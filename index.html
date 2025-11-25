@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aadhat Billing App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Hamburger Menu Button -->
+    <button class="hamburger" onclick="toggleMenu()">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+
+    <!-- Side Navigation -->
+    <div class="side-nav" id="sideNav">
+        <div class="nav-header">
+            <h2>Aadhat Billing</h2>
+            <button class="close-btn" onclick="toggleMenu()">×</button>
+        </div>
+        <nav class="nav-menu">
+            <a href="#" onclick="showTabFromNav('billing')">
+                <span class="nav-icon">📋</span>
+                Billing
+            </a>
+            <a href="#" onclick="showTabFromNav('items')">
+                <span class="nav-icon">📦</span>
+                Items
+            </a>
+            <a href="#" onclick="showTabFromNav('stock')">
+                <span class="nav-icon">📊</span>
+                Stock
+            </a>
+            <a href="#" onclick="showTabFromNav('sales')">
+                <span class="nav-icon">💰</span>
+                Sales
+            </a>
+            <a href="#" onclick="showTabFromNav('history')">
+                <span class="nav-icon">📜</span>
+                History
+            </a>
+            <a href="#" onclick="showTabFromNav('reports')">
+                <span class="nav-icon">📈</span>
+                Reports
+            </a>
+            <a href="#" onclick="showTabFromNav('configure')">
+                <span class="nav-icon">⚙️</span>
+                Configure
+            </a>
+            <a href="#" onclick="showTabFromNav('settings')">
+                <span class="nav-icon">ℹ️</span>
+                Settings
+            </a>
+        </nav>
+    </div>
+
+    <!-- Overlay -->
+    <div class="overlay" id="overlay" onclick="toggleMenu()"></div>
+
+    <!-- ITEMS TAB -->
+    <div id="items" class="tab">
+        <h2>Items</h2>
+        <div id="itemsList"></div>
+
+        <button class="add-item-btn" onclick="addItem()">+ Add Item</button>
+    </div>
+
+    <!-- BILLING TAB -->
+    <div id="billing" class="tab active">
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 id="billingTitle" style="margin: 0;">Purchase Entry</h2>
+            <button class="mode-toggle-btn" id="modeToggleBtn" onclick="toggleTransactionMode()">
+                💰 Switch to Sale
+            </button>
+        </div>
+
+        <div class="form-row">
+            <label>Item:</label>
+            <select id="billItem" onchange="loadRates()"></select>
+        </div>
+
+        <div class="form-row">
+            <label>Rate (₹):</label>
+            <input type="number" id="billRate" list="rateOptions" placeholder="Select or enter rate" />
+            <datalist id="rateOptions"></datalist>
+        </div>
+
+        <div class="form-row">
+            <label>Weight (kg):</label>
+            <div style="display: flex; gap: 8px; flex: 1;">
+                <input type="number" id="newWeight" placeholder="Enter weight" style="flex: 1;" />
+                <button class="quick-add-btn-inline" onclick="addWeight()">Add</button>
+            </div>
+        </div>
+
+        <div id="weightsDisplay" class="weights-compact"></div>
+
+        <div class="bill-summary">
+            <div class="summary-item">
+                <span>Total: <strong><span id="totalWeights">0</span> kg</strong></span>
+            </div>
+            <div class="summary-item">
+                <span>Packets: <strong><span id="totalPackets">0</span></strong></span>
+            </div>
+        </div>
+
+        <button class="add-to-bill-btn" onclick="addToBill()">Add to Bill</button>
+
+        <h3>Bill Items</h3>
+        <table id="billTable">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Rate</th>
+                    <th>Qty</th>
+                    <th>Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div style="text-align: right; padding: 8px 0; font-size: 14px; color: var(--text-secondary); margin-top: 8px;">
+            Total Packets: <strong style="color: var(--dark-color); font-size: 15px;"><span id="totalPacketsInBill">0</span></strong>
+        </div>
+
+        <div class="bill-totals">
+            <div class="total-row">
+                <span>Purchase Total:</span>
+                <strong>₹ <span id="billTotal">0</span></strong>
+            </div>
+            
+            <div class="labor-input-row">
+                <label class="checkbox-label" style="margin: 0;">
+                    <input type="checkbox" id="autoLaborCharge" checked onchange="updateLaborDisplay()">
+                    <span>Labor (₹):</span>
+                </label>
+                <span id="laborCalculation" style="color: #666; font-size: 13px;">6 × 0</span>
+                <input type="number" id="manualLaborCharges" value="0" oninput="updateTotals()" placeholder="0" />
+            </div>
+            
+            <div class="total-row grand-total">
+                <span>Total Payable:</span>
+                <strong>₹ <span id="amountPayable">0</span></strong>
+            </div>
+
+            <div class="payment-row">
+                <label>Online (₹):</label>
+                <input type="number" id="onlinePayment" oninput="updatePaymentTotal()" placeholder="0" />
+            </div>
+            
+            <div class="payment-row">
+                <label>Cash (₹):</label>
+                <input type="number" id="cashPayment" oninput="updatePaymentTotal()" placeholder="0" />
+            </div>
+            
+            <div class="payment-row payment-total">
+                <span>Total Paid:</span>
+                <strong>₹ <span id="totalPayment">0</span></strong>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 16px;">
+            <button class="save-btn save-purchase-btn" id="saveBillBtn" onclick="saveBillOnly()">Save Purchase</button>
+            <button class="print-btn print-purchase-btn" id="printBillBtn" onclick="printBill()">Print Purchase</button>
+        </div>
+    </div>
+
+    <!-- HISTORY TAB -->
+    <div id="history" class="tab">
+        <h2>Billing History</h2>
+        
+        <div id="historyList">
+            <p style="text-align: center; color: #888; margin-top: 40px;">No billing history yet</p>
+        </div>
+    </div>
+
+    <!-- STOCK TAB - READ ONLY -->
+    <div id="stock" class="tab">
+        <h2>Stock Management</h2>
+        
+        <div id="stockList">
+            <p style="text-align: center; color: #888; margin-top: 40px;">No stock data available</p>
+        </div>
+    </div>
+
+    <!-- SALES TAB -->
+    <div id="sales" class="tab">
+        <h2>Sales Entry</h2>
+
+        <label>Select Item:</label>
+        <select id="sellItem" onchange="loadSellItemDetails()">
+            <option value="">Select item</option>
+        </select>
+
+        <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 12px 0;">
+            <div style="font-size: 14px; color: #333;">
+                <strong>Available Stock:</strong> <span id="availableStock">-</span> kg<br>
+                <strong>Avg Purchase Rate:</strong> ₹<span id="avgPurchaseRate">-</span>/kg
+            </div>
+        </div>
+
+        <label>Selling Rate (₹/kg):</label>
+        <input type="number" id="sellRate" placeholder="Enter selling rate" />
+
+        <div class="weight-input-row">
+            <div style="flex: 1;">
+                <label>Quantity (kg):</label>
+                <input type="number" id="sellQuantity" placeholder="Enter quantity" />
+            </div>
+            <button class="quick-add-btn" onclick="addToSalesBill()">Add to Bill</button>
+        </div>
+
+        <h3>Sale Items</h3>
+        <table id="salesTable">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Rate</th>
+                    <th>Qty</th>
+                    <th>Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div class="bill-totals">
+            <div class="total-row grand-total">
+                <span>Total Sale Amount:</span>
+                <strong>₹ <span id="salesTotalAmount">0</span></strong>
+            </div>
+        </div>
+
+        <button class="print-btn" onclick="completeSale()">Complete Sale</button>
+    </div>
+
+    <!-- REPORTS TAB -->
+    <div id="reports" class="tab">
+        <h2>Reports</h2>
+        
+        <div class="date-filter-card">
+            <div class="filter-buttons">
+                <button class="filter-btn active" onclick="setDateFilter('today')">Today</button>
+                <button class="filter-btn" onclick="setDateFilter('week')">This Week</button>
+                <button class="filter-btn" onclick="setDateFilter('month')">This Month</button>
+                <button class="filter-btn" onclick="setDateFilter('custom')">Custom</button>
+            </div>
+            
+            <div id="customDateRange" style="display: none; margin-top: 16px;">
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 140px;">
+                        <label>From:</label>
+                        <input type="date" id="dateFrom" onchange="applyCustomDateFilter()" />
+                    </div>
+                    <div style="flex: 1; min-width: 140px;">
+                        <label>To:</label>
+                        <input type="date" id="dateTo" onchange="applyCustomDateFilter()" />
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="report-cards">
+            <div class="report-card">
+                <h3>Total Purchases</h3>
+                <p class="report-value">₹ <span id="totalSales">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Total Bills</h3>
+                <p class="report-value"><span id="totalBills">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Labor Cost</h3>
+                <p class="report-value">₹ <span id="totalLabour">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Cash Payment</h3>
+                <p class="report-value">₹ <span id="totalCash">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Online Payment</h3>
+                <p class="report-value">₹ <span id="totalOnline">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Total Payment</h3>
+                <p class="report-value">₹ <span id="totalPaymentReport">0</span></p>
+            </div>
+        </div>
+
+        <h3>Purchase Trends</h3>
+        <div class="chart-container">
+            <canvas id="purchaseChart"></canvas>
+        </div>
+
+        <h3>Popular Items</h3>
+        <div id="popularItems">
+            <p style="text-align: center; color: #888;">No data available</p>
+        </div>
+
+        <h3>Item-wise Purchase Details</h3>
+        <div id="itemWiseReport"></div>
+    </div>
+
+    <!-- CONFIGURE TAB -->
+    <div id="configure" class="tab">
+        <h2>Configure</h2>
+
+        <div class="settings-card">
+            <h3>Labor Charges</h3>
+            
+            <label>Heavy Packet Weight Threshold (kg):</label>
+            <input type="number" id="settingHeavyWeight" placeholder="30" value="30" onchange="saveSettings()" />
+            <p class="setting-description">Packets above this weight will incur labor charges</p>
+
+            <label>Labor Charge per Heavy Packet (₹):</label>
+            <input type="number" id="settingLaborRate" placeholder="6" value="6" onchange="saveSettings()" />
+            <p class="setting-description">Amount charged for each heavy packet</p>
+
+            <label class="checkbox-label">
+                <input type="checkbox" id="settingAutoLabor" checked onchange="saveSettings()">
+                <span>Enable automatic labor charges by default</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- SETTINGS TAB -->
+    <div id="settings" class="tab">
+        <h2>Settings</h2>
+
+        <div class="settings-card">
+            <h3>About</h3>
+            <p><strong>Version:</strong> 1.0.0</p>
+            <p><strong>App:</strong> Aadhat Billing System</p>
+            <p><strong>Developer:</strong> Your Company Name</p>
+        </div>
+
+        <div class="settings-card">
+            <h3>Data Management</h3>
+            <button class="danger-btn" onclick="clearAllData()">Clear All Data</button>
+            <p class="setting-description">This will delete all items, bills, and history. This action cannot be undone.</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+
+</body>
+</html>
