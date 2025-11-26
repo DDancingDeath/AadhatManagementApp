@@ -22,35 +22,35 @@
             <button class="close-btn" onclick="toggleMenu()">×</button>
         </div>
         <nav class="nav-menu">
-            <a href="#" onclick="showTabFromNav('billing')">
+            <a href="#" onclick="showTabFromNav('billing', event)">
                 <span class="nav-icon">📋</span>
                 Billing
             </a>
-            <a href="#" onclick="showTabFromNav('items')">
+            <a href="#" onclick="showTabFromNav('items', event)">
                 <span class="nav-icon">📦</span>
                 Items
             </a>
-            <a href="#" onclick="showTabFromNav('stock')">
+            <a href="#" onclick="showTabFromNav('stock', event)">
                 <span class="nav-icon">📊</span>
                 Stock
             </a>
-            <a href="#" onclick="showTabFromNav('sales')">
+            <a href="#" onclick="showTabFromNav('sales', event)">
                 <span class="nav-icon">💰</span>
                 Sales
             </a>
-            <a href="#" onclick="showTabFromNav('history')">
+            <a href="#" onclick="showTabFromNav('history', event)">
                 <span class="nav-icon">📜</span>
                 History
             </a>
-            <a href="#" onclick="showTabFromNav('reports')">
+            <a href="#" onclick="showTabFromNav('reports', event)">
                 <span class="nav-icon">📈</span>
                 Reports
             </a>
-            <a href="#" onclick="showTabFromNav('configure')">
+            <a href="#" onclick="showTabFromNav('configure', event)">
                 <span class="nav-icon">⚙️</span>
                 Configure
             </a>
-            <a href="#" onclick="showTabFromNav('settings')">
+            <a href="#" onclick="showTabFromNav('settings', event)">
                 <span class="nav-icon">ℹ️</span>
                 Settings
             </a>
@@ -59,6 +59,22 @@
 
     <!-- Overlay -->
     <div class="overlay" id="overlay" onclick="toggleMenu()"></div>
+
+    <!-- Modal Popup -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-box" id="modalBox">
+            <div class="modal-header">
+                <h3 id="modalTitle">Alert</h3>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <p id="modalMessage">This is a message</p>
+            </div>
+            <div class="modal-footer" id="modalFooter">
+                <button class="modal-btn modal-btn-cancel" id="modalCancelBtn" onclick="closeModal(false)">Cancel</button>
+                <button class="modal-btn modal-btn-confirm" id="modalConfirmBtn" onclick="closeModal(true)">OK</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ITEMS TAB -->
     <div id="items" class="tab">
@@ -85,14 +101,14 @@
 
         <div class="form-row">
             <label>Rate (₹):</label>
-            <input type="number" id="billRate" list="rateOptions" placeholder="Select or enter rate" />
+            <input type="number" inputmode="decimal" id="billRate" list="rateOptions" step="any" placeholder="Select or enter rate" />
             <datalist id="rateOptions"></datalist>
         </div>
 
         <div class="form-row">
             <label>Weight (kg):</label>
             <div style="display: flex; gap: 8px; flex: 1;">
-                <input type="number" id="newWeight" placeholder="Enter weight" style="flex: 1;" />
+                <input type="number" inputmode="decimal" id="newWeight" placeholder="Enter weight" style="flex: 1;" />
                 <button class="quick-add-btn-inline" onclick="addWeight()">Add</button>
             </div>
         </div>
@@ -140,7 +156,7 @@
                     <span>Labor (₹):</span>
                 </label>
                 <span id="laborCalculation" style="color: #666; font-size: 13px;">6 × 0</span>
-                <input type="number" id="manualLaborCharges" value="0" oninput="updateTotals()" placeholder="0" />
+                <input type="number" inputmode="decimal" id="manualLaborCharges" value="0" oninput="updateTotals()" placeholder="0" />
             </div>
             
             <div class="total-row grand-total">
@@ -150,12 +166,14 @@
 
             <div class="payment-row">
                 <label>Online (₹):</label>
-                <input type="number" id="onlinePayment" oninput="updatePaymentTotal()" placeholder="0" />
+                <input type="checkbox" id="onlineCheckbox" onchange="fillPayableAmount('online')" />
+                <input type="number" inputmode="decimal" id="onlinePayment" oninput="updatePaymentTotal()" placeholder="0" />
             </div>
             
             <div class="payment-row">
                 <label>Cash (₹):</label>
-                <input type="number" id="cashPayment" oninput="updatePaymentTotal()" placeholder="0" />
+                <input type="checkbox" id="cashCheckbox" onchange="fillPayableAmount('cash')" />
+                <input type="number" inputmode="decimal" id="cashPayment" oninput="updatePaymentTotal()" placeholder="0" />
             </div>
             
             <div class="payment-row payment-total">
@@ -205,12 +223,12 @@
         </div>
 
         <label>Selling Rate (₹/kg):</label>
-        <input type="number" id="sellRate" placeholder="Enter selling rate" />
+        <input type="number" inputmode="decimal" id="sellRate" placeholder="Enter selling rate" />
 
         <div class="weight-input-row">
             <div style="flex: 1;">
                 <label>Quantity (kg):</label>
-                <input type="number" id="sellQuantity" placeholder="Enter quantity" />
+                <input type="number" inputmode="decimal" id="sellQuantity" placeholder="Enter quantity" />
             </div>
             <button class="quick-add-btn" onclick="addToSalesBill()">Add to Bill</button>
         </div>
@@ -244,11 +262,11 @@
         <h2>Reports</h2>
         
         <div class="date-filter-card">
-            <div class="filter-buttons">
-                <button class="filter-btn active" onclick="setDateFilter('today')">Today</button>
-                <button class="filter-btn" onclick="setDateFilter('week')">This Week</button>
-                <button class="filter-btn" onclick="setDateFilter('month')">This Month</button>
-                <button class="filter-btn" onclick="setDateFilter('custom')">Custom</button>
+            <div class="date-filter-buttons">
+                <button class="filter-btn active" onclick="setDateFilter('today', event)">Today</button>
+                <button class="filter-btn" onclick="setDateFilter('week', event)">This Week</button>
+                <button class="filter-btn" onclick="setDateFilter('month', event)">This Month</button>
+                <button class="filter-btn" onclick="setDateFilter('custom', event)">Custom</button>
             </div>
             
             <div id="customDateRange" style="display: none; margin-top: 16px;">
@@ -319,11 +337,11 @@
             <h3>Labor Charges</h3>
             
             <label>Heavy Packet Weight Threshold (kg):</label>
-            <input type="number" id="settingHeavyWeight" placeholder="30" value="30" onchange="saveSettings()" />
+            <input type="number" inputmode="decimal" id="settingHeavyWeight" placeholder="30" value="30" onchange="saveSettings()" />
             <p class="setting-description">Packets above this weight will incur labor charges</p>
 
             <label>Labor Charge per Heavy Packet (₹):</label>
-            <input type="number" id="settingLaborRate" placeholder="6" value="6" onchange="saveSettings()" />
+            <input type="number" inputmode="decimal" id="settingLaborRate" placeholder="6" value="6" onchange="saveSettings()" />
             <p class="setting-description">Amount charged for each heavy packet</p>
 
             <label class="checkbox-label">

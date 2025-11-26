@@ -18,6 +18,44 @@ let settings = JSON.parse(localStorage.getItem("settings")) || {
     autoLaborEnabled: true
 };
 
+// Modal system
+let modalResolve = null;
+
+function showModal(message, title = 'Alert', showCancel = false) {
+    return new Promise((resolve) => {
+        modalResolve = resolve;
+        
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
+        const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+        
+        modalTitle.textContent = title;
+        modalMessage.innerHTML = message.replace(/\n/g, '<br>');
+        
+        if (showCancel) {
+            modalCancelBtn.style.display = 'block';
+            modalConfirmBtn.textContent = 'Yes';
+        } else {
+            modalCancelBtn.style.display = 'none';
+            modalConfirmBtn.textContent = 'OK';
+        }
+        
+        modalOverlay.classList.add('active');
+    });
+}
+
+function closeModal(result) {
+    const modalOverlay = document.getElementById('modalOverlay');
+    modalOverlay.classList.remove('active');
+    
+    if (modalResolve) {
+        modalResolve(result);
+        modalResolve = null;
+    }
+}
+
 // Save DB (without re-rendering)
 function saveDB() {
     localStorage.setItem("items", JSON.stringify(items));
@@ -40,7 +78,7 @@ function toggleMenu() {
     overlay.classList.toggle("active");
 }
 
-function showTabFromNav(tabId) {
+function showTabFromNav(tabId, event) {
     // Hide all tabs
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     
@@ -49,7 +87,7 @@ function showTabFromNav(tabId) {
     
     // Update active nav link
     document.querySelectorAll(".nav-menu a").forEach(a => a.classList.remove("active"));
-    event.target.closest("a").classList.add("active");
+    if (event) event.target.closest("a").classList.add("active");
     
     // Refresh data for specific tabs with slight delay for canvas rendering
     if (tabId === 'history') renderHistory();
@@ -101,6 +139,8 @@ function saveBillToHistory() {
     document.getElementById("manualLaborCharges").value = 0;
     document.getElementById("onlinePayment").value = "";
     document.getElementById("cashPayment").value = "";
+    document.getElementById("onlineCheckbox").checked = false;
+    document.getElementById("cashCheckbox").checked = false;
     document.getElementById("totalPayment").textContent = 0;
     
     const totalPacketsElement = document.getElementById("totalPacketsInBill");
@@ -311,28 +351,28 @@ function loadSellItemDetails() {
     sellRateEl.value = suggestedRate;
 }
 
-function addToSalesBill() {
+async function addToSalesBill() {
     const itemName = document.getElementById("sellItem").value;
     const quantity = Number(document.getElementById("sellQuantity").value);
     const rate = Number(document.getElementById("sellRate").value);
     
     if (!itemName) {
-        alert("Please select an item");
+        await showModal("Please select an item");
         return;
     }
     
     if (!quantity || quantity <= 0) {
-        alert("Please enter valid quantity");
+        await showModal("Please enter valid quantity");
         return;
     }
     
     if (!rate || rate <= 0) {
-        alert("Please enter valid selling rate");
+        await showModal("Please enter valid selling rate");
         return;
     }
     
     if (!stock[itemName] || stock[itemName].quantity < quantity) {
-        alert(`Insufficient stock! Only ${stock[itemName]?.quantity.toFixed(2) || 0} kg available`);
+        await showModal(`Insufficient stock! Only ${stock[itemName]?.quantity.toFixed(2) || 0} kg available`);
         return;
     }
     
@@ -340,9 +380,9 @@ function addToSalesBill() {
         name: itemName,
         quantity: quantity,
         rate: rate,
-        total: quantity * rate,
+        total: Math.round(quantity * rate),
         costRate: stock[itemName].avgRate,
-        profit: (rate - stock[itemName].avgRate) * quantity
+        profit: Math.round((rate - stock[itemName].avgRate) * quantity)
     });
     
     renderSalesBill();
@@ -383,9 +423,9 @@ function removeSalesItem(index) {
     renderSalesBill();
 }
 
-function completeSale() {
+async function completeSale() {
     if (salesItems.length === 0) {
-        alert("No items in sale");
+        await showModal("No items in sale");
         return;
     }
     
@@ -406,7 +446,7 @@ function completeSale() {
     });
     
     if (stockUpdateFailed) {
-        alert("Error: Some items couldn't be reduced from stock. Please check stock levels.");
+        await showModal("Error: Some items couldn't be reduced from stock. Please check stock levels.");
         return;
     }
     
@@ -420,16 +460,16 @@ function completeSale() {
     renderStock();
     loadSellItemDropdown();
     
-    alert(`Sale completed! Total: ₹${saleRecord.total}`);
+    await showModal(`Sale completed! Total: ₹${saleRecord.total}`, "Success");
 }
 
 // -------------------- DATE FILTERING --------------------
-function setDateFilter(filter) {
+function setDateFilter(filter, evt) {
     currentDateFilter = filter;
     
     // Update button states
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
+    if (evt) evt.target.classList.add('active');
     
     // Show/hide custom date range
     const customRange = document.getElementById('customDateRange');
@@ -643,12 +683,12 @@ function renderPurchaseChart(bills) {
 }
 
 // -------------------- TABS --------------------
-function showTab(tabId) {
+function showTab(tabId, evt) {
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
     document.querySelectorAll(".tab-btn").forEach(t => t.classList.remove("active"));
 
     document.getElementById(tabId).classList.add("active");
-    event.target.classList.add("active");
+    if (evt) evt.target.classList.add("active");
 }
 
 // -------------------- ITEMS & RATES PAGE --------------------
@@ -867,12 +907,12 @@ function updateRateFromCustom() {
 }
 
 // -------------------- WEIGHTS MANAGEMENT --------------------
-function addWeight() {
+async function addWeight() {
     const weightInput = document.getElementById("newWeight");
     const weight = Number(weightInput.value);
 
     if (!weight || weight <= 0) {
-        alert("Enter valid weight");
+        await showModal("Enter valid weight");
         return;
     }
 
@@ -927,7 +967,7 @@ function clearWeights() {
 }
 
 // Add to bill
-function addToBill() {
+async function addToBill() {
     // Check if there's a weight entered but not added
     const weightInput = document.getElementById("newWeight");
     const pendingWeight = Number(weightInput.value);
@@ -942,17 +982,17 @@ function addToBill() {
     let rate = Number(document.getElementById("billRate").value);
 
     if (!itemIndex) {
-        alert("Please select an item");
+        await showModal("Please select an item");
         return;
     }
 
     if (!rate || rate <= 0) {
-        alert("Please enter a valid rate");
+        await showModal("Please enter a valid rate");
         return;
     }
 
     if (currentWeights.length === 0) {
-        alert("Please add at least one weight");
+        await showModal("Please add at least one weight");
         return;
     }
 
@@ -963,7 +1003,7 @@ function addToBill() {
         const itemName = itemIndex;
         
         if (!stock[itemName] || stock[itemName].quantity < totalQty) {
-            alert(`Insufficient stock! Only ${stock[itemName]?.quantity.toFixed(2) || 0} kg available`);
+            await showModal(`Insufficient stock! Only ${stock[itemName]?.quantity.toFixed(2) || 0} kg available`);
             return;
         }
 
@@ -973,7 +1013,7 @@ function addToBill() {
             qty: totalQty,
             weights: [...currentWeights],
             packets: currentWeights.length,
-            total: rate * totalQty,
+            total: Math.round(rate * totalQty),
             mode: 'sale'
         });
     } else {
@@ -988,7 +1028,7 @@ function addToBill() {
             weights: [...currentWeights],
             packets: currentWeights.length,
             heavyPackets: heavyPackets,
-            total: rate * totalQty,
+            total: Math.round(rate * totalQty),
             mode: 'purchase'
         });
 
@@ -1071,11 +1111,11 @@ function updateTotals() {
     
     if (transactionMode === 'sale') {
         // For sales, no labor charges
-        document.getElementById("amountPayable").textContent = billTotal;
+        document.getElementById("amountPayable").textContent = Math.round(billTotal);
     } else {
         // For purchases, subtract labor charges
         const laborCharges = Number(document.getElementById("manualLaborCharges").value) || 0;
-        const amountPayable = billTotal - laborCharges;
+        const amountPayable = Math.round(billTotal - laborCharges);
         document.getElementById("amountPayable").textContent = amountPayable;
     }
 }
@@ -1101,10 +1141,38 @@ function updatePaymentTotal() {
     }
 }
 
+function fillPayableAmount(type) {
+    const onlineCheckbox = document.getElementById('onlineCheckbox');
+    const cashCheckbox = document.getElementById('cashCheckbox');
+    const onlinePayment = document.getElementById('onlinePayment');
+    const cashPayment = document.getElementById('cashPayment');
+    const amountPayable = Number(document.getElementById('amountPayable').textContent) || 0;
+
+    if (type === 'online') {
+        if (onlineCheckbox.checked) {
+            cashCheckbox.checked = false;
+            onlinePayment.value = amountPayable;
+            cashPayment.value = '';
+        } else {
+            onlinePayment.value = '';
+        }
+    } else if (type === 'cash') {
+        if (cashCheckbox.checked) {
+            onlineCheckbox.checked = false;
+            cashPayment.value = amountPayable;
+            onlinePayment.value = '';
+        } else {
+            cashPayment.value = '';
+        }
+    }
+
+    updatePaymentTotal();
+}
+
 // -------------------- PRINT BILL --------------------
-function printBill() {
+async function printBill() {
     if (billItems.length === 0) {
-        alert("No items in bill");
+        await showModal("No items in bill");
         return;
     }
 
@@ -1117,12 +1185,14 @@ function printBill() {
     // Check if payment is sufficient
     if (totalPayment < amountPayable) {
         const shortfall = amountPayable - totalPayment;
-        const confirmPrint = confirm(
+        const confirmPrint = await showModal(
             `⚠️ Payment Insufficient!\n\n` +
             `Amount Payable: ₹${amountPayable}\n` +
             `Total Payment: ₹${totalPayment}\n` +
             `Shortfall: ₹${shortfall.toFixed(2)}\n\n` +
-            `Do you still want to print the bill?`
+            `Do you still want to print the bill?`,
+            'Confirmation',
+            true
         );
         
         if (!confirmPrint) {
@@ -1248,6 +1318,8 @@ function saveSaleToHistory() {
     billItems = [];
     document.getElementById("onlinePayment").value = "";
     document.getElementById("cashPayment").value = "";
+    document.getElementById("onlineCheckbox").checked = false;
+    document.getElementById("cashCheckbox").checked = false;
     document.getElementById("totalPayment").textContent = 0;
     
     const totalPacketsElement = document.getElementById("totalPacketsInBill");
@@ -1265,9 +1337,9 @@ function saveSaleToHistory() {
 }
 
 // -------------------- SAVE BILL ONLY --------------------
-function saveBillOnly() {
+async function saveBillOnly() {
     if (billItems.length === 0) {
-        alert("No items in bill");
+        await showModal("No items in bill");
         return;
     }
 
@@ -1280,12 +1352,14 @@ function saveBillOnly() {
     // Check if payment is sufficient
     if (totalPayment < amountPayable) {
         const shortfall = amountPayable - totalPayment;
-        const confirmSave = confirm(
+        const confirmSave = await showModal(
             `⚠️ Payment Insufficient!\n\n` +
             `Amount Payable: ₹${amountPayable}\n` +
             `Total Payment: ₹${totalPayment}\n` +
             `Shortfall: ₹${shortfall.toFixed(2)}\n\n` +
-            `Do you still want to save the bill?`
+            `Do you still want to save the bill?`,
+            'Confirmation',
+            true
         );
         
         if (!confirmSave) {
@@ -1298,15 +1372,15 @@ function saveBillOnly() {
     // Save to appropriate history
     if (isPurchase) {
         saveBillToHistory();
-        alert("Purchase bill saved successfully!");
+        await showModal("Purchase bill saved successfully!", "Success");
     } else {
         saveSaleToHistory();
-        alert("Sale bill saved successfully!");
+        await showModal("Sale bill saved successfully!", "Success");
     }
 }
 
 // -------------------- TRANSACTION MODE --------------------
-function toggleTransactionMode() {
+async function toggleTransactionMode() {
     transactionMode = transactionMode === 'purchase' ? 'sale' : 'purchase';
     updateModeUI();
     
@@ -1319,7 +1393,8 @@ function toggleTransactionMode() {
     
     // Clear current bill if switching modes
     if (billItems.length > 0) {
-        if (confirm('Switching modes will clear current bill. Continue?')) {
+        const shouldContinue = await showModal('Switching modes will clear current bill. Continue?', 'Confirmation', true);
+        if (shouldContinue) {
             billItems = [];
             renderBill();
             updateTotals();
