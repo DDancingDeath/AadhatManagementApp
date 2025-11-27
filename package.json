@@ -3,6 +3,7 @@
     "start": "servor --reload"
   },
   "dependencies": {
+    "@capacitor-community/bluetooth-le": "^7.2.0",
     "@capacitor/android": "^7.4.4",
     "@capacitor/cli": "^7.4.4",
     "@capacitor/core": "^7.4.4",

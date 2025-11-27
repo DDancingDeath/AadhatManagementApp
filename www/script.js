@@ -22,6 +22,375 @@ let settings = JSON.parse(localStorage.getItem("settings")) || {
 // Modal system
 let modalResolve = null;
 
+// -------------------- MOBILE UI ENHANCEMENTS --------------------
+// Haptic feedback
+function hapticFeedback(type = 'light') {
+    if (window.Capacitor && window.Capacitor.Plugins.Haptics) {
+        const { Haptics, ImpactStyle } = window.Capacitor.Plugins;
+        try {
+            if (type === 'light') {
+                Haptics.impact({ style: ImpactStyle.Light });
+            } else if (type === 'medium') {
+                Haptics.impact({ style: ImpactStyle.Medium });
+            } else if (type === 'heavy') {
+                Haptics.impact({ style: ImpactStyle.Heavy });
+            }
+        } catch (e) {
+            // Haptics not available
+        }
+    } else if (navigator.vibrate) {
+        // Fallback to vibration API
+        if (type === 'light') navigator.vibrate(10);
+        else if (type === 'medium') navigator.vibrate(20);
+        else if (type === 'heavy') navigator.vibrate(30);
+    }
+}
+
+// -------------------- BLUETOOTH PRINTER --------------------
+let connectedPrinter = null;
+let printerSettings = JSON.parse(localStorage.getItem('printerSettings')) || {
+    enabled: false,
+    deviceId: null,
+    deviceName: null,
+    paperWidth: 48 // characters per line for 80mm thermal printer
+};
+
+// ESC/POS Commands
+const ESC = '\x1B';
+const GS = '\x1D';
+
+class BluetoothPrinterManager {
+    constructor() {
+        this.device = null;
+        this.characteristic = null;
+    }
+
+    async scanDevices() {
+        try {
+            if (!window.Capacitor || !window.Capacitor.Plugins.BluetoothLe) {
+                throw new Error('Bluetooth plugin not available');
+            }
+
+            const { BluetoothLe } = window.Capacitor.Plugins;
+            
+            // Request location permission (required for Bluetooth on Android)
+            await BluetoothLe.initialize();
+            
+            showLoading();
+            const devices = await BluetoothLe.requestDevice({
+                services: [], // Empty to see all devices
+                optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] // Common printer service
+            });
+            
+            hideLoading();
+            return devices;
+        } catch (error) {
+            hideLoading();
+            console.error('Bluetooth scan error:', error);
+            throw error;
+        }
+    }
+
+    async connect(deviceId) {
+        try {
+            if (!window.Capacitor || !window.Capacitor.Plugins.BluetoothLe) {
+                throw new Error('Bluetooth plugin not available');
+            }
+
+            const { BluetoothLe } = window.Capacitor.Plugins;
+            
+            showLoading();
+            await BluetoothLe.connect({ deviceId });
+            
+            // Discover services
+            const services = await BluetoothLe.getServices({ deviceId });
+            
+            // Find printer service and characteristic
+            // Common UUIDs for thermal printers
+            const printerServiceUUIDs = [
+                '000018f0-0000-1000-8000-00805f9b34fb',
+                '49535343-fe7d-4ae5-8fa9-9fafd205e455'
+            ];
+            
+            const printerCharacteristicUUIDs = [
+                '00002af1-0000-1000-8000-00805f9b34fb',
+                '49535343-8841-43f4-a8d4-ecbe34729bb3'
+            ];
+
+            let foundService = null;
+            let foundCharacteristic = null;
+
+            for (const service of services.services) {
+                if (printerServiceUUIDs.includes(service.uuid.toLowerCase())) {
+                    foundService = service;
+                    const characteristics = await BluetoothLe.getCharacteristics({
+                        deviceId,
+                        service: service.uuid
+                    });
+                    
+                    for (const char of characteristics.characteristics) {
+                        if (printerCharacteristicUUIDs.includes(char.uuid.toLowerCase()) ||
+                            char.properties.write || char.properties.writeWithoutResponse) {
+                            foundCharacteristic = char;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            if (!foundCharacteristic) {
+                // Try to find any writable characteristic
+                for (const service of services.services) {
+                    const characteristics = await BluetoothLe.getCharacteristics({
+                        deviceId,
+                        service: service.uuid
+                    });
+                    
+                    for (const char of characteristics.characteristics) {
+                        if (char.properties.write || char.properties.writeWithoutResponse) {
+                            foundService = service;
+                            foundCharacteristic = char;
+                            break;
+                        }
+                    }
+                    if (foundCharacteristic) break;
+                }
+            }
+
+            if (!foundCharacteristic) {
+                throw new Error('No writable characteristic found on printer');
+            }
+
+            this.device = deviceId;
+            this.characteristic = {
+                service: foundService.uuid,
+                characteristic: foundCharacteristic.uuid
+            };
+            
+            connectedPrinter = this;
+            hideLoading();
+            return true;
+        } catch (error) {
+            hideLoading();
+            console.error('Bluetooth connect error:', error);
+            throw error;
+        }
+    }
+
+    async disconnect() {
+        if (this.device && window.Capacitor && window.Capacitor.Plugins.BluetoothLe) {
+            try {
+                const { BluetoothLe } = window.Capacitor.Plugins;
+                await BluetoothLe.disconnect({ deviceId: this.device });
+                this.device = null;
+                this.characteristic = null;
+                connectedPrinter = null;
+            } catch (error) {
+                console.error('Disconnect error:', error);
+            }
+        }
+    }
+
+    async write(data) {
+        if (!this.device || !this.characteristic) {
+            throw new Error('Printer not connected');
+        }
+
+        try {
+            const { BluetoothLe } = window.Capacitor.Plugins;
+            
+            // Convert string to byte array
+            const bytes = new Uint8Array(data.length);
+            for (let i = 0; i < data.length; i++) {
+                bytes[i] = data.charCodeAt(i);
+            }
+            
+            // Convert to base64 for transmission
+            const base64 = btoa(String.fromCharCode.apply(null, bytes));
+            
+            await BluetoothLe.write({
+                deviceId: this.device,
+                service: this.characteristic.service,
+                characteristic: this.characteristic.characteristic,
+                value: base64
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('Write error:', error);
+            throw error;
+        }
+    }
+}
+
+const printerManager = new BluetoothPrinterManager();
+
+// ESC/POS Print Commands Generator
+function generateESCPOS(billData) {
+    let commands = '';
+    
+    // Initialize printer
+    commands += ESC + '@'; // Initialize
+    commands += ESC + 'a' + '\x01'; // Center align
+    
+    // Title - Large and bold
+    commands += ESC + '!' + '\x30'; // Double height + double width
+    commands += billData.isPurchase ? 'PURCHASE RECEIPT\n' : 'SALE RECEIPT\n';
+    commands += ESC + '!' + '\x00'; // Normal size
+    commands += '\n';
+    
+    // Date and time
+    const now = new Date();
+    commands += now.toLocaleString('en-IN') + '\n';
+    commands += '--------------------------------\n';
+    
+    // Left align for items
+    commands += ESC + 'a' + '\x00';
+    
+    // Column headers
+    commands += 'वस्तु        दर     मात्रा   कुल\n';
+    commands += '--------------------------------\n';
+    
+    // Items
+    billData.items.forEach(item => {
+        const name = item.name.substring(0, 12).padEnd(12);
+        const rate = ('₹' + item.rate).padEnd(8);
+        const qty = (item.qty + 'kg').padEnd(7);
+        const total = '₹' + item.total;
+        commands += name + rate + qty + total + '\n';
+        
+        // Show weight breakdown if multiple weights
+        if (item.weights && item.weights.length > 1) {
+            commands += '  (' + item.weights.join('+') + ')\n';
+        }
+    });
+    
+    commands += '--------------------------------\n';
+    
+    // Totals
+    commands += 'कुल:'.padEnd(24) + '₹' + billData.billTotal + '\n';
+    
+    if (billData.isPurchase && billData.laborCharges > 0) {
+        let laborLine = 'मजदूरी:';
+        if (billData.isAutoLabor && billData.laborCalc) {
+            laborLine += '     ' + billData.laborCalc + ' = ₹' + billData.laborCharges;
+        } else {
+            laborLine = laborLine.padEnd(16) + '₹' + billData.laborCharges;
+        }
+        commands += laborLine + '\n';
+    }
+    
+    commands += 'पैकेट:'.padEnd(24) + billData.totalPackets + '\n';
+    commands += '\n';
+    
+    // Grand total - Bold
+    commands += ESC + '!' + '\x18'; // Bold + double height
+    commands += (billData.isPurchase ? 'कुल भुगतान:' : 'कुल प्राप्त:') + ' ₹' + billData.amountPayable + '\n';
+    commands += ESC + '!' + '\x00'; // Normal
+    
+    commands += '\n';
+    
+    // Payment details (for purchase)
+    if (billData.isPurchase && (billData.onlinePayment > 0 || billData.cashPayment > 0)) {
+        commands += '--------------------------------\n';
+        if (billData.onlinePayment > 0) {
+            commands += 'ऑनलाइन:'.padEnd(24) + '₹' + billData.onlinePayment + '\n';
+        }
+        if (billData.cashPayment > 0) {
+            commands += 'नकद:'.padEnd(24) + '₹' + billData.cashPayment + '\n';
+        }
+        commands += '\n';
+    }
+    
+    // Center align for footer
+    commands += ESC + 'a' + '\x01';
+    commands += 'धन्यवाद!\n';
+    commands += '\n\n\n';
+    
+    // Cut paper
+    commands += GS + 'V' + '\x41' + '\x03'; // Partial cut
+    
+    return commands;
+}
+
+// Loading state
+function showLoading() {
+    const loader = document.getElementById('loadingOverlay');
+    if (loader) loader.classList.add('active');
+}
+
+function hideLoading() {
+    const loader = document.getElementById('loadingOverlay');
+    if (loader) loader.classList.remove('active');
+}
+
+// Toast notification
+function showToast(message, duration = 2000) {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+    
+    toast.textContent = message;
+    toast.classList.add('show');
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, duration);
+}
+
+// Pull to refresh
+let pullStartY = 0;
+let isPulling = false;
+
+function initPullToRefresh() {
+    const tabs = document.querySelectorAll('.tab');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('touchstart', (e) => {
+            if (tab.scrollTop === 0) {
+                pullStartY = e.touches[0].clientY;
+                isPulling = true;
+            }
+        }, { passive: true });
+        
+        tab.addEventListener('touchmove', (e) => {
+            if (!isPulling) return;
+            
+            const pullDistance = e.touches[0].clientY - pullStartY;
+            
+            if (pullDistance > 80 && tab.scrollTop === 0) {
+                hapticFeedback('medium');
+                isPulling = false;
+                refreshCurrentTab();
+            }
+        }, { passive: true });
+        
+        tab.addEventListener('touchend', () => {
+            isPulling = false;
+        }, { passive: true });
+    });
+}
+
+function refreshCurrentTab() {
+    const activeTab = document.querySelector('.tab.active');
+    if (!activeTab) return;
+    
+    showLoading();
+    
+    setTimeout(() => {
+        const tabId = activeTab.id;
+        
+        if (tabId === 'history') renderHistory();
+        else if (tabId === 'reports') renderReports();
+        else if (tabId === 'stock') renderStock();
+        else if (tabId === 'items') renderItems();
+        else if (tabId === 'sales') renderSalesBill();
+        
+        hideLoading();
+        hapticFeedback('light');
+    }, 500);
+}
+
 function showModal(message, title = 'Alert', showCancel = false) {
     return new Promise((resolve) => {
         modalResolve = resolve;
@@ -770,7 +1139,7 @@ function renderItems() {
                 <button class="delete-item-btn" onclick="deleteItem(${index})">Delete</button>
             </div>
             <div style="margin-bottom: 12px;">
-                <label style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px; display: block;">Hindi Name (Optional):</label>
+                <label style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px; display: block;">Hindi Name:</label>
                 <input type="text" 
                        value="${item.hindiName || ''}" 
                        oninput="updateItemHindiName(${index}, this.value)"
@@ -996,8 +1365,10 @@ async function addWeight() {
         return;
     }
 
+    hapticFeedback('light');
     currentWeights.push(weight);
     renderWeights();
+    showToast(`Added ${weight}kg`);
     weightInput.value = "";
     weightInput.focus();
 }
@@ -1124,9 +1495,13 @@ async function addToBill() {
         }
     }
 
+    hapticFeedback('medium');
     renderBill();
     clearWeights();
     updateTotals();
+    
+    const itemName = transactionMode === 'sale' ? itemIndex : items[itemIndex].name;
+    showToast(`Added ${itemName} to bill`);
     
     // Reset selection
     document.getElementById("billItem").value = "";
@@ -1262,6 +1637,8 @@ async function printBill() {
         await showModal("No items in bill");
         return;
     }
+    
+    hapticFeedback('medium');
 
     // Get payment details - treat empty as 0
     const amountPayable = Number(document.getElementById("amountPayable").textContent) || 0;
@@ -1283,6 +1660,7 @@ async function printBill() {
         );
         
         if (!confirmPrint) {
+            hideLoading();
             return;
         }
     }
@@ -1297,59 +1675,136 @@ async function printBill() {
     // Calculate totals before clearing
     const totalHeavyPackets = billItems.reduce((sum, b) => sum + (b.heavyPackets || 0), 0);
     const totalPackets = billItems.reduce((sum, b) => sum + (b.packets || 0), 0);
+    const isAutoLabor = isPurchase && document.getElementById("autoLaborCharge").checked;
 
-    // Build bill items HTML with current data (always use Hindi names in print)
-    let billItemsHTML = billItems.map(b => {
-        let weightsDisplay = '';
-        if (b.weights) {
-            if (b.weights.length === 1) {
-                weightsDisplay = `<strong>${b.qty}kg</strong>`;
+    // Prepare bill data
+    const billData = {
+        isPurchase,
+        billTotal,
+        laborCharges,
+        amountPayable: amountPayableFinal,
+        totalPackets,
+        onlinePayment,
+        cashPayment,
+        isAutoLabor: isAutoLabor,
+        laborCalc: totalHeavyPackets > 0 ? `${settings.laborRate} × ${totalHeavyPackets}` : '',
+        items: billItems.map(b => {
+            const item = items.find(i => i.name === b.name);
+            const printName = (item && item.hindiName) ? item.hindiName : b.name;
+            return {
+                name: printName,
+                rate: b.rate,
+                qty: b.qty,
+                total: b.total,
+                weights: b.weights
+            };
+        })
+    };
+
+    // Check if Bluetooth printer is enabled and connected
+    if (printerSettings.enabled && connectedPrinter) {
+        try {
+            showLoading();
+            await printViaBluetooth(billData);
+            hideLoading();
+            showToast('✓ Printed via Bluetooth');
+        } catch (error) {
+            hideLoading();
+            const retry = await showModal(
+                `Bluetooth print failed: ${error.message}\n\nTry web print instead?`,
+                'Print Error',
+                true
+            );
+            if (retry) {
+                await printViaWeb(billData);
             } else {
-                weightsDisplay = b.weights.join('+') + ` = <strong>${b.qty}kg</strong>`;
+                return;
             }
         }
-        const item = items.find(i => i.name === b.name);
-        const printName = (item && item.hindiName) ? item.hindiName : b.name;
+    } else {
+        // Use web print
+        showLoading();
+        await printViaWeb(billData);
+        hideLoading();
+    }
+
+    // Save to appropriate history
+    if (isPurchase) {
+        saveBillToHistory();
+    } else {
+        saveSaleToHistory();
+    }
+    
+    hapticFeedback('heavy');
+}
+
+async function printViaBluetooth(billData) {
+    if (!connectedPrinter) {
+        throw new Error('Printer not connected');
+    }
+    
+    const escposCommands = generateESCPOS(billData);
+    await connectedPrinter.write(escposCommands);
+}
+
+async function printViaWeb(billData) {
+    // Build bill items HTML
+    let billItemsHTML = billData.items.map(item => {
+        let weightsDisplay = '';
+        if (item.weights) {
+            if (item.weights.length === 1) {
+                weightsDisplay = `${item.qty}kg`;
+            } else {
+                weightsDisplay = `(${item.weights.join('+')}) = ${item.qty}kg`;
+            }
+        }
         
         return `
             <tr>
-                <td>${printName}</td>
-                <td>₹ ${b.rate}</td>
+                <td>${item.name}</td>
+                <td>₹${item.rate}</td>
                 <td>${weightsDisplay}</td>
-                <td>₹ ${b.total}</td>
+                <td>₹${item.total}</td>
             </tr>
         `;
     }).join("");
 
-    // Calculate labor charge breakdown
-    const laborCalc = totalHeavyPackets > 0 ? `(${settings.laborRate} × ${totalHeavyPackets}) = ₹${laborCharges}` : '';
+    // Labor display
+    let laborDisplay = '';
+    if (billData.isPurchase && billData.laborCharges > 0) {
+        if (billData.isAutoLabor && billData.laborCalc) {
+            laborDisplay = `<div><span>मजदूरी:</span><span>${billData.laborCalc} = ₹${billData.laborCharges}</span></div>`;
+        } else {
+            laborDisplay = `<div><span>मजदूरी:</span><span>₹${billData.laborCharges}</span></div>`;
+        }
+    }
 
     const printContent = `
         <html>
         <head>
             <title>Bill</title>
             <style>
-                body { font-family: Arial; padding: 20px; }
+                body { font-family: Arial, sans-serif; padding: 20px; }
                 table { width: 100%; border-collapse: collapse; margin-top: 20px; }
                 th, td { border-bottom: 1px solid #ccc; padding: 8px; text-align: center; }
-                h2, h3 { text-align: center; }
+                h2 { text-align: center; text-decoration: underline; }
                 .totals { margin-top: 30px; font-size: 16px; }
                 .totals div { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
                 .grand-total { font-size: 20px; font-weight: bold; border-top: 2px solid #333; margin-top: 10px; padding-top: 10px; }
             </style>
         </head>
         <body>
-            <h2>${isPurchase ? 'Purchase Receipt' : 'Sale Receipt'}</h2>
+            <h2>${billData.isPurchase ? 'PURCHASE RECEIPT' : 'SALE RECEIPT'}</h2>
             <table>
-                <tr><th>Item</th><th>Rate</th><th>Qty</th><th>Total</th></tr>
+                <tr><th>वस्तु</th><th>दर</th><th>मात्रा</th><th>कुल</th></tr>
                 ${billItemsHTML}
             </table>
 
             <div class="totals">
-                <div><span>${isPurchase ? 'Purchase Total:' : 'Sale Total:'}</span><span>₹ ${billTotal}</span></div>
-                ${isPurchase && laborCharges > 0 ? `<div><span>Labor Charges:</span><span>${laborCalc}</span></div>` : ''}
-                <div><span>Total Packets:</span><span>${totalPackets}</span></div>
-                <div class="grand-total"><span>${isPurchase ? 'Total Paid:' : 'Total Received:'}</span><span>₹ ${amountPayableFinal}</span></div>
+                <div><span>कुल:</span><span>₹${billData.billTotal}</span></div>
+                ${laborDisplay}
+                <div><span>पैकेट:</span><span>${billData.totalPackets}</span></div>
+                <div class="grand-total"><span>${billData.isPurchase ? 'कुल भुगतान:' : 'कुल प्राप्त:'}</span><span>₹${billData.amountPayable}</span></div>
             </div>
         </body>
         </html>
@@ -1366,19 +1821,16 @@ async function printBill() {
     doc.close();
     
     // Wait for content to load, then print
-    iframe.contentWindow.focus();
-    setTimeout(() => {
-        iframe.contentWindow.print();
-        // Remove iframe after printing
-        setTimeout(() => document.body.removeChild(iframe), 100);
-    }, 250);
-
-    // Save to appropriate history
-    if (isPurchase) {
-        saveBillToHistory();
-    } else {
-        saveSaleToHistory();
-    }
+    await new Promise(resolve => {
+        iframe.contentWindow.focus();
+        setTimeout(() => {
+            iframe.contentWindow.print();
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                resolve();
+            }, 100);
+        }, 250);
+    });
 }
 
 function saveSaleToHistory() {
@@ -1467,9 +1919,11 @@ async function saveBillOnly() {
     
     // Save to appropriate history
     if (isPurchase) {
+        hapticFeedback('heavy');
         saveBillToHistory();
         await showModal("Purchase bill saved successfully!", "Success");
     } else {
+        hapticFeedback('heavy');
         saveSaleToHistory();
         await showModal("Sale bill saved successfully!", "Success");
     }
@@ -1588,6 +2042,18 @@ function loadSettings() {
     document.getElementById('settingLaborRate').value = settings.laborRate;
     document.getElementById('settingAutoLabor').checked = settings.autoLaborEnabled;
     document.getElementById('settingShowHindi').checked = settings.showHindi || false;
+    
+    // Load Bluetooth printer settings
+    const bluetoothCheckbox = document.getElementById('settingBluetoothEnabled');
+    if (bluetoothCheckbox) {
+        bluetoothCheckbox.checked = printerSettings.enabled || false;
+        const section = document.getElementById('bluetoothPrinterSection');
+        if (section) {
+            section.style.display = printerSettings.enabled ? 'block' : 'none';
+        }
+    }
+    
+    updatePrinterStatus();
 }
 
 function saveSettings() {
@@ -1597,6 +2063,9 @@ function saveSettings() {
     settings.showHindi = document.getElementById('settingShowHindi').checked;
     
     localStorage.setItem('settings', JSON.stringify(settings));
+    
+    hapticFeedback('light');
+    showToast('Settings saved successfully');
     
     // Re-render items to show/hide Hindi names
     renderItems();
@@ -1616,12 +2085,176 @@ async function clearAllData() {
     }
 }
 
+// -------------------- BLUETOOTH PRINTER UI --------------------
+function toggleBluetoothPrinter() {
+    const enabled = document.getElementById('settingBluetoothEnabled').checked;
+    printerSettings.enabled = enabled;
+    localStorage.setItem('printerSettings', JSON.stringify(printerSettings));
+    
+    const section = document.getElementById('bluetoothPrinterSection');
+    if (section) {
+        section.style.display = enabled ? 'block' : 'none';
+    }
+    
+    updatePrinterStatus();
+}
+
+async function scanBluetoothDevices() {
+    try {
+        hapticFeedback('light');
+        
+        if (!window.Capacitor || !window.Capacitor.Plugins.BluetoothLe) {
+            await showModal('Bluetooth is only available in the mobile app.\n\nWeb printing will be used instead.');
+            return;
+        }
+        
+        const devices = await printerManager.scanDevices();
+        displayBluetoothDevices(devices);
+    } catch (error) {
+        await showModal('Failed to scan devices: ' + error.message);
+    }
+}
+
+function displayBluetoothDevices(devices) {
+    const container = document.getElementById('bluetoothDevicesList');
+    if (!container) return;
+    
+    if (!devices || devices.length === 0) {
+        container.innerHTML = '<p style="color: #666; padding: 12px;">No devices found. Make sure your printer is powered on and in pairing mode.</p>';
+        return;
+    }
+    
+    container.innerHTML = '<div style="margin-top: 12px;"><strong>Available Devices:</strong></div>';
+    
+    devices.forEach(device => {
+        const deviceCard = document.createElement('div');
+        deviceCard.style.cssText = 'background: #f5f5f5; padding: 12px; margin: 8px 0; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;';
+        deviceCard.innerHTML = `
+            <div>
+                <strong>${device.name || 'Unknown Device'}</strong><br>
+                <small style="color: #666;">${device.deviceId}</small>
+            </div>
+            <button class="add-item-btn" onclick="connectToPrinter('${device.deviceId}', '${device.name || 'Printer'}')">Connect</button>
+        `;
+        container.appendChild(deviceCard);
+    });
+}
+
+async function connectToPrinter(deviceId, deviceName) {
+    try {
+        hapticFeedback('medium');
+        await printerManager.connect(deviceId);
+        
+        printerSettings.deviceId = deviceId;
+        printerSettings.deviceName = deviceName;
+        localStorage.setItem('printerSettings', JSON.stringify(printerSettings));
+        
+        updatePrinterStatus();
+        showToast('✓ Connected to ' + deviceName);
+        
+        // Clear devices list
+        const container = document.getElementById('bluetoothDevicesList');
+        if (container) container.innerHTML = '';
+        
+    } catch (error) {
+        await showModal('Failed to connect: ' + error.message);
+    }
+}
+
+async function disconnectPrinter() {
+    try {
+        hapticFeedback('light');
+        await printerManager.disconnect();
+        
+        printerSettings.deviceId = null;
+        printerSettings.deviceName = null;
+        localStorage.setItem('printerSettings', JSON.stringify(printerSettings));
+        
+        updatePrinterStatus();
+        showToast('Printer disconnected');
+    } catch (error) {
+        await showModal('Failed to disconnect: ' + error.message);
+    }
+}
+
+function updatePrinterStatus() {
+    const statusText = document.getElementById('printerStatusText');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const testPrintBtn = document.getElementById('testPrintBtn');
+    
+    if (connectedPrinter && printerSettings.deviceName) {
+        if (statusText) {
+            statusText.innerHTML = `<span style="color: #4CAF50;">● Connected to ${printerSettings.deviceName}</span>`;
+        }
+        if (disconnectBtn) disconnectBtn.style.display = 'block';
+        if (testPrintBtn) testPrintBtn.style.display = 'block';
+    } else {
+        if (statusText) {
+            statusText.innerHTML = '<span style="color: #999;">○ Not connected</span>';
+        }
+        if (disconnectBtn) disconnectBtn.style.display = 'none';
+        if (testPrintBtn) testPrintBtn.style.display = 'none';
+    }
+}
+
+async function testPrint() {
+    if (!connectedPrinter) {
+        await showModal('Printer not connected');
+        return;
+    }
+    
+    try {
+        hapticFeedback('medium');
+        showLoading();
+        
+        // Create test bill data
+        const testBillData = {
+            isPurchase: true,
+            billTotal: 1000,
+            laborCharges: 12,
+            amountPayable: 988,
+            totalPackets: 3,
+            onlinePayment: 500,
+            cashPayment: 488,
+            laborCalc: '(6 × 2)',
+            items: [
+                {
+                    name: 'Test Item 1',
+                    rate: 50,
+                    qty: 10,
+                    total: 500,
+                    weights: [5, 5]
+                },
+                {
+                    name: 'Test Item 2',
+                    rate: 50,
+                    qty: 10,
+                    total: 500,
+                    weights: [10]
+                }
+            ]
+        };
+        
+        await printViaBluetooth(testBillData);
+        hideLoading();
+        showToast('✓ Test print sent');
+        hapticFeedback('heavy');
+    } catch (error) {
+        hideLoading();
+        await showModal('Test print failed: ' + error.message);
+    }
+}
+
 // -------------------- INIT --------------------
 document.addEventListener('DOMContentLoaded', function() {
     renderItems();
     loadItemsDropdown();
     loadSettings();
     updateModeUI(); // Initialize with purchase theme
+    
+    // Initialize mobile UI enhancements
+    initPullToRefresh();
+    hideLoading(); // Ensure loading is hidden on start
     
     // Set today's date as default for custom filter
     const today = new Date().toISOString().split('T')[0];
