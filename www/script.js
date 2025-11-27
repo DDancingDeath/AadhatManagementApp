@@ -15,7 +15,8 @@ let transactionMode = 'purchase'; // 'purchase' or 'sale'
 let settings = JSON.parse(localStorage.getItem("settings")) || {
     heavyWeightThreshold: 30,
     laborRate: 6,
-    autoLaborEnabled: true
+    autoLaborEnabled: true,
+    showHindi: false
 };
 
 // Modal system
@@ -155,6 +156,9 @@ function saveBillToHistory() {
     
     renderBill();
     updateTotals();
+    
+    // Reset item dropdown to most frequent
+    loadItemsDropdown();
 }
 
 function renderHistory() {
@@ -346,9 +350,16 @@ function loadSellItemDetails() {
     availableStockEl.textContent = stock[itemName].quantity.toFixed(2);
     avgRateEl.textContent = stock[itemName].avgRate.toFixed(2);
     
-    // Suggest selling rate with 20% markup
-    const suggestedRate = Math.round(stock[itemName].avgRate * 1.2);
-    sellRateEl.value = suggestedRate;
+    // Check if item has predefined sale rates
+    const itemData = items.find(item => item.name === itemName);
+    if (itemData && itemData.saleRates && itemData.saleRates.length > 0) {
+        // Use first sale rate as default
+        const firstValidRate = itemData.saleRates.find(rate => rate && rate > 0);
+        sellRateEl.value = firstValidRate || "";
+    } else {
+        // Don't suggest any rate if no sale rates are defined
+        sellRateEl.value = "";
+    }
 }
 
 async function addToSalesBill() {
@@ -682,6 +693,40 @@ function renderPurchaseChart(bills) {
     });
 }
 
+// -------------------- HELPER: GET MOST FREQUENT ITEMS --------------------
+function getMostFrequentItem(mode) {
+    const freq = {};
+    
+    if (mode === 'purchase') {
+        // Count purchase frequency from billHistory
+        billHistory.forEach(bill => {
+            if (bill.type === 'purchase' || !bill.type) {
+                bill.items.forEach(item => {
+                    freq[item.name] = (freq[item.name] || 0) + 1;
+                });
+            }
+        });
+    } else {
+        // Count sale frequency from both billHistory (sale mode) and salesHistory
+        billHistory.forEach(bill => {
+            if (bill.type === 'sale') {
+                bill.items.forEach(item => {
+                    freq[item.name] = (freq[item.name] || 0) + 1;
+                });
+            }
+        });
+        salesHistory.forEach(sale => {
+            sale.items.forEach(item => {
+                freq[item.name] = (freq[item.name] || 0) + 1;
+            });
+        });
+    }
+    
+    // Find most frequent
+    const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+    return sorted.length > 0 ? sorted[0][0] : null;
+}
+
 // -------------------- TABS --------------------
 function showTab(tabId, evt) {
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
@@ -721,8 +766,16 @@ function renderItems() {
                 <input type="text" class="item-name-input" 
                        value="${item.name}" 
                        oninput="updateItemName(${index}, this.value)"
-                       placeholder="Enter item name">
+                       placeholder="Enter item name (English)">
                 <button class="delete-item-btn" onclick="deleteItem(${index})">Delete</button>
+            </div>
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px; display: block;">Hindi Name (Optional):</label>
+                <input type="text" 
+                       value="${item.hindiName || ''}" 
+                       oninput="updateItemHindiName(${index}, this.value)"
+                       placeholder="हिंदी नाम"
+                       style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 8px; font-size: 15px;">
             </div>
             <div class="item-row">
                 <div style="margin-bottom: 8px;">
@@ -743,13 +796,19 @@ function renderItems() {
 
 // Add item
 function addItem() {
-    items.push({ name: "", rates: [], saleRates: [] });
+    items.push({ name: "", hindiName: "", rates: [], saleRates: [] });
     saveDBAndRender();
 }
 
 // Update item name (AUTO-SAVE without re-render)
 function updateItemName(index, value) {
     items[index].name = value;
+    saveDB();
+}
+
+// Update item Hindi name (AUTO-SAVE without re-render)
+function updateItemHindiName(index, value) {
+    items[index].hindiName = value;
     saveDB();
 }
 
@@ -813,11 +872,22 @@ function loadItemsDropdown() {
     items.forEach((item, index) => {
         let opt = document.createElement("option");
         opt.value = index;
-        opt.textContent = item.name;
+        const displayName = (settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        opt.textContent = displayName;
         select.appendChild(opt);
     });
 
-    loadRates();
+    // Select most frequent purchased item by default
+    if (items.length > 0) {
+        const mostFrequent = getMostFrequentItem('purchase');
+        if (mostFrequent) {
+            const frequentIndex = items.findIndex(item => item.name === mostFrequent);
+            if (frequentIndex !== -1) {
+                select.value = frequentIndex;
+            }
+        }
+        loadRates();
+    }
     clearWeights(); // Clear weights when loading items
 }
 
@@ -826,17 +896,28 @@ function loadSaleItemsDropdown() {
     const select = document.getElementById("billItem");
     if (!select) return;
     
-    select.innerHTML = '<option value="">Select item</option>';
+    select.innerHTML = '';
 
     // Load items that have stock
-    Object.keys(stock).forEach(itemName => {
-        if (stock[itemName].quantity > 0) {
-            const opt = document.createElement("option");
-            opt.value = itemName;
-            opt.textContent = itemName;
-            select.appendChild(opt);
-        }
+    const stockItems = Object.keys(stock).filter(itemName => stock[itemName].quantity > 0);
+    
+    stockItems.forEach(itemName => {
+        const opt = document.createElement("option");
+        opt.value = itemName;
+        const item = items.find(i => i.name === itemName);
+        const displayName = (settings.showHindi && item && item.hindiName) ? item.hindiName : itemName;
+        opt.textContent = displayName;
+        select.appendChild(opt);
     });
+    
+    // Select most frequent sold item by default
+    if (stockItems.length > 0) {
+        const mostFrequent = getMostFrequentItem('sale');
+        if (mostFrequent && stock[mostFrequent] && stock[mostFrequent].quantity > 0) {
+            select.value = mostFrequent;
+        }
+        loadRates();
+    }
     
     clearWeights();
 }
@@ -854,24 +935,23 @@ function loadRates() {
     rateInput.placeholder = "Select or enter rate";
 
     if (transactionMode === 'sale') {
-        // For sale mode, load predefined sale rates or suggest from stock
+        // For sale mode, load predefined sale rates
         const itemName = itemIndex;
         
         // Try to find item in items list to get sale rates
         const itemData = items.find(item => item.name === itemName);
         
         if (itemData && itemData.saleRates && itemData.saleRates.length > 0) {
-            // Load sale rates
+            // Load sale rates into datalist
             itemData.saleRates.forEach(rate => {
-                let opt = document.createElement("option");
-                opt.value = rate;
-                rateDatalist.appendChild(opt);
+                if (rate && rate > 0) {
+                    let opt = document.createElement("option");
+                    opt.value = rate;
+                    rateDatalist.appendChild(opt);
+                }
             });
-        } else if (stock[itemName]) {
-            // Fallback to 20% markup on avg cost
-            const suggestedRate = Math.round(stock[itemName].avgRate * 1.2);
-            rateInput.value = suggestedRate;
         }
+        // Don't auto-fill any rate - leave empty for manual entry
     } else {
         // For purchase mode, load predefined purchase rates
         if (!items[itemIndex]) return;
@@ -1067,8 +1147,15 @@ function renderBill() {
         totalPacketsCount += b.packets;
         totalHeavyPacketsCount += b.heavyPackets || 0;
 
-        // Format weights display - just show the numbers without kg
-        const weightsDisplay = b.weights ? b.weights.join(', ') : '';
+        // Format weights display - show formula for multiple weights, just total for single weight
+        let weightsDisplay = '';
+        if (b.weights) {
+            if (b.weights.length === 1) {
+                weightsDisplay = `<strong>${b.qty}kg</strong>`;
+            } else {
+                weightsDisplay = b.weights.join('+') + ` = <strong>${b.qty}kg</strong>`;
+            }
+        }
 
         let row = document.createElement("tr");
         row.innerHTML = `
@@ -1211,13 +1298,22 @@ async function printBill() {
     const totalHeavyPackets = billItems.reduce((sum, b) => sum + (b.heavyPackets || 0), 0);
     const totalPackets = billItems.reduce((sum, b) => sum + (b.packets || 0), 0);
 
-    // Build bill items HTML with current data
+    // Build bill items HTML with current data (always use Hindi names in print)
     let billItemsHTML = billItems.map(b => {
-        const weightsDisplay = b.weights ? b.weights.join(', ') + 'kg' : '';
+        let weightsDisplay = '';
+        if (b.weights) {
+            if (b.weights.length === 1) {
+                weightsDisplay = `<strong>${b.qty}kg</strong>`;
+            } else {
+                weightsDisplay = b.weights.join('+') + ` = <strong>${b.qty}kg</strong>`;
+            }
+        }
+        const item = items.find(i => i.name === b.name);
+        const printName = (item && item.hindiName) ? item.hindiName : b.name;
         
         return `
             <tr>
-                <td>${b.name}</td>
+                <td>${printName}</td>
                 <td>₹ ${b.rate}</td>
                 <td>${weightsDisplay}</td>
                 <td>₹ ${b.total}</td>
@@ -1330,7 +1426,7 @@ function saveSaleToHistory() {
     renderBill();
     updateTotals();
     
-    // Reload stock dropdown for next sale
+    // Reload stock dropdown for next sale with most frequent item
     if (transactionMode === 'sale') {
         loadSaleItemsDropdown();
     }
@@ -1441,12 +1537,12 @@ function updateModeUI() {
         
         // Update buttons
         if (printBtn) {
-            printBtn.textContent = 'Print Sale Bill';
+            printBtn.textContent = 'Print Sale';
             printBtn.classList.remove('print-purchase-btn');
             printBtn.classList.add('print-sale-btn');
         }
         if (saveBtn) {
-            saveBtn.textContent = 'Save Sale Bill';
+            saveBtn.textContent = 'Save Sale';
             saveBtn.classList.remove('save-purchase-btn');
             saveBtn.classList.add('save-sale-btn');
         }
@@ -1474,15 +1570,49 @@ function updateModeUI() {
         
         // Update buttons
         if (printBtn) {
-            printBtn.textContent = 'Print Purchase Bill';
+            printBtn.textContent = 'Print Purchase';
             printBtn.classList.remove('print-sale-btn');
             printBtn.classList.add('print-purchase-btn');
         }
         if (saveBtn) {
-            saveBtn.textContent = 'Save Purchase Bill';
+            saveBtn.textContent = 'Save Purchase';
             saveBtn.classList.remove('save-sale-btn');
             saveBtn.classList.add('save-purchase-btn');
         }
+    }
+}
+
+// -------------------- SETTINGS --------------------
+function loadSettings() {
+    document.getElementById('settingHeavyWeight').value = settings.heavyWeightThreshold;
+    document.getElementById('settingLaborRate').value = settings.laborRate;
+    document.getElementById('settingAutoLabor').checked = settings.autoLaborEnabled;
+    document.getElementById('settingShowHindi').checked = settings.showHindi || false;
+}
+
+function saveSettings() {
+    settings.heavyWeightThreshold = Number(document.getElementById('settingHeavyWeight').value) || 30;
+    settings.laborRate = Number(document.getElementById('settingLaborRate').value) || 6;
+    settings.autoLaborEnabled = document.getElementById('settingAutoLabor').checked;
+    settings.showHindi = document.getElementById('settingShowHindi').checked;
+    
+    localStorage.setItem('settings', JSON.stringify(settings));
+    
+    // Re-render items to show/hide Hindi names
+    renderItems();
+    loadItemsDropdown();
+}
+
+async function clearAllData() {
+    const confirmed = await showModal(
+        'Are you sure you want to delete ALL data? This cannot be undone!',
+        'Clear All Data',
+        true
+    );
+    
+    if (confirmed) {
+        localStorage.clear();
+        location.reload();
     }
 }
 

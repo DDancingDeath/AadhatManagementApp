@@ -87,8 +87,8 @@
     <!-- BILLING TAB -->
     <div id="billing" class="tab active">
 
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h2 id="billingTitle" style="margin: 0;">Purchase Entry</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: nowrap; gap: 8px;">
+            <h2 id="billingTitle" style="margin: 0; font-size: 20px; white-space: nowrap;">Purchase Entry</h2>
             <button class="mode-toggle-btn" id="modeToggleBtn" onclick="toggleTransactionMode()">
                 💰 Switch to Sale
             </button>
@@ -348,6 +348,16 @@
                 <input type="checkbox" id="settingAutoLabor" checked onchange="saveSettings()">
                 <span>Enable automatic labor charges by default</span>
             </label>
+        </div>
+
+        <div class="settings-card">
+            <h3>Display Settings</h3>
+            
+            <label class="checkbox-label">
+                <input type="checkbox" id="settingShowHindi" onchange="saveSettings()">
+                <span>Show item names in Hindi</span>
+            </label>
+            <p class="setting-description">Display Hindi names in the app (English names will be used in bills)</p>
         </div>
     </div>
 

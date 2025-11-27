@@ -3,6 +3,24 @@
     "start": "servor --reload"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/cli": "^7.4.4",
+    "@capacitor/core": "^7.4.4",
     "servor": "^4.0.2"
-  }
+  },
+  "name": "aadhatmanagementapp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "script.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DDancingDeath/AadhatManagementApp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DDancingDeath/AadhatManagementApp/issues"
+  },
+  "homepage": "https://github.com/DDancingDeath/AadhatManagementApp#readme"
 }
