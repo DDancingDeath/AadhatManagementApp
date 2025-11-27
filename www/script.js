@@ -7,6 +7,7 @@ let currentWeights = [];
 let stock = JSON.parse(localStorage.getItem("stock")) || {};
 let salesItems = [];
 let salesHistory = JSON.parse(localStorage.getItem("salesHistory")) || [];
+let paymentsHistory = JSON.parse(localStorage.getItem("paymentsHistory")) || [];
 let currentDateFilter = 'today';
 let customDateRange = { from: null, to: null };
 let transactionMode = 'purchase'; // 'purchase' or 'sale'
@@ -385,6 +386,7 @@ function refreshCurrentTab() {
         else if (tabId === 'stock') renderStock();
         else if (tabId === 'items') renderItems();
         else if (tabId === 'sales') renderSalesBill();
+        else if (tabId === 'payments') renderPaymentsHistory();
         
         hideLoading();
         hapticFeedback('light');
@@ -2246,11 +2248,215 @@ async function testPrint() {
 }
 
 // -------------------- INIT --------------------
+// -------------------- PAYMENTS --------------------
+function savePayment() {
+    const type = document.getElementById('paymentType').value.trim();
+    const personName = document.getElementById('paymentPersonName').value.trim();
+    const amount = Number(document.getElementById('paymentAmount').value);
+    const remarks = document.getElementById('paymentRemarks').value.trim();
+
+    if (!type) {
+        showModal('Please enter payment type');
+        return;
+    }
+
+    if (!amount || amount <= 0) {
+        showModal('Please enter a valid amount');
+        return;
+    }
+
+    // Update payment type options
+    updatePaymentTypeOptions(type);
+
+    const payment = {
+        id: Date.now(),
+        type,
+        personName,
+        amount,
+        remarks,
+        date: new Date().toLocaleString('en-IN')
+    };
+
+    paymentsHistory.unshift(payment);
+    localStorage.setItem('paymentsHistory', JSON.stringify(paymentsHistory));
+    
+    hapticFeedback('medium');
+    showToast('✓ Payment saved');
+    
+    clearPaymentForm();
+    renderPaymentsHistory();
+}
+
+async function saveAndPrintPayment() {
+    const type = document.getElementById('paymentType').value.trim();
+    const personName = document.getElementById('paymentPersonName').value.trim();
+    const amount = Number(document.getElementById('paymentAmount').value);
+    const remarks = document.getElementById('paymentRemarks').value.trim();
+
+    if (!type) {
+        await showModal('Please enter payment type');
+        return;
+    }
+
+    if (!amount || amount <= 0) {
+        await showModal('Please enter a valid amount');
+        return;
+    }
+
+    // Update payment type options
+    updatePaymentTypeOptions(type);
+
+    const payment = {
+        id: Date.now(),
+        type,
+        personName,
+        amount,
+        remarks,
+        date: new Date().toLocaleString('en-IN')
+    };
+
+    paymentsHistory.unshift(payment);
+    localStorage.setItem('paymentsHistory', JSON.stringify(paymentsHistory));
+    
+    hapticFeedback('medium');
+    
+    await printPaymentReceipt(payment);
+    
+    clearPaymentForm();
+    renderPaymentsHistory();
+}
+
+function updatePaymentTypeOptions(newType) {
+    // Get unique payment types from history
+    const uniqueTypes = [...new Set(paymentsHistory.map(p => p.type))];
+    
+    // Add new type if not exists
+    if (newType && !uniqueTypes.includes(newType)) {
+        uniqueTypes.unshift(newType);
+    }
+    
+    // Update datalist
+    const datalist = document.getElementById('paymentTypeOptions');
+    if (datalist) {
+        datalist.innerHTML = uniqueTypes.map(type => `<option value="${type}">`).join('');
+    }
+}
+
+async function printPaymentReceipt(payment) {
+
+    const printContent = `
+        <html>
+        <head>
+            <title>Payment Receipt</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; }
+                h2 { text-align: center; text-decoration: underline; margin-bottom: 10px; }
+                .date { text-align: center; color: #666; margin-bottom: 20px; }
+                .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; font-size: 16px; }
+                .detail-row.amount { font-size: 20px; font-weight: bold; margin-top: 10px; border-top: 2px solid #333; padding-top: 15px; }
+                .signature { margin-top: 50px; border-top: 1px solid #333; padding-top: 10px; text-align: center; }
+            </style>
+        </head>
+        <body>
+            <h2>PAYMENT RECEIPT</h2>
+            <h3 style="text-align: center; margin: 5px 0 20px 0;">${payment.type}</h3>
+            <div class="date">${payment.date}</div>
+            
+            ${payment.personName ? `
+            <div class="detail-row">
+                <span>नाम (Name):</span>
+                <strong>${payment.personName}</strong>
+            </div>
+            ` : ''}
+            
+            ${payment.remarks ? `
+            <div class="detail-row">
+                <span>विवरण (Details):</span>
+                <span>${payment.remarks}</span>
+            </div>
+            ` : ''}
+            
+            <div class="detail-row amount">
+                <span>राशि (Amount):</span>
+                <span>₹${payment.amount}</span>
+            </div>
+            
+            <div class="signature">
+                <p>हस्ताक्षर / Signature</p>
+                <p style="margin-top: 40px;">_________________</p>
+            </div>
+        </body>
+        </html>
+    `;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(printContent);
+    doc.close();
+    
+    await new Promise(resolve => {
+        iframe.contentWindow.focus();
+        setTimeout(() => {
+            iframe.contentWindow.print();
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                resolve();
+            }, 100);
+        }, 250);
+    });
+}
+
+function clearPaymentForm() {
+    document.getElementById('paymentType').value = '';
+    document.getElementById('paymentPersonName').value = '';
+    document.getElementById('paymentAmount').value = '';
+    document.getElementById('paymentRemarks').value = '';
+}
+
+function renderPaymentsHistory() {
+    const container = document.getElementById('paymentsHistoryList');
+    
+    if (paymentsHistory.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No expenses recorded yet</p>';
+        return;
+    }
+
+    // Update payment type options from history
+    updatePaymentTypeOptions();
+
+    container.innerHTML = paymentsHistory.map((payment, index) => `
+        <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                <div>
+                    ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${payment.personName}</div>` : ''}
+                    <div style="font-size: 13px; color: #666; margin-top: 4px;">${payment.type}</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${payment.amount}</div>
+                </div>
+            </div>
+            ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${payment.remarks}</div>` : ''}
+            <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${payment.date}</div>
+        </div>
+    `).join('');
+}
+
+async function reprintPayment(index) {
+    const payment = paymentsHistory[index];
+    await printPaymentReceipt(payment);
+    showToast('✓ Receipt printed');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     renderItems();
     loadItemsDropdown();
     loadSettings();
     updateModeUI(); // Initialize with purchase theme
+    renderPaymentsHistory(); // Load payments
     
     // Initialize mobile UI enhancements
     initPullToRefresh();

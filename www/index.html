@@ -29,6 +29,10 @@
                 <span class="nav-icon">📋</span>
                 Billing
             </a>
+            <a href="#" onclick="showTabFromNav('payments', event)">
+                <span class="nav-icon">💳</span>
+                Miscellaneous
+            </a>
             <a href="#" onclick="showTabFromNav('items', event)">
                 <span class="nav-icon">📦</span>
                 Items
@@ -266,6 +270,42 @@
         </div>
 
         <button class="print-btn" onclick="completeSale()">Complete Sale</button>
+    </div>
+
+    <!-- MISCELLANEOUS TAB -->
+    <div id="payments" class="tab">
+        <h2>Miscellaneous Expenses</h2>
+
+        <div class="form-row">
+            <label>Payment Type:</label>
+            <input type="text" id="paymentType" list="paymentTypeOptions" placeholder="Enter payment type" />
+            <datalist id="paymentTypeOptions"></datalist>
+        </div>
+
+        <div class="form-row">
+            <label>Amount (₹):</label>
+            <input type="number" inputmode="decimal" id="paymentAmount" placeholder="Enter amount" />
+        </div>
+
+        <div class="form-row">
+            <label>Person (Optional):</label>
+            <input type="text" id="paymentPersonName" placeholder="Enter name" />
+        </div>
+
+        <div class="form-row">
+            <label>Remarks (Optional):</label>
+            <input type="text" id="paymentRemarks" placeholder="Enter remarks" />
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 16px;">
+            <button class="save-btn" onclick="savePayment()">Save Payment</button>
+            <button class="print-btn" onclick="saveAndPrintPayment()">Print Payment</button>
+        </div>
+
+        <h3>Expense History</h3>
+        <div id="paymentsHistoryList">
+            <p style="text-align: center; color: #888; margin-top: 40px;">No expenses recorded yet</p>
+        </div>
     </div>
 
     <!-- REPORTS TAB -->

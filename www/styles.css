@@ -430,7 +430,8 @@ body {
 }
 
 .form-row label {
-  min-width: 90px;
+  width: 140px;
+  flex-shrink: 0;
   font-weight: 600;
   font-size: 14px;
   color: var(--dark-color);
@@ -438,7 +439,8 @@ body {
 }
 
 .form-row select,
-.form-row input[type="number"] {
+.form-row input[type="number"],
+.form-row input[type="text"] {
   flex: 1;
   padding: 10px 12px;
   border: 2px solid var(--border-color);
@@ -980,6 +982,7 @@ select:focus, input:focus {
 /* -------------------- SAVE BUTTON -------------------- */
 .save-btn {
   flex: 1;
+  background: linear-gradient(135deg, #007bff, #0056b3);
   color: var(--white);
   border: none;
   padding: 14px;
@@ -1006,6 +1009,7 @@ select:focus, input:focus {
 /* -------------------- PRINT BUTTON -------------------- */
 .print-btn {
   flex: 1;
+  background: linear-gradient(135deg, #007bff, #0056b3);
   color: var(--white);
   border: none;
   padding: 14px;
