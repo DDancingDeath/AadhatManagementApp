@@ -94,7 +94,20 @@ window.handleLogin = async function() {
     showLoading();
     
     try {
-        await auth.signInWithEmailAndPassword(email, password);
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        
+        // Check if user is approved
+        const userDoc = await db.collection('users').doc(userCredential.user.uid).get();
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            if (userData.status === 'pending' || !userData.role) {
+                await auth.signOut();
+                hideLoading();
+                await showModal('Your account is pending approval. Please contact the owner.');
+                return;
+            }
+        }
+        
         hapticFeedback('medium');
         showToast('Login successful!');
     } catch (error) {
@@ -139,14 +152,27 @@ window.handleRegister = async function() {
         const userCredential = await auth.createUserWithEmailAndPassword(email, password);
         const user = userCredential.user;
         
+        // Check if this is the first user
+        const usersSnapshot = await db.collection('users').get();
+        const isFirstUser = usersSnapshot.empty;
+        
         // Create user document in Firestore
         await db.collection('users').doc(user.uid).set({
             name: name,
             email: email,
-            role: 'owner', // First user is owner, subsequent users can be assigned roles
+            role: isFirstUser ? 'owner' : null, // First user is owner, others need approval
+            status: isFirstUser ? 'active' : 'pending',
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         
+        // Sign out the user immediately if not the first user
+        if (!isFirstUser) {
+            await auth.signOut();
+            hideLoading();
+            await showModal('Registration successful! Please wait for the owner to approve your account.');
+            return;
+        }
+
         hapticFeedback('medium');
         showToast('Account created successfully!');
     } catch (error) {
@@ -216,11 +242,40 @@ function updateUserDisplay() {
 function applyRoleBasedRestrictions() {
     console.log('Applying role-based restrictions for:', userRole);
     
+    // Owner only: Show Users tab
+    const usersNavLink = document.getElementById('usersNavLink');
+    if (usersNavLink) {
+        usersNavLink.style.display = userRole === 'owner' ? 'block' : 'none';
+    }
+    
+    // Manager role restrictions
+    if (userRole === 'manager') {
+        // Hide Items tab
+        const itemsNav = document.querySelector('.nav-menu a[onclick*="items"]');
+        if (itemsNav) itemsNav.style.display = 'none';
+        
+        // Hide Sales tab
+        const salesNav = document.querySelector('.nav-menu a[onclick*="sales"]');
+        if (salesNav) salesNav.style.display = 'none';
+        
+        // Hide Configure tab
+        const configNav = document.querySelector('.nav-menu a[onclick*="configure"]');
+        if (configNav) configNav.style.display = 'none';
+    }
+    
     // Staff role restrictions
     if (userRole === 'staff') {
         // Hide Items tab
         const itemsNav = document.querySelector('.nav-menu a[onclick*="items"]');
         if (itemsNav) itemsNav.style.display = 'none';
+        
+        // Hide Stock tab
+        const stockNav = document.querySelector('.nav-menu a[onclick*="stock"]');
+        if (stockNav) stockNav.style.display = 'none';
+        
+        // Hide Sales tab
+        const salesNav = document.querySelector('.nav-menu a[onclick*="sales"]');
+        if (salesNav) salesNav.style.display = 'none';
         
         // Hide Configure tab
         const configNav = document.querySelector('.nav-menu a[onclick*="configure"]');
@@ -233,119 +288,50 @@ function applyRoleBasedRestrictions() {
         if (clearDataBtn) clearDataBtn.style.display = 'none';
     }
     
+    // Staff: Hide month and custom date filters (limit to 1 week)
+    if (userRole === 'staff') {
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        filterBtns.forEach(btn => {
+            if (btn.textContent.includes('Month') || btn.textContent.includes('Custom')) {
+                btn.style.display = 'none';
+            }
+        });
+    }
+    
     console.log('Role restrictions applied');
 }
 
-// AI Chatbot Integration
-function initChatbot() {
-    // Add chatbot button
-    const chatbotBtn = document.createElement('button');
-    chatbotBtn.id = 'chatbot-btn';
-    chatbotBtn.innerHTML = '💬';
-    chatbotBtn.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        font-size: 28px;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        z-index: 9999;
-        transition: all 0.3s;
-    `;
-    chatbotBtn.onmouseover = () => chatbotBtn.style.transform = 'scale(1.1)';
-    chatbotBtn.onmouseout = () => chatbotBtn.style.transform = 'scale(1)';
-    chatbotBtn.onclick = toggleChatbot;
-    document.body.appendChild(chatbotBtn);
-    
-    // Add chatbot window
-    const chatWindow = document.createElement('div');
-    chatWindow.id = 'chatbot-window';
-    chatWindow.style.cssText = `
-        position: fixed;
-        bottom: 90px;
-        right: 20px;
-        width: 350px;
-        height: 500px;
-        background: white;
-        border-radius: 16px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-        display: none;
-        flex-direction: column;
-        z-index: 9998;
-    `;
-    
-    chatWindow.innerHTML = `
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; color: white;">
-            <h3 style="margin: 0; font-size: 18px;">🤖 Aadhat Assistant</h3>
-            <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">Ask me anything about your business</p>
-        </div>
-        <div id="chatbot-messages" style="flex: 1; overflow-y: auto; padding: 16px; background: #f8f9fa;">
-            <div class="bot-message" style="background: white; padding: 10px 14px; border-radius: 18px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                👋 Hi! I'm your Aadhat Assistant. I can help you with:
-                <br>• Checking stock levels
-                <br>• Viewing sales reports
-                <br>• Finding customer information
-                <br>• Billing questions
-                <br><br>What would you like to know?
-            </div>
-        </div>
-        <div style="padding: 12px; border-top: 1px solid #dee2e6; background: white;">
-            <div style="display: flex; gap: 8px;">
-                <input type="text" id="chatbot-input" placeholder="Type your question..." 
-                    style="flex: 1; padding: 10px; border: 2px solid #dee2e6; border-radius: 20px; font-size: 14px;"
-                    onkeypress="if(event.key==='Enter') sendChatMessage()">
-                <button onclick="sendChatMessage()" 
-                    style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                    color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: 600;">Send</button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(chatWindow);
-}
-
-function toggleChatbot() {
-    const chatWindow = document.getElementById('chatbot-window');
-    if (chatWindow.style.display === 'none' || !chatWindow.style.display) {
-        chatWindow.style.display = 'flex';
-    } else {
-        chatWindow.style.display = 'none';
-    }
-}
-
-window.sendChatMessage = async function() {
-    const input = document.getElementById('chatbot-input');
+// Chat tab functions
+window.sendChatMessageFromTab = async function() {
+    const input = document.getElementById('chatInput');
     const message = input.value.trim();
     if (!message) return;
     
-    const messagesDiv = document.getElementById('chatbot-messages');
+    askChatbot(message);
+    input.value = '';
+};
+
+window.askChatbot = async function(message) {
+    const messagesDiv = document.getElementById('chatMessages');
     
     // Add user message
     const userMsg = document.createElement('div');
     userMsg.textContent = message;
-    userMsg.style.cssText = 'background: #667eea; color: white; padding: 10px 14px; border-radius: 18px; margin-bottom: 10px; max-width: 70%; margin-left: auto; text-align: right;';
+    userMsg.style.cssText = 'background: #667eea; color: white; padding: 12px 16px; border-radius: 18px; margin-bottom: 12px; max-width: 70%; margin-left: auto; text-align: right; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);';
     messagesDiv.appendChild(userMsg);
-    
-    input.value = '';
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
     
     // Process message
     const response = await processChatMessage(message.toLowerCase());
     
-    // Add bot response
+    // Add bot response with animation
     setTimeout(() => {
         const botMsg = document.createElement('div');
         botMsg.innerHTML = response;
-        botMsg.style.cssText = 'background: white; padding: 10px 14px; border-radius: 18px; margin-bottom: 10px; max-width: 70%; box-shadow: 0 2px 4px rgba(0,0,0,0.1);';
+        botMsg.style.cssText = 'background: white; padding: 12px 16px; border-radius: 18px; margin-bottom: 12px; max-width: 70%; box-shadow: 0 2px 8px rgba(0,0,0,0.1); animation: slideIn 0.3s ease-out;';
         messagesDiv.appendChild(botMsg);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }, 500);
+    }, 600);
 };
 
 async function processChatMessage(message) {
@@ -947,6 +933,11 @@ function initPullToRefresh() {
     const tabs = document.querySelectorAll('.tab');
     
     tabs.forEach(tab => {
+        // Skip pull-to-refresh on billing page to avoid accidental refreshes
+        if (tab.id === 'billing') {
+            return;
+        }
+        
         tab.addEventListener('touchstart', (e) => {
             if (tab.scrollTop === 0) {
                 pullStartY = e.touches[0].clientY;
@@ -1667,17 +1658,22 @@ function applyCustomDateFilter() {
 
 function filterBillsByDate(bills) {
     const now = new Date();
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
     
     return bills.filter(bill => {
         const billDate = new Date(bill.date);
+        
+        // Staff can only view last 7 days
+        if (userRole === 'staff' && billDate < weekAgo) {
+            return false;
+        }
         
         switch(currentDateFilter) {
             case 'today':
                 return billDate.toDateString() === now.toDateString();
             
             case 'week':
-                const weekAgo = new Date(now);
-                weekAgo.setDate(now.getDate() - 7);
                 return billDate >= weekAgo;
             
             case 'month':
@@ -3621,8 +3617,6 @@ async function loadUserDataAndInitialize() {
         updateCustomerOptions();
         updateUserDisplay();
         applyRoleBasedRestrictions();
-        initChatbot();
-        applyRoleBasedRestrictions();
         
         // Initialize dark mode if enabled
         const darkModeEnabled = localStorage.getItem('darkMode') === 'true';
@@ -3652,4 +3646,243 @@ async function loadUserDataAndInitialize() {
         hideLoading();
         await showModal('Failed to load data. Please try again.');
     }
+}
+
+// -------------------- USER MANAGEMENT --------------------
+
+// Load and display users
+async function loadUsers() {
+    if (userRole !== 'owner') return;
+    
+    try {
+        const usersSnapshot = await db.collection('users').orderBy('createdAt', 'desc').get();
+        
+        const pendingUsers = [];
+        const activeUsers = [];
+        
+        usersSnapshot.forEach(doc => {
+            const userData = { id: doc.id, ...doc.data() };
+            if (userData.status === 'pending' || !userData.role) {
+                pendingUsers.push(userData);
+            } else {
+                activeUsers.push(userData);
+            }
+        });
+        
+        renderPendingUsers(pendingUsers);
+        renderActiveUsers(activeUsers);
+    } catch (error) {
+        console.error('Error loading users:', error);
+        showToast('Failed to load users');
+    }
+}
+
+function renderPendingUsers(users) {
+    const container = document.getElementById('pendingUsersList');
+    if (!container) return;
+    
+    if (users.length === 0) {
+        container.innerHTML = '<p style="color: #666; padding: 16px; text-align: center;">No pending registrations</p>';
+        return;
+    }
+    
+    container.innerHTML = users.map(user => `
+        <div style="background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+            <div style="margin-bottom: 12px;">
+                <strong style="font-size: 16px;">${escapeHtml(user.name)}</strong>
+                <p style="color: #666; margin: 4px 0;">${escapeHtml(user.email)}</p>
+                <p style="color: #999; font-size: 12px;">Registered: ${user.createdAt ? new Date(user.createdAt.toDate()).toLocaleDateString() : 'Recently'}</p>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button onclick="approveUser('${user.id}', 'owner')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    👑 Owner
+                </button>
+                <button onclick="approveUser('${user.id}', 'manager')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #764ba2; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    👔 Manager
+                </button>
+                <button onclick="approveUser('${user.id}', 'staff')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    👤 Staff
+                </button>
+                <button onclick="rejectUser('${user.id}')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #f56565; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    ❌ Reject
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderActiveUsers(users) {
+    const container = document.getElementById('activeUsersList');
+    if (!container) return;
+    
+    container.innerHTML = users.map(user => {
+        const roleColors = {
+            owner: '#667eea',
+            manager: '#764ba2',
+            staff: '#48bb78'
+        };
+        const roleIcons = {
+            owner: '👑',
+            manager: '👔',
+            staff: '👤'
+        };
+        
+        return `
+            <div style="background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                    <div style="flex: 1;">
+                        <strong style="font-size: 16px;">${escapeHtml(user.name)}</strong>
+                        <p style="color: #666; margin: 4px 0;">${escapeHtml(user.email)}</p>
+                        <span style="display: inline-block; padding: 4px 12px; background: ${roleColors[user.role]}; color: white; border-radius: 12px; font-size: 12px; margin-top: 4px;">
+                            ${roleIcons[user.role]} ${user.role.toUpperCase()}
+                        </span>
+                    </div>
+                    ${user.id !== currentUser.uid ? `
+                        <button onclick="showChangeRoleDialog('${user.id}', '${user.name}', '${user.role}')" style="padding: 6px 12px; background: #f7fafc; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer;">
+                            Edit
+                        </button>
+                    ` : '<span style="color: #999; font-size: 12px; padding: 8px;">(You)</span>'}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.approveUser = async function(userId, role) {
+    try {
+        await db.collection('users').doc(userId).update({
+            role: role,
+            status: 'active',
+            approvedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        hapticFeedback('medium');
+        showToast(`User approved as ${role}`);
+        loadUsers();
+    } catch (error) {
+        console.error('Error approving user:', error);
+        showModal('Failed to approve user');
+    }
+};
+
+window.rejectUser = async function(userId) {
+    const confirmed = await showConfirmModal('Are you sure you want to reject this registration?');
+    if (!confirmed) return;
+    
+    try {
+        await db.collection('users').doc(userId).delete();
+        
+        hapticFeedback('light');
+        showToast('Registration rejected');
+        loadUsers();
+    } catch (error) {
+        console.error('Error rejecting user:', error);
+        showModal('Failed to reject user');
+    }
+};
+
+window.showChangeRoleDialog = async function(userId, userName, currentRole) {
+    const roles = ['owner', 'manager', 'staff'];
+    const roleOptions = roles.map(r => 
+        `<option value="${r}" ${r === currentRole ? 'selected' : ''}>${r.toUpperCase()}</option>`
+    ).join('');
+    
+    const html = `
+        <div style="text-align: left;">
+            <p style="margin-bottom: 16px;">Change role for <strong>${escapeHtml(userName)}</strong></p>
+            <select id="newRoleSelect" style="width: 100%; padding: 12px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                ${roleOptions}
+            </select>
+        </div>
+    `;
+    
+    const result = await showCustomModal(html, [
+        { text: 'Cancel', value: null },
+        { text: 'Change Role', value: 'change', primary: true }
+    ]);
+    
+    if (result && result.selectedRole) {
+        const newRole = result.selectedRole;
+        if (newRole !== currentRole) {
+            await changeUserRole(userId, newRole);
+        }
+    }
+};
+
+async function changeUserRole(userId, newRole) {
+    try {
+        await db.collection('users').doc(userId).update({
+            role: newRole,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        hapticFeedback('medium');
+        showToast(`Role updated to ${newRole}`);
+        loadUsers();
+    } catch (error) {
+        console.error('Error changing role:', error);
+        showModal('Failed to change role');
+    }
+}
+
+// Show custom modal with buttons
+function showCustomModal(html, buttons) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;';
+        
+        const content = document.createElement('div');
+        content.style.cssText = 'background: white; padding: 24px; border-radius: 16px; max-width: 400px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.2);';
+        content.innerHTML = html;
+        
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = 'display: flex; gap: 12px; margin-top: 20px;';
+        
+        buttons.forEach(btn => {
+            const button = document.createElement('button');
+            button.textContent = btn.text;
+            button.style.cssText = `flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; ${
+                btn.primary ? 'background: #667eea; color: white;' : 'background: #f7fafc; color: #333;'
+            }`;
+            button.onclick = () => {
+                // Capture select value before removing modal
+                const selectElement = document.getElementById('newRoleSelect');
+                const selectedRole = selectElement ? selectElement.value : null;
+                
+                document.body.removeChild(modal);
+                
+                // Return object with both the button value and selected role
+                if (btn.value === 'change' && selectedRole) {
+                    resolve({ ...btn, selectedRole });
+                } else {
+                    resolve(btn.value);
+                }
+            };
+            buttonContainer.appendChild(button);
+        });
+        
+        content.appendChild(buttonContainer);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+    });
+}
+
+// Load users when Users tab is shown
+const originalShowTabFromNav = showTabFromNav;
+window.showTabFromNav = function(tabId, event) {
+    originalShowTabFromNav(tabId, event);
+    if (tabId === 'users' && userRole === 'owner') {
+        loadUsers();
+    }
+};
+
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
 }
