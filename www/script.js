@@ -1,16 +1,611 @@
+// -------------------- AUTHENTICATION --------------------
+let currentUser = null;
+let userRole = 'staff';
+let userName = 'User';
+
+// Show/Hide authentication tabs
+window.showAuthTab = function(tab) {
+    console.log('=== showAuthTab called with:', tab, '===');
+    
+    const tabs = document.querySelectorAll('.auth-tab');
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    
+    console.log('Found tabs:', tabs.length);
+    console.log('Found loginForm:', !!loginForm);
+    console.log('Found registerForm:', !!registerForm);
+    
+    if (!loginForm || !registerForm) {
+        console.error('Forms not found!');
+        return false;
+    }
+    
+    if (tabs.length < 2) {
+        console.error('Not enough tabs found!');
+        return false;
+    }
+    
+    // Remove active from all tabs and hide all forms
+    tabs.forEach((t, i) => {
+        console.log('Processing tab', i, ':', t);
+        t.classList.remove('active');
+    });
+    loginForm.classList.add('hidden');
+    registerForm.classList.add('hidden');
+    
+    // Show selected tab
+    if (tab === 'login') {
+        tabs[0].classList.add('active');
+        loginForm.classList.remove('hidden');
+        console.log('✓ Login form shown, register hidden');
+    } else if (tab === 'register') {
+        tabs[1].classList.add('active');
+        registerForm.classList.remove('hidden');
+        console.log('✓ Register form shown, login hidden');
+    }
+    
+    // Verify the changes
+    console.log('Login form hidden?', loginForm.classList.contains('hidden'));
+    console.log('Register form hidden?', registerForm.classList.contains('hidden'));
+    console.log('Tab 0 active?', tabs[0].classList.contains('active'));
+    console.log('Tab 1 active?', tabs[1].classList.contains('active'));
+    
+    return false; // Prevent default link behavior
+};
+
+// Initialize auth tab switching - runs immediately
+(function() {
+    function initAuthTabs() {
+        const tabs = document.querySelectorAll('.auth-tab');
+        if (tabs.length === 0) {
+            // DOM not ready yet, try again in 10ms
+            setTimeout(initAuthTabs, 10);
+            return;
+        }
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const tabType = index === 0 ? 'login' : 'register';
+                console.log('Tab clicked:', tabType);
+                window.showAuthTab(tabType);
+            });
+        });
+        console.log('Auth tabs initialized, found', tabs.length, 'tabs');
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAuthTabs);
+    } else {
+        initAuthTabs();
+    }
+})();
+
+// Handle login
+window.handleLogin = async function() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    
+    if (!email || !password) {
+        await showModal('Please enter both email and password');
+        return;
+    }
+    
+    showLoading();
+    
+    try {
+        await auth.signInWithEmailAndPassword(email, password);
+        hapticFeedback('medium');
+        showToast('Login successful!');
+    } catch (error) {
+        hideLoading();
+        let message = 'Login failed. Please try again.';
+        if (error.code === 'auth/user-not-found') {
+            message = 'No account found with this email.';
+        } else if (error.code === 'auth/wrong-password') {
+            message = 'Incorrect password.';
+        } else if (error.code === 'auth/invalid-email') {
+            message = 'Invalid email address.';
+        }
+        await showModal(message);
+    }
+}
+
+// Handle registration
+window.handleRegister = async function() {
+    const name = document.getElementById('registerName').value.trim();
+    const email = document.getElementById('registerEmail').value.trim();
+    const password = document.getElementById('registerPassword').value;
+    const confirmPassword = document.getElementById('registerConfirmPassword').value;
+    
+    if (!name || !email || !password || !confirmPassword) {
+        await showModal('Please fill in all fields');
+        return;
+    }
+    
+    if (password.length < 6) {
+        await showModal('Password must be at least 6 characters long');
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        await showModal('Passwords do not match');
+        return;
+    }
+    
+    showLoading();
+    
+    try {
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+        
+        // Create user document in Firestore
+        await db.collection('users').doc(user.uid).set({
+            name: name,
+            email: email,
+            role: 'owner', // First user is owner, subsequent users can be assigned roles
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        hapticFeedback('medium');
+        showToast('Account created successfully!');
+    } catch (error) {
+        hideLoading();
+        let message = 'Registration failed. Please try again.';
+        if (error.code === 'auth/email-already-in-use') {
+            message = 'An account with this email already exists.';
+        } else if (error.code === 'auth/invalid-email') {
+            message = 'Invalid email address.';
+        } else if (error.code === 'auth/weak-password') {
+            message = 'Password is too weak. Use at least 6 characters.';
+        }
+        await showModal(message);
+    }
+}
+
+// Handle forgot password
+window.handleForgotPassword = async function() {
+    const email = document.getElementById('loginEmail').value.trim();
+    
+    if (!email) {
+        await showModal('Please enter your email address in the login form first');
+        return;
+    }
+    
+    try {
+        await auth.sendPasswordResetEmail(email);
+        await showModal(`Password reset email sent to ${email}. Please check your inbox.`);
+    } catch (error) {
+        let message = 'Failed to send reset email.';
+        if (error.code === 'auth/user-not-found') {
+            message = 'No account found with this email.';
+        } else if (error.code === 'auth/invalid-email') {
+            message = 'Invalid email address.';
+        }
+        await showModal(message);
+    }
+}
+
+// Handle logout
+window.handleLogout = async function() {
+    const confirmed = await showModal('Are you sure you want to logout?', 'Logout', true);
+    if (!confirmed) return;
+    
+    try {
+        await auth.signOut();
+        hapticFeedback('light');
+        showToast('Logged out successfully');
+        
+        // Clear login form
+        document.getElementById('loginEmail').value = '';
+        document.getElementById('loginPassword').value = '';
+    } catch (error) {
+        await showModal('Failed to logout. Please try again.');
+    }
+}
+
+// Update user display in settings
+function updateUserDisplay() {
+    if (currentUser) {
+        document.getElementById('userEmail').textContent = currentUser.email;
+        document.getElementById('userRoleDisplay').textContent = userRole.charAt(0).toUpperCase() + userRole.slice(1);
+    }
+}
+
+// Apply role-based UI restrictions
+function applyRoleBasedRestrictions() {
+    console.log('Applying role-based restrictions for:', userRole);
+    
+    // Staff role restrictions
+    if (userRole === 'staff') {
+        // Hide Items tab
+        const itemsNav = document.querySelector('.nav-menu a[onclick*="items"]');
+        if (itemsNav) itemsNav.style.display = 'none';
+        
+        // Hide Configure tab
+        const configNav = document.querySelector('.nav-menu a[onclick*="configure"]');
+        if (configNav) configNav.style.display = 'none';
+    }
+    
+    // Manager and Staff: Hide clear data button
+    if (userRole !== 'owner') {
+        const clearDataBtn = document.querySelector('button[onclick*="clearAllData"]');
+        if (clearDataBtn) clearDataBtn.style.display = 'none';
+    }
+    
+    console.log('Role restrictions applied');
+}
+
+// AI Chatbot Integration
+function initChatbot() {
+    // Add chatbot button
+    const chatbotBtn = document.createElement('button');
+    chatbotBtn.id = 'chatbot-btn';
+    chatbotBtn.innerHTML = '💬';
+    chatbotBtn.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        font-size: 28px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        z-index: 9999;
+        transition: all 0.3s;
+    `;
+    chatbotBtn.onmouseover = () => chatbotBtn.style.transform = 'scale(1.1)';
+    chatbotBtn.onmouseout = () => chatbotBtn.style.transform = 'scale(1)';
+    chatbotBtn.onclick = toggleChatbot;
+    document.body.appendChild(chatbotBtn);
+    
+    // Add chatbot window
+    const chatWindow = document.createElement('div');
+    chatWindow.id = 'chatbot-window';
+    chatWindow.style.cssText = `
+        position: fixed;
+        bottom: 90px;
+        right: 20px;
+        width: 350px;
+        height: 500px;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        display: none;
+        flex-direction: column;
+        z-index: 9998;
+    `;
+    
+    chatWindow.innerHTML = `
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; color: white;">
+            <h3 style="margin: 0; font-size: 18px;">🤖 Aadhat Assistant</h3>
+            <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">Ask me anything about your business</p>
+        </div>
+        <div id="chatbot-messages" style="flex: 1; overflow-y: auto; padding: 16px; background: #f8f9fa;">
+            <div class="bot-message" style="background: white; padding: 10px 14px; border-radius: 18px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                👋 Hi! I'm your Aadhat Assistant. I can help you with:
+                <br>• Checking stock levels
+                <br>• Viewing sales reports
+                <br>• Finding customer information
+                <br>• Billing questions
+                <br><br>What would you like to know?
+            </div>
+        </div>
+        <div style="padding: 12px; border-top: 1px solid #dee2e6; background: white;">
+            <div style="display: flex; gap: 8px;">
+                <input type="text" id="chatbot-input" placeholder="Type your question..." 
+                    style="flex: 1; padding: 10px; border: 2px solid #dee2e6; border-radius: 20px; font-size: 14px;"
+                    onkeypress="if(event.key==='Enter') sendChatMessage()">
+                <button onclick="sendChatMessage()" 
+                    style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: 600;">Send</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(chatWindow);
+}
+
+function toggleChatbot() {
+    const chatWindow = document.getElementById('chatbot-window');
+    if (chatWindow.style.display === 'none' || !chatWindow.style.display) {
+        chatWindow.style.display = 'flex';
+    } else {
+        chatWindow.style.display = 'none';
+    }
+}
+
+window.sendChatMessage = async function() {
+    const input = document.getElementById('chatbot-input');
+    const message = input.value.trim();
+    if (!message) return;
+    
+    const messagesDiv = document.getElementById('chatbot-messages');
+    
+    // Add user message
+    const userMsg = document.createElement('div');
+    userMsg.textContent = message;
+    userMsg.style.cssText = 'background: #667eea; color: white; padding: 10px 14px; border-radius: 18px; margin-bottom: 10px; max-width: 70%; margin-left: auto; text-align: right;';
+    messagesDiv.appendChild(userMsg);
+    
+    input.value = '';
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    
+    // Process message
+    const response = await processChatMessage(message.toLowerCase());
+    
+    // Add bot response
+    setTimeout(() => {
+        const botMsg = document.createElement('div');
+        botMsg.innerHTML = response;
+        botMsg.style.cssText = 'background: white; padding: 10px 14px; border-radius: 18px; margin-bottom: 10px; max-width: 70%; box-shadow: 0 2px 4px rgba(0,0,0,0.1);';
+        messagesDiv.appendChild(botMsg);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }, 500);
+};
+
+async function processChatMessage(message) {
+    // Stock queries
+    if (message.includes('stock') || message.includes('inventory')) {
+        const itemsList = items.map(item => {
+            const qty = stock[item.name]?.quantity || 0;
+            return `<br>• ${item.name}: ${qty.toFixed(2)} kg`;
+        }).join('');
+        return `📦 Current Stock:${itemsList || '<br>No items in stock'}`;
+    }
+    
+    // Sales queries
+    if (message.includes('sales') || message.includes('revenue')) {
+        const totalSales = salesHistory.reduce((sum, sale) => sum + sale.total, 0);
+        return `💰 Total Sales: ₹${totalSales.toFixed(2)}<br>Transactions: ${salesHistory.length}`;
+    }
+    
+    // Purchase queries
+    if (message.includes('purchase') || message.includes('bill')) {
+        const totalPurchases = billHistory.reduce((sum, bill) => sum + bill.total, 0);
+        return `📝 Total Purchases: ₹${totalPurchases.toFixed(2)}<br>Bills: ${billHistory.length}`;
+    }
+    
+    // Item queries
+    if (message.includes('item') || message.includes('product')) {
+        return `📋 You have ${items.length} items in your catalog.`;
+    }
+    
+    // Customer queries
+    if (message.includes('customer')) {
+        const customers = [...new Set(billHistory.map(b => b.customerName).filter(n => n))];
+        return `👥 You have ${customers.length} unique customers.`;
+    }
+    
+    // Help/Default
+    return `I can help you with:<br>• Stock levels ("show stock")<br>• Sales reports ("total sales")<br>• Purchase history ("total purchases")<br>• Customer info ("customers")<br><br>Try asking me!`;
+}
+
+// -------------------- FIRESTORE DATA OPERATIONS --------------------
+
+// Load items from Firestore
+async function loadItemsFromFirestore() {
+    const snapshot = await db.collection('items').get();
+    items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Also calculate stock from bills
+    await calculateStockFromBills();
+}
+
+// Save item to Firestore
+async function saveItemToFirestore(item) {
+    if (item.id) {
+        // Update existing
+        await db.collection('items').doc(item.id).update(item);
+    } else {
+        // Create new
+        const docRef = await db.collection('items').add({
+            ...item,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser.uid
+        });
+        item.id = docRef.id;
+    }
+}
+
+// Delete item from Firestore
+async function deleteItemFromFirestore(itemId) {
+    await db.collection('items').doc(itemId).delete();
+}
+
+// Load bills from Firestore
+async function loadBillsFromFirestore() {
+    const snapshot = await db.collection('bills').orderBy('date', 'desc').get();
+    billHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// Save bill to Firestore
+async function saveBillToFirestore(bill) {
+    const docRef = await db.collection('bills').add({
+        ...bill,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+        createdByName: userName
+    });
+    bill.id = docRef.id;
+    return bill;
+}
+
+// Load sales from Firestore
+async function loadSalesFromFirestore() {
+    const snapshot = await db.collection('sales').orderBy('date', 'desc').get();
+    salesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// Save sale to Firestore
+async function saveSaleToFirestore(sale) {
+    const docRef = await db.collection('sales').add({
+        ...sale,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+        createdByName: userName
+    });
+    sale.id = docRef.id;
+    return sale;
+}
+
+// Load payments from Firestore
+async function loadPaymentsFromFirestore() {
+    const snapshot = await db.collection('payments').orderBy('date', 'desc').get();
+    paymentsHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// Save payment to Firestore
+async function savePaymentToFirestore(payment) {
+    const docRef = await db.collection('payments').add({
+        ...payment,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+        createdByName: userName
+    });
+    payment.id = docRef.id;
+    return payment;
+}
+
+// Load stock adjustments from Firestore
+async function loadStockAdjustmentsFromFirestore() {
+    const snapshot = await db.collection('stockAdjustments').orderBy('date', 'desc').limit(100).get();
+    stockAdjustments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// Save stock adjustment to Firestore
+async function saveStockAdjustmentToFirestore(adjustment) {
+    const docRef = await db.collection('stockAdjustments').add({
+        ...adjustment,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+        createdByName: userName
+    });
+    adjustment.id = docRef.id;
+    return adjustment;
+}
+
+// Calculate stock from all bills (purchase increases, sales decrease)
+async function calculateStockFromBills() {
+    stock = {};
+    
+    // Add purchases
+    billHistory.forEach(bill => {
+        bill.items.forEach(item => {
+            if (!stock[item.name]) {
+                stock[item.name] = { quantity: 0, avgRate: 0, totalValue: 0 };
+            }
+            const oldQty = stock[item.name].quantity;
+            const oldValue = stock[item.name].totalValue;
+            const newQty = oldQty + item.qty;
+            const newValue = oldValue + item.total;
+            
+            stock[item.name].quantity = newQty;
+            stock[item.name].totalValue = newValue;
+            stock[item.name].avgRate = newValue / newQty;
+        });
+    });
+    
+    // Subtract sales
+    salesHistory.forEach(sale => {
+        sale.items.forEach(item => {
+            if (stock[item.name]) {
+                stock[item.name].quantity -= item.qty;
+            }
+        });
+    });
+    
+    // Apply adjustments
+    stockAdjustments.forEach(adj => {
+        if (stock[adj.itemName]) {
+            stock[adj.itemName].quantity = adj.newQuantity;
+        }
+    });
+}
+
+// Set up real-time listeners for live sync
+function setupRealtimeListeners() {
+    // Listen to items changes
+    db.collection('items').onSnapshot((snapshot) => {
+        // Save currently focused element
+        const activeElement = document.activeElement;
+        const isFocusedOnItemInput = activeElement && 
+            (activeElement.classList.contains('item-name-input') || 
+             activeElement.classList.contains('rate-input') ||
+             (activeElement.tagName === 'INPUT' && activeElement.closest('.item-card')));
+        
+        items = [];
+        snapshot.forEach(doc => {
+            items.push({ id: doc.id, ...doc.data() });
+        });
+        
+        // Only re-render if not currently typing in an item field
+        if (!isFocusedOnItemInput) {
+            renderItems();
+        }
+        loadItemsDropdown();
+    });
+    
+    // Listen to bills changes
+    db.collection('bills').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
+        billHistory = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            billHistory.push({ id: doc.id, ...data });
+        });
+        calculateStockFromBills();
+    });
+    
+    // Listen to sales changes
+    db.collection('sales').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
+        salesHistory = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            salesHistory.push({ id: doc.id, ...data });
+        });
+        calculateStockFromBills();
+    });
+    
+    // Listen to payments changes
+    db.collection('payments').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
+        paymentsHistory = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            paymentsHistory.push({ id: doc.id, ...data });
+        });
+        renderPaymentsHistory();
+    });
+    
+    // Listen to stock adjustments changes
+    db.collection('stockAdjustments').orderBy('createdAt', 'desc').limit(100).onSnapshot((snapshot) => {
+        stockAdjustments = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            stockAdjustments.push({ id: doc.id, ...data });
+        });
+        calculateStockFromBills();
+    });
+}
+
 // -------------------- DATABASE --------------------
-let items = JSON.parse(localStorage.getItem("items")) || [];
+let items = [];
 let billItems = [];
 let labourCharges = [];
-let billHistory = JSON.parse(localStorage.getItem("billHistory")) || [];
+let billHistory = [];
 let currentWeights = [];
-let stock = JSON.parse(localStorage.getItem("stock")) || {};
+let stock = {};
 let salesItems = [];
-let salesHistory = JSON.parse(localStorage.getItem("salesHistory")) || [];
-let paymentsHistory = JSON.parse(localStorage.getItem("paymentsHistory")) || [];
+let salesHistory = [];
+let paymentsHistory = [];
+let stockAdjustments = [];
 let currentDateFilter = 'today';
 let customDateRange = { from: null, to: null };
 let transactionMode = 'purchase'; // 'purchase' or 'sale'
+let reportFilters = { transaction: 'all', item: 'all', customer: 'all' };
 
 // Settings with defaults
 let settings = JSON.parse(localStorage.getItem("settings")) || {
@@ -241,6 +836,11 @@ function generateESCPOS(billData) {
     commands += ESC + '!' + '\x00'; // Normal size
     commands += '\n';
     
+    // Customer name if provided
+    if (billData.customerName) {
+        commands += 'Customer: ' + billData.customerName + '\n';
+    }
+    
     // Date and time
     const now = new Date();
     commands += now.toLocaleString('en-IN') + '\n';
@@ -429,14 +1029,20 @@ function closeModal(result) {
 }
 
 // Save DB (without re-rendering)
-function saveDB() {
-    localStorage.setItem("items", JSON.stringify(items));
+async function saveDB() {
+    // Save all items to Firestore
+    for (const item of items) {
+        await saveItemToFirestore(item);
+    }
     loadItemsDropdown();
 }
 
 // Save DB with full re-render (only when structure changes)
-function saveDBAndRender() {
-    localStorage.setItem("items", JSON.stringify(items));
+async function saveDBAndRender() {
+    // Save all items to Firestore
+    for (const item of items) {
+        await saveItemToFirestore(item);
+    }
     renderItems();
     loadItemsDropdown();
 }
@@ -478,7 +1084,7 @@ function showTabFromNav(tabId, event) {
 }
 
 // -------------------- HISTORY --------------------
-function saveBillToHistory() {
+async function saveBillToHistory() {
     if (billItems.length === 0) return;
 
     const laborCharges = Number(document.getElementById("manualLaborCharges").value) || 0;
@@ -487,10 +1093,17 @@ function saveBillToHistory() {
     const onlinePayment = Number(document.getElementById("onlinePayment").value) || 0;
     const cashPayment = Number(document.getElementById("cashPayment").value) || 0;
     const totalPayment = onlinePayment + cashPayment;
+    const customerName = document.getElementById("customerName").value.trim();
+
+    // Update customer options
+    if (customerName) {
+        updateCustomerOptions(customerName);
+    }
 
     const bill = {
         id: Date.now(),
         date: new Date().toLocaleString(),
+        customerName: customerName,
         items: [...billItems], // Full item details with weights
         laborCharges: laborCharges,
         billTotal: billTotal,
@@ -503,8 +1116,9 @@ function saveBillToHistory() {
         type: 'purchase'
     };
 
+    await saveBillToFirestore(bill);
     billHistory.unshift(bill);
-    localStorage.setItem("billHistory", JSON.stringify(billHistory));
+    await calculateStockFromBills();
     
     // Clear current bill - set payment fields to empty
     billItems = [];
@@ -528,8 +1142,31 @@ function saveBillToHistory() {
     renderBill();
     updateTotals();
     
+    // Clear customer name
+    document.getElementById("customerName").value = "";
+    
     // Reset item dropdown to most frequent
     loadItemsDropdown();
+}
+
+function updateCustomerOptions(newCustomer) {
+    // Get unique customer names from history
+    const uniqueCustomers = [...new Set(
+        billHistory
+            .filter(b => b.customerName)
+            .map(b => b.customerName)
+    )];
+    
+    // Add new customer if not exists
+    if (newCustomer && !uniqueCustomers.includes(newCustomer)) {
+        uniqueCustomers.unshift(newCustomer);
+    }
+    
+    // Update datalist
+    const datalist = document.getElementById('customerOptions');
+    if (datalist) {
+        datalist.innerHTML = uniqueCustomers.map(name => `<option value="${name}">`).join('');
+    }
 }
 
 function renderHistory() {
@@ -610,7 +1247,7 @@ function updateStock(itemName, quantity, rate) {
         stock[itemName].avgRate = (oldValue + newValue) / stock[itemName].quantity;
     }
     
-    localStorage.setItem("stock", JSON.stringify(stock));
+    // Stock is now calculated from bills, no need to save separately
 }
 
 function reduceStock(itemName, quantity) {
@@ -623,44 +1260,196 @@ function reduceStock(itemName, quantity) {
     }
     
     stock[itemName].quantity -= quantity;
-    localStorage.setItem("stock", JSON.stringify(stock));
+    // Stock is now calculated from bills, no need to save separately
     return true;
 }
 
 function renderStock() {
+    // Populate adjustment item dropdown
+    const adjustSelect = document.getElementById("adjustItem");
+    if (adjustSelect) {
+        adjustSelect.innerHTML = '<option value="">Select item</option>';
+        Object.keys(stock).forEach(itemName => {
+            const opt = document.createElement("option");
+            opt.value = itemName;
+            opt.textContent = itemName;
+            adjustSelect.appendChild(opt);
+        });
+    }
+    
+    // Render stock list
     const container = document.getElementById("stockList");
     
     const stockItems = Object.keys(stock);
     
     if (stockItems.length === 0) {
         container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No stock data available. Start purchasing items to build stock.</p>';
+    } else {
+        container.innerHTML = "";
+        
+        stockItems.forEach(itemName => {
+            const item = stock[itemName];
+            const div = document.createElement("div");
+            
+            let stockClass = "stock-item";
+            if (item.quantity === 0) stockClass += " stock-out";
+            else if (item.quantity < 100) stockClass += " stock-low";
+            
+            div.className = stockClass;
+            
+            const stockValue = item.quantity * item.avgRate;
+            
+            div.innerHTML = `
+                <div class="stock-header">
+                    <span>${itemName}</span>
+                    <span style="color: ${item.quantity > 0 ? '#28a745' : '#dc3545'};">${item.quantity.toFixed(2)} kg</span>
+                </div>
+                <div class="stock-details">
+                    <div><strong>Average Purchase Rate:</strong> ₹${item.avgRate.toFixed(2)}/kg</div>
+                    <div><strong>Stock Value:</strong> ₹${stockValue.toFixed(2)}</div>
+                    ${item.quantity < 100 && item.quantity > 0 ? '<div style="color: #ffc107; font-weight: 600; margin-top: 8px;">⚠️ Low Stock</div>' : ''}
+                    ${item.quantity === 0 ? '<div style="color: #dc3545; font-weight: 600; margin-top: 8px;">❌ Out of Stock</div>' : ''}
+                </div>
+            `;
+            
+            container.appendChild(div);
+        });
+    }
+    
+    // Render adjustment history
+    renderAdjustmentHistory();
+}
+
+// -------------------- STOCK ADJUSTMENTS --------------------
+function loadAdjustItemStock() {
+    const itemName = document.getElementById("adjustItem").value;
+    const displaySpan = document.getElementById("currentStockDisplay");
+    
+    if (!itemName) {
+        displaySpan.textContent = "-";
+        return;
+    }
+    
+    const currentStock = stock[itemName] ? stock[itemName].quantity : 0;
+    displaySpan.textContent = currentStock.toFixed(2);
+}
+
+function updateAdjustmentPlaceholder() {
+    const adjustType = document.getElementById("adjustType").value;
+    const quantityInput = document.getElementById("adjustQuantity");
+    
+    if (adjustType === 'add') {
+        quantityInput.placeholder = "Enter quantity to add";
+    } else if (adjustType === 'remove') {
+        quantityInput.placeholder = "Enter quantity to remove";
+    } else {
+        quantityInput.placeholder = "Enter new total quantity";
+    }
+}
+
+async function applyStockAdjustment() {
+    const itemName = document.getElementById("adjustItem").value;
+    const adjustType = document.getElementById("adjustType").value;
+    const quantity = parseFloat(document.getElementById("adjustQuantity").value);
+    const reason = document.getElementById("adjustReason").value.trim();
+    
+    if (!itemName) {
+        showAlert("Please select an item");
+        return;
+    }
+    
+    if (!quantity || quantity <= 0) {
+        showAlert("Please enter a valid quantity");
+        return;
+    }
+    
+    if (!stock[itemName]) {
+        stock[itemName] = { quantity: 0, avgRate: 0 };
+    }
+    
+    const oldQuantity = stock[itemName].quantity;
+    let newQuantity = oldQuantity;
+    
+    if (adjustType === 'add') {
+        newQuantity = oldQuantity + quantity;
+    } else if (adjustType === 'remove') {
+        newQuantity = Math.max(0, oldQuantity - quantity);
+    } else if (adjustType === 'set') {
+        newQuantity = quantity;
+    }
+    
+    // Log the adjustment
+    const adjustment = {
+        id: Date.now(),
+        date: new Date().toISOString(),
+        itemName: itemName,
+        type: adjustType,
+        oldQuantity: oldQuantity,
+        newQuantity: newQuantity,
+        change: newQuantity - oldQuantity,
+        reason: reason || "No reason provided"
+    };
+    
+    await saveStockAdjustmentToFirestore(adjustment);
+    stockAdjustments.unshift(adjustment);
+    
+    // Recalculate stock from bills
+    await calculateStockFromBills();
+    
+    // Clear form
+    document.getElementById("adjustQuantity").value = "";
+    document.getElementById("adjustReason").value = "";
+    
+    // Refresh displays
+    loadAdjustItemStock();
+    renderStock();
+    
+    hapticFeedback('medium');
+    showAlert(`Stock adjusted successfully!\n${itemName}: ${oldQuantity.toFixed(2)} kg → ${newQuantity.toFixed(2)} kg`);
+}
+
+function renderAdjustmentHistory() {
+    const container = document.getElementById("adjustmentHistory");
+    
+    if (stockAdjustments.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>';
         return;
     }
     
     container.innerHTML = "";
     
-    stockItems.forEach(itemName => {
-        const item = stock[itemName];
+    // Show last 20 adjustments
+    const recentAdjustments = stockAdjustments.slice(0, 20);
+    
+    recentAdjustments.forEach(adj => {
         const div = document.createElement("div");
+        div.className = "stock-item";
         
-        let stockClass = "stock-item";
-        if (item.quantity === 0) stockClass += " stock-out";
-        else if (item.quantity < 100) stockClass += " stock-low";
+        const date = new Date(adj.date);
+        const dateStr = date.toLocaleDateString('en-IN') + ' ' + date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
         
-        div.className = stockClass;
-        
-        const stockValue = item.quantity * item.avgRate;
+        let typeIcon = '';
+        let typeColor = '';
+        if (adj.type === 'add') {
+            typeIcon = '➕';
+            typeColor = '#28a745';
+        } else if (adj.type === 'remove') {
+            typeIcon = '➖';
+            typeColor = '#dc3545';
+        } else {
+            typeIcon = '=';
+            typeColor = '#007bff';
+        }
         
         div.innerHTML = `
             <div class="stock-header">
-                <span>${itemName}</span>
-                <span style="color: ${item.quantity > 0 ? '#28a745' : '#dc3545'};">${item.quantity.toFixed(2)} kg</span>
+                <span>${adj.itemName}</span>
+                <span style="color: ${typeColor};">${typeIcon} ${adj.change >= 0 ? '+' : ''}${adj.change.toFixed(2)} kg</span>
             </div>
             <div class="stock-details">
-                <div><strong>Average Purchase Rate:</strong> ₹${item.avgRate.toFixed(2)}/kg</div>
-                <div><strong>Stock Value:</strong> ₹${stockValue.toFixed(2)}</div>
-                ${item.quantity < 100 && item.quantity > 0 ? '<div style="color: #ffc107; font-weight: 600; margin-top: 8px;">⚠️ Low Stock</div>' : ''}
-                ${item.quantity === 0 ? '<div style="color: #dc3545; font-weight: 600; margin-top: 8px;">❌ Out of Stock</div>' : ''}
+                <div><strong>Date:</strong> ${dateStr}</div>
+                <div><strong>Change:</strong> ${adj.oldQuantity.toFixed(2)} kg → ${adj.newQuantity.toFixed(2)} kg</div>
+                <div><strong>Reason:</strong> ${adj.reason}</div>
             </div>
         `;
         
@@ -833,8 +1622,9 @@ async function completeSale() {
     }
     
     // Save to sales history
+    await saveSaleToFirestore(saleRecord);
     salesHistory.unshift(saleRecord);
-    localStorage.setItem("salesHistory", JSON.stringify(salesHistory));
+    await calculateStockFromBills();
     
     // Clear sales bill
     salesItems = [];
@@ -907,8 +1697,68 @@ function filterBillsByDate(bills) {
 }
 
 // -------------------- REPORTS --------------------
+function populateReportFilters() {
+    // Populate item filter
+    const itemFilter = document.getElementById("reportItemFilter");
+    if (itemFilter) {
+        itemFilter.innerHTML = '<option value="all">All Items</option>';
+        const uniqueItems = [...new Set(billHistory.flatMap(bill => bill.items.map(item => item.name)))];
+        uniqueItems.forEach(itemName => {
+            const opt = document.createElement("option");
+            opt.value = itemName;
+            opt.textContent = itemName;
+            itemFilter.appendChild(opt);
+        });
+    }
+    
+    // Populate customer filter
+    const customerFilter = document.getElementById("reportCustomerFilter");
+    if (customerFilter) {
+        customerFilter.innerHTML = '<option value="all">All Customers</option>';
+        const uniqueCustomers = [...new Set(billHistory.map(bill => bill.customerName).filter(c => c))];
+        uniqueCustomers.forEach(customerName => {
+            const opt = document.createElement("option");
+            opt.value = customerName;
+            opt.textContent = customerName;
+            customerFilter.appendChild(opt);
+        });
+    }
+}
+
+function applyReportFilters() {
+    reportFilters.transaction = document.getElementById("reportTransactionFilter").value;
+    reportFilters.item = document.getElementById("reportItemFilter").value;
+    reportFilters.customer = document.getElementById("reportCustomerFilter").value;
+    renderReports();
+}
+
+function filterBillsByReportFilters(bills) {
+    return bills.filter(bill => {
+        // Transaction type filter
+        if (reportFilters.transaction !== 'all' && bill.type !== reportFilters.transaction) {
+            return false;
+        }
+        
+        // Item filter
+        if (reportFilters.item !== 'all') {
+            const hasItem = bill.items.some(item => item.name === reportFilters.item);
+            if (!hasItem) return false;
+        }
+        
+        // Customer filter
+        if (reportFilters.customer !== 'all' && bill.customerName !== reportFilters.customer) {
+            return false;
+        }
+        
+        return true;
+    });
+}
+
 function renderReports() {
-    const filteredBills = filterBillsByDate(billHistory);
+    populateReportFilters();
+    
+    let filteredBills = filterBillsByDate(billHistory);
+    filteredBills = filterBillsByReportFilters(filteredBills);
     
     const totalSales = filteredBills.reduce((sum, bill) => sum + bill.total, 0);
     const totalBills = filteredBills.length;
@@ -1166,48 +2016,91 @@ function renderItems() {
 }
 
 // Add item
-function addItem() {
-    items.push({ name: "", hindiName: "", rates: [], saleRates: [] });
-    saveDBAndRender();
+async function addItem() {
+    const newItem = { name: "", hindiName: "", rates: [], saleRates: [] };
+    await saveItemToFirestore(newItem);
+    items.push(newItem);
+    renderItems();
+    loadItemsDropdown();
 }
+
+// Debounce timers for item updates
+const itemUpdateTimers = {};
 
 // Update item name (AUTO-SAVE without re-render)
 function updateItemName(index, value) {
     items[index].name = value;
-    saveDB();
+    
+    // Clear existing timer for this item
+    if (itemUpdateTimers[`name_${index}`]) {
+        clearTimeout(itemUpdateTimers[`name_${index}`]);
+    }
+    
+    // Set new timer to save after 500ms of no typing
+    itemUpdateTimers[`name_${index}`] = setTimeout(async () => {
+        await saveItemToFirestore(items[index]);
+        loadItemsDropdown();
+    }, 500);
 }
 
 // Update item Hindi name (AUTO-SAVE without re-render)
 function updateItemHindiName(index, value) {
     items[index].hindiName = value;
-    saveDB();
+    
+    // Clear existing timer for this item
+    if (itemUpdateTimers[`hindi_${index}`]) {
+        clearTimeout(itemUpdateTimers[`hindi_${index}`]);
+    }
+    
+    // Set new timer to save after 500ms of no typing
+    itemUpdateTimers[`hindi_${index}`] = setTimeout(async () => {
+        await saveItemToFirestore(items[index]);
+        loadItemsDropdown();
+    }, 500);
 }
 
 // Add rate inline
-function addRate(index) {
+async function addRate(index) {
     items[index].rates.push('');
-    saveDBAndRender();
+    await saveItemToFirestore(items[index]);
+    renderItems();
+    loadItemsDropdown();
 }
 
 // Update rate (AUTO-SAVE without re-render)
 function updateRate(itemIndex, rateIndex, value) {
     items[itemIndex].rates[rateIndex] = Number(value);
-    saveDB();
+    
+    // Clear existing timer
+    const timerId = `rate_${itemIndex}_${rateIndex}`;
+    if (itemUpdateTimers[timerId]) {
+        clearTimeout(itemUpdateTimers[timerId]);
+    }
+    
+    // Set new timer to save after 500ms of no typing
+    itemUpdateTimers[timerId] = setTimeout(async () => {
+        await saveItemToFirestore(items[itemIndex]);
+        loadItemsDropdown();
+    }, 500);
 }
 
 // Delete rate
-function deleteRate(itemIndex, rateIndex) {
+async function deleteRate(itemIndex, rateIndex) {
     items[itemIndex].rates.splice(rateIndex, 1);
-    saveDBAndRender();
+    await saveItemToFirestore(items[itemIndex]);
+    renderItems();
+    loadItemsDropdown();
 }
 
 // Add sale rate inline
-function addSaleRate(index) {
+async function addSaleRate(index) {
     if (!items[index].saleRates) {
         items[index].saleRates = [];
     }
     items[index].saleRates.push('');
-    saveDBAndRender();
+    await saveItemToFirestore(items[index]);
+    renderItems();
+    loadItemsDropdown();
 }
 
 // Update sale rate (AUTO-SAVE without re-render)
@@ -1216,21 +2109,39 @@ function updateSaleRate(itemIndex, rateIndex, value) {
         items[itemIndex].saleRates = [];
     }
     items[itemIndex].saleRates[rateIndex] = Number(value);
-    saveDB();
+    
+    // Clear existing timer
+    const timerId = `salerate_${itemIndex}_${rateIndex}`;
+    if (itemUpdateTimers[timerId]) {
+        clearTimeout(itemUpdateTimers[timerId]);
+    }
+    
+    // Set new timer to save after 500ms of no typing
+    itemUpdateTimers[timerId] = setTimeout(async () => {
+        await saveItemToFirestore(items[itemIndex]);
+        loadItemsDropdown();
+    }, 500);
 }
 
 // Delete sale rate
-function deleteSaleRate(itemIndex, rateIndex) {
+async function deleteSaleRate(itemIndex, rateIndex) {
     if (items[itemIndex].saleRates) {
         items[itemIndex].saleRates.splice(rateIndex, 1);
-        saveDBAndRender();
+        await saveItemToFirestore(items[itemIndex]);
+        renderItems();
+        loadItemsDropdown();
     }
 }
 
 // Delete item
-function deleteItem(index) {
+async function deleteItem(index) {
+    const itemToDelete = items[index];
+    if (itemToDelete.id) {
+        await deleteItemFromFirestore(itemToDelete.id);
+    }
     items.splice(index, 1);
-    saveDBAndRender();
+    renderItems();
+    loadItemsDropdown();
 }
 
 // -------------------- BILLING PAGE --------------------
@@ -1385,7 +2296,7 @@ function renderWeights() {
     });
 
     // Update summary
-    document.getElementById("totalWeights").textContent = totalWeight;
+    document.getElementById("totalWeights").textContent = totalWeight.toFixed(1);
     document.getElementById("totalPackets").textContent = currentWeights.length;
 
     // Render weight chips
@@ -1678,10 +2589,12 @@ async function printBill() {
     const totalHeavyPackets = billItems.reduce((sum, b) => sum + (b.heavyPackets || 0), 0);
     const totalPackets = billItems.reduce((sum, b) => sum + (b.packets || 0), 0);
     const isAutoLabor = isPurchase && document.getElementById("autoLaborCharge").checked;
+    const customerName = document.getElementById("customerName").value.trim();
 
     // Prepare bill data
     const billData = {
         isPurchase,
+        customerName,
         billTotal,
         laborCharges,
         amountPayable: amountPayableFinal,
@@ -1732,9 +2645,9 @@ async function printBill() {
 
     // Save to appropriate history
     if (isPurchase) {
-        saveBillToHistory();
+        await saveBillToHistory();
     } else {
-        saveSaleToHistory();
+        await saveSaleToHistory();
     }
     
     hapticFeedback('heavy');
@@ -1797,6 +2710,7 @@ async function printViaWeb(billData) {
         </head>
         <body>
             <h2>${billData.isPurchase ? 'PURCHASE RECEIPT' : 'SALE RECEIPT'}</h2>
+            ${billData.customerName ? `<p style="text-align: center; margin: 10px 0; font-size: 16px;"><strong>Customer:</strong> ${billData.customerName}</p>` : ''}
             <table>
                 <tr><th>वस्तु</th><th>दर</th><th>मात्रा</th><th>कुल</th></tr>
                 ${billItemsHTML}
@@ -1835,7 +2749,7 @@ async function printViaWeb(billData) {
     });
 }
 
-function saveSaleToHistory() {
+async function saveSaleToHistory() {
     if (billItems.length === 0) return;
 
     const billTotal = Number(document.getElementById("billTotal").textContent);
@@ -1861,8 +2775,9 @@ function saveSaleToHistory() {
         type: 'sale'
     };
 
+    await saveSaleToFirestore(sale);
     salesHistory.unshift(sale);
-    localStorage.setItem("salesHistory", JSON.stringify(salesHistory));
+    await calculateStockFromBills();
     
     // Clear current bill - set payment fields to empty
     billItems = [];
@@ -1922,11 +2837,11 @@ async function saveBillOnly() {
     // Save to appropriate history
     if (isPurchase) {
         hapticFeedback('heavy');
-        saveBillToHistory();
+        await saveBillToHistory();
         await showModal("Purchase bill saved successfully!", "Success");
     } else {
         hapticFeedback('heavy');
-        saveSaleToHistory();
+        await saveSaleToHistory();
         await showModal("Sale bill saved successfully!", "Success");
     }
 }
@@ -2045,6 +2960,16 @@ function loadSettings() {
     document.getElementById('settingAutoLabor').checked = settings.autoLaborEnabled;
     document.getElementById('settingShowHindi').checked = settings.showHindi || false;
     
+    // Load dark mode setting
+    const darkModeCheckbox = document.getElementById('settingDarkMode');
+    if (darkModeCheckbox) {
+        const darkModeEnabled = localStorage.getItem('darkMode') === 'true';
+        darkModeCheckbox.checked = darkModeEnabled;
+        if (darkModeEnabled) {
+            document.body.classList.add('dark-mode');
+        }
+    }
+    
     // Load Bluetooth printer settings
     const bluetoothCheckbox = document.getElementById('settingBluetoothEnabled');
     if (bluetoothCheckbox) {
@@ -2056,6 +2981,20 @@ function loadSettings() {
     }
     
     updatePrinterStatus();
+}
+
+function toggleDarkMode() {
+    const enabled = document.getElementById('settingDarkMode').checked;
+    localStorage.setItem('darkMode', enabled);
+    
+    if (enabled) {
+        document.body.classList.add('dark-mode');
+    } else {
+        document.body.classList.remove('dark-mode');
+    }
+    
+    hapticFeedback('light');
+    showToast(enabled ? 'Dark mode enabled' : 'Dark mode disabled');
 }
 
 function saveSettings() {
@@ -2085,6 +3024,174 @@ async function clearAllData() {
         localStorage.clear();
         location.reload();
     }
+}
+
+// -------------------- EXPORT FUNCTIONS --------------------
+function exportToCSV() {
+    let filteredBills = filterBillsByDate(billHistory);
+    filteredBills = filterBillsByReportFilters(filteredBills);
+    
+    if (filteredBills.length === 0) {
+        showAlert("No data to export for the selected filters");
+        return;
+    }
+    
+    // Prepare CSV content
+    let csv = "Bill ID,Date,Time,Type,Customer,Item,Quantity (kg),Rate (₹/kg),Amount (₹),Labor Charges (₹),Total (₹),Cash Payment (₹),Online Payment (₹)\n";
+    
+    filteredBills.forEach(bill => {
+        const date = new Date(bill.date);
+        const dateStr = date.toLocaleDateString('en-IN');
+        const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const type = bill.type === 'sale' ? 'Sale' : 'Purchase';
+        const customer = bill.customerName || '-';
+        
+        bill.items.forEach(item => {
+            csv += `${bill.id},"${dateStr}","${timeStr}","${type}","${customer}","${item.name}",${item.qty},${item.rate},${item.total},${bill.laborCharges || 0},${bill.total},${bill.payment?.cash || 0},${bill.payment?.online || 0}\n`;
+        });
+    });
+    
+    // Add summary
+    const totalSales = filteredBills.reduce((sum, bill) => sum + bill.total, 0);
+    const totalLabor = filteredBills.reduce((sum, bill) => sum + (bill.laborCharges || 0), 0);
+    const totalCash = filteredBills.reduce((sum, bill) => sum + (bill.payment?.cash || 0), 0);
+    const totalOnline = filteredBills.reduce((sum, bill) => sum + (bill.payment?.online || 0), 0);
+    
+    csv += `\n"SUMMARY",,,,,,,,,,,,\n`;
+    csv += `"Total Bills:",${filteredBills.length},,,,,,,,,,\n`;
+    csv += `"Total Amount:",₹${totalSales},,,,,,,,,,\n`;
+    csv += `"Total Labor:",₹${totalLabor},,,,,,,,,,\n`;
+    csv += `"Cash Payment:",₹${totalCash},,,,,,,,,,\n`;
+    csv += `"Online Payment:",₹${totalOnline},,,,,,,,,,\n`;
+    
+    // Download CSV
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    const filename = `Aadhat_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    hapticFeedback('medium');
+    showToast(`Exported ${filteredBills.length} bills to CSV`);
+}
+
+function exportToPDF() {
+    let filteredBills = filterBillsByDate(billHistory);
+    filteredBills = filterBillsByReportFilters(filteredBills);
+    
+    if (filteredBills.length === 0) {
+        showAlert("No data to export for the selected filters");
+        return;
+    }
+    
+    // Create a printable HTML report
+    const totalSales = filteredBills.reduce((sum, bill) => sum + bill.total, 0);
+    const totalLabor = filteredBills.reduce((sum, bill) => sum + (bill.laborCharges || 0), 0);
+    const totalCash = filteredBills.reduce((sum, bill) => sum + (bill.payment?.cash || 0), 0);
+    const totalOnline = filteredBills.reduce((sum, bill) => sum + (bill.payment?.online || 0), 0);
+    
+    let html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Aadhat Report</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+                .summary { background: #f0f8ff; padding: 15px; border-radius: 5px; margin: 20px 0; }
+                .summary-item { margin: 8px 0; font-size: 16px; }
+                table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background-color: #007bff; color: white; }
+                tr:nth-child(even) { background-color: #f9f9f9; }
+                .footer { margin-top: 30px; text-align: center; color: #666; font-size: 12px; }
+            </style>
+        </head>
+        <body>
+            <h1>Aadhat Billing Report</h1>
+            <p><strong>Generated on:</strong> ${new Date().toLocaleString('en-IN')}</p>
+            <p><strong>Filter Period:</strong> ${currentDateFilter.charAt(0).toUpperCase() + currentDateFilter.slice(1)}</p>
+            
+            <div class="summary">
+                <h2>Summary</h2>
+                <div class="summary-item"><strong>Total Bills:</strong> ${filteredBills.length}</div>
+                <div class="summary-item"><strong>Total Amount:</strong> ₹${totalSales}</div>
+                <div class="summary-item"><strong>Labor Charges:</strong> ₹${totalLabor}</div>
+                <div class="summary-item"><strong>Cash Payment:</strong> ₹${totalCash}</div>
+                <div class="summary-item"><strong>Online Payment:</strong> ₹${totalOnline}</div>
+            </div>
+            
+            <h2>Bill Details</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bill ID</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Customer</th>
+                        <th>Item</th>
+                        <th>Qty (kg)</th>
+                        <th>Rate (₹/kg)</th>
+                        <th>Amount (₹)</th>
+                        <th>Total (₹)</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    filteredBills.forEach(bill => {
+        const date = new Date(bill.date);
+        const dateStr = date.toLocaleDateString('en-IN') + ' ' + date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const type = bill.type === 'sale' ? 'Sale' : 'Purchase';
+        const customer = bill.customerName || '-';
+        
+        bill.items.forEach((item, idx) => {
+            html += `
+                <tr>
+                    <td>${idx === 0 ? bill.id : ''}</td>
+                    <td>${idx === 0 ? dateStr : ''}</td>
+                    <td>${idx === 0 ? type : ''}</td>
+                    <td>${idx === 0 ? customer : ''}</td>
+                    <td>${item.name}</td>
+                    <td>${item.qty.toFixed(2)}</td>
+                    <td>₹${item.rate}</td>
+                    <td>₹${item.total}</td>
+                    <td>${idx === 0 ? '₹' + bill.total : ''}</td>
+                </tr>
+            `;
+        });
+    });
+    
+    html += `
+                </tbody>
+            </table>
+            
+            <div class="footer">
+                <p>Aadhat Billing System • Generated automatically</p>
+            </div>
+        </body>
+        </html>
+    `;
+    
+    // Open in new window for printing/saving as PDF
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    // Auto-trigger print dialog after content loads
+    printWindow.onload = function() {
+        printWindow.print();
+    };
+    
+    hapticFeedback('medium');
+    showToast(`Report opened in new window. Use Print → Save as PDF`);
 }
 
 // -------------------- BLUETOOTH PRINTER UI --------------------
@@ -2249,7 +3356,7 @@ async function testPrint() {
 
 // -------------------- INIT --------------------
 // -------------------- PAYMENTS --------------------
-function savePayment() {
+async function savePayment() {
     const type = document.getElementById('paymentType').value.trim();
     const personName = document.getElementById('paymentPersonName').value.trim();
     const amount = Number(document.getElementById('paymentAmount').value);
@@ -2277,8 +3384,8 @@ function savePayment() {
         date: new Date().toLocaleString('en-IN')
     };
 
+    await savePaymentToFirestore(payment);
     paymentsHistory.unshift(payment);
-    localStorage.setItem('paymentsHistory', JSON.stringify(paymentsHistory));
     
     hapticFeedback('medium');
     showToast('✓ Payment saved');
@@ -2315,8 +3422,8 @@ async function saveAndPrintPayment() {
         date: new Date().toLocaleString('en-IN')
     };
 
+    await savePaymentToFirestore(payment);
     paymentsHistory.unshift(payment);
-    localStorage.setItem('paymentsHistory', JSON.stringify(paymentsHistory));
     
     hapticFeedback('medium');
     
@@ -2452,25 +3559,97 @@ async function reprintPayment(index) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    renderItems();
-    loadItemsDropdown();
-    loadSettings();
-    updateModeUI(); // Initialize with purchase theme
-    renderPaymentsHistory(); // Load payments
+    // Wait for Firebase auth to initialize
+    hideLoading();
+    
+    // Listen for auth state changes
+    auth.onAuthStateChanged((user) => {
+        if (user) {
+            currentUser = user;
+            loadUserDataAndInitialize();
+        } else {
+            // Show auth screen
+            document.getElementById('authScreen')?.classList.remove('hidden');
+            document.getElementById('appContent')?.classList.add('hidden');
+            hideLoading();
+        }
+    });
     
     // Initialize mobile UI enhancements
     initPullToRefresh();
-    hideLoading(); // Ensure loading is hidden on start
-    
-    // Set today's date as default for custom filter
-    const today = new Date().toISOString().split('T')[0];
-    if (document.getElementById('dateTo')) {
-        document.getElementById('dateTo').value = today;
-    }
-    
-    // Set billing as default active nav item
-    const billingNavLink = document.querySelector('.nav-menu a[onclick*="billing"]');
-    if (billingNavLink) {
-        billingNavLink.classList.add("active");
-    }
 });
+
+async function loadUserDataAndInitialize() {
+    showLoading();
+    
+    try {
+        // Load user role
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            userRole = userData.role || 'staff';
+            userName = userData.name || currentUser.email.split('@')[0];
+        } else {
+            // First time user - create default user document
+            userName = currentUser.email.split('@')[0];
+            await db.collection('users').doc(currentUser.uid).set({
+                email: currentUser.email,
+                role: 'owner', // First user is owner
+                name: userName,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            userRole = 'owner';
+            console.log('Created new user with owner role');
+        }
+        
+        // Set up real-time listeners for live sync
+        setupRealtimeListeners();
+        
+        // Initial load of data
+        await loadItemsFromFirestore();
+        await loadBillsFromFirestore();
+        await loadSalesFromFirestore();
+        await loadPaymentsFromFirestore();
+        await loadStockAdjustmentsFromFirestore();
+        
+        // Initialize UI
+        renderItems();
+        loadItemsDropdown();
+        loadSettings();
+        updateModeUI();
+        renderPaymentsHistory();
+        updateCustomerOptions();
+        updateUserDisplay();
+        applyRoleBasedRestrictions();
+        initChatbot();
+        applyRoleBasedRestrictions();
+        
+        // Initialize dark mode if enabled
+        const darkModeEnabled = localStorage.getItem('darkMode') === 'true';
+        if (darkModeEnabled) {
+            document.body.classList.add('dark-mode');
+        }
+        
+        // Set today's date as default for custom filter
+        const today = new Date().toISOString().split('T')[0];
+        if (document.getElementById('dateTo')) {
+            document.getElementById('dateTo').value = today;
+        }
+        
+        // Set billing as default active nav item
+        const billingNavLink = document.querySelector('.nav-menu a[onclick*="billing"]');
+        if (billingNavLink) {
+            billingNavLink.classList.add("active");
+        }
+        
+        // Show app content
+        document.getElementById('authScreen')?.classList.add('hidden');
+        document.getElementById('appContent')?.classList.remove('hidden');
+        
+        hideLoading();
+    } catch (error) {
+        console.error('Error loading data:', error);
+        hideLoading();
+        await showModal('Failed to load data. Please try again.');
+    }
+}
