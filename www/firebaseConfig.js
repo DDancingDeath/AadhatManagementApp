@@ -20,8 +20,8 @@ const auth = firebase.auth();
 // Initialize Cloud Firestore
 const db = firebase.firestore();
 
-// Enable offline persistence
-db.enablePersistence()
+// Enable offline persistence (Note: Using compat API for simplicity)
+db.enablePersistence({ synchronizeTabs: true })
   .catch((err) => {
     if (err.code === 'failed-precondition') {
       console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');

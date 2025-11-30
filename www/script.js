@@ -83,24 +83,55 @@ window.showAuthTab = function(tab) {
 
 // Handle login
 window.handleLogin = async function() {
-    const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
+    console.log('=== LOGIN STARTED ===');
+    console.log('Device:', navigator.userAgent);
+    console.log('Online:', navigator.onLine);
+    console.log('Firebase auth initialized:', !!auth);
+    console.log('Firebase db initialized:', !!db);
+    
+    const emailInput = document.getElementById('loginEmail');
+    const passwordInput = document.getElementById('loginPassword');
+    
+    console.log('Email input found:', !!emailInput);
+    console.log('Password input found:', !!passwordInput);
+    
+    if (!emailInput || !passwordInput) {
+        console.error('Login inputs not found!');
+        alert('ERROR: Login form not found. Please refresh the page.');
+        return;
+    }
+    
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+    
+    console.log('Email:', email);
+    console.log('Password length:', password.length);
     
     if (!email || !password) {
+        console.log('Empty email or password');
         await showModal('Please enter both email and password');
         return;
     }
     
+    console.log('Starting Firebase auth...');
     showLoading();
     
     try {
+        console.log('Calling signInWithEmailAndPassword...');
         const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        console.log('Auth successful, user:', userCredential.user.uid);
         
         // Check if user is approved
+        console.log('Fetching user document...');
         const userDoc = await db.collection('users').doc(userCredential.user.uid).get();
+        console.log('User doc exists:', userDoc.exists);
+        
         if (userDoc.exists) {
             const userData = userDoc.data();
+            console.log('User data:', userData);
+            
             if (userData.status === 'pending' || !userData.role) {
+                console.log('User not approved');
                 await auth.signOut();
                 hideLoading();
                 await showModal('Your account is pending approval. Please contact the owner.');
@@ -108,10 +139,16 @@ window.handleLogin = async function() {
             }
         }
         
+        console.log('Login successful!');
         hapticFeedback('medium');
         showToast('Login successful!');
     } catch (error) {
         hideLoading();
+        console.error('=== LOGIN ERROR ===');
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Full error:', error);
+        
         let message = 'Login failed. Please try again.';
         if (error.code === 'auth/user-not-found') {
             message = 'No account found with this email.';
@@ -119,9 +156,27 @@ window.handleLogin = async function() {
             message = 'Incorrect password.';
         } else if (error.code === 'auth/invalid-email') {
             message = 'Invalid email address.';
+        } else if (error.code === 'auth/invalid-credential') {
+            message = 'Invalid email or password. Please check your credentials.';
+        } else if (error.code === 'auth/too-many-requests') {
+            message = 'Too many failed login attempts. Please try again later.';
+        } else if (error.code === 'auth/network-request-failed') {
+            message = 'Network error. Please check your internet connection.';
+        } else {
+            message = `Login failed: ${error.message}`;
         }
-        await showModal(message);
+        
+        console.log('Showing modal with message:', message);
+        try {
+            await showModal(message);
+            console.log('Modal shown successfully');
+        } catch (modalError) {
+            console.error('Modal error:', modalError);
+            alert(message); // Fallback
+        }
     }
+    
+    console.log('=== LOGIN ENDED ===');
 }
 
 // Handle registration
@@ -233,8 +288,16 @@ window.handleLogout = async function() {
 // Update user display in settings
 function updateUserDisplay() {
     if (currentUser) {
-        document.getElementById('userEmail').textContent = currentUser.email;
-        document.getElementById('userRoleDisplay').textContent = userRole.charAt(0).toUpperCase() + userRole.slice(1);
+        const userEmailEl = document.getElementById('userEmail');
+        if (userEmailEl) {
+            userEmailEl.textContent = currentUser.email;
+        }
+        
+        // userRoleDisplay was removed from settings page
+        const userRoleEl = document.getElementById('userRoleDisplay');
+        if (userRoleEl) {
+            userRoleEl.textContent = userRole.charAt(0).toUpperCase() + userRole.slice(1);
+        }
     }
 }
 
@@ -505,11 +568,15 @@ async function calculateStockFromBills() {
         });
     });
     
-    // Apply adjustments
+    // Apply adjustments (apply the change delta, not absolute newQuantity)
     stockAdjustments.forEach(adj => {
-        if (stock[adj.itemName]) {
-            stock[adj.itemName].quantity = adj.newQuantity;
+        if (!stock[adj.itemName]) {
+            stock[adj.itemName] = { quantity: 0, avgRate: 0, totalValue: 0 };
         }
+        // Apply the change amount (delta) to current calculated stock
+        stock[adj.itemName].quantity += adj.change;
+        // Ensure non-negative
+        stock[adj.itemName].quantity = Math.max(0, stock[adj.itemName].quantity);
     });
 }
 
@@ -925,65 +992,6 @@ function showToast(message, duration = 2000) {
     }, duration);
 }
 
-// Pull to refresh
-let pullStartY = 0;
-let isPulling = false;
-
-function initPullToRefresh() {
-    const tabs = document.querySelectorAll('.tab');
-    
-    tabs.forEach(tab => {
-        // Skip pull-to-refresh on billing page to avoid accidental refreshes
-        if (tab.id === 'billing') {
-            return;
-        }
-        
-        tab.addEventListener('touchstart', (e) => {
-            if (tab.scrollTop === 0) {
-                pullStartY = e.touches[0].clientY;
-                isPulling = true;
-            }
-        }, { passive: true });
-        
-        tab.addEventListener('touchmove', (e) => {
-            if (!isPulling) return;
-            
-            const pullDistance = e.touches[0].clientY - pullStartY;
-            
-            if (pullDistance > 80 && tab.scrollTop === 0) {
-                hapticFeedback('medium');
-                isPulling = false;
-                refreshCurrentTab();
-            }
-        }, { passive: true });
-        
-        tab.addEventListener('touchend', () => {
-            isPulling = false;
-        }, { passive: true });
-    });
-}
-
-function refreshCurrentTab() {
-    const activeTab = document.querySelector('.tab.active');
-    if (!activeTab) return;
-    
-    showLoading();
-    
-    setTimeout(() => {
-        const tabId = activeTab.id;
-        
-        if (tabId === 'history') renderHistory();
-        else if (tabId === 'reports') renderReports();
-        else if (tabId === 'stock') renderStock();
-        else if (tabId === 'items') renderItems();
-        else if (tabId === 'sales') renderSalesBill();
-        else if (tabId === 'payments') renderPaymentsHistory();
-        
-        hideLoading();
-        hapticFeedback('light');
-    }, 500);
-}
-
 function showModal(message, title = 'Alert', showCancel = false) {
     return new Promise((resolve) => {
         modalResolve = resolve;
@@ -1204,7 +1212,7 @@ function renderHistory() {
                 <span>Bill #${bill.id}</span>
                 <span style="color: #28a745; font-weight: 700;">₹ ${bill.total}</span>
             </div>
-            <div class="history-date">${bill.date}</div>
+            <div class="history-date">${bill.date}${bill.createdByName ? ` • By: ${bill.createdByName}` : ''}</div>
             <div class="history-summary">
                 ${bill.items.length} items • ${totalPackets} packets • ${totalWeight}kg
             </div>
@@ -1959,6 +1967,10 @@ function renderItems() {
     container.innerHTML = "";
 
     items.forEach((item, index) => {
+        // Initialize rates and saleRates if they don't exist
+        if (!item.rates) item.rates = [];
+        if (!item.saleRates) item.saleRates = [];
+        
         let card = document.createElement("div");
         card.className = "item-card";
 
@@ -1971,7 +1983,7 @@ function renderItems() {
         `).join('');
 
         // Build sale rates - wrap each rate+button in a container
-        const saleRatesHTML = (item.saleRates || []).map((rate, rIndex) => `
+        const saleRatesHTML = item.saleRates.map((rate, rIndex) => `
             <div class="rate-group">
                 <input type="number" value="${rate}" class="rate-input sale" oninput="updateSaleRate(${index}, ${rIndex}, this.value)" placeholder="Rate" />
                 <button class="delete-rate" onclick="deleteSaleRate(${index}, ${rIndex})">×</button>
@@ -2601,7 +2613,11 @@ async function printBill() {
         laborCalc: totalHeavyPackets > 0 ? `${settings.laborRate} × ${totalHeavyPackets}` : '',
         items: billItems.map(b => {
             const item = items.find(i => i.name === b.name);
+            // Always use Hindi name for bills, show warning if missing
             const printName = (item && item.hindiName) ? item.hindiName : b.name;
+            if (item && !item.hindiName) {
+                console.warn(`Hindi name missing for item: ${b.name}`);
+            }
             return {
                 name: printName,
                 rate: b.rate,
@@ -3543,7 +3559,7 @@ function renderPaymentsHistory() {
                 </div>
             </div>
             ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${payment.remarks}</div>` : ''}
-            <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${payment.date}</div>
+            <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${payment.date}${payment.createdByName ? ` • By: ${payment.createdByName}` : ''}</div>
         </div>
     `).join('');
 }
@@ -3560,10 +3576,15 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Listen for auth state changes
     auth.onAuthStateChanged((user) => {
+        console.log('=== AUTH STATE CHANGED ===');
+        console.log('User:', user ? user.uid : 'null');
+        
         if (user) {
             currentUser = user;
+            console.log('Calling loadUserDataAndInitialize...');
             loadUserDataAndInitialize();
         } else {
+            console.log('No user, showing auth screen');
             // Show auth screen
             document.getElementById('authScreen')?.classList.remove('hidden');
             document.getElementById('appContent')?.classList.add('hidden');
@@ -3571,21 +3592,26 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Initialize mobile UI enhancements
-    initPullToRefresh();
 });
 
 async function loadUserDataAndInitialize() {
+    console.log('=== LOAD USER DATA AND INITIALIZE ===');
     showLoading();
     
     try {
+        console.log('Loading user document...');
         // Load user role
         const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        console.log('User doc exists:', userDoc.exists);
+        
         if (userDoc.exists) {
             const userData = userDoc.data();
             userRole = userData.role || 'staff';
             userName = userData.name || currentUser.email.split('@')[0];
+            console.log('User role:', userRole);
+            console.log('User name:', userName);
         } else {
+            console.log('Creating new user document...');
             // First time user - create default user document
             userName = currentUser.email.split('@')[0];
             await db.collection('users').doc(currentUser.uid).set({
@@ -3598,6 +3624,7 @@ async function loadUserDataAndInitialize() {
             console.log('Created new user with owner role');
         }
         
+        console.log('Setting up real-time listeners...');
         // Set up real-time listeners for live sync
         setupRealtimeListeners();
         
@@ -3636,12 +3663,28 @@ async function loadUserDataAndInitialize() {
             billingNavLink.classList.add("active");
         }
         
+        console.log('Hiding auth screen and showing app content...');
         // Show app content
-        document.getElementById('authScreen')?.classList.add('hidden');
-        document.getElementById('appContent')?.classList.remove('hidden');
+        const authScreen = document.getElementById('authScreen');
+        const appContent = document.getElementById('appContent');
+        
+        console.log('Auth screen element:', !!authScreen);
+        console.log('App content element:', !!appContent);
+        
+        if (authScreen) {
+            authScreen.classList.add('hidden');
+            console.log('Auth screen hidden');
+        }
+        
+        if (appContent) {
+            appContent.classList.remove('hidden');
+            console.log('App content shown');
+        }
         
         hideLoading();
+        console.log('=== INITIALIZATION COMPLETE ===');
     } catch (error) {
+        console.error('=== ERROR LOADING DATA ===');
         console.error('Error loading data:', error);
         hideLoading();
         await showModal('Failed to load data. Please try again.');
@@ -3886,3 +3929,249 @@ function escapeHtml(text) {
     };
     return text.replace(/[&<>"']/g, m => map[m]);
 }
+
+// -------------------- EXCEL IMPORT/EXPORT FOR ITEMS --------------------
+
+window.exportItemsToExcel = async function() {
+    try {
+        if (items.length === 0) {
+            await showModal('No items to export');
+            return;
+        }
+        
+        console.log('Exporting items:', items.length);
+        
+        // Prepare data for export
+        const exportData = items.map(item => {
+            // Handle multiple rates as comma-separated values
+            const purchaseRates = (item.rates && item.rates.length > 0) 
+                ? item.rates.join(', ') 
+                : '';
+            const saleRates = (item.saleRates && item.saleRates.length > 0) 
+                ? item.saleRates.join(', ') 
+                : '';
+            
+            console.log('Item:', item.name, 'Purchase Rates:', purchaseRates, 'Sale Rates:', saleRates);
+            
+            return {
+                'Item Name': item.name || '',
+                'Hindi Name': item.hindiName || '',
+                'Purchase Rates': purchaseRates,
+                'Sale Rates': saleRates
+            };
+        });
+        
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 25 }, // Item Name
+            { wch: 25 }, // Hindi Name
+            { wch: 20 }, // Purchase Rates (wider for comma-separated)
+            { wch: 20 }  // Sale Rates (wider for comma-separated)
+        ];
+        
+        XLSX.utils.book_append_sheet(wb, ws, 'Items');
+        
+        // Generate filename with current date
+        const date = new Date().toISOString().split('T')[0];
+        const filename = `Items_${date}.xlsx`;
+        
+        // Download file
+        XLSX.writeFile(wb, filename);
+        
+        hapticFeedback('medium');
+        showToast(`✓ Exported ${items.length} items to ${filename}`);
+        console.log('Export completed:', filename);
+    } catch (error) {
+        console.error('Error exporting items:', error);
+        await showModal('Failed to export items to Excel');
+    }
+};
+
+window.importItemsFromExcel = async function(event) {
+    console.log('=== IMPORT STARTED ===');
+    const file = event.target.files[0];
+    if (!file) {
+        console.log('No file selected');
+        return;
+    }
+    
+    console.log('File:', file.name, 'Size:', file.size, 'Type:', file.type);
+    
+    try {
+        showLoading();
+        
+        console.log('Reading file...');
+        const data = await file.arrayBuffer();
+        console.log('File read, size:', data.byteLength);
+        
+        console.log('Parsing Excel...');
+        const workbook = XLSX.read(data);
+        console.log('Sheets found:', workbook.SheetNames);
+        
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        console.log('Rows found:', jsonData.length);
+        console.log('First row:', jsonData[0]);
+        
+        if (jsonData.length === 0) {
+            hideLoading();
+            await showModal('No data found in Excel file');
+            event.target.value = ''; // Reset file input
+            return;
+        }
+        
+        // Validate and prepare items
+        const newItems = [];
+        const errors = [];
+        const seenNames = new Set(); // Track seen item names to prevent duplicates
+        
+        jsonData.forEach((row, index) => {
+            const rowNum = index + 2; // Excel row number (1-indexed + header)
+            
+            console.log(`Row ${rowNum}:`, row);
+            
+            // Check required fields
+            const itemName = row['Item Name'] || row['item name'] || row['Name'] || row['name'];
+            
+            if (!itemName || itemName.toString().trim() === '') {
+                console.log(`Row ${rowNum}: Missing or empty item name, skipping`);
+                return; // Skip empty rows
+            }
+            
+            const trimmedName = itemName.toString().trim();
+            const nameLower = trimmedName.toLowerCase();
+            
+            // Check for duplicates in the Excel file
+            if (seenNames.has(nameLower)) {
+                console.log(`Row ${rowNum}: Duplicate item "${trimmedName}", skipping`);
+                errors.push(`Row ${rowNum}: Duplicate item "${trimmedName}" - only first occurrence will be imported`);
+                return;
+            }
+            seenNames.add(nameLower);
+            
+            const hindiName = (row['Hindi Name'] || row['hindi name'] || row['HindiName'] || '').toString().trim();
+            
+            // Parse purchase rates (comma-separated or single value)
+            const purchaseRatesStr = (row['Purchase Rates'] || row['purchase rates'] || row['Purchase Rate'] || row['purchase rate'] || row['Rate'] || row['rate'] || '').toString().trim();
+            let purchaseRates = [];
+            if (purchaseRatesStr) {
+                purchaseRates = purchaseRatesStr
+                    .split(',')
+                    .map(r => parseFloat(r.trim()))
+                    .filter(r => !isNaN(r) && r > 0);
+            }
+            
+            // Parse sale rates (comma-separated or single value)
+            const saleRatesStr = (row['Sale Rates'] || row['sale rates'] || row['Sale Rate'] || row['sale rate'] || row['SaleRate'] || '').toString().trim();
+            let saleRates = [];
+            if (saleRatesStr) {
+                saleRates = saleRatesStr
+                    .split(',')
+                    .map(r => parseFloat(r.trim()))
+                    .filter(r => !isNaN(r) && r > 0);
+            }
+            
+            console.log(`  Item: ${trimmedName}, Hindi: ${hindiName}, Purchase Rates:`, purchaseRates, 'Sale Rates:', saleRates);
+            
+            // Add item to import list
+            newItems.push({
+                name: trimmedName,
+                hindiName: hindiName,
+                rates: purchaseRates,
+                saleRates: saleRates
+            });
+        });
+        
+        if (newItems.length === 0) {
+            hideLoading();
+            await showModal('No valid items found in Excel file');
+            event.target.value = '';
+            return;
+        }
+        
+        if (errors.length > 0) {
+            console.warn('Import warnings:', errors);
+            // Show warnings but continue with import
+        }
+        
+        // Confirm import - this will replace all existing items
+        console.log('Prepared items:', newItems.length);
+        
+        // Hide loading before showing modal so user can see it
+        hideLoading();
+        
+        const confirmed = await showModal(
+            `Replace all existing items with ${newItems.length} items from Excel?\n\n` +
+            `⚠️ This will delete all current items!\n\n` +
+            `Continue?`,
+            'Confirm Import',
+            true
+        );
+        
+        console.log('User confirmed:', confirmed);
+        
+        // Show loading again for the import process
+        if (confirmed) {
+            showLoading();
+        }
+        
+        if (!confirmed) {
+            hideLoading();
+            event.target.value = '';
+            return;
+        }
+        
+        console.log('Starting Firestore import...');
+        console.log('Deleting existing items...');
+        
+        // Delete all existing items
+        const existingItemsSnapshot = await db.collection('items').get();
+        const deletePromises = existingItemsSnapshot.docs.map(doc => doc.ref.delete());
+        await Promise.all(deletePromises);
+        console.log('Deleted', existingItemsSnapshot.size, 'existing items');
+        
+        // Import new items
+        let imported = 0;
+        
+        for (const item of newItems) {
+            console.log('Adding item:', item.name, 'rates:', item.rates, 'saleRates:', item.saleRates);
+            // Add new item with proper structure (rates and saleRates as arrays)
+            await db.collection('items').add({
+                name: item.name,
+                hindiName: item.hindiName,
+                rates: item.rates || [],
+                saleRates: item.saleRates || [],
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            imported++;
+            console.log('Added:', item.name);
+        }
+        
+        console.log('Reloading items from Firestore...');
+        // Reload items from Firestore
+        await loadItemsFromFirestore();
+        renderItems();
+        loadItemsDropdown();
+        
+        hideLoading();
+        hapticFeedback('heavy');
+        showToast(`✓ Replaced all items with ${imported} items from Excel`);
+        console.log('=== IMPORT COMPLETED ===');
+        
+    } catch (error) {
+        hideLoading();
+        console.error('=== IMPORT ERROR ===');
+        console.error('Error:', error);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+        await showModal(`Failed to import items:\n${error.message}`);
+    }
+    
+    // Reset file input
+    event.target.value = '';
+    console.log('=== IMPORT ENDED ===');
+};
