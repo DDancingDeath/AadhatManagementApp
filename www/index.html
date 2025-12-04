@@ -113,6 +113,10 @@
                 <span class="nav-icon">📜</span>
                 History
             </a>
+            <a href="#" onclick="showTabFromNav('due', event)">
+                <span class="nav-icon">💸</span>
+                Outstanding
+            </a>
             <a href="#" onclick="showTabFromNav('reports', event)">
                 <span class="nav-icon">📈</span>
                 Reports
@@ -124,6 +128,14 @@
             <a href="#" onclick="showTabFromNav('settings', event)">
                 <span class="nav-icon">⚙️</span>
                 Settings
+            </a>
+            <a href="#" onclick="showTabFromNav('finance', event)">
+                <span class="nav-icon">💰</span>
+                Finance
+            </a>
+            <a href="#" onclick="showTabFromNav('analytics', event)">
+                <span class="nav-icon">📊</span>
+                Analytics
             </a>
             <a href="#" onclick="showTabFromNav('users', event)" id="usersNavLink" style="display: none;">
                 <span class="nav-icon">👥</span>
@@ -163,6 +175,23 @@
         </div>
     </div>
 
+    <!-- BILL DETAILS OVERLAY -->
+    <div class="bill-details-overlay" id="billDetailsOverlay">
+        <div class="bill-details-container">
+            <div class="bill-details-header">
+                <h2 id="billDetailsTitle">Bill Details</h2>
+                <button class="bill-details-close" onclick="closeBillDetails()">✕</button>
+            </div>
+            <div class="bill-details-content" id="billDetailsContent">
+                <!-- Bill content will be inserted here -->
+            </div>
+            <div class="bill-details-footer">
+                <button class="btn-secondary" onclick="closeBillDetails()">Close</button>
+                <button class="btn-primary" id="billEditBtn" onclick="editBillDetails()">Edit</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ITEMS TAB -->
     <div id="items" class="tab">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
@@ -183,7 +212,10 @@
     <div id="billing" class="tab active">
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: nowrap; gap: 8px;">
-            <h2 id="billingTitle" style="margin: 0; font-size: 20px; white-space: nowrap;">Purchase Entry</h2>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <h2 id="billingTitle" style="margin: 0; font-size: 20px; white-space: nowrap;">Purchase Entry</h2>
+                <span id="draftIndicator" style="font-size: 12px; color: #28a745; display: none;">💾 Draft saved</span>
+            </div>
             <button class="mode-toggle-btn" id="modeToggleBtn" onclick="toggleTransactionMode()">
                 💰 Switch to Sale
             </button>
@@ -191,7 +223,10 @@
 
         <div class="form-row">
             <label style="width: 100px;">Customer:</label>
-            <input type="text" id="customerName" list="customerOptions" placeholder="Enter customer name (Optional)" />
+            <div style="display: flex; gap: 8px; flex: 1; align-items: center;">
+                <input type="text" id="customerName" list="customerOptions" placeholder="Enter customer name (Optional)" style="flex: 1;" oninput="saveBillDraft()" />
+                <button onclick="pickContactNumber()" style="padding: 8px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px; display: flex; align-items: center; justify-content: center;" title="Pick Contact">👤</button>
+            </div>
             <datalist id="customerOptions"></datalist>
         </div>
 
@@ -259,7 +294,7 @@
                     <span>Labor (₹):</span>
                 </label>
                 <span id="laborCalculation" style="color: #666; font-size: 13px;">6 × 0</span>
-                <input type="number" inputmode="decimal" id="manualLaborCharges" value="0" oninput="updateTotals()" placeholder="0" />
+                <input type="number" inputmode="decimal" id="manualLaborCharges" value="0" oninput="updateTotals(); saveBillDraft();" placeholder="0" />
             </div>
             
             <div class="total-row grand-total">
@@ -270,24 +305,44 @@
             <div class="payment-row">
                 <label>Online (₹):</label>
                 <input type="checkbox" id="onlineCheckbox" onchange="fillPayableAmount('online')" />
-                <input type="number" inputmode="decimal" id="onlinePayment" oninput="updatePaymentTotal()" placeholder="0" />
+                <input type="number" inputmode="decimal" id="onlinePayment" oninput="updatePaymentTotal(); saveBillDraft();" placeholder="0" />
             </div>
             
             <div class="payment-row">
                 <label>Cash (₹):</label>
                 <input type="checkbox" id="cashCheckbox" onchange="fillPayableAmount('cash')" />
-                <input type="number" inputmode="decimal" id="cashPayment" oninput="updatePaymentTotal()" placeholder="0" />
+                <input type="number" inputmode="decimal" id="cashPayment" oninput="updatePaymentTotal(); saveBillDraft();" placeholder="0" />
             </div>
             
             <div class="payment-row payment-total">
                 <span>Total Paid:</span>
                 <strong>₹ <span id="totalPayment">0</span></strong>
             </div>
+            
+            <div class="payment-row">
+                <label>Due (₹):</label>
+                <input type="checkbox" id="dueCheckbox" onchange="fillPayableAmount('due')" />
+                <input type="number" inputmode="decimal" id="dueAmount" oninput="updatePaymentTotal(); saveBillDraft();" placeholder="0" />
+            </div>
         </div>
 
-        <div style="display: flex; gap: 12px; margin-top: 16px;">
-            <button class="save-btn save-purchase-btn" id="saveBillBtn" onclick="saveBillOnly()">Save Purchase</button>
-            <button class="print-btn print-purchase-btn" id="printBillBtn" onclick="printBill()">Print Purchase</button>
+        <div class="form-row" style="margin-top: 16px;">
+            <label style="width: 100px;">Comments:</label>
+            <input type="text" id="billComments" placeholder="GPay name, payment date, notes, etc. (Optional)" oninput="saveBillDraft()" />
+        </div>
+
+        <!-- Canvas Debug Preview -->
+        <div style="margin-top: 20px; text-align: center;">
+            <img id="canvasDebugPreview" style="display: none;" alt="Receipt Preview">
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
+            <button onclick="shareOnWhatsApp()" style="flex: 1; min-width: 140px; padding: 12px 24px; background: #25D366; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                WhatsApp
+            </button>
+            <button class="save-btn save-purchase-btn" id="saveBillBtn" onclick="saveBillOnly()" style="flex: 1; min-width: 140px;">Save</button>
+            <button class="print-btn print-purchase-btn" id="printBillBtn" onclick="printBill()" style="flex: 1; min-width: 140px;">Print</button>
         </div>
     </div>
 
@@ -300,64 +355,99 @@
         </div>
     </div>
 
+    <!-- OUTSTANDING TAB -->
+    <div id="due" class="tab">
+        <h2>Outstanding</h2>
+        
+        <div style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+            <button class="filter-btn active" onclick="filterDue('purchase', event)">Purchases</button>
+            <button class="filter-btn" onclick="filterDue('sale', event)">Sales</button>
+        </div>
+
+        <div id="dueList">
+            <p style="text-align: center; color: #888; margin-top: 40px;">No outstanding amounts</p>
+        </div>
+    </div>
+
     <!-- STOCK TAB -->
     <div id="stock" class="tab">
         <h2>Stock Management</h2>
         
-        <div class="settings-card">
-            <h3>Manual Stock Adjustment</h3>
-            
-            <div class="form-row">
-                <label>Select Item:</label>
-                <select id="adjustItem" onchange="loadAdjustItemStock()">
-                    <option value="">Select item</option>
-                </select>
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterStockTab('current', event)">Current Stock</button>
+            <button class="filter-btn" onclick="filterStockTab('adjustment', event)">Stock Adjustment</button>
+        </div>
+
+        <div id="currentStockSection">
+            <h3>Current Stock</h3>
+            <div id="stockList">
+                <p style="text-align: center; color: #888; margin-top: 40px;">No stock data available</p>
             </div>
-            
-            <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 12px 0;">
-                <div style="font-size: 14px; color: #333;">
-                    <strong>Current Stock:</strong> <span id="currentStockDisplay">-</span> kg
+        </div>
+
+        <div id="stockAdjustmentSection" style="display: none;">
+            <div class="settings-card">
+                <h3>Manual Stock Adjustment</h3>
+                
+                <div class="form-row">
+                    <label>Select Item:</label>
+                    <select id="adjustItem" onchange="loadAdjustItemStock()">
+                        <option value="">Select item</option>
+                    </select>
                 </div>
+                
+                <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 12px 0;">
+                    <div style="font-size: 14px; color: #333;">
+                        <strong>Current Stock:</strong> <span id="currentStockDisplay">-</span> kg
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <label>Adjustment Type:</label>
+                    <select id="adjustType" onchange="updateAdjustmentPlaceholder()">
+                        <option value="add">Add Stock (+)</option>
+                        <option value="remove">Remove Stock (-)</option>
+                        <option value="set">Set Stock (=)</option>
+                    </select>
+                </div>
+                
+                <div class="form-row">
+                    <label>Quantity (kg):</label>
+                    <input type="number" inputmode="decimal" id="adjustQuantity" placeholder="Enter quantity" />
+                </div>
+                
+                <div class="form-row">
+                    <label>Reason (Optional):</label>
+                    <input type="text" id="adjustReason" placeholder="e.g., Damaged goods, Manual count" />
+                </div>
+                
+                <button class="add-to-bill-btn" onclick="applyStockAdjustment()">Apply Adjustment</button>
             </div>
             
-            <div class="form-row">
-                <label>Adjustment Type:</label>
-                <select id="adjustType" onchange="updateAdjustmentPlaceholder()">
-                    <option value="add">Add Stock (+)</option>
-                    <option value="remove">Remove Stock (-)</option>
-                    <option value="set">Set Stock (=)</option>
-                </select>
+            <h3>Adjustment History</h3>
+            <div id="adjustmentHistory">
+                <p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>
             </div>
-            
-            <div class="form-row">
-                <label>Quantity (kg):</label>
-                <input type="number" inputmode="decimal" id="adjustQuantity" placeholder="Enter quantity" />
-            </div>
-            
-            <div class="form-row">
-                <label>Reason (Optional):</label>
-                <input type="text" id="adjustReason" placeholder="e.g., Damaged goods, Manual count" />
-            </div>
-            
-            <button class="add-to-bill-btn" onclick="applyStockAdjustment()">Apply Adjustment</button>
-        </div>
-        
-        <h3>Current Stock</h3>
-        <div id="stockList">
-            <p style="text-align: center; color: #888; margin-top: 40px;">No stock data available</p>
-        </div>
-        
-        <h3>Adjustment History</h3>
-        <div id="adjustmentHistory">
-            <p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>
         </div>
     </div>
 
     <!-- SALES TAB -->
     <div id="sales" class="tab">
-        <h2>Sales Entry</h2>
+        <h2>Wholesale Sales</h2>
 
-        <label>Select Item:</label>
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterSalesTab('sales', event)">Sales</button>
+            <button class="filter-btn" onclick="filterSalesTab('outstanding', event)">Outstanding</button>
+        </div>
+
+        <div id="salesEntrySection">
+            <div class="form-row" style="margin-bottom: 16px;">
+                <label style="width: 100px;">Customer:</label>
+                <input type="text" id="wholesaleCustomerName" list="wholesaleCustomerOptions" placeholder="Enter customer name" style="flex: 1;" />
+                <datalist id="wholesaleCustomerOptions"></datalist>
+            </div>
+
+            <label>Select Item:</label>
         <select id="sellItem" onchange="loadSellItemDetails()">
             <option value="">Select item</option>
         </select>
@@ -402,41 +492,112 @@
         </div>
 
         <button class="print-btn" onclick="completeSale()">Complete Sale</button>
+
+        <h3>Sales History</h3>
+        <div id="salesHistoryList">
+            <p style="text-align: center; color: #888; margin-top: 20px;">No sales yet</p>
+        </div>
+        </div>
+
+        <div id="salesOutstandingSection" style="display: none;">
+            <div id="salesOutstandingList">
+                <p style="text-align: center; color: #888; margin-top: 20px;">No outstanding payments</p>
+            </div>
+        </div>
     </div>
 
     <!-- MISCELLANEOUS TAB -->
     <div id="payments" class="tab">
         <h2>Miscellaneous Expenses</h2>
 
-        <div class="form-row">
-            <label>Payment Type:</label>
-            <input type="text" id="paymentType" list="paymentTypeOptions" placeholder="Enter payment type" />
-            <datalist id="paymentTypeOptions"></datalist>
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterExpenseTab('business', event)">Business Expenses</button>
+            <button class="filter-btn" onclick="filterExpenseTab('personal', event)">Personal Expenses</button>
         </div>
 
-        <div class="form-row">
-            <label>Amount (₹):</label>
-            <input type="number" inputmode="decimal" id="paymentAmount" placeholder="Enter amount" />
+        <!-- Business Expenses Section -->
+        <div id="businessExpenseSection">
+            <div class="form-row">
+                <label>Expense Type:</label>
+                <input type="text" id="businessExpenseType" list="businessExpenseTypeOptions" placeholder="Enter expense type" />
+                <datalist id="businessExpenseTypeOptions">
+                    <option value="Labor">
+                    <option value="Staff Salary">
+                    <option value="Weighing Machine">
+                    <option value="Electricity">
+                    <option value="Rent">
+                    <option value="Maintenance">
+                    <option value="Transportation">
+                </datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="businessExpenseAmount" placeholder="Enter amount" />
+            </div>
+
+            <div class="form-row">
+                <label>Person Name (Optional):</label>
+                <input type="text" id="businessExpensePerson" list="businessExpensePersonOptions" placeholder="Enter name" />
+                <datalist id="businessExpensePersonOptions"></datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Remarks (Optional):</label>
+                <input type="text" id="businessExpenseRemarks" placeholder="Enter remarks" />
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="save-btn" onclick="saveBusinessExpense()">Save Expense</button>
+                <button class="print-btn" onclick="saveAndPrintBusinessExpense()">Print Expense</button>
+            </div>
+
+            <h3>Business Expense History</h3>
+            <div id="businessExpenseHistoryList">
+                <p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>
+            </div>
         </div>
 
-        <div class="form-row">
-            <label>Person (Optional):</label>
-            <input type="text" id="paymentPersonName" placeholder="Enter name" />
-        </div>
+        <!-- Personal Expenses Section -->
+        <div id="personalExpenseSection" style="display: none;">
+            <div class="form-row">
+                <label>Expense Type:</label>
+                <input type="text" id="personalExpenseType" list="personalExpenseTypeOptions" placeholder="Enter expense type" />
+                <datalist id="personalExpenseTypeOptions">
+                    <option value="Newspaper">
+                    <option value="Bike Servicing">
+                    <option value="Phone Bill">
+                    <option value="Personal Shopping">
+                    <option value="Medical">
+                    <option value="Entertainment">
+                </datalist>
+            </div>
 
-        <div class="form-row">
-            <label>Remarks (Optional):</label>
-            <input type="text" id="paymentRemarks" placeholder="Enter remarks" />
-        </div>
+            <div class="form-row">
+                <label>Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="personalExpenseAmount" placeholder="Enter amount" />
+            </div>
 
-        <div style="display: flex; gap: 12px; margin-top: 16px;">
-            <button class="save-btn" onclick="savePayment()">Save Payment</button>
-            <button class="print-btn" onclick="saveAndPrintPayment()">Print Payment</button>
-        </div>
+            <div class="form-row">
+                <label>Person Name (Optional):</label>
+                <input type="text" id="personalExpensePerson" list="personalExpensePersonOptions" placeholder="Enter name" />
+                <datalist id="personalExpensePersonOptions"></datalist>
+            </div>
 
-        <h3>Expense History</h3>
-        <div id="paymentsHistoryList">
-            <p style="text-align: center; color: #888; margin-top: 40px;">No expenses recorded yet</p>
+            <div class="form-row">
+                <label>Remarks (Optional):</label>
+                <input type="text" id="personalExpenseRemarks" placeholder="Enter remarks" />
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="save-btn" onclick="savePersonalExpense()">Save Expense</button>
+                <button class="print-btn" onclick="saveAndPrintPersonalExpense()">Print Expense</button>
+            </div>
+
+            <h3>Personal Expense History</h3>
+            <div id="personalExpenseHistoryList">
+                <p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>
+            </div>
         </div>
     </div>
 
@@ -528,6 +689,16 @@
                 <h3>Total Payment</h3>
                 <p class="report-value">₹ <span id="totalPaymentReport">0</span></p>
             </div>
+
+            <div class="report-card" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+                <h3>Purchase Outstanding</h3>
+                <p class="report-value" style="color: #dc3545;">₹ <span id="purchaseOutstanding">0</span></p>
+            </div>
+
+            <div class="report-card" style="background: #d1ecf1; border-left: 4px solid #17a2b8;">
+                <h3>Sale Outstanding</h3>
+                <p class="report-value" style="color: #28a745;">₹ <span id="saleOutstanding">0</span></p>
+            </div>
         </div>
 
         <h3>Purchase Trends</h3>
@@ -563,6 +734,289 @@
                 <input type="checkbox" id="settingAutoLabor" checked onchange="saveSettings()">
                 <span>Enable automatic labor charges by default</span>
             </label>
+        </div>
+    </div>
+
+    <!-- FINANCE TAB -->
+    <div id="finance" class="tab">
+        <h2>Finance & Accounting</h2>
+
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterFinanceTab('overview', event)">Overview</button>
+            <button class="filter-btn" onclick="filterFinanceTab('transactions', event)">Transactions</button>
+            <button class="filter-btn" onclick="filterFinanceTab('withdrawals', event)">Withdrawals</button>
+        </div>
+
+        <!-- OVERVIEW SECTION -->
+        <div id="financeOverviewSection">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <!-- Current Balance Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Current Balance</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="currentBalance">0</span></div>
+                </div>
+
+                <!-- Total Revenue Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Revenue</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalRevenue">0</span></div>
+                </div>
+
+                <!-- Total Profit Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Profit</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalProfit">0</span></div>
+                </div>
+
+                <!-- Business Expenses Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Business Expenses</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="businessExpensesTotal">0</span></div>
+                </div>
+
+                <!-- Personal Expenses Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Personal Expenses</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="personalExpensesTotal">0</span></div>
+                </div>
+
+                <!-- Total Withdrawals Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333;">
+                    <div style="font-size: 14px; opacity: 0.8; margin-bottom: 8px;">Total Withdrawals</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalWithdrawals">0</span></div>
+                </div>
+            </div>
+
+            <!-- Monthly Trends -->
+            <div class="settings-card">
+                <h3>Monthly Profit Trend</h3>
+                <div id="monthlyProfitChart" style="height: 200px; display: flex; align-items: flex-end; gap: 8px; padding: 20px 0;">
+                    <!-- Chart will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Account Breakdown -->
+            <div class="settings-card">
+                <h3>Account Breakdown</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding: 12px; text-align: left;">Description</th>
+                            <th style="padding: 12px; text-align: right;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountBreakdownTable">
+                        <!-- Breakdown will be rendered here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TRANSACTIONS SECTION -->
+        <div id="financeTransactionsSection" style="display: none;">
+            <div class="settings-card">
+                <h3>All Financial Transactions</h3>
+                <div id="allTransactionsList">
+                    <!-- Transactions will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- WITHDRAWALS SECTION -->
+        <div id="financeWithdrawalsSection" style="display: none;">
+            <div class="settings-card">
+                <h3>Record Money Withdrawal</h3>
+                
+                <div class="form-row">
+                    <label>Amount (₹):</label>
+                    <input type="number" inputmode="decimal" id="withdrawalAmount" placeholder="Enter amount" />
+                </div>
+
+                <div class="form-row">
+                    <label>Withdrawn By:</label>
+                    <input type="text" id="withdrawalPerson" list="withdrawalPersonOptions" placeholder="Enter name" />
+                    <datalist id="withdrawalPersonOptions"></datalist>
+                </div>
+
+                <div class="form-row">
+                    <label>Purpose:</label>
+                    <input type="text" id="withdrawalPurpose" placeholder="Enter purpose (Optional)" />
+                </div>
+
+                <div class="form-row">
+                    <label>Date:</label>
+                    <input type="date" id="withdrawalDate" />
+                </div>
+
+                <button class="save-btn" onclick="recordWithdrawal()">Record Withdrawal</button>
+            </div>
+
+            <div class="settings-card">
+                <h3>Withdrawal History</h3>
+                <div id="withdrawalHistoryList">
+                    <p style="text-align: center; color: #888; margin-top: 40px;">No withdrawals recorded yet</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ANALYTICS TAB -->
+    <div id="analytics" class="tab">
+        <h2>Business Analytics</h2>
+
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterAnalyticsTab('overview', event)">Overview</button>
+            <button class="filter-btn" onclick="filterAnalyticsTab('sales', event)">Sales</button>
+            <button class="filter-btn" onclick="filterAnalyticsTab('items', event)">Items</button>
+            <button class="filter-btn" onclick="filterAnalyticsTab('customers', event)">Customers</button>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div class="settings-card" style="margin-bottom: 20px;">
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <label style="font-weight: 500;">Period:</label>
+                <button class="filter-btn" onclick="setAnalyticsPeriod('7days', event)">Last 7 Days</button>
+                <button class="filter-btn active" onclick="setAnalyticsPeriod('30days', event)">Last 30 Days</button>
+                <button class="filter-btn" onclick="setAnalyticsPeriod('90days', event)">Last 90 Days</button>
+                <button class="filter-btn" onclick="setAnalyticsPeriod('all', event)">All Time</button>
+            </div>
+        </div>
+
+        <!-- OVERVIEW SECTION -->
+        <div id="analyticsOverviewSection">
+            <!-- Key Metrics -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div class="stats-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Transactions</div>
+                    <div style="font-size: 28px; font-weight: 700;"><span id="analyticsTransactionCount">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Avg Transaction Value</div>
+                    <div style="font-size: 28px; font-weight: 700;">₹<span id="analyticsAvgTransaction">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Profit</div>
+                    <div style="font-size: 28px; font-weight: 700;">₹<span id="analyticsTotalProfit">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Profit Margin</div>
+                    <div style="font-size: 28px; font-weight: 700;"><span id="analyticsProfitMargin">0</span>%</div>
+                </div>
+            </div>
+
+            <!-- Daily Trends Chart -->
+            <div class="settings-card">
+                <h3>Daily Revenue & Profit Trend</h3>
+                <div id="dailyTrendChart" style="height: 250px; overflow-x: auto;">
+                    <!-- Chart will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Business Health Score -->
+            <div class="settings-card">
+                <h3>Business Health Scorecard</h3>
+                <div id="healthScorecard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+                    <!-- Scorecard will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- SALES ANALYTICS SECTION -->
+        <div id="analyticsSalesSection" style="display: none;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div class="stats-card" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Sales</div>
+                    <div style="font-size: 28px; font-weight: 700;">₹<span id="analyticsTotalSales">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Purchases</div>
+                    <div style="font-size: 28px; font-weight: 700;">₹<span id="analyticsTotalPurchases">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #834d9b 0%, #d04ed6 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Sales Count</div>
+                    <div style="font-size: 28px; font-weight: 700;"><span id="analyticsSalesCount">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Purchase Count</div>
+                    <div style="font-size: 28px; font-weight: 700;"><span id="analyticsPurchaseCount">0</span></div>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Sales vs Purchases Timeline</h3>
+                <div id="salesPurchasesChart" style="height: 250px; overflow-x: auto;">
+                    <!-- Chart will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Payment Methods Breakdown</h3>
+                <div id="paymentMethodsChart" style="height: 200px; display: flex; justify-content: center; align-items: center; gap: 40px;">
+                    <!-- Pie chart will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ITEMS ANALYTICS SECTION -->
+        <div id="analyticsItemsSection" style="display: none;">
+            <div class="settings-card">
+                <h3>Top Selling Items (By Revenue)</h3>
+                <div id="topSellingItemsRevenue">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Top Selling Items (By Quantity)</h3>
+                <div id="topSellingItemsQuantity">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Most Purchased Items</h3>
+                <div id="topPurchasedItems">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Item Profitability Analysis</h3>
+                <div id="itemProfitability">
+                    <!-- Table will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- CUSTOMERS ANALYTICS SECTION -->
+        <div id="analyticsCustomersSection" style="display: none;">
+            <div class="settings-card">
+                <h3>Top Customers by Revenue</h3>
+                <div id="topCustomersByRevenue">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Top Suppliers by Volume</h3>
+                <div id="topSuppliersByVolume">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Customer Payment Behavior</h3>
+                <div id="customerPaymentBehavior">
+                    <!-- Analysis will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Customer Activity</h3>
+                <div id="customerActivity" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
+                    <!-- Stats will be rendered here -->
+                </div>
+            </div>
         </div>
     </div>
 

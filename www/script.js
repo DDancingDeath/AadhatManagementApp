@@ -474,14 +474,50 @@ async function loadBillsFromFirestore() {
 
 // Save bill to Firestore
 async function saveBillToFirestore(bill) {
-    const docRef = await db.collection('bills').add({
-        ...bill,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        createdBy: currentUser.uid,
-        createdByName: userName
-    });
-    bill.id = docRef.id;
-    return bill;
+    // Check if we're editing an existing bill
+    if (window.editingBillDocId) {
+        const oldBillSnapshot = await db.collection('bills').doc(window.editingBillDocId).get();
+        const oldBill = oldBillSnapshot.data();
+        
+        // Update the existing document
+        await db.collection('bills').doc(window.editingBillDocId).update({
+            ...bill,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedBy: currentUser.uid,
+            updatedByName: userName,
+            editHistory: firebase.firestore.FieldValue.arrayUnion({
+                editedAt: new Date().toLocaleString('en-IN'),
+                editedBy: userName,
+                previousData: {
+                    customerName: oldBill.customerName,
+                    total: oldBill.total,
+                    items: oldBill.items,
+                    laborCharges: oldBill.laborCharges
+                }
+            })
+        });
+        
+        bill.id = window.editingBillDocId;
+        
+        // Send notification to owners about the edit
+        await notifyOwnersOfEdit('purchase', window.editingBillDocId, oldBill, bill);
+        
+        // Clear edit mode flags
+        delete window.editingBillId;
+        delete window.editingBillDocId;
+        
+        return bill;
+    } else {
+        // Create new bill
+        const docRef = await db.collection('bills').add({
+            ...bill,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser.uid,
+            createdByName: userName
+        });
+        bill.id = docRef.id;
+        return bill;
+    }
 }
 
 // Load sales from Firestore
@@ -492,20 +528,61 @@ async function loadSalesFromFirestore() {
 
 // Save sale to Firestore
 async function saveSaleToFirestore(sale) {
-    const docRef = await db.collection('sales').add({
-        ...sale,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        createdBy: currentUser.uid,
-        createdByName: userName
-    });
-    sale.id = docRef.id;
-    return sale;
+    // Check if we're editing an existing sale
+    if (window.editingSaleDocId) {
+        const oldSaleSnapshot = await db.collection('sales').doc(window.editingSaleDocId).get();
+        const oldSale = oldSaleSnapshot.data();
+        
+        // Update the existing document
+        await db.collection('sales').doc(window.editingSaleDocId).update({
+            ...sale,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedBy: currentUser.uid,
+            updatedByName: userName,
+            editHistory: firebase.firestore.FieldValue.arrayUnion({
+                editedAt: new Date().toLocaleString('en-IN'),
+                editedBy: userName,
+                previousData: {
+                    customerName: oldSale.customerName,
+                    total: oldSale.total,
+                    items: oldSale.items
+                }
+            })
+        });
+        
+        sale.id = window.editingSaleDocId;
+        
+        // Send notification to owners about the edit
+        await notifyOwnersOfEdit('sale', window.editingSaleDocId, oldSale, sale);
+        
+        // Clear edit mode flags
+        delete window.editingSaleId;
+        delete window.editingSaleDocId;
+        
+        return sale;
+    } else {
+        // Create new sale
+        const docRef = await db.collection('sales').add({
+            ...sale,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser.uid,
+            createdByName: userName
+        });
+        sale.id = docRef.id;
+        return sale;
+    }
 }
 
 // Load payments from Firestore
 async function loadPaymentsFromFirestore() {
     const snapshot = await db.collection('payments').orderBy('date', 'desc').get();
-    paymentsHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    paymentsHistory = snapshot.docs.map(doc => {
+        const data = doc.data();
+        if (!data.category) {
+            data.category = 'business';
+        }
+        return { id: doc.id, ...data };
+    });
 }
 
 // Save payment to Firestore
@@ -563,7 +640,9 @@ async function calculateStockFromBills() {
     salesHistory.forEach(sale => {
         sale.items.forEach(item => {
             if (stock[item.name]) {
-                stock[item.name].quantity -= item.qty;
+                // Handle both qty (from billing tab) and quantity (from sales tab)
+                const saleQty = item.qty || item.quantity || 0;
+                stock[item.name].quantity -= saleQty;
             }
         });
     });
@@ -655,10 +734,123 @@ let salesItems = [];
 let salesHistory = [];
 let paymentsHistory = [];
 let stockAdjustments = [];
+let withdrawalsHistory = [];
 let currentDateFilter = 'today';
 let customDateRange = { from: null, to: null };
 let transactionMode = 'purchase'; // 'purchase' or 'sale'
 let reportFilters = { transaction: 'all', item: 'all', customer: 'all' };
+let customerPhoneNumber = ''; // Store phone number for WhatsApp
+
+// Auto-save draft bills to prevent data loss
+function saveBillDraft() {
+    try {
+        const draft = {
+            billItems: billItems,
+            currentWeights: currentWeights,
+            transactionMode: transactionMode,
+            customerName: document.getElementById('customerName')?.value || '',
+            customerPhone: customerPhoneNumber,
+            billComments: document.getElementById('billComments')?.value || '',
+            itemIndex: document.getElementById('billItem')?.value || '',
+            rate: document.getElementById('billRate')?.value || '',
+            laborCharges: document.getElementById('manualLaborCharges')?.value || 0,
+            cashPayment: document.getElementById('cashPayment')?.value || 0,
+            onlinePayment: document.getElementById('onlinePayment')?.value || 0,
+            dueAmount: document.getElementById('dueAmount')?.value || 0,
+            timestamp: Date.now()
+        };
+        localStorage.setItem('billDraft', JSON.stringify(draft));
+        
+        // Show draft saved indicator briefly
+        const indicator = document.getElementById('draftIndicator');
+        if (indicator) {
+            indicator.style.display = 'inline';
+            setTimeout(() => {
+                indicator.style.display = 'none';
+            }, 2000);
+        }
+    } catch (error) {
+        console.error('Error saving bill draft:', error);
+    }
+}
+
+function restoreBillDraft() {
+    try {
+        const draftStr = localStorage.getItem('billDraft');
+        if (!draftStr) return false;
+        
+        const draft = JSON.parse(draftStr);
+        
+        // Check if draft is not too old (less than 24 hours)
+        const ageHours = (Date.now() - draft.timestamp) / (1000 * 60 * 60);
+        if (ageHours > 24) {
+            localStorage.removeItem('billDraft');
+            return false;
+        }
+        
+        // Restore bill state
+        if (draft.billItems && draft.billItems.length > 0) {
+            billItems = draft.billItems;
+            currentWeights = draft.currentWeights || [];
+            transactionMode = draft.transactionMode || 'purchase';
+            
+            // Restore form fields
+            setTimeout(() => {
+                if (draft.customerName) {
+                    const customerEl = document.getElementById('customerName');
+                    if (customerEl) customerEl.value = draft.customerName;
+                }
+                if (draft.customerPhone) {
+                    customerPhoneNumber = draft.customerPhone;
+                }
+                if (draft.billComments) {
+                    const commentsEl = document.getElementById('billComments');
+                    if (commentsEl) commentsEl.value = draft.billComments;
+                }
+                if (draft.itemIndex) {
+                    const itemEl = document.getElementById('billItem');
+                    if (itemEl) itemEl.value = draft.itemIndex;
+                }
+                if (draft.rate) {
+                    const rateEl = document.getElementById('billRate');
+                    if (rateEl) rateEl.value = draft.rate;
+                }
+                if (draft.laborCharges) {
+                    const laborEl = document.getElementById('manualLaborCharges');
+                    if (laborEl) laborEl.value = draft.laborCharges;
+                }
+                if (draft.cashPayment) {
+                    const cashEl = document.getElementById('cashPayment');
+                    if (cashEl) cashEl.value = draft.cashPayment;
+                }
+                if (draft.onlinePayment) {
+                    const onlineEl = document.getElementById('onlinePayment');
+                    if (onlineEl) onlineEl.value = draft.onlinePayment;
+                }
+                if (draft.dueAmount) {
+                    const dueEl = document.getElementById('dueAmount');
+                    if (dueEl) dueEl.value = draft.dueAmount;
+                }
+                
+                renderBill();
+                renderWeights();
+                updateTotals();
+                updateModeUI();
+            }, 500);
+            
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('Error restoring bill draft:', error);
+        return false;
+    }
+}
+
+function clearBillDraft() {
+    localStorage.removeItem('billDraft');
+}
 
 // Settings with defaults
 let settings = JSON.parse(localStorage.getItem("settings")) || {
@@ -711,163 +903,361 @@ const GS = '\x1D';
 class BluetoothPrinterManager {
     constructor() {
         this.device = null;
-        this.characteristic = null;
+        this.printerName = null;
     }
 
     async scanDevices() {
         try {
-            if (!window.Capacitor || !window.Capacitor.Plugins.BluetoothLe) {
-                throw new Error('Bluetooth plugin not available');
+            if (!window.bluetoothSerial) {
+                throw new Error('Bluetooth Serial plugin not available');
             }
-
-            const { BluetoothLe } = window.Capacitor.Plugins;
-            
-            // Request location permission (required for Bluetooth on Android)
-            await BluetoothLe.initialize();
             
             showLoading();
-            const devices = await BluetoothLe.requestDevice({
-                services: [], // Empty to see all devices
-                optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] // Common printer service
-            });
+            console.log('[SCAN] Starting Bluetooth scan...');
             
-            hideLoading();
-            return devices;
+            return new Promise((resolve, reject) => {
+                window.bluetoothSerial.list(
+                    (devices) => {
+                        hideLoading();
+                        console.log('[SCAN] Found', devices.length, 'devices');
+                        // Format to match expected structure
+                        const formattedDevices = devices.map(d => ({
+                            address: d.address,
+                            name: d.name || d.address
+                        }));
+                        resolve(formattedDevices);
+                    },
+                    (error) => {
+                        hideLoading();
+                        console.error('[SCAN] Error:', error);
+                        reject(error);
+                    }
+                );
+            });
         } catch (error) {
             hideLoading();
-            console.error('Bluetooth scan error:', error);
+            console.error('[SCAN] Error:', error);
             throw error;
         }
     }
 
     async connect(deviceId) {
         try {
-            if (!window.Capacitor || !window.Capacitor.Plugins.BluetoothLe) {
-                throw new Error('Bluetooth plugin not available');
+            if (!window.bluetoothSerial) {
+                throw new Error('Bluetooth Serial plugin not available');
             }
-
-            const { BluetoothLe } = window.Capacitor.Plugins;
             
             showLoading();
-            await BluetoothLe.connect({ deviceId });
+            console.log('[CONNECT] Connecting to:', deviceId);
             
-            // Discover services
-            const services = await BluetoothLe.getServices({ deviceId });
-            
-            // Find printer service and characteristic
-            // Common UUIDs for thermal printers
-            const printerServiceUUIDs = [
-                '000018f0-0000-1000-8000-00805f9b34fb',
-                '49535343-fe7d-4ae5-8fa9-9fafd205e455'
-            ];
-            
-            const printerCharacteristicUUIDs = [
-                '00002af1-0000-1000-8000-00805f9b34fb',
-                '49535343-8841-43f4-a8d4-ecbe34729bb3'
-            ];
-
-            let foundService = null;
-            let foundCharacteristic = null;
-
-            for (const service of services.services) {
-                if (printerServiceUUIDs.includes(service.uuid.toLowerCase())) {
-                    foundService = service;
-                    const characteristics = await BluetoothLe.getCharacteristics({
-                        deviceId,
-                        service: service.uuid
-                    });
-                    
-                    for (const char of characteristics.characteristics) {
-                        if (printerCharacteristicUUIDs.includes(char.uuid.toLowerCase()) ||
-                            char.properties.write || char.properties.writeWithoutResponse) {
-                            foundCharacteristic = char;
-                            break;
-                        }
+            return new Promise((resolve, reject) => {
+                window.bluetoothSerial.connect(
+                    deviceId,
+                    () => {
+                        hideLoading();
+                        console.log('[CONNECT] Connected successfully');
+                        this.device = deviceId;
+                        connectedPrinter = this;
+                        resolve(true);
+                    },
+                    (error) => {
+                        hideLoading();
+                        console.error('[CONNECT] Error:', error);
+                        reject(error);
                     }
-                    break;
-                }
-            }
-
-            if (!foundCharacteristic) {
-                // Try to find any writable characteristic
-                for (const service of services.services) {
-                    const characteristics = await BluetoothLe.getCharacteristics({
-                        deviceId,
-                        service: service.uuid
-                    });
-                    
-                    for (const char of characteristics.characteristics) {
-                        if (char.properties.write || char.properties.writeWithoutResponse) {
-                            foundService = service;
-                            foundCharacteristic = char;
-                            break;
-                        }
-                    }
-                    if (foundCharacteristic) break;
-                }
-            }
-
-            if (!foundCharacteristic) {
-                throw new Error('No writable characteristic found on printer');
-            }
-
-            this.device = deviceId;
-            this.characteristic = {
-                service: foundService.uuid,
-                characteristic: foundCharacteristic.uuid
-            };
-            
-            connectedPrinter = this;
-            hideLoading();
-            return true;
+                );
+            });
         } catch (error) {
             hideLoading();
-            console.error('Bluetooth connect error:', error);
+            console.error('[CONNECT] Error:', error);
             throw error;
         }
     }
 
     async disconnect() {
-        if (this.device && window.Capacitor && window.Capacitor.Plugins.BluetoothLe) {
+        if (this.device && window.bluetoothSerial) {
             try {
-                const { BluetoothLe } = window.Capacitor.Plugins;
-                await BluetoothLe.disconnect({ deviceId: this.device });
-                this.device = null;
-                this.characteristic = null;
-                connectedPrinter = null;
+                return new Promise((resolve) => {
+                    window.bluetoothSerial.disconnect(
+                        () => {
+                            this.device = null;
+                            this.printerName = null;
+                            connectedPrinter = null;
+                            console.log('[DISCONNECT] Disconnected');
+                            resolve();
+                        },
+                        () => {
+                            // Even if disconnect fails, clear state
+                            this.device = null;
+                            this.printerName = null;
+                            connectedPrinter = null;
+                            resolve();
+                        }
+                    );
+                });
             } catch (error) {
-                console.error('Disconnect error:', error);
+                console.error('[DISCONNECT] Error:', error);
             }
         }
     }
 
-    async write(data) {
-        if (!this.device || !this.characteristic) {
-            throw new Error('Printer not connected');
+    async write(billData) {
+        if (!this.device) {
+            throw new Error('Not connected to device');
         }
 
+        if (!window.bluetoothSerial) {
+            throw new Error('Bluetooth Serial plugin not available');
+        }
+        
+        console.log('[WRITE] Building receipt as image...');
+        
         try {
-            const { BluetoothLe } = window.Capacitor.Plugins;
+            // STEP 1: Create large temporary canvas for drawing
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
             
-            // Convert string to byte array
-            const bytes = new Uint8Array(data.length);
-            for (let i = 0; i < data.length; i++) {
-                bytes[i] = data.charCodeAt(i);
+            // Set canvas size for 58mm thermal printer (384 pixels width)
+            const width = 384;
+            let y = 30;
+            tempCanvas.width = width;
+            tempCanvas.height = 2000; // Large temporary canvas
+            
+            // White background with black text
+            tempCtx.fillStyle = '#ffffff';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            tempCtx.fillStyle = '#000000';
+            
+            // Helper function to draw centered text
+            const drawCenter = (text, yPos, fontSize = 20, bold = false) => {
+                tempCtx.font = `${bold ? 'bold ' : ''}${fontSize}px Arial`;
+                tempCtx.fillStyle = '#000000';
+                const textWidth = tempCtx.measureText(text).width;
+                tempCtx.fillText(text, (width - textWidth) / 2, yPos);
+                return yPos + fontSize + 6;
+            };
+            
+            // Helper function to draw left-aligned text
+            const drawLeft = (text, yPos, fontSize = 18) => {
+                tempCtx.font = `${fontSize}px Arial`;
+                tempCtx.fillStyle = '#000000';
+                tempCtx.fillText(text, 15, yPos);
+                return yPos + fontSize + 6;
+            };
+            
+            // Helper function to draw right-aligned text
+            const drawRight = (text, yPos, fontSize = 18) => {
+                tempCtx.font = `${fontSize}px Arial`;
+                tempCtx.fillStyle = '#000000';
+                const textWidth = tempCtx.measureText(text).width;
+                tempCtx.fillText(text, width - textWidth - 15, yPos);
+                return yPos + fontSize + 6;
+            };
+            
+            // Helper function to add spacing (no lines)
+            const addSpacing = (yPos, space = 12) => {
+                return yPos + space;
+            };
+            
+            // Build receipt content on temporary canvas
+            const receiptY = y;
+            y = drawCenter('Receipt', y, 26, true);
+            // Draw underline for Receipt
+            tempCtx.fillStyle = '#000000';
+            const receiptWidth = tempCtx.measureText('Receipt').width;
+            tempCtx.fillRect((width - receiptWidth) / 2, receiptY + 2, receiptWidth, 2);
+            
+            y = drawCenter(new Date().toLocaleDateString('en-IN') + ' ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }), y, 18);
+            y = addSpacing(y, 12);
+            
+            // Customer name if provided
+            if (billData.customerName) {
+                y = drawLeft('Customer: ' + billData.customerName, y, 18);
+                y += 8;
             }
             
-            // Convert to base64 for transmission
-            const base64 = btoa(String.fromCharCode.apply(null, bytes));
+            // Table header
+            tempCtx.font = 'bold 20px Arial';
+            tempCtx.fillStyle = '#000000';
+            tempCtx.fillText('वस्तु', 15, y);
+            tempCtx.fillText('दर', 140, y);
+            tempCtx.fillText('मात्रा', 220, y);
+            tempCtx.fillText('कुल', 310, y);
+            y += 24;
+            y = addSpacing(y, 8);
             
-            await BluetoothLe.write({
-                deviceId: this.device,
-                service: this.characteristic.service,
-                characteristic: this.characteristic.characteristic,
-                value: base64
+            // Items
+            tempCtx.font = '18px Arial';
+            billData.items.forEach(item => {
+                let weightsStr = '';
+                if (item.weights) {
+                    if (item.weights.length === 1) {
+                        weightsStr = item.qty + 'kg';
+                    } else {
+                        weightsStr = item.qty + 'kg (' + item.weights.join('+') + ')';
+                    }
+                } else {
+                    weightsStr = item.qty + 'kg';
+                }
+                
+                tempCtx.fillStyle = '#000000';
+                tempCtx.fillText(item.name.substring(0, 11), 15, y);
+                tempCtx.fillText('₹' + item.rate, 140, y);
+                tempCtx.fillText(weightsStr, 220, y);
+                tempCtx.fillText('₹' + item.total, 310, y);
+                y += 24;
             });
             
-            return true;
+            y = addSpacing(y, 12);
+            
+            // Totals with proper alignment
+            tempCtx.font = '18px Arial';
+            tempCtx.fillStyle = '#000000';
+            tempCtx.fillText('कुल:', 15, y);
+            const totalText = '₹' + billData.billTotal;
+            const totalWidth = tempCtx.measureText(totalText).width;
+            tempCtx.fillText(totalText, width - totalWidth - 15, y);
+            y += 24;
+            
+            if (billData.isPurchase && billData.laborCharges > 0) {
+                tempCtx.fillText('मजदूरी:', 15, y);
+                
+                // Show calculation only if auto-calculated, else show just the amount
+                if (billData.isAutoLabor) {
+                    const totalPackets = billData.totalPackets || 0;
+                    const laborText = settings.laborRate + ' × ' + totalPackets + ' = ₹' + billData.laborCharges;
+                    const laborWidth = tempCtx.measureText(laborText).width;
+                    tempCtx.fillText(laborText, width - laborWidth - 15, y);
+                } else {
+                    const laborText = '₹' + billData.laborCharges;
+                    const laborWidth = tempCtx.measureText(laborText).width;
+                    tempCtx.fillText(laborText, width - laborWidth - 15, y);
+                }
+                
+                y += 24;
+            }
+            
+            tempCtx.fillText('पैकेट:', 15, y);
+            const packetText = String(billData.totalPackets);
+            const packetWidth = tempCtx.measureText(packetText).width;
+            tempCtx.fillText(packetText, width - packetWidth - 15, y);
+            y += 24;
+            
+            y = addSpacing(y, 12);
+            
+            // Grand total
+            y = drawCenter('कुल भुगतान: ₹' + billData.amountPayable, y, 24, true);
+            
+            console.log('[WRITE] Drawing complete, height:', y);
+            
+            // STEP 2: Copy to final canvas with exact height
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = width;
+            finalCanvas.height = y;
+            const finalCtx = finalCanvas.getContext('2d');
+            
+            // Copy only the used portion from temp canvas
+            finalCtx.drawImage(tempCanvas, 0, 0, width, y, 0, 0, width, y);
+            
+            // DEBUG: Show canvas preview
+            // const debugPreview = document.getElementById('canvasDebugPreview');
+            // if (debugPreview) {
+            //     debugPreview.src = finalCanvas.toDataURL('image/png');
+            //     debugPreview.style.display = 'block';
+            //     debugPreview.style.maxWidth = '100%';
+            //     debugPreview.style.border = '2px solid #667eea';
+            //     debugPreview.style.margin = '10px auto';
+            // }
+            
+            console.log('[WRITE] Canvas rendered, converting to bitmap...');
+            
+            // Get image data from FINAL canvas
+            const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
+            const pixels = imageData.data;
+            
+            // Convert to 1-bit monochrome bitmap
+            const threshold = 128;
+            const bytesPerLine = Math.ceil(finalCanvas.width / 8);
+            const bitmapData = [];
+            
+            for (let y = 0; y < finalCanvas.height; y++) {
+                const line = new Array(bytesPerLine).fill(0);
+                
+                for (let x = 0; x < finalCanvas.width; x++) {
+                    const pixelIndex = (y * finalCanvas.width + x) * 4;
+                    const r = pixels[pixelIndex];
+                    const g = pixels[pixelIndex + 1];
+                    const b = pixels[pixelIndex + 2];
+                    
+                    // Convert to grayscale and apply threshold
+                    const gray = (r + g + b) / 3;
+                    
+                    // Black pixels on canvas should print as black
+                    // ESC/POS: bit 1 = black dot, bit 0 = white/no print
+                    if (gray < threshold) {
+                        const byteIndex = Math.floor(x / 8);
+                        const bitIndex = 7 - (x % 8);
+                        line[byteIndex] |= (1 << bitIndex);
+                    }
+                }
+                
+                bitmapData.push(...line);
+            }
+            
+            console.log('[WRITE] Bitmap created:', bitmapData.length, 'bytes for', finalCanvas.height, 'lines');
+            
+            // Build ESC/POS commands for image printing
+            const commands = [];
+            
+            // Initialize printer
+            commands.push(0x1B, 0x40); // ESC @
+            
+            // Center align
+            commands.push(0x1B, 0x61, 0x01); // ESC a 1
+            
+            // Use GS v 0 command for raster bitmap printing
+            // Format: GS v 0 m xL xH yL yH d1...dk
+            // m = mode (0 = normal)
+            // xL xH = width in bytes (little endian)
+            // yL yH = height in dots (little endian)
+            
+            commands.push(0x1D, 0x76, 0x30, 0x00); // GS v 0 m
+            
+            // Width in bytes (little endian)
+            commands.push(bytesPerLine & 0xFF);
+            commands.push((bytesPerLine >> 8) & 0xFF);
+            
+            // Height in dots (little endian)
+            commands.push(finalCanvas.height & 0xFF);
+            commands.push((finalCanvas.height >> 8) & 0xFF);
+            
+            // Add bitmap data
+            commands.push(...bitmapData);
+            
+            // Feed paper and cut
+            commands.push(0x1B, 0x64, 0x03); // ESC d 3 - feed 3 lines
+            commands.push(0x1D, 0x56, 0x41, 0x03); // GS V A 3 - partial cut
+            
+            console.log('[WRITE] Sending', commands.length, 'bytes to printer...');
+            
+            // Convert to Uint8Array for binary transmission
+            const commandBytes = new Uint8Array(commands);
+            
+            return new Promise((resolve, reject) => {
+                window.bluetoothSerial.write(
+                    commandBytes,
+                    () => {
+                        console.log('[WRITE] Print successful!');
+                        resolve(true);
+                    },
+                    (error) => {
+                        console.error('[WRITE] Print failed:', error);
+                        reject(error);
+                    }
+                );
+            });
         } catch (error) {
-            console.error('Write error:', error);
+            console.error('[WRITE] Print failed:', error);
             throw error;
         }
     }
@@ -877,15 +1267,23 @@ const printerManager = new BluetoothPrinterManager();
 
 // ESC/POS Print Commands Generator
 function generateESCPOS(billData) {
-    let commands = '';
-    
-    // Initialize printer
-    commands += ESC + '@'; // Initialize
-    commands += ESC + 'a' + '\x01'; // Center align
+    try {
+        console.log('[DEBUG] generateESCPOS started');
+        if (!billData || !billData.items || billData.items.length === 0) {
+            throw new Error('Invalid bill data');
+        }
+        console.log('[DEBUG] Bill data valid, items:', billData.items.length);
+        
+        let commands = '';
+        
+        // Initialize printer
+        commands += ESC + '@'; // Initialize
+        commands += ESC + 'a' + '\x01'; // Center align
     
     // Title - Large and bold
     commands += ESC + '!' + '\x30'; // Double height + double width
-    commands += billData.isPurchase ? 'PURCHASE RECEIPT\n' : 'SALE RECEIPT\n';
+    const receiptTitle = billData.duePayment > 0 ? 'RECEIPT\n' : (billData.isPurchase ? 'PURCHASE RECEIPT\n' : 'SALE RECEIPT\n');
+    commands += receiptTitle;
     commands += ESC + '!' + '\x00'; // Normal size
     commands += '\n';
     
@@ -957,15 +1355,19 @@ function generateESCPOS(billData) {
         commands += '\n';
     }
     
-    // Center align for footer
-    commands += ESC + 'a' + '\x01';
-    commands += 'धन्यवाद!\n';
-    commands += '\n\n\n';
-    
-    // Cut paper
-    commands += GS + 'V' + '\x41' + '\x03'; // Partial cut
-    
-    return commands;
+        // Center align for footer
+        commands += ESC + 'a' + '\x01';
+        commands += 'धन्यवाद!\n';
+        commands += '\n\n\n';
+        
+        // Cut paper
+        commands += GS + 'V' + '\x41' + '\x03'; // Partial cut
+        
+        return commands;
+    } catch (error) {
+        console.error('Generate ESCPOS error:', error);
+        throw new Error('Failed to generate print commands: ' + error.message);
+    }
 }
 
 // Loading state
@@ -1091,8 +1493,10 @@ async function saveBillToHistory() {
     const amountPayable = billTotal - laborCharges;
     const onlinePayment = Number(document.getElementById("onlinePayment").value) || 0;
     const cashPayment = Number(document.getElementById("cashPayment").value) || 0;
-    const totalPayment = onlinePayment + cashPayment;
+    const duePayment = Number(document.getElementById("dueAmount").value) || 0;
+    const totalPayment = onlinePayment + cashPayment + duePayment;
     const customerName = document.getElementById("customerName").value.trim();
+    const billComments = document.getElementById("billComments").value.trim();
 
     // Update customer options
     if (customerName) {
@@ -1103,6 +1507,8 @@ async function saveBillToHistory() {
         id: Date.now(),
         date: new Date().toLocaleString(),
         customerName: customerName,
+        customerPhone: customerPhoneNumber,
+        comments: billComments,
         items: [...billItems], // Full item details with weights
         laborCharges: laborCharges,
         billTotal: billTotal,
@@ -1110,6 +1516,7 @@ async function saveBillToHistory() {
         payment: {
             online: onlinePayment,
             cash: cashPayment,
+            due: duePayment,
             total: totalPayment
         },
         type: 'purchase'
@@ -1119,20 +1526,27 @@ async function saveBillToHistory() {
     billHistory.unshift(bill);
     await calculateStockFromBills();
     
+    // Update finance overview if on Finance tab
+    if (document.getElementById('financeOverview') && document.getElementById('financeOverview').style.display !== 'none') {
+        calculateFinanceOverview();
+    }
+    
     // Clear current bill - set payment fields to empty
     billItems = [];
     document.getElementById("manualLaborCharges").value = 0;
     document.getElementById("onlinePayment").value = "";
     document.getElementById("cashPayment").value = "";
+    document.getElementById("dueAmount").value = "";
     document.getElementById("onlineCheckbox").checked = false;
     document.getElementById("cashCheckbox").checked = false;
+    document.getElementById("dueCheckbox").checked = false;
     document.getElementById("totalPayment").textContent = 0;
     
     const totalPacketsElement = document.getElementById("totalPacketsInBill");
     if (totalPacketsElement) {
         totalPacketsElement.textContent = 0;
     }
-    
+
     const laborCalcElement = document.getElementById("laborCalculation");
     if (laborCalcElement) {
         laborCalcElement.textContent = `${settings.laborRate} × 0`;
@@ -1140,9 +1554,15 @@ async function saveBillToHistory() {
     
     renderBill();
     updateTotals();
+    renderDue();
     
-    // Clear customer name
+    // Clear customer fields
     document.getElementById("customerName").value = "";
+    customerPhoneNumber = '';
+    document.getElementById("billComments").value = "";
+    
+    // Clear draft after successful save
+    clearBillDraft();
     
     // Reset item dropdown to most frequent
     loadItemsDropdown();
@@ -1168,11 +1588,352 @@ function updateCustomerOptions(newCustomer) {
     }
 }
 
+function updateWholesaleCustomerOptions(newCustomer) {
+    // Get unique customer names from wholesale sales history
+    const uniqueCustomers = [...new Set(
+        salesHistory
+            .filter(s => s.source === 'sales-tab' && s.customerName)
+            .map(s => s.customerName)
+    )];
+    
+    // Add new customer if not exists
+    if (newCustomer && !uniqueCustomers.includes(newCustomer)) {
+        uniqueCustomers.unshift(newCustomer);
+    }
+    
+    // Update datalist
+    const datalist = document.getElementById('wholesaleCustomerOptions');
+    if (datalist) {
+        datalist.innerHTML = uniqueCustomers.map(name => `<option value="${name}">`).join('');
+    }
+}
+
+function updateSalePaymentTotal() {
+    const onlinePayment = Number(document.getElementById("saleOnlinePayment").value) || 0;
+    const cashPayment = Number(document.getElementById("saleCashPayment").value) || 0;
+    const totalPayment = onlinePayment + cashPayment;
+    
+    const totalPaymentElement = document.getElementById("saleTotalPayment");
+    totalPaymentElement.textContent = totalPayment;
+    
+    // Get amount payable
+    const amountPayable = Number(document.getElementById("salesTotalAmount").textContent) || 0;
+    
+    // Check if payment exceeds amount payable
+    const paymentTotalRow = document.querySelector('#sales .payment-total');
+    if (paymentTotalRow) {
+        if (totalPayment > amountPayable && amountPayable > 0) {
+            paymentTotalRow.classList.add('payment-excess');
+        } else {
+            paymentTotalRow.classList.remove('payment-excess');
+        }
+    }
+}
+
+function fillSalePayableAmount(type) {
+    const onlineCheckbox = document.getElementById('saleOnlineCheckbox');
+    const cashCheckbox = document.getElementById('saleCashCheckbox');
+    const dueCheckbox = document.getElementById('saleDueCheckbox');
+    const onlinePayment = document.getElementById('saleOnlinePayment');
+    const cashPayment = document.getElementById('saleCashPayment');
+    const dueAmount = document.getElementById('saleDueAmount');
+    const amountPayable = Number(document.getElementById('salesTotalAmount').textContent) || 0;
+
+    if (type === 'online') {
+        if (onlineCheckbox.checked) {
+            cashCheckbox.checked = false;
+            dueCheckbox.checked = false;
+            onlinePayment.value = amountPayable;
+            cashPayment.value = '';
+            dueAmount.value = '';
+        } else {
+            onlinePayment.value = '';
+        }
+    } else if (type === 'cash') {
+        if (cashCheckbox.checked) {
+            onlineCheckbox.checked = false;
+            dueCheckbox.checked = false;
+            cashPayment.value = amountPayable;
+            onlinePayment.value = '';
+            dueAmount.value = '';
+        } else {
+            cashPayment.value = '';
+        }
+    } else if (type === 'due') {
+        if (dueCheckbox.checked) {
+            onlineCheckbox.checked = false;
+            cashCheckbox.checked = false;
+            dueAmount.value = amountPayable;
+            onlinePayment.value = '';
+            cashPayment.value = '';
+        } else {
+            dueAmount.value = '';
+        }
+    }
+
+    updateSalePaymentTotal();
+}
+
+function filterSalesTab(view, evt) {
+    // Update button states
+    const buttons = document.querySelectorAll('#sales .filter-btn');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    if (evt) evt.target.classList.add('active');
+    
+    // Show/hide sections
+    const entrySection = document.getElementById('salesEntrySection');
+    const outstandingSection = document.getElementById('salesOutstandingSection');
+    
+    if (view === 'sales') {
+        entrySection.style.display = 'block';
+        outstandingSection.style.display = 'none';
+    } else {
+        entrySection.style.display = 'none';
+        outstandingSection.style.display = 'block';
+        renderSalesOutstanding();
+    }
+}
+
+async function recordPayment(saleId) {
+    const sale = salesHistory.find(s => s.id == saleId);
+    if (!sale) {
+        showToast('Error: Sale not found');
+        return;
+    }
+    
+    const paymentInput = document.getElementById(`payment_${saleId}`);
+    const paymentAmount = Number(paymentInput.value) || 0;
+    
+    if (paymentAmount <= 0) {
+        showToast('Please enter a valid payment amount');
+        return;
+    }
+    
+    const currentReceived = (sale.payment.online || 0) + (sale.payment.cash || 0);
+    const outstanding = sale.payment.due || 0;
+    
+    if (paymentAmount > outstanding) {
+        showToast('Payment amount exceeds outstanding amount');
+        return;
+    }
+    
+    // Initialize payments array if it doesn't exist
+    if (!sale.payments) {
+        sale.payments = [];
+    }
+    
+    // Record the payment
+    const payment = {
+        amount: paymentAmount,
+        date: new Date().toLocaleString(),
+        recordedBy: currentUser ? currentUser.name : 'Unknown'
+    };
+    
+    sale.payments.push(payment);
+    
+    // Update payment totals
+    sale.payment.cash = (sale.payment.cash || 0) + paymentAmount;
+    sale.payment.total = (sale.payment.online || 0) + sale.payment.cash;
+    sale.payment.due = sale.total - sale.payment.total;
+    
+    // Update in Firestore
+    try {
+        await db.collection('sales').doc(String(saleId)).update({
+            payments: sale.payments,
+            payment: sale.payment
+        });
+        
+        paymentInput.value = '';
+        renderSalesOutstanding();
+        renderSalesHistory();
+        renderDue();
+        showToast(`✓ Payment of ₹${paymentAmount} recorded`);
+    } catch (error) {
+        console.error('Error recording payment:', error);
+        showToast('Error: ' + error.message);
+    }
+}
+
+async function markSaleAsCleared(saleId) {
+    const sale = salesHistory.find(s => s.id == saleId);
+    if (!sale) {
+        console.error('Sale not found:', saleId);
+        showToast('Error: Sale not found');
+        return;
+    }
+    
+    sale.cleared = true;
+    
+    // Update in Firestore
+    try {
+        await db.collection('sales').doc(String(saleId)).update({ cleared: true });
+        
+        renderSalesOutstanding();
+        renderDue();
+        showToast('✓ Sale marked as cleared');
+    } catch (error) {
+        console.error('Error updating sale:', error, 'Sale ID:', saleId);
+        showToast('Error: ' + error.message);
+    }
+}
+
+function renderSalesOutstanding() {
+    const container = document.getElementById("salesOutstandingList");
+    
+    // Filter wholesale sales with outstanding amounts and not cleared
+    const outstandingSales = salesHistory
+        .filter(sale => {
+            if (sale.source !== 'sales-tab') return false;
+            if (sale.cleared) return false;
+            
+            const totalReceivable = sale.total || 0;
+            const onlineReceived = sale.payment ? (sale.payment.online || 0) : 0;
+            const cashReceived = sale.payment ? (sale.payment.cash || 0) : 0;
+            const totalReceived = onlineReceived + cashReceived;
+            const outstanding = sale.payment?.due || (totalReceivable - totalReceived);
+            
+            return outstanding > 0;
+        })
+        .map(sale => {
+            const totalReceivable = sale.total || 0;
+            const onlineReceived = sale.payment ? (sale.payment.online || 0) : 0;
+            const cashReceived = sale.payment ? (sale.payment.cash || 0) : 0;
+            const totalReceived = onlineReceived + cashReceived;
+            const outstanding = sale.payment?.due || (totalReceivable - totalReceived);
+            
+            return {
+                ...sale,
+                outstanding: outstanding,
+                totalAmount: totalReceivable,
+                paidAmount: totalReceived
+            };
+        });
+    
+    if (outstandingSales.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No outstanding payments</p>';
+        return;
+    }
+
+    // Group by customer and calculate totals
+    const customerOutstanding = {};
+    outstandingSales.forEach(sale => {
+        const customer = sale.customerName || 'Unknown';
+        if (!customerOutstanding[customer]) {
+            customerOutstanding[customer] = {
+                name: customer,
+                totalOutstanding: 0,
+                billCount: 0,
+                sales: []
+            };
+        }
+        customerOutstanding[customer].totalOutstanding += sale.outstanding;
+        customerOutstanding[customer].billCount++;
+        customerOutstanding[customer].sales.push(sale);
+    });
+
+    // Sort customers by outstanding amount
+    const sortedCustomers = Object.values(customerOutstanding).sort((a, b) => b.totalOutstanding - a.totalOutstanding);
+
+    container.innerHTML = "";
+
+    // Create summary table
+    const summaryTable = document.createElement('div');
+    summaryTable.innerHTML = `
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+            <thead>
+                <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                    <th style="padding: 12px; text-align: left; font-weight: 600;">Customer</th>
+                    <th style="padding: 12px; text-align: center; font-weight: 600;">Bills</th>
+                    <th style="padding: 12px; text-align: right; font-weight: 600;">Outstanding</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${sortedCustomers.map(customer => `
+                    <tr style="border-bottom: 1px solid #dee2e6;">
+                        <td style="padding: 12px;"><strong>${customer.name}</strong></td>
+                        <td style="padding: 12px; text-align: center;">${customer.billCount}</td>
+                        <td style="padding: 12px; text-align: right; color: #28a745; font-weight: 600;">₹${customer.totalOutstanding.toFixed(2)}</td>
+                    </tr>
+                `).join('')}
+                <tr style="background: #e9ecef; font-weight: 700;">
+                    <td style="padding: 12px;">Total</td>
+                    <td style="padding: 12px; text-align: center;">${outstandingSales.length}</td>
+                    <td style="padding: 12px; text-align: right; color: #28a745;">₹${sortedCustomers.reduce((sum, c) => sum + c.totalOutstanding, 0).toFixed(2)}</td>
+                </tr>
+            </tbody>
+        </table>
+    `;
+    container.appendChild(summaryTable);
+
+    // Add detailed bills section
+    const detailsHeader = document.createElement('h4');
+    detailsHeader.textContent = 'Bill-wise Details';
+    detailsHeader.style.marginBottom = '12px';
+    container.appendChild(detailsHeader);
+
+    // Render detailed bills grouped by customer
+    sortedCustomers.forEach(customer => {
+        const customerSection = document.createElement('div');
+        customerSection.style.marginBottom = '30px';
+        
+        const customerHeader = document.createElement('h5');
+        customerHeader.innerHTML = `${customer.name} <span style="color: #28a745;">(₹${customer.totalOutstanding.toFixed(2)})</span>`;
+        customerHeader.style.marginBottom = '10px';
+        customerHeader.style.padding = '8px 12px';
+        customerHeader.style.background = '#e9ecef';
+        customerHeader.style.borderRadius = '4px';
+        customerSection.appendChild(customerHeader);
+
+        customer.sales.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(sale => {
+        const div = document.createElement("div");
+        div.className = "history-item";
+        
+        div.innerHTML = `
+            <div class="history-header">
+                <span>Sale #${sale.id}${sale.customerName ? ` • <strong>${sale.customerName}</strong>` : ''}</span>
+                <span style="color: #28a745; font-weight: 700;">Due: ₹${sale.outstanding.toFixed(2)}</span>
+            </div>
+            <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
+            <div style="background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 12px; margin: 12px 0; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span>Total Receivable:</span>
+                    <strong>₹${sale.totalAmount.toFixed(2)}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span>Received:</span>
+                    <strong>₹${sale.paidAmount.toFixed(2)}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-top: 2px solid #17a2b8; padding-top: 6px; margin-top: 6px;">
+                    <span style="font-weight: 600;">Outstanding:</span>
+                    <strong style="color: #28a745; font-size: 16px;">₹${sale.outstanding.toFixed(2)}</strong>
+                </div>
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #17a2b8;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                        <label style="font-weight: 500;">Payment (₹):</label>
+                        <input type="number" inputmode="decimal" id="payment_${sale.id}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
+                        <button onclick="window.recordPayment('${sale.id}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
+                    </div>
+                    <div style="display: flex; align-items: center;">
+                        <input type="checkbox" id="clear_${sale.id}" onchange="window.markSaleAsCleared('${sale.id}')" style="margin-right: 8px; transform: scale(1.2);" />
+                        <label for="clear_${sale.id}" style="cursor: pointer; font-weight: 500;">Mark as Cleared</label>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        customerSection.appendChild(div);
+        });
+        
+        container.appendChild(customerSection);
+    });
+}
+
 function renderHistory() {
     const container = document.getElementById("historyList");
     
+    // Show only purchase history in History tab
     if (billHistory.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No billing history yet</p>';
+        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No purchase history yet</p>';
         return;
     }
 
@@ -1198,28 +1959,141 @@ function renderHistory() {
         }).join("");
         
         // Payment details
-        const paymentHTML = bill.payment ? `
+        const paymentParts = [];
+        if (bill.payment) {
+            if (bill.payment.online > 0) paymentParts.push(`Online: ₹${bill.payment.online}`);
+            if (bill.payment.cash > 0) paymentParts.push(`Cash: ₹${bill.payment.cash}`);
+            if (bill.payment.due > 0) paymentParts.push(`Due: ₹${bill.payment.due}`);
+        }
+        const paymentHTML = paymentParts.length > 0 ? `
             <div class="history-payment">
-                ${bill.payment.online > 0 ? `Online: ₹${bill.payment.online}` : ''}
-                ${bill.payment.online > 0 && bill.payment.cash > 0 ? ' | ' : ''}
-                ${bill.payment.cash > 0 ? `Cash: ₹${bill.payment.cash}` : ''}
-                ${bill.payment.total > 0 ? ` = Total Payment: ₹${bill.payment.total}` : ''}
+                ${paymentParts.join(' | ')}
             </div>
         ` : '';
         
+        const billIndex = billHistory.indexOf(bill);
+        
         div.innerHTML = `
             <div class="history-header">
-                <span>Bill #${bill.id}</span>
-                <span style="color: #28a745; font-weight: 700;">₹ ${bill.total}</span>
+                <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="reprintBill(${billIndex})">Bill #${bill.id}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
+                <span style="color: #007bff; font-weight: 700;">₹ ${bill.total}</span>
             </div>
-            <div class="history-date">${bill.date}${bill.createdByName ? ` • By: ${bill.createdByName}` : ''}</div>
+            <div class="history-date">${bill.date}${bill.createdByName ? ` • By: <strong>${bill.createdByName}</strong>` : ''}</div>
             <div class="history-summary">
-                ${bill.items.length} items • ${totalPackets} packets • ${totalWeight}kg
+                ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets • ${totalWeight}kg
             </div>
-            ${bill.laborCharges > 0 ? `<div class="history-labor">Labor Charges: ₹${bill.laborCharges}</div>` : ''}
             ${paymentHTML}
-            <div class="history-items-detail">
-                ${itemsDetailHTML}
+        `;
+        
+        container.appendChild(div);
+    });
+}
+
+// -------------------- OUTSTANDING --------------------
+let currentDueFilter = 'purchase';
+
+function filterDue(filter, evt) {
+    currentDueFilter = filter;
+    
+    // Update button states
+    document.querySelectorAll('#due .filter-btn').forEach(btn => btn.classList.remove('active'));
+    if (evt) evt.target.classList.add('active');
+    
+    renderDue();
+}
+
+function renderDue() {
+    const container = document.getElementById("dueList");
+    
+    // Collect transactions based on filter
+    const dueTransactions = [];
+    
+    if (currentDueFilter === 'purchase') {
+        billHistory.forEach(bill => {
+            const totalPayable = bill.total || 0;
+            const onlinePaid = bill.payment ? (bill.payment.online || 0) : 0;
+            const cashPaid = bill.payment ? (bill.payment.cash || 0) : 0;
+            const totalPaid = onlinePaid + cashPaid;
+            const outstanding = bill.payment?.due || (totalPayable - totalPaid);
+            
+            if (outstanding > 0 && !bill.cleared) {
+                dueTransactions.push({
+                    ...bill,
+                    transactionType: 'purchase',
+                    outstanding: outstanding,
+                    totalAmount: totalPayable,
+                    paidAmount: totalPaid
+                });
+            }
+        });
+    } else if (currentDueFilter === 'sale') {
+        salesHistory.forEach(sale => {
+            const totalReceivable = sale.total || 0;
+            const onlineReceived = sale.payment ? (sale.payment.online || 0) : 0;
+            const cashReceived = sale.payment ? (sale.payment.cash || 0) : 0;
+            const totalReceived = onlineReceived + cashReceived;
+            const outstanding = sale.payment?.due || (totalReceivable - totalReceived);
+            
+            if (outstanding > 0 && !sale.cleared) {
+                dueTransactions.push({
+                    ...sale,
+                    transactionType: 'sale',
+                    outstanding: outstanding,
+                    totalAmount: totalReceivable,
+                    paidAmount: totalReceived
+                });
+            }
+        });
+    }
+    
+    // Sort by outstanding amount (highest first)
+    dueTransactions.sort((a, b) => b.outstanding - a.outstanding);
+    
+    if (dueTransactions.length === 0) {
+        const message = currentDueFilter === 'purchase' ? 'No outstanding purchase amounts' : 'No outstanding sale amounts';
+        container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
+        return;
+    }
+
+    container.innerHTML = "";
+    
+    const isPurchase = currentDueFilter === 'purchase';
+    const headerColor = isPurchase ? '#dc3545' : '#28a745';
+    const bgColor = isPurchase ? '#fff3cd' : '#d1ecf1';
+    const borderColor = isPurchase ? '#ffc107' : '#17a2b8';
+    const totalLabel = isPurchase ? 'Total Payable' : 'Total Receivable';
+    const paidLabel = isPurchase ? 'Paid' : 'Received';
+    const billLabel = isPurchase ? 'Bill' : 'Sale';
+
+    dueTransactions.forEach(transaction => {
+        const div = document.createElement("div");
+        div.className = "history-item";
+        
+        div.innerHTML = `
+            <div class="history-header">
+                <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="showOutstandingDetails('${transaction.id}', '${transaction.transactionType}')">${billLabel} #${transaction.id}</span>${transaction.customerName ? ` • <strong>${transaction.customerName}</strong>` : ''}
+                <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${transaction.outstanding.toFixed(2)}</span>
+            </div>
+            <div class="history-date">${transaction.date}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>
+            <div style="background: ${bgColor}; border-left: 4px solid ${borderColor}; padding: 12px; margin: 12px 0; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span>${totalLabel}:</span>
+                    <strong>₹${transaction.totalAmount.toFixed(2)}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span>${paidLabel}:</span>
+                    <strong>₹${transaction.paidAmount.toFixed(2)}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-top: 2px solid ${borderColor}; padding-top: 6px; margin-top: 6px;">
+                    <span style="font-weight: 600;">Outstanding:</span>
+                    <strong style="color: ${headerColor}; font-size: 16px;">₹${transaction.outstanding.toFixed(2)}</strong>
+                </div>
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #ddd;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" ${transaction.cleared ? 'checked' : ''} onchange="markOutstandingAsCleared('${transaction.id}', '${transaction.transactionType}')" style="margin-right: 8px;" />
+                        <span style="font-size: 13px; color: #666;">Mark as Cleared</span>
+                    </label>
+                </div>
             </div>
         `;
         
@@ -1376,7 +2250,7 @@ async function applyStockAdjustment() {
     } else if (adjustType === 'set') {
         newQuantity = quantity;
     }
-    
+
     // Log the adjustment
     const adjustment = {
         id: Date.now(),
@@ -1482,14 +2356,13 @@ function loadSalesPageDropdown() {
     
     select.innerHTML = '<option value="">Select item</option>';
 
-    // Load items that have stock
-    Object.keys(stock).forEach(itemName => {
-        if (stock[itemName].quantity > 0) {
-            const opt = document.createElement("option");
-            opt.value = itemName;
-            opt.textContent = itemName;
-            select.appendChild(opt);
-        }
+    // Load all items
+    items.forEach(item => {
+        const opt = document.createElement("option");
+        opt.value = item.name;
+        const displayName = (settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        opt.textContent = displayName;
+        select.appendChild(opt);
     });
 }
 
@@ -1599,12 +2472,30 @@ async function completeSale() {
         return;
     }
     
+    const customerName = document.getElementById("wholesaleCustomerName").value.trim();
+    const saleTotal = Number(document.getElementById("salesTotalAmount").textContent);
+    
+    // Update customer options if name provided
+    if (customerName) {
+        updateWholesaleCustomerOptions(customerName);
+    }
+    
     // Reduce stock for each item
     const saleRecord = {
         id: Date.now(),
         date: new Date().toLocaleString(),
+        customerName: customerName,
         items: [...salesItems],
-        total: Number(document.getElementById("salesTotalAmount").textContent)
+        total: saleTotal,
+        payment: {
+            online: 0,
+            cash: 0,
+            due: saleTotal,
+            total: saleTotal
+        },
+        source: 'sales-tab',
+        createdByName: currentUser ? currentUser.name : 'Unknown',
+        cleared: false
     };
     
     let stockUpdateFailed = false;
@@ -1621,17 +2512,73 @@ async function completeSale() {
     }
     
     // Save to sales history
-    await saveSaleToFirestore(saleRecord);
-    salesHistory.unshift(saleRecord);
+    const savedSale = await saveSaleToFirestore(saleRecord);
+    salesHistory.unshift(savedSale);
     await calculateStockFromBills();
     
     // Clear sales bill
     salesItems = [];
+    document.getElementById("wholesaleCustomerName").value = "";
+    
     renderSalesBill();
+    renderSalesHistory();
+    renderSalesOutstanding();
+    renderDue();
     renderStock();
     loadSellItemDropdown();
     
     await showModal(`Sale completed! Total: ₹${saleRecord.total}`, "Success");
+}
+
+function renderSalesHistory() {
+    const container = document.getElementById("salesHistoryList");
+    
+    // Filter to only show sales from Sales tab
+    const salesTabHistory = salesHistory.filter(sale => sale.source === 'sales-tab');
+    
+    if (salesTabHistory.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No sales yet</p>';
+        return;
+    }
+
+    container.innerHTML = "";
+
+    salesTabHistory.forEach(sale => {
+        const div = document.createElement("div");
+        div.className = "history-item";
+        
+        // Calculate total weight
+        const totalWeight = sale.items.reduce((sum, item) => sum + (item.qty || item.quantity || 0), 0);
+        
+        // Payment details (if available)
+        const paymentParts = [];
+        if (sale.payment) {
+            if (sale.payment.online > 0) paymentParts.push(`Online: ₹${sale.payment.online}`);
+            if (sale.payment.cash > 0) paymentParts.push(`Cash: ₹${sale.payment.cash}`);
+            if (sale.payment.due > 0) paymentParts.push(`Due: ₹${sale.payment.due}`);
+        }
+        const paymentHTML = paymentParts.length > 0 ? `
+            <div class="history-payment">
+                ${paymentParts.join(' | ')}
+            </div>
+        ` : '';
+        
+        const saleIndex = salesHistory.indexOf(sale);
+        
+        div.innerHTML = `
+            <div class="history-header">
+                <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="reprintSale(${saleIndex})">Sale #${sale.id}</span>${sale.customerName ? ` • <strong>${sale.customerName}</strong>` : ''}
+                <span style="color: #28a745; font-weight: 700;">₹ ${sale.total}</span>
+            </div>
+            <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
+            <div class="history-summary">
+                ${sale.items.map(item => item.name).join(', ')} • ${totalWeight.toFixed(2)}kg
+            </div>
+            ${paymentHTML}
+        `;
+        
+        container.appendChild(div);
+    });
 }
 
 // -------------------- DATE FILTERING --------------------
@@ -1771,12 +2718,39 @@ function renderReports() {
     const totalOnline = filteredBills.reduce((sum, bill) => sum + (bill.payment?.online || 0), 0);
     const totalPayment = totalCash + totalOnline;
 
+    // Calculate outstanding amounts for all bills and sales
+    let purchaseOutstanding = 0;
+    billHistory.forEach(bill => {
+        const totalPayable = bill.total || 0;
+        const onlinePaid = bill.payment ? (bill.payment.online || 0) : 0;
+        const cashPaid = bill.payment ? (bill.payment.cash || 0) : 0;
+        const totalPaid = onlinePaid + cashPaid;
+        const outstanding = bill.payment?.due || (totalPayable - totalPaid);
+        if (outstanding > 0) {
+            purchaseOutstanding += outstanding;
+        }
+    });
+
+    let saleOutstanding = 0;
+    salesHistory.forEach(sale => {
+        const totalReceivable = sale.total || 0;
+        const onlineReceived = sale.payment ? (sale.payment.online || 0) : 0;
+        const cashReceived = sale.payment ? (sale.payment.cash || 0) : 0;
+        const totalReceived = onlineReceived + cashReceived;
+        const outstanding = sale.payment?.due || (totalReceivable - totalReceived);
+        if (outstanding > 0) {
+            saleOutstanding += outstanding;
+        }
+    });
+
     document.getElementById("totalSales").textContent = totalSales;
     document.getElementById("totalBills").textContent = totalBills;
     document.getElementById("totalLabour").textContent = totalLabour;
     document.getElementById("totalCash").textContent = totalCash;
     document.getElementById("totalOnline").textContent = totalOnline;
     document.getElementById("totalPaymentReport").textContent = totalPayment;
+    document.getElementById("purchaseOutstanding").textContent = purchaseOutstanding.toFixed(2);
+    document.getElementById("saleOutstanding").textContent = saleOutstanding.toFixed(2);
 
     // Popular items
     const itemCounts = {};
@@ -2181,29 +3155,26 @@ function loadItemsDropdown() {
     clearWeights(); // Clear weights when loading items
 }
 
-// Load sale items dropdown (items with stock)
+// Load sale items dropdown (all items)
 function loadSaleItemsDropdown() {
     const select = document.getElementById("billItem");
     if (!select) return;
     
     select.innerHTML = '';
 
-    // Load items that have stock
-    const stockItems = Object.keys(stock).filter(itemName => stock[itemName].quantity > 0);
-    
-    stockItems.forEach(itemName => {
+    // Load all items
+    items.forEach(item => {
         const opt = document.createElement("option");
-        opt.value = itemName;
-        const item = items.find(i => i.name === itemName);
-        const displayName = (settings.showHindi && item && item.hindiName) ? item.hindiName : itemName;
+        opt.value = item.name;
+        const displayName = (settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         opt.textContent = displayName;
         select.appendChild(opt);
     });
     
     // Select most frequent sold item by default
-    if (stockItems.length > 0) {
+    if (items.length > 0) {
         const mostFrequent = getMostFrequentItem('sale');
-        if (mostFrequent && stock[mostFrequent] && stock[mostFrequent].quantity > 0) {
+        if (mostFrequent) {
             select.value = mostFrequent;
         }
         loadRates();
@@ -2289,8 +3260,25 @@ async function addWeight() {
     hapticFeedback('light');
     currentWeights.push(weight);
     renderWeights();
+    saveBillDraft(); // Auto-save draft
     showToast(`Added ${weight}kg`);
     weightInput.value = "";
+    
+    // Auto-add to bill when 10 weights are collected (lot-wise)
+    if (currentWeights.length >= 10) {
+        const itemIndex = document.getElementById("billItem").value;
+        const rate = Number(document.getElementById("billRate").value);
+        
+        if (itemIndex && rate && rate > 0) {
+            // Automatically add to bill (will combine with existing item)
+            await addToBill(true); // true = auto-add, combine with existing
+            showToast(`✓ Lot of 10 packets added to bill`);
+        } else {
+            // Just notify user that they can add manually
+            showToast(`⚠️ 10 packets collected - select item & rate to add`);
+        }
+    }
+    
     weightInput.focus();
 }
 
@@ -2339,7 +3327,7 @@ function clearWeights() {
 }
 
 // Add to bill
-async function addToBill() {
+async function addToBill(autoAdd = false) {
     // Check if there's a weight entered but not added
     const weightInput = document.getElementById("newWeight");
     const pendingWeight = Number(weightInput.value);
@@ -2379,40 +3367,76 @@ async function addToBill() {
             return;
         }
 
-        billItems.push({
-            name: itemName,
-            rate,
-            qty: totalQty,
-            weights: [...currentWeights],
-            packets: currentWeights.length,
-            total: Math.round(rate * totalQty),
-            mode: 'sale'
-        });
+        // Check if item with same rate already exists in bill (only for auto-add)
+        const existingItem = autoAdd ? billItems.find(item => item.name === itemName && item.rate === rate && item.mode === 'sale') : null;
+        
+        if (existingItem) {
+            // Add to existing item (auto-add combines lots)
+            existingItem.weights.push(...currentWeights);
+            existingItem.packets += currentWeights.length;
+            existingItem.qty += totalQty;
+            existingItem.total = Math.round(existingItem.rate * existingItem.qty);
+        } else {
+            // Create new item (manual add always creates new row)
+            billItems.push({
+                name: itemName,
+                rate,
+                qty: totalQty,
+                weights: [...currentWeights],
+                packets: currentWeights.length,
+                total: Math.round(rate * totalQty),
+                mode: 'sale'
+            });
+        }
     } else {
         // Purchase mode
         let item = items[itemIndex];
         const heavyPackets = currentWeights.filter(w => w > settings.heavyWeightThreshold).length;
 
-        billItems.push({
-            name: item.name,
-            rate,
-            qty: totalQty,
-            weights: [...currentWeights],
-            packets: currentWeights.length,
-            heavyPackets: heavyPackets,
-            total: Math.round(rate * totalQty),
-            mode: 'purchase'
-        });
+        // Check if item with same rate already exists in bill (only for auto-add)
+        const existingItem = autoAdd ? billItems.find(billItem => billItem.name === item.name && billItem.rate === rate && billItem.mode === 'purchase') : null;
+        
+        if (existingItem) {
+            // Add to existing item (auto-add combines lots)
+            existingItem.weights.push(...currentWeights);
+            existingItem.packets += currentWeights.length;
+            existingItem.heavyPackets = (existingItem.heavyPackets || 0) + heavyPackets;
+            existingItem.qty += totalQty;
+            existingItem.total = Math.round(existingItem.rate * existingItem.qty);
+            
+            // Update stock with the new quantity
+            updateStock(item.name, totalQty, rate);
+            
+            // Auto-add labor charge for heavy packets if checkbox is enabled
+            const autoLaborEnabled = document.getElementById("autoLaborCharge").checked;
+            if (heavyPackets > 0 && autoLaborEnabled) {
+                const autoLabor = heavyPackets * settings.laborRate;
+                const currentLabor = Number(document.getElementById("manualLaborCharges").value) || 0;
+                document.getElementById("manualLaborCharges").value = currentLabor + autoLabor;
+            }
+        } else {
+            // Create new item (manual add always creates new row)
+            billItems.push({
+                name: item.name,
+                rate,
+                qty: totalQty,
+                weights: [...currentWeights],
+                packets: currentWeights.length,
+                heavyPackets: heavyPackets,
+                total: Math.round(rate * totalQty),
+                mode: 'purchase'
+            });
 
-        // Update stock - ADD to stock when purchasing
-        updateStock(item.name, totalQty, rate);
+            // Update stock - ADD to stock when purchasing
+            updateStock(item.name, totalQty, rate);
 
-        // Auto-add labor charge for heavy packets if checkbox is enabled
-        const autoLaborEnabled = document.getElementById("autoLaborCharge").checked;
-        if (heavyPackets > 0 && autoLaborEnabled) {
-            const autoLabor = heavyPackets * settings.laborRate;
-            const currentLabor = Number(document.getElementById("manualLaborCharges").value) || 0;
-            document.getElementById("manualLaborCharges").value = currentLabor + autoLabor;
+            // Auto-add labor charge for heavy packets if checkbox is enabled
+            const autoLaborEnabled = document.getElementById("autoLaborCharge").checked;
+            if (heavyPackets > 0 && autoLaborEnabled) {
+                const autoLabor = heavyPackets * settings.laborRate;
+                const currentLabor = Number(document.getElementById("manualLaborCharges").value) || 0;
+                document.getElementById("manualLaborCharges").value = currentLabor + autoLabor;
+            }
         }
     }
 
@@ -2420,13 +3444,16 @@ async function addToBill() {
     renderBill();
     clearWeights();
     updateTotals();
+    saveBillDraft(); // Auto-save draft
     
     const itemName = transactionMode === 'sale' ? itemIndex : items[itemIndex].name;
     showToast(`Added ${itemName} to bill`);
     
-    // Reset selection
-    document.getElementById("billItem").value = "";
-    document.getElementById("billRate").value = "";
+    // Reset selection only for manual add (not auto-add)
+    if (!autoAdd) {
+        document.getElementById("billItem").value = "";
+        document.getElementById("billRate").value = "";
+    }
 }
 
 // Render bill items in the table
@@ -2443,13 +3470,20 @@ function renderBill() {
         totalPacketsCount += b.packets;
         totalHeavyPacketsCount += b.heavyPackets || 0;
 
-        // Format weights display - show formula for multiple weights, just total for single weight
+        // Format weights display - group by lots of 10
         let weightsDisplay = '';
         if (b.weights) {
             if (b.weights.length === 1) {
                 weightsDisplay = `<strong>${b.qty}kg</strong>`;
             } else {
-                weightsDisplay = b.weights.join('+') + ` = <strong>${b.qty}kg</strong>`;
+                // Group weights into lots of 10
+                const lots = [];
+                for (let j = 0; j < b.weights.length; j += 10) {
+                    const lot = b.weights.slice(j, j + 10);
+                    const lotSum = lot.reduce((sum, w) => sum + w, 0);
+                    lots.push(lot.join('+') + ` = ${lotSum}`);
+                }
+                weightsDisplay = lots.join('<br>') + `<br><strong>= ${b.qty}kg</strong>`;
             }
         }
 
@@ -2486,6 +3520,7 @@ function renderBill() {
 function deleteBillItem(index) {
     billItems.splice(index, 1);
     renderBill();
+    saveBillDraft(); // Auto-save draft
 }
 
 // Update totals calculation
@@ -2527,25 +3562,41 @@ function updatePaymentTotal() {
 function fillPayableAmount(type) {
     const onlineCheckbox = document.getElementById('onlineCheckbox');
     const cashCheckbox = document.getElementById('cashCheckbox');
+    const dueCheckbox = document.getElementById('dueCheckbox');
     const onlinePayment = document.getElementById('onlinePayment');
     const cashPayment = document.getElementById('cashPayment');
+    const dueAmount = document.getElementById('dueAmount');
     const amountPayable = Number(document.getElementById('amountPayable').textContent) || 0;
 
     if (type === 'online') {
         if (onlineCheckbox.checked) {
             cashCheckbox.checked = false;
+            dueCheckbox.checked = false;
             onlinePayment.value = amountPayable;
             cashPayment.value = '';
+            dueAmount.value = '';
         } else {
             onlinePayment.value = '';
         }
     } else if (type === 'cash') {
         if (cashCheckbox.checked) {
             onlineCheckbox.checked = false;
+            dueCheckbox.checked = false;
             cashPayment.value = amountPayable;
             onlinePayment.value = '';
+            dueAmount.value = '';
         } else {
             cashPayment.value = '';
+        }
+    } else if (type === 'due') {
+        if (dueCheckbox.checked) {
+            onlineCheckbox.checked = false;
+            cashCheckbox.checked = false;
+            dueAmount.value = amountPayable;
+            onlinePayment.value = '';
+            cashPayment.value = '';
+        } else {
+            dueAmount.value = '';
         }
     }
 
@@ -2554,18 +3605,24 @@ function fillPayableAmount(type) {
 
 // -------------------- PRINT BILL --------------------
 async function printBill() {
-    if (billItems.length === 0) {
-        await showModal("No items in bill");
-        return;
-    }
-    
-    hapticFeedback('medium');
+    try {
+        console.log('[DEBUG] printBill started');
+        if (billItems.length === 0) {
+            await showModal("No items in bill");
+            return;
+        }
+        console.log('[DEBUG] Bill items count:', billItems.length);
+        
+        hapticFeedback('medium');
 
-    // Get payment details - treat empty as 0
-    const amountPayable = Number(document.getElementById("amountPayable").textContent) || 0;
-    const onlinePayment = Number(document.getElementById("onlinePayment").value) || 0;
-    const cashPayment = Number(document.getElementById("cashPayment").value) || 0;
-    const totalPayment = onlinePayment + cashPayment;
+        // Get payment details - treat empty as 0
+        console.log('[DEBUG] Getting payment details');
+        const amountPayable = Number(document.getElementById("amountPayable").textContent) || 0;
+        const onlinePayment = Number(document.getElementById("onlinePayment").value) || 0;
+        const cashPayment = Number(document.getElementById("cashPayment").value) || 0;
+        const duePayment = Number(document.getElementById("dueAmount").value) || 0;
+        const totalPayment = onlinePayment + cashPayment + duePayment;
+        console.log('[DEBUG] Payment details:', { amountPayable, totalPayment });
     
     // Check if payment is sufficient
     if (totalPayment < amountPayable) {
@@ -2586,10 +3643,13 @@ async function printBill() {
         }
     }
 
-    const isPurchase = billItems[0].mode === 'purchase';
-    
-    // Get values before clearing
-    const billTotal = Number(document.getElementById("billTotal").textContent);
+        console.log('[DEBUG] Payment check passed');
+        const isPurchase = billItems[0].mode === 'purchase';
+        console.log('[DEBUG] isPurchase:', isPurchase);
+        
+        // Get values before clearing
+        const billTotal = Number(document.getElementById("billTotal").textContent);
+        console.log('[DEBUG] billTotal:', billTotal);
     const laborCharges = isPurchase ? Number(document.getElementById("manualLaborCharges").value) || 0 : 0;
     const amountPayableFinal = isPurchase ? billTotal - laborCharges : billTotal;
 
@@ -2599,16 +3659,18 @@ async function printBill() {
     const isAutoLabor = isPurchase && document.getElementById("autoLaborCharge").checked;
     const customerName = document.getElementById("customerName").value.trim();
 
-    // Prepare bill data
-    const billData = {
-        isPurchase,
-        customerName,
+        // Prepare bill data
+        console.log('[DEBUG] Preparing bill data');
+        const billData = {
+            isPurchase,
+            customerName,
         billTotal,
         laborCharges,
         amountPayable: amountPayableFinal,
         totalPackets,
         onlinePayment,
         cashPayment,
+        duePayment,
         isAutoLabor: isAutoLabor,
         laborCalc: totalHeavyPackets > 0 ? `${settings.laborRate} × ${totalHeavyPackets}` : '',
         items: billItems.map(b => {
@@ -2628,11 +3690,13 @@ async function printBill() {
         })
     };
 
-    // Check if Bluetooth printer is enabled and connected
-    if (printerSettings.enabled && connectedPrinter) {
-        try {
-            showLoading();
-            await printViaBluetooth(billData);
+        // Check if Bluetooth printer is enabled and connected
+        console.log('[DEBUG] Checking printer settings:', { enabled: printerSettings.enabled, connected: !!connectedPrinter });
+        if (printerSettings.enabled && connectedPrinter) {
+            try {
+                console.log('[DEBUG] Attempting Bluetooth print');
+                showLoading();
+                await printViaBluetooth(billData);
             hideLoading();
             showToast('✓ Printed via Bluetooth');
         } catch (error) {
@@ -2655,23 +3719,40 @@ async function printBill() {
         hideLoading();
     }
 
-    // Save to appropriate history
-    if (isPurchase) {
-        await saveBillToHistory();
-    } else {
-        await saveSaleToHistory();
+        // Save to appropriate history
+        if (isPurchase) {
+            await saveBillToHistory();
+        } else {
+            await saveSaleToHistory();
+        }
+        
+        hapticFeedback('heavy');
+    } catch (error) {
+        hideLoading();
+        console.error('Print bill error:', error);
+        await showModal('Print failed: ' + (error.message || 'Unknown error'));
     }
-    
-    hapticFeedback('heavy');
 }
 
 async function printViaBluetooth(billData) {
-    if (!connectedPrinter) {
-        throw new Error('Printer not connected');
+    try {
+        console.log('[DEBUG] printViaBluetooth started');
+        if (!connectedPrinter) {
+            throw new Error('Printer not connected');
+        }
+        console.log('[DEBUG] Printer device:', connectedPrinter.device);
+        
+        if (!connectedPrinter.device) {
+            throw new Error('No printer device available');
+        }
+        
+        console.log('[DEBUG] Printing with thermal printer plugin');
+        await connectedPrinter.write(billData);
+        console.log('[DEBUG] Print completed successfully');
+    } catch (error) {
+        console.error('Bluetooth print error:', error);
+        throw new Error(error.message || 'Failed to print via Bluetooth');
     }
-    
-    const escposCommands = generateESCPOS(billData);
-    await connectedPrinter.write(escposCommands);
 }
 
 async function printViaWeb(billData) {
@@ -2721,7 +3802,7 @@ async function printViaWeb(billData) {
             </style>
         </head>
         <body>
-            <h2>${billData.isPurchase ? 'PURCHASE RECEIPT' : 'SALE RECEIPT'}</h2>
+            <h2>${billData.duePayment > 0 ? 'RECEIPT' : (billData.isPurchase ? 'PURCHASE RECEIPT' : 'SALE RECEIPT')}</h2>
             ${billData.customerName ? `<p style="text-align: center; margin: 10px 0; font-size: 16px;"><strong>Customer:</strong> ${billData.customerName}</p>` : ''}
             <table>
                 <tr><th>वस्तु</th><th>दर</th><th>मात्रा</th><th>कुल</th></tr>
@@ -2767,36 +3848,50 @@ async function saveSaleToHistory() {
     const billTotal = Number(document.getElementById("billTotal").textContent);
     const onlinePayment = Number(document.getElementById("onlinePayment").value) || 0;
     const cashPayment = Number(document.getElementById("cashPayment").value) || 0;
-    const totalPayment = onlinePayment + cashPayment;
+    const duePayment = Number(document.getElementById("dueAmount").value) || 0;
+    const totalPayment = onlinePayment + cashPayment + duePayment;
 
     // Reduce stock for each item
     billItems.forEach(item => {
         reduceStock(item.name, item.qty);
     });
 
+    const billComments = document.getElementById("billComments").value.trim();
+
     const sale = {
         id: Date.now(),
         date: new Date().toLocaleString(),
+        customerPhone: customerPhoneNumber,
+        comments: billComments,
         items: [...billItems],
         total: billTotal,
         payment: {
             online: onlinePayment,
             cash: cashPayment,
+            due: duePayment,
             total: totalPayment
         },
-        type: 'sale'
+        type: 'sale',
+        source: 'billing-tab'
     };
 
     await saveSaleToFirestore(sale);
     salesHistory.unshift(sale);
     await calculateStockFromBills();
     
+    // Update finance overview if on Finance tab
+    if (document.getElementById('financeOverview') && document.getElementById('financeOverview').style.display !== 'none') {
+        calculateFinanceOverview();
+    }
+    
     // Clear current bill - set payment fields to empty
     billItems = [];
     document.getElementById("onlinePayment").value = "";
     document.getElementById("cashPayment").value = "";
+    document.getElementById("dueAmount").value = "";
     document.getElementById("onlineCheckbox").checked = false;
     document.getElementById("cashCheckbox").checked = false;
+    document.getElementById("dueCheckbox").checked = false;
     document.getElementById("totalPayment").textContent = 0;
     
     const totalPacketsElement = document.getElementById("totalPacketsInBill");
@@ -2806,6 +3901,12 @@ async function saveSaleToHistory() {
     
     renderBill();
     updateTotals();
+    renderSalesHistory();
+    renderDue();
+    
+    // Clear customer fields
+    customerPhoneNumber = '';
+    document.getElementById("billComments").value = "";
     
     // Reload stock dropdown for next sale with most frequent item
     if (transactionMode === 'sale') {
@@ -2920,12 +4021,12 @@ function updateModeUI() {
         
         // Update buttons
         if (printBtn) {
-            printBtn.textContent = 'Print Sale';
+            printBtn.textContent = 'Print';
             printBtn.classList.remove('print-purchase-btn');
             printBtn.classList.add('print-sale-btn');
         }
         if (saveBtn) {
-            saveBtn.textContent = 'Save Sale';
+            saveBtn.textContent = 'Save';
             saveBtn.classList.remove('save-purchase-btn');
             saveBtn.classList.add('save-sale-btn');
         }
@@ -2953,12 +4054,12 @@ function updateModeUI() {
         
         // Update buttons
         if (printBtn) {
-            printBtn.textContent = 'Print Purchase';
+            printBtn.textContent = 'Print';
             printBtn.classList.remove('print-sale-btn');
             printBtn.classList.add('print-purchase-btn');
         }
         if (saveBtn) {
-            saveBtn.textContent = 'Save Purchase';
+            saveBtn.textContent = 'Save';
             saveBtn.classList.remove('save-sale-btn');
             saveBtn.classList.add('save-purchase-btn');
         }
@@ -3224,7 +4325,11 @@ async function scanBluetoothDevices() {
     try {
         hapticFeedback('light');
         
-        if (!window.Capacitor || !window.Capacitor.Plugins.BluetoothLe) {
+        console.log('[SCAN] Checking Capacitor:', !!window.Capacitor);
+        console.log('[SCAN] Available plugins:', window.Capacitor?.Plugins ? Object.keys(window.Capacitor.Plugins) : 'none');
+        console.log('[SCAN] CapacitorThermalPrinter available:', !!window.Capacitor?.Plugins?.CapacitorThermalPrinter);
+        
+        if (!window.Capacitor || !window.Capacitor.Plugins.CapacitorThermalPrinter) {
             await showModal('Bluetooth is only available in the mobile app.\n\nWeb printing will be used instead.');
             return;
         }
@@ -3250,12 +4355,15 @@ function displayBluetoothDevices(devices) {
     devices.forEach(device => {
         const deviceCard = document.createElement('div');
         deviceCard.style.cssText = 'background: #f5f5f5; padding: 12px; margin: 8px 0; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;';
+        // ThermalPrinter plugin uses 'address' instead of 'deviceId' and 'name' for device info
+        const address = device.address || device.deviceId || device.id;
+        const name = device.name || 'Unknown Device';
         deviceCard.innerHTML = `
             <div>
-                <strong>${device.name || 'Unknown Device'}</strong><br>
-                <small style="color: #666;">${device.deviceId}</small>
+                <strong>${name}</strong><br>
+                <small style="color: #666;">${address}</small>
             </div>
-            <button class="add-item-btn" onclick="connectToPrinter('${device.deviceId}', '${device.name || 'Printer'}')">Connect</button>
+            <button class="add-item-btn" onclick="connectToPrinter('${address}', '${name}')">Connect</button>
         `;
         container.appendChild(deviceCard);
     });
@@ -3368,6 +4476,274 @@ async function testPrint() {
 
 // -------------------- INIT --------------------
 // -------------------- PAYMENTS --------------------
+
+function updateExpensePersonOptions() {
+    // Get unique person names from all expenses (business and personal)
+    const uniquePersons = [...new Set(
+        paymentsHistory
+            .filter(p => p.personName && p.personName.trim() !== '')
+            .map(p => p.personName)
+    )];
+    
+    // Update business expense person options
+    const businessDatalist = document.getElementById('businessExpensePersonOptions');
+    if (businessDatalist) {
+        businessDatalist.innerHTML = uniquePersons.map(name => `<option value="${name}">`).join('');
+    }
+    
+    // Update personal expense person options
+    const personalDatalist = document.getElementById('personalExpensePersonOptions');
+    if (personalDatalist) {
+        personalDatalist.innerHTML = uniquePersons.map(name => `<option value="${name}">`).join('');
+    }
+}
+
+function filterExpenseTab(view, evt) {
+    const buttons = document.querySelectorAll('#payments .filter-btn');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    if (evt) evt.target.classList.add('active');
+    
+    const businessSection = document.getElementById('businessExpenseSection');
+    const personalSection = document.getElementById('personalExpenseSection');
+    
+    if (view === 'business') {
+        businessSection.style.display = 'block';
+        personalSection.style.display = 'none';
+    } else {
+        businessSection.style.display = 'none';
+        personalSection.style.display = 'block';
+    }
+}
+
+async function saveBusinessExpense() {
+    const type = document.getElementById('businessExpenseType').value.trim();
+    const personName = document.getElementById('businessExpensePerson').value.trim();
+    const amount = Number(document.getElementById('businessExpenseAmount').value);
+    const remarks = document.getElementById('businessExpenseRemarks').value.trim();
+
+    if (!type) {
+        showModal('Please enter expense type');
+        return;
+    }
+
+    if (!amount || amount <= 0) {
+        showModal('Please enter a valid amount');
+        return;
+    }
+
+    const expense = {
+        id: Date.now(),
+        type,
+        personName,
+        amount,
+        remarks,
+        category: 'business',
+        date: new Date().toLocaleString('en-IN'),
+        createdBy: currentUser ? currentUser.uid : 'unknown',
+        createdByName: currentUser ? currentUser.name : 'Unknown'
+    };
+
+    await savePaymentToFirestore(expense);
+    paymentsHistory.unshift(expense);
+    
+    hapticFeedback('medium');
+    showToast('✓ Business expense saved');
+    
+    document.getElementById('businessExpenseType').value = '';
+    document.getElementById('businessExpensePerson').value = '';
+    document.getElementById('businessExpenseAmount').value = '';
+    document.getElementById('businessExpenseRemarks').value = '';
+    
+    updateExpensePersonOptions();
+    renderPaymentsHistory();
+    
+    // Update finance overview if on Finance tab
+    if (document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
+        calculateFinanceOverview();
+    }
+}
+
+async function savePersonalExpense() {
+    const type = document.getElementById('personalExpenseType').value.trim();
+    const amount = Number(document.getElementById('personalExpenseAmount').value);
+    const personName = document.getElementById('personalExpensePerson').value.trim();
+    const remarks = document.getElementById('personalExpenseRemarks').value.trim();
+
+    if (!type) {
+        showModal('Please enter expense type');
+        return;
+    }
+
+    if (!amount || amount <= 0) {
+        showModal('Please enter a valid amount');
+        return;
+    }
+
+    const expense = {
+        id: Date.now(),
+        type,
+        personName,
+        amount,
+        remarks,
+        category: 'personal',
+        date: new Date().toLocaleString('en-IN'),
+        createdBy: currentUser ? currentUser.uid : 'unknown',
+        createdByName: currentUser ? currentUser.name : 'Unknown'
+    };
+
+    await savePaymentToFirestore(expense);
+    paymentsHistory.unshift(expense);
+    
+    hapticFeedback('medium');
+    showToast('✓ Personal expense saved');
+    
+    document.getElementById('personalExpenseType').value = '';
+    document.getElementById('personalExpenseAmount').value = '';
+    document.getElementById('personalExpensePerson').value = '';
+    document.getElementById('personalExpenseRemarks').value = '';
+    
+    updateExpensePersonOptions();
+    renderPaymentsHistory();
+    
+    // Update finance overview if on Finance tab
+    if (document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
+        calculateFinanceOverview();
+    }
+}
+
+async function saveAndPrintBusinessExpense() {
+    const type = document.getElementById('businessExpenseType').value.trim();
+    const personName = document.getElementById('businessExpensePerson').value.trim();
+    const amount = Number(document.getElementById('businessExpenseAmount').value);
+    const remarks = document.getElementById('businessExpenseRemarks').value.trim();
+
+    if (!type) {
+        await showModal('Please enter expense type');
+        return;
+    }
+
+    if (!amount || amount <= 0) {
+        await showModal('Please enter a valid amount');
+        return;
+    }
+
+    const expense = {
+        id: Date.now(),
+        type,
+        personName,
+        amount,
+        remarks,
+        category: 'business',
+        date: new Date().toLocaleString('en-IN'),
+        createdBy: currentUser ? currentUser.uid : 'unknown',
+        createdByName: currentUser ? currentUser.name : 'Unknown'
+    };
+
+    await savePaymentToFirestore(expense);
+    paymentsHistory.unshift(expense);
+    
+    printExpenseReceipt(expense);
+    
+    document.getElementById('businessExpenseType').value = '';
+    document.getElementById('businessExpensePerson').value = '';
+    document.getElementById('businessExpenseAmount').value = '';
+    document.getElementById('businessExpenseRemarks').value = '';
+    
+    renderPaymentsHistory();
+    
+    // Update finance overview if on Finance tab
+    if (document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
+        calculateFinanceOverview();
+    }
+}
+
+async function saveAndPrintPersonalExpense() {
+    const type = document.getElementById('personalExpenseType').value.trim();
+    const amount = Number(document.getElementById('personalExpenseAmount').value);
+    const personName = document.getElementById('personalExpensePerson').value.trim();
+    const remarks = document.getElementById('personalExpenseRemarks').value.trim();
+
+    if (!type) {
+        await showModal('Please enter expense type');
+        return;
+    }
+
+    if (!amount || amount <= 0) {
+        await showModal('Please enter a valid amount');
+        return;
+    }
+
+    const expense = {
+        id: Date.now(),
+        type,
+        personName,
+        amount,
+        remarks,
+        category: 'personal',
+        date: new Date().toLocaleString('en-IN'),
+        createdBy: currentUser ? currentUser.uid : 'unknown',
+        createdByName: currentUser ? currentUser.name : 'Unknown'
+    };
+
+    await savePaymentToFirestore(expense);
+    paymentsHistory.unshift(expense);
+    
+    printExpenseReceipt(expense);
+    
+    document.getElementById('personalExpenseType').value = '';
+    document.getElementById('personalExpenseAmount').value = '';
+    document.getElementById('personalExpensePerson').value = '';
+    document.getElementById('personalExpenseRemarks').value = '';
+    
+    renderPaymentsHistory();
+    
+    // Update finance overview if on Finance tab
+    if (document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
+        calculateFinanceOverview();
+    }
+}
+
+function printExpenseReceipt(expense) {
+    const printContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Expense Receipt</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                h2 { text-align: center; }
+                .details { margin: 20px 0; }
+                .details div { padding: 8px 0; border-bottom: 1px solid #eee; }
+            </style>
+        </head>
+        <body>
+            <h2>${expense.category === 'business' ? 'BUSINESS EXPENSE' : 'PERSONAL EXPENSE'}</h2>
+            <div class="details">
+                <div><strong>Type:</strong> ${expense.type}</div>
+                <div><strong>Amount:</strong> ₹${expense.amount}</div>
+                ${expense.personName ? `<div><strong>Person:</strong> ${expense.personName}</div>` : ''}
+                ${expense.remarks ? `<div><strong>Remarks:</strong> ${expense.remarks}</div>` : ''}
+                <div><strong>Date:</strong> ${expense.date}</div>
+            </div>
+        </body>
+        </html>
+    `;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(printContent);
+    doc.close();
+    
+    setTimeout(() => {
+        iframe.contentWindow.print();
+        setTimeout(() => document.body.removeChild(iframe), 500);
+    }, 250);
+}
+
 async function savePayment() {
     const type = document.getElementById('paymentType').value.trim();
     const personName = document.getElementById('paymentPersonName').value.trim();
@@ -3393,7 +4769,10 @@ async function savePayment() {
         personName,
         amount,
         remarks,
-        date: new Date().toLocaleString('en-IN')
+        category: 'business',
+        date: new Date().toLocaleString('en-IN'),
+        createdBy: currentUser ? currentUser.uid : 'unknown',
+        createdByName: currentUser ? currentUser.name : 'Unknown'
     };
 
     await savePaymentToFirestore(payment);
@@ -3431,7 +4810,10 @@ async function saveAndPrintPayment() {
         personName,
         amount,
         remarks,
-        date: new Date().toLocaleString('en-IN')
+        category: 'business',
+        date: new Date().toLocaleString('en-IN'),
+        createdBy: currentUser ? currentUser.uid : 'unknown',
+        createdByName: currentUser ? currentUser.name : 'Unknown'
     };
 
     await savePaymentToFirestore(payment);
@@ -3537,17 +4919,20 @@ function clearPaymentForm() {
 }
 
 function renderPaymentsHistory() {
-    const container = document.getElementById('paymentsHistoryList');
+    renderBusinessExpenseHistory();
+    renderPersonalExpenseHistory();
+}
+
+function renderBusinessExpenseHistory() {
+    const container = document.getElementById('businessExpenseHistoryList');
+    const businessExpenses = paymentsHistory.filter(p => p.category === 'business');
     
-    if (paymentsHistory.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No expenses recorded yet</p>';
+    if (businessExpenses.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>';
         return;
     }
 
-    // Update payment type options from history
-    updatePaymentTypeOptions();
-
-    container.innerHTML = paymentsHistory.map((payment, index) => `
+    container.innerHTML = businessExpenses.map((payment, index) => `
         <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                 <div>
@@ -3564,13 +4949,1624 @@ function renderPaymentsHistory() {
     `).join('');
 }
 
+function renderPersonalExpenseHistory() {
+    const container = document.getElementById('personalExpenseHistoryList');
+    const personalExpenses = paymentsHistory.filter(p => p.category === 'personal');
+    
+    if (personalExpenses.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>';
+        return;
+    }
+
+    container.innerHTML = personalExpenses.map((payment, index) => `
+        <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                <div>
+                    ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${payment.personName}</div>` : ''}
+                    <div style="font-size: 13px; color: #666; margin-top: 4px;">${payment.type}</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${payment.amount}</div>
+                </div>
+            </div>
+            ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${payment.remarks}</div>` : ''}
+            <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${payment.date}${payment.createdByName ? ` • By: ${payment.createdByName}` : ''}</div>
+        </div>
+    `).join('');
+}
+
+// Store current bill/sale for editing
+let currentBillForEdit = null;
+let currentBillType = null;
+let currentBillIndex = null;
+
+async function reprintBill(index) {
+    const bill = billHistory[index];
+    if (!bill) {
+        showModal('Bill not found');
+        return;
+    }
+    
+    // Store for editing
+    currentBillForEdit = bill;
+    currentBillType = 'purchase';
+    currentBillIndex = index;
+    
+    // Generate bill HTML
+    const itemsHTML = bill.items.map(item => {
+        const weightsDisplay = item.weights ? item.weights.map(w => `${w}kg`).join(', ') : '';
+        return `
+            <tr>
+                <td>${item.name}</td>
+                <td>${item.packets || 0}</td>
+                <td>${weightsDisplay}</td>
+                <td>${item.qty || 0} kg</td>
+                <td>₹${item.rate}</td>
+                <td><strong>₹${item.total}</strong></td>
+            </tr>
+        `;
+    }).join('');
+    
+    const payment = bill.payment || {};
+    const paymentHTML = (payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
+        <div class="bill-payment-section">
+            <h4>Payment Details</h4>
+            ${payment.online > 0 ? `<div class="bill-payment-row"><span>Online:</span><strong>₹${payment.online}</strong></div>` : ''}
+            ${payment.cash > 0 ? `<div class="bill-payment-row"><span>Cash:</span><strong>₹${payment.cash}</strong></div>` : ''}
+            ${payment.due > 0 ? `<div class="bill-payment-row" style="color: #dc3545;"><span>Due:</span><strong>₹${payment.due}</strong></div>` : ''}
+        </div>
+    ` : '';
+    
+    const content = `
+        <div class="bill-info-section">
+            ${bill.customerName ? `
+                <div class="bill-info-row">
+                    <div class="bill-info-label">Customer:</div>
+                    <div class="bill-info-value"><strong>${bill.customerName}</strong></div>
+                </div>
+            ` : ''}
+            <div class="bill-info-row">
+                <div class="bill-info-label">Date:</div>
+                <div class="bill-info-value">${bill.date}</div>
+            </div>
+            ${bill.createdByName ? `
+                <div class="bill-info-row">
+                    <div class="bill-info-label">Created By:</div>
+                    <div class="bill-info-value">${bill.createdByName}</div>
+                </div>
+            ` : ''}
+        </div>
+        
+        <table class="bill-items-table">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th style="text-align: center;">Packets</th>
+                    <th>Weights</th>
+                    <th>Qty</th>
+                    <th>Rate</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${itemsHTML}
+            </tbody>
+        </table>
+        
+        <div class="bill-totals-section">
+            <div class="bill-totals-row">
+                <span>Bill Total:</span>
+                <strong>₹${bill.total}</strong>
+            </div>
+            ${bill.laborCharges > 0 ? `
+                <div class="bill-totals-row">
+                    <span>Labor Charges:</span>
+                    <strong>₹${bill.laborCharges}</strong>
+                </div>
+                <div class="bill-totals-row total">
+                    <span>Amount Payable:</span>
+                    <strong>₹${(bill.total - bill.laborCharges).toFixed(2)}</strong>
+                </div>
+            ` : ''}
+        </div>
+        
+        ${paymentHTML}
+    `;
+    
+    document.getElementById('billDetailsTitle').textContent = `Purchase Bill #${bill.id}`;
+    document.getElementById('billDetailsContent').innerHTML = content;
+    document.getElementById('billDetailsOverlay').classList.add('active');
+}
+
+async function reprintSale(index) {
+    const sale = salesHistory[index];
+    if (!sale) {
+        showModal('Sale not found');
+        return;
+    }
+    
+    // Store for editing
+    currentBillForEdit = sale;
+    currentBillType = 'sale';
+    currentBillIndex = index;
+    
+    // Generate sale HTML
+    const itemsHTML = sale.items.map(item => {
+        const qty = item.qty || item.quantity || 0;
+        return `
+            <tr>
+                <td>${item.name}</td>
+                <td>${qty} kg</td>
+                <td>₹${item.rate}</td>
+                <td><strong>₹${item.total}</strong></td>
+            </tr>
+        `;
+    }).join('');
+    
+    const payment = sale.payment || {};
+    const paymentHTML = (payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
+        <div class="bill-payment-section">
+            <h4>Payment Details</h4>
+            ${payment.online > 0 ? `<div class="bill-payment-row"><span>Online:</span><strong>₹${payment.online}</strong></div>` : ''}
+            ${payment.cash > 0 ? `<div class="bill-payment-row"><span>Cash:</span><strong>₹${payment.cash}</strong></div>` : ''}
+            ${payment.due > 0 ? `<div class="bill-payment-row" style="color: #dc3545;"><span>Due:</span><strong>₹${payment.due}</strong></div>` : ''}
+        </div>
+    ` : '';
+    
+    const paymentsHistoryHTML = sale.payments && sale.payments.length > 0 ? `
+        <div class="bill-payment-section" style="background: #e7f5e9;">
+            <h4 style="color: #155724;">Payment History</h4>
+            ${sale.payments.map(p => `
+                <div class="bill-payment-row"><span>• ${p.date}${p.recordedBy ? ` by ${p.recordedBy}` : ''}</span><strong>₹${p.amount}</strong></div>
+            `).join('')}
+        </div>
+    ` : '';
+    
+    const content = `
+        <div class="bill-info-section">
+            ${sale.customerName ? `
+                <div class="bill-info-row">
+                    <div class="bill-info-label">Customer:</div>
+                    <div class="bill-info-value"><strong>${sale.customerName}</strong></div>
+                </div>
+            ` : ''}
+            <div class="bill-info-row">
+                <div class="bill-info-label">Date:</div>
+                <div class="bill-info-value">${sale.date}</div>
+            </div>
+            ${sale.createdByName ? `
+                <div class="bill-info-row">
+                    <div class="bill-info-label">Created By:</div>
+                    <div class="bill-info-value">${sale.createdByName}</div>
+                </div>
+            ` : ''}
+        </div>
+        
+        <table class="bill-items-table">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Rate</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${itemsHTML}
+            </tbody>
+        </table>
+        
+        <div class="bill-totals-section">
+            <div class="bill-totals-row total">
+                <span>Total:</span>
+                <strong>₹${sale.total}</strong>
+            </div>
+        </div>
+        
+        ${paymentHTML}
+        ${paymentsHistoryHTML}
+    `;
+    
+    document.getElementById('billDetailsTitle').textContent = `Sale #${sale.id}`;
+    document.getElementById('billDetailsContent').innerHTML = content;
+    document.getElementById('billDetailsOverlay').classList.add('active');
+}
+
+function closeBillDetails() {
+    document.getElementById('billDetailsOverlay').classList.remove('active');
+    currentBillForEdit = null;
+    currentBillType = null;
+    currentBillIndex = null;
+}
+
+async function editBillDetails() {
+    if (!currentBillForEdit || !currentBillType) {
+        showModal('No bill selected for editing');
+        return;
+    }
+    
+    closeBillDetails();
+    
+    if (currentBillType === 'purchase') {
+        // Switch to Billing tab (Purchase) and prefill data
+        showTab('billing', null);
+        
+        // Set edit mode flag
+        window.editingBillId = currentBillForEdit.id;
+        window.editingBillDocId = currentBillForEdit.docId || String(currentBillForEdit.id);
+        
+        // Prefill customer name
+        const customerNameEl = document.getElementById('customerName');
+        if (customerNameEl) {
+            customerNameEl.value = currentBillForEdit.customerName || '';
+        }
+        
+        // Prefill labor charges
+        const laborChargesEl = document.getElementById('manualLaborCharges');
+        if (laborChargesEl) {
+            laborChargesEl.value = currentBillForEdit.laborCharges || 0;
+        }
+        
+        // Prefill items
+        billItems = currentBillForEdit.items.map(item => ({
+            name: item.name,
+            packets: item.packets || 0,
+            weights: item.weights || [],
+            qty: item.qty || 0,
+            rate: item.rate || 0,
+            total: item.total || 0
+        }));
+        
+        // Prefill payment
+        const payment = currentBillForEdit.payment || {};
+        const cashEl = document.getElementById('cashPayment');
+        const onlineEl = document.getElementById('onlinePayment');
+        const dueEl = document.getElementById('dueAmount');
+        
+        if (cashEl) cashEl.value = payment.cash || 0;
+        if (onlineEl) onlineEl.value = payment.online || 0;
+        if (dueEl) dueEl.value = payment.due || 0;
+        
+        // Check checkboxes for payment methods
+        const cashCheckbox = document.getElementById('cashCheckbox');
+        const onlineCheckbox = document.getElementById('onlineCheckbox');
+        const dueCheckbox = document.getElementById('dueCheckbox');
+        
+        if (cashCheckbox && payment.cash > 0) cashCheckbox.checked = true;
+        if (onlineCheckbox && payment.online > 0) onlineCheckbox.checked = true;
+        if (dueCheckbox && payment.due > 0) dueCheckbox.checked = true;
+        
+        renderBill();
+        updateTotals();
+        
+        showToast('📝 Editing mode - Make changes and save to update');
+        
+    } else {
+        // Switch to Sales tab and prefill data
+        showTab('sales', null);
+        
+        // Make sure we're on the sales entry section, not outstanding
+        filterSalesTab('sales', null);
+        
+        // Set edit mode flag
+        window.editingSaleId = currentBillForEdit.id;
+        window.editingSaleDocId = currentBillForEdit.docId || String(currentBillForEdit.id);
+        
+        // Prefill customer name
+        const customerNameEl = document.getElementById('wholesaleCustomerName');
+        if (customerNameEl) {
+            customerNameEl.value = currentBillForEdit.customerName || '';
+        }
+        
+        // Prefill items
+        saleItems = currentBillForEdit.items.map(item => ({
+            name: item.name,
+            qty: item.qty || item.quantity || 0,
+            rate: item.rate || 0,
+            total: item.total || 0
+        }));
+        
+        // Prefill payment
+        const payment = currentBillForEdit.payment || {};
+        const cashEl = document.getElementById('wholesaleCash');
+        const onlineEl = document.getElementById('wholesaleOnline');
+        const dueEl = document.getElementById('wholesaleDue');
+        
+        if (cashEl) cashEl.value = payment.cash || 0;
+        if (onlineEl) onlineEl.value = payment.online || 0;
+        if (dueEl) dueEl.value = payment.due || 0;
+        
+        renderSalesBill();
+        updateSalesBillPayment();
+        
+        showToast('📝 Editing mode - Make changes and save to update');
+    }
+}
+
+async function showOutstandingDetails(transactionId, transactionType) {
+    if (transactionType === 'purchase') {
+        const billIndex = billHistory.findIndex(b => String(b.id) === String(transactionId));
+        if (billIndex >= 0) {
+            await reprintBill(billIndex);
+        } else {
+            showModal('Bill not found');
+        }
+    } else {
+        const saleIndex = salesHistory.findIndex(s => String(s.id) === String(transactionId));
+        if (saleIndex >= 0) {
+            await reprintSale(saleIndex);
+        } else {
+            showModal('Sale not found');
+        }
+    }
+}
+
+async function notifyOwnersOfEdit(type, docId, oldData, newData) {
+    try {
+        // Get all owners from users collection
+        const usersSnapshot = await db.collection('users').where('role', '==', 'owner').get();
+        const owners = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+        
+        // Create notification message
+        const typeName = type === 'purchase' ? 'Purchase Bill' : 'Sale';
+        const changes = [];
+        
+        if (oldData.customerName !== newData.customerName) {
+            changes.push(`Customer: ${oldData.customerName || 'N/A'} → ${newData.customerName || 'N/A'}`);
+        }
+        if (oldData.total !== newData.total) {
+            changes.push(`Total: ₹${oldData.total} → ₹${newData.total}`);
+        }
+        if (oldData.items.length !== newData.items.length) {
+            changes.push(`Items: ${oldData.items.length} → ${newData.items.length}`);
+        }
+        
+        const notification = {
+            type: 'history_edit',
+            transactionType: type,
+            transactionId: docId,
+            message: `${typeName} #${docId} was edited by ${userName}`,
+            changes: changes.join(', '),
+            editedBy: currentUser.uid,
+            editedByName: userName,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            date: new Date().toLocaleString('en-IN'),
+            read: false
+        };
+        
+        // Save notification for each owner
+        for (const owner of owners) {
+            if (owner.uid !== currentUser.uid) { // Don't notify the person who made the edit
+                await db.collection('notifications').add({
+                    ...notification,
+                    recipientId: owner.uid,
+                    recipientName: owner.name
+                });
+            }
+        }
+        
+        console.log('✓ Notified', owners.length - 1, 'owner(s) about edit');
+    } catch (error) {
+        console.error('Error sending notifications:', error);
+        // Don't throw - notifications are not critical
+    }
+}
+
+// ========== FINANCE & ACCOUNTING FUNCTIONS ==========
+
+function filterFinanceTab(view, evt) {
+    // Update button states
+    const buttons = document.querySelectorAll('#finance .filter-btn');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    if (evt) evt.currentTarget.classList.add('active');
+    
+    // Show/hide sections
+    document.getElementById('financeOverviewSection').style.display = view === 'overview' ? 'block' : 'none';
+    document.getElementById('financeTransactionsSection').style.display = view === 'transactions' ? 'block' : 'none';
+    document.getElementById('financeWithdrawalsSection').style.display = view === 'withdrawals' ? 'block' : 'none';
+    
+    // Render content for the selected view
+    if (view === 'overview') {
+        calculateFinanceOverview();
+    } else if (view === 'transactions') {
+        renderFinanceTransactions();
+    } else if (view === 'withdrawals') {
+        renderWithdrawalHistory();
+    }
+}
+
+function calculateFinanceOverview() {
+    // Calculate total revenue from sales
+    let totalRevenue = 0;
+    salesHistory.forEach(sale => {
+        totalRevenue += parseFloat(sale.total) || 0;
+    });
+    
+    // Calculate total purchases
+    let totalPurchases = 0;
+    billHistory.forEach(bill => {
+        totalPurchases += parseFloat(bill.total) || 0;
+    });
+    
+    // Calculate business and personal expenses
+    let businessExpenses = 0;
+    let personalExpenses = 0;
+    paymentsHistory.forEach(payment => {
+        const amount = parseFloat(payment.amount) || 0;
+        if (payment.category === 'business') {
+            businessExpenses += amount;
+        } else if (payment.category === 'personal') {
+            personalExpenses += amount;
+        }
+    });
+    
+    // Calculate total withdrawals
+    let totalWithdrawals = 0;
+    withdrawalsHistory.forEach(withdrawal => {
+        totalWithdrawals += parseFloat(withdrawal.amount) || 0;
+    });
+    
+    // Calculate profit and balance
+    const totalExpenses = businessExpenses + personalExpenses;
+    const profit = totalRevenue - totalPurchases - totalExpenses;
+    const balance = profit - totalWithdrawals;
+    
+    // Update stats cards
+    document.getElementById('currentBalance').textContent = balance.toFixed(2);
+    document.getElementById('totalRevenue').textContent = totalRevenue.toFixed(2);
+    document.getElementById('totalProfit').textContent = profit.toFixed(2);
+    document.getElementById('businessExpensesTotal').textContent = businessExpenses.toFixed(2);
+    document.getElementById('personalExpensesTotal').textContent = personalExpenses.toFixed(2);
+    document.getElementById('totalWithdrawals').textContent = totalWithdrawals.toFixed(2);
+    
+    // Render account breakdown
+    renderAccountBreakdown(totalRevenue, totalPurchases, businessExpenses, personalExpenses, totalWithdrawals, balance);
+    
+    // Render monthly profit chart
+    renderMonthlyProfitChart();
+}
+
+function renderAccountBreakdown(revenue, purchases, businessExp, personalExp, withdrawals, balance) {
+    const tbody = document.querySelector('#accountBreakdownTable tbody');
+    tbody.innerHTML = `
+        <tr>
+            <td>Sales Revenue</td>
+            <td style="color: #10b981;">+₹${revenue.toFixed(2)}</td>
+        </tr>
+        <tr>
+            <td>Purchase Costs</td>
+            <td style="color: #ef4444;">-₹${purchases.toFixed(2)}</td>
+        </tr>
+        <tr>
+            <td>Business Expenses</td>
+            <td style="color: #ef4444;">-₹${businessExp.toFixed(2)}</td>
+        </tr>
+        <tr>
+            <td>Personal Expenses</td>
+            <td style="color: #ef4444;">-₹${personalExp.toFixed(2)}</td>
+        </tr>
+        <tr>
+            <td>Withdrawals</td>
+            <td style="color: #ef4444;">-₹${withdrawals.toFixed(2)}</td>
+        </tr>
+        <tr style="border-top: 2px solid #333; font-weight: bold;">
+            <td>Current Balance</td>
+            <td style="color: ${balance >= 0 ? '#10b981' : '#ef4444'};">₹${balance.toFixed(2)}</td>
+        </tr>
+    `;
+}
+
+function renderMonthlyProfitChart() {
+    // Group transactions by month
+    const monthlyData = {};
+    
+    // Process sales
+    salesHistory.forEach(sale => {
+        const date = new Date(sale.date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = { revenue: 0, costs: 0 };
+        }
+        monthlyData[monthKey].revenue += parseFloat(sale.total) || 0;
+    });
+    
+    // Process purchases
+    billHistory.forEach(bill => {
+        const date = new Date(bill.date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = { revenue: 0, costs: 0 };
+        }
+        monthlyData[monthKey].costs += parseFloat(bill.total) || 0;
+    });
+    
+    // Process expenses
+    paymentsHistory.forEach(payment => {
+        const date = new Date(payment.date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = { revenue: 0, costs: 0 };
+        }
+        monthlyData[monthKey].costs += parseFloat(payment.amount) || 0;
+    });
+    
+    // Sort by month and get last 6 months
+    const sortedMonths = Object.keys(monthlyData).sort().slice(-6);
+    
+    // Create simple bar chart HTML
+    const chartContainer = document.getElementById('monthlyProfitChart');
+    let chartHTML = '<div style="display: flex; align-items: flex-end; justify-content: space-around; height: 200px; padding: 10px;">';
+    
+    sortedMonths.forEach(month => {
+        const data = monthlyData[month];
+        const profit = data.revenue - data.costs;
+        const maxProfit = Math.max(...sortedMonths.map(m => monthlyData[m].revenue - monthlyData[m].costs));
+        const height = maxProfit > 0 ? Math.max(10, (profit / maxProfit) * 180) : 10;
+        const color = profit >= 0 ? '#10b981' : '#ef4444';
+        const [year, monthNum] = month.split('-');
+        const monthName = new Date(year, parseInt(monthNum) - 1).toLocaleString('en', { month: 'short' });
+        
+        chartHTML += `
+            <div style="display: flex; flex-direction: column; align-items: center;">
+                <div style="background: ${color}; width: 40px; height: ${height}px; border-radius: 4px 4px 0 0;"></div>
+                <div style="font-size: 10px; margin-top: 5px;">${monthName}</div>
+                <div style="font-size: 9px; color: #888;">₹${(profit / 1000).toFixed(1)}k</div>
+            </div>
+        `;
+    });
+    
+    chartHTML += '</div>';
+    chartContainer.innerHTML = chartHTML;
+}
+
+function renderFinanceTransactions() {
+    const container = document.getElementById('allTransactionsList');
+    
+    // Combine all transactions
+    const allTransactions = [];
+    
+    salesHistory.forEach(sale => {
+        allTransactions.push({
+            date: new Date(sale.date),
+            type: 'Sale',
+            description: `Sale to ${sale.customerName}`,
+            amount: parseFloat(sale.total),
+            isIncome: true,
+            id: sale.id
+        });
+    });
+    
+    billHistory.forEach(bill => {
+        allTransactions.push({
+            date: new Date(bill.date),
+            type: 'Purchase',
+            description: `Purchase from ${bill.customerName}`,
+            amount: parseFloat(bill.total),
+            isIncome: false,
+            id: bill.id
+        });
+    });
+    
+    paymentsHistory.forEach(payment => {
+        allTransactions.push({
+            date: new Date(payment.date),
+            type: payment.category === 'business' ? 'Business Expense' : 'Personal Expense',
+            description: payment.purpose,
+            amount: parseFloat(payment.amount),
+            isIncome: false,
+            id: payment.id
+        });
+    });
+    
+    withdrawalsHistory.forEach(withdrawal => {
+        allTransactions.push({
+            date: new Date(withdrawal.date),
+            type: 'Withdrawal',
+            description: `${withdrawal.purpose} (${withdrawal.person})`,
+            amount: parseFloat(withdrawal.amount),
+            isIncome: false,
+            id: withdrawal.id
+        });
+    });
+    
+    // Sort by date descending
+    allTransactions.sort((a, b) => b.date - a.date);
+    
+    // Render transactions
+    let html = '<div class="history-list">';
+    allTransactions.forEach(txn => {
+        const dateStr = txn.date.toLocaleDateString('en-IN');
+        const amountColor = txn.isIncome ? '#10b981' : '#ef4444';
+        const amountSign = txn.isIncome ? '+' : '-';
+        
+        html += `
+            <div class="history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #333;">
+                <div>
+                    <div style="font-weight: 500;">${txn.type}</div>
+                    <div style="font-size: 12px; color: #888;">${txn.description}</div>
+                    <div style="font-size: 11px; color: #666; margin-top: 2px;">${dateStr}</div>
+                </div>
+                <div style="font-weight: 600; color: ${amountColor}; font-size: 14px;">
+                    ${amountSign}₹${txn.amount.toFixed(2)}
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html || '<p style="color: #888; text-align: center; padding: 20px;">No transactions yet</p>';
+}
+
+async function recordWithdrawal() {
+    const amount = parseFloat(document.getElementById('withdrawalAmount').value);
+    const person = document.getElementById('withdrawalPerson').value.trim();
+    const purpose = document.getElementById('withdrawalPurpose').value.trim();
+    const date = document.getElementById('withdrawalDate').value;
+    
+    if (!amount || amount <= 0) {
+        showModal('Please enter a valid withdrawal amount');
+        return;
+    }
+    
+    if (!person) {
+        showModal('Please enter the person name');
+        return;
+    }
+    
+    if (!purpose) {
+        showModal('Please enter the withdrawal purpose');
+        return;
+    }
+    
+    if (!date) {
+        showModal('Please select a date');
+        return;
+    }
+    
+    try {
+        const withdrawal = {
+            amount: amount,
+            person: person,
+            purpose: purpose,
+            date: date,
+            withdrawnBy: currentUser ? currentUser.uid : 'unknown',
+            withdrawnByName: currentUser ? currentUser.name : 'Unknown',
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            createdAt: new Date().toLocaleString('en-IN')
+        };
+        
+        const docRef = await db.collection('withdrawals').add(withdrawal);
+        withdrawal.id = docRef.id;
+        withdrawal.docId = docRef.id;
+        
+        withdrawalsHistory.push(withdrawal);
+        
+        // Clear form
+        document.getElementById('withdrawalAmount').value = '';
+        document.getElementById('withdrawalPerson').value = '';
+        document.getElementById('withdrawalPurpose').value = '';
+        document.getElementById('withdrawalDate').value = new Date().toISOString().split('T')[0];
+        
+        showModal('✓ Withdrawal recorded successfully');
+        
+        // Update displays
+        renderWithdrawalHistory();
+        if (document.getElementById('financeOverview').style.display !== 'none') {
+            calculateFinanceOverview();
+        }
+        
+        console.log('✓ Withdrawal saved:', withdrawal);
+    } catch (error) {
+        console.error('Error recording withdrawal:', error);
+        showModal('Error recording withdrawal: ' + error.message);
+    }
+}
+
+function renderWithdrawalHistory() {
+    const container = document.getElementById('withdrawalHistoryList');
+    
+    if (withdrawalsHistory.length === 0) {
+        container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No withdrawals recorded yet</p>';
+        return;
+    }
+    
+    // Sort by date descending
+    const sorted = [...withdrawalsHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    let html = '<div class="history-list">';
+    sorted.forEach(withdrawal => {
+        const date = new Date(withdrawal.date).toLocaleDateString('en-IN');
+        
+        html += `
+            <div class="history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #333;">
+                <div>
+                    <div style="font-weight: 500;">${withdrawal.person}</div>
+                    <div style="font-size: 12px; color: #888;">${withdrawal.purpose}</div>
+                    <div style="font-size: 11px; color: #666; margin-top: 2px;">${date} • ${withdrawal.withdrawnByName || 'Unknown'}</div>
+                </div>
+                <div style="font-weight: 600; color: #ef4444; font-size: 14px;">
+                    -₹${withdrawal.amount.toFixed(2)}
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+async function loadWithdrawalsFromFirestore() {
+    try {
+        const snapshot = await db.collection('withdrawals').orderBy('timestamp', 'desc').get();
+        withdrawalsHistory = [];
+        
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            withdrawalsHistory.push({
+                id: doc.id,
+                docId: doc.id,
+                ...data
+            });
+        });
+        
+        console.log('✓ Loaded', withdrawalsHistory.length, 'withdrawals');
+    } catch (error) {
+        console.error('Error loading withdrawals:', error);
+    }
+}
+
+function updateWithdrawalPersonOptions() {
+    const datalist = document.getElementById('withdrawalPersonOptions');
+    if (!datalist) return;
+    
+    const people = new Set();
+    
+    // Add from sales
+    salesHistory.forEach(sale => {
+        if (sale.customerName) people.add(sale.customerName);
+    });
+    
+    // Add from purchases
+    billHistory.forEach(bill => {
+        if (bill.customerName) people.add(bill.customerName);
+    });
+    
+    // Add from expenses
+    paymentsHistory.forEach(payment => {
+        if (payment.person) people.add(payment.person);
+    });
+    
+    // Add from previous withdrawals
+    withdrawalsHistory.forEach(withdrawal => {
+        if (withdrawal.person) people.add(withdrawal.person);
+    });
+    
+    datalist.innerHTML = Array.from(people).sort().map(name => `<option value="${name}">`).join('');
+}
+
+// ========== CONTACT & WHATSAPP FUNCTIONS ==========
+
+async function pickContactNumber() {
+    try {
+        if (!('contacts' in navigator && 'ContactsManager' in window)) {
+            showModal('Contact Picker API is not supported on this device/browser. Please enter the phone number manually.');
+            return;
+        }
+        
+        const props = ['name', 'tel'];
+        const opts = { multiple: false };
+        
+        const contacts = await navigator.contacts.select(props, opts);
+        
+        if (contacts && contacts.length > 0) {
+            const contact = contacts[0];
+            
+            // Set name if available
+            if (contact.name && contact.name.length > 0) {
+                document.getElementById('customerName').value = contact.name[0];
+            }
+            
+            // Store phone if available
+            if (contact.tel && contact.tel.length > 0) {
+                customerPhoneNumber = contact.tel[0].replace(/\s+/g, '').replace(/[^\d+]/g, '');
+            }
+            
+            saveBillDraft();
+            showToast('✓ Contact selected');
+        }
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Error picking contact:', error);
+            showModal('Failed to pick contact: ' + error.message);
+        }
+    }
+}
+
+function shareOnWhatsApp() {
+    if (billItems.length === 0) {
+        showModal('No items in bill to share');
+        return;
+    }
+    
+    const customerName = document.getElementById('customerName').value.trim();
+    const comments = document.getElementById('billComments').value.trim();
+    
+    if (!customerPhoneNumber) {
+        showModal('Please select a contact first using the Pick Contact button');
+        return;
+    }
+    
+    // Clean phone number
+    let phone = customerPhoneNumber.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+    if (phone.startsWith('0')) {
+        phone = '91' + phone.substring(1);
+    } else if (!phone.startsWith('+') && !phone.startsWith('91')) {
+        phone = '91' + phone;
+    }
+    phone = phone.replace('+', '');
+    
+    // Build bill message
+    const isPurchase = billItems[0].mode === 'purchase';
+    const billTotal = Number(document.getElementById('billTotal').textContent);
+    const laborCharges = isPurchase ? Number(document.getElementById('manualLaborCharges').value) || 0 : 0;
+    const amountPayable = isPurchase ? billTotal - laborCharges : billTotal;
+    const onlinePayment = Number(document.getElementById('onlinePayment').value) || 0;
+    const cashPayment = Number(document.getElementById('cashPayment').value) || 0;
+    const duePayment = Number(document.getElementById('dueAmount').value) || 0;
+    
+    let message = `*${isPurchase ? 'PURCHASE BILL' : 'SALE BILL'}*\n`;
+    if (customerName) {
+        message += `Customer: ${customerName}\n`;
+    }
+    message += `Date: ${new Date().toLocaleString('en-IN')}\n`;
+    message += `\n*Items:*\n`;
+    
+    billItems.forEach((item, index) => {
+        const itemObj = items.find(i => i.name === item.name);
+        const displayName = (itemObj && itemObj.hindiName) ? itemObj.hindiName : item.name;
+        message += `${index + 1}. ${displayName}\n`;
+        message += `   Rate: ₹${item.rate}/kg | Qty: ${item.qty}kg | Total: ₹${item.total}\n`;
+    });
+    
+    message += `\n*Bill Total:* ₹${billTotal}\n`;
+    
+    if (isPurchase && laborCharges > 0) {
+        message += `*Labor Charges:* -₹${laborCharges}\n`;
+    }
+    
+    message += `*Amount Payable:* ₹${amountPayable}\n`;
+    message += `\n*Payment Details:*\n`;
+    
+    if (onlinePayment > 0) message += `Online: ₹${onlinePayment}\n`;
+    if (cashPayment > 0) message += `Cash: ₹${cashPayment}\n`;
+    if (duePayment > 0) message += `Due: ₹${duePayment}\n`;
+    
+    if (comments) {
+        message += `\n*Comments:* ${comments}\n`;
+    }
+    
+    message += `\n_Thank you for your business!_ 🙏`;
+    
+    // Encode message for URL
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappURL = `https://wa.me/${phone}?text=${encodedMessage}`;
+    
+    // Open WhatsApp
+    window.open(whatsappURL, '_blank');
+    
+    hapticFeedback('medium');
+    showToast('📱 Opening WhatsApp...');
+}
+
+// ========== ANALYTICS FUNCTIONS ==========
+
+let analyticsPeriod = '30days';
+
+function filterAnalyticsTab(view, evt) {
+    // Update button states
+    const buttons = document.querySelectorAll('#analytics .filter-buttons button');
+    buttons.forEach(btn => {
+        if (!btn.onclick.toString().includes('setAnalyticsPeriod')) {
+            btn.classList.remove('active');
+        }
+    });
+    if (evt) evt.currentTarget.classList.add('active');
+    
+    // Show/hide sections
+    document.getElementById('analyticsOverviewSection').style.display = view === 'overview' ? 'block' : 'none';
+    document.getElementById('analyticsSalesSection').style.display = view === 'sales' ? 'block' : 'none';
+    document.getElementById('analyticsItemsSection').style.display = view === 'items' ? 'block' : 'none';
+    document.getElementById('analyticsCustomersSection').style.display = view === 'customers' ? 'block' : 'none';
+    
+    // Render content for the selected view
+    if (view === 'overview') {
+        renderAnalyticsOverview();
+    } else if (view === 'sales') {
+        renderSalesAnalytics();
+    } else if (view === 'items') {
+        renderItemsAnalytics();
+    } else if (view === 'customers') {
+        renderCustomersAnalytics();
+    }
+}
+
+function setAnalyticsPeriod(period, evt) {
+    analyticsPeriod = period;
+    
+    // Update period button states
+    const periodButtons = document.querySelectorAll('#analytics .settings-card:first-child button');
+    periodButtons.forEach(btn => btn.classList.remove('active'));
+    if (evt) evt.currentTarget.classList.add('active');
+    
+    // Re-render current view
+    const activeSection = document.querySelector('#analytics > div[id$="Section"]:not([style*="display: none"])');
+    if (activeSection) {
+        const sectionId = activeSection.id;
+        if (sectionId === 'analyticsOverviewSection') {
+            renderAnalyticsOverview();
+        } else if (sectionId === 'analyticsSalesSection') {
+            renderSalesAnalytics();
+        } else if (sectionId === 'analyticsItemsSection') {
+            renderItemsAnalytics();
+        } else if (sectionId === 'analyticsCustomersSection') {
+            renderCustomersAnalytics();
+        }
+    }
+}
+
+function getFilteredData() {
+    let startDate = new Date(0); // Beginning of time
+    const now = new Date();
+    
+    if (analyticsPeriod === '7days') {
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (analyticsPeriod === '30days') {
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (analyticsPeriod === '90days') {
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    }
+    
+    return {
+        sales: salesHistory.filter(s => new Date(s.date) >= startDate),
+        bills: billHistory.filter(b => new Date(b.date) >= startDate),
+        payments: paymentsHistory.filter(p => new Date(p.date) >= startDate)
+    };
+}
+
+function renderAnalyticsOverview() {
+    const data = getFilteredData();
+    
+    // Calculate key metrics
+    const totalSales = data.sales.reduce((sum, s) => sum + (parseFloat(s.total) || 0), 0);
+    const totalPurchases = data.bills.reduce((sum, b) => sum + (parseFloat(b.total) || 0), 0);
+    const totalExpenses = data.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const totalProfit = totalSales - totalPurchases - totalExpenses;
+    const transactionCount = data.sales.length + data.bills.length;
+    const avgTransaction = transactionCount > 0 ? (totalSales + totalPurchases) / transactionCount : 0;
+    const profitMargin = totalSales > 0 ? ((totalProfit / totalSales) * 100) : 0;
+    
+    // Update stats cards
+    document.getElementById('analyticsTransactionCount').textContent = transactionCount;
+    document.getElementById('analyticsAvgTransaction').textContent = avgTransaction.toFixed(0);
+    document.getElementById('analyticsTotalProfit').textContent = totalProfit.toFixed(0);
+    document.getElementById('analyticsProfitMargin').textContent = profitMargin.toFixed(1);
+    
+    // Render daily trends chart
+    renderDailyTrendChart(data);
+    
+    // Render business health scorecard
+    renderHealthScorecard(data);
+}
+
+function renderDailyTrendChart(data) {
+    const dailyData = {};
+    
+    // Group sales by date
+    data.sales.forEach(sale => {
+        const date = new Date(sale.date).toLocaleDateString('en-IN');
+        if (!dailyData[date]) {
+            dailyData[date] = { revenue: 0, costs: 0 };
+        }
+        dailyData[date].revenue += parseFloat(sale.total) || 0;
+    });
+    
+    // Group purchases by date
+    data.bills.forEach(bill => {
+        const date = new Date(bill.date).toLocaleDateString('en-IN');
+        if (!dailyData[date]) {
+            dailyData[date] = { revenue: 0, costs: 0 };
+        }
+        dailyData[date].costs += parseFloat(bill.total) || 0;
+    });
+    
+    // Group expenses by date
+    data.payments.forEach(payment => {
+        const date = new Date(payment.date).toLocaleDateString('en-IN');
+        if (!dailyData[date]) {
+            dailyData[date] = { revenue: 0, costs: 0 };
+        }
+        dailyData[date].costs += parseFloat(payment.amount) || 0;
+    });
+    
+    // Sort dates
+    const sortedDates = Object.keys(dailyData).sort((a, b) => new Date(a) - new Date(b));
+    const displayDates = sortedDates.slice(-14); // Last 14 days
+    
+    // Find max value for scaling
+    const maxValue = Math.max(...displayDates.map(date => Math.max(dailyData[date].revenue, dailyData[date].costs)));
+    
+    // Render chart
+    const chartContainer = document.getElementById('dailyTrendChart');
+    let chartHTML = '<div style="display: flex; align-items: flex-end; justify-content: space-around; height: 220px; padding: 10px; gap: 8px; overflow-x: auto;">';
+    
+    displayDates.forEach(date => {
+        const data = dailyData[date];
+        const profit = data.revenue - data.costs;
+        const revenueHeight = maxValue > 0 ? Math.max(10, (data.revenue / maxValue) * 180) : 10;
+        const costsHeight = maxValue > 0 ? Math.max(10, (data.costs / maxValue) * 180) : 10;
+        const [day, month] = date.split('/');
+        
+        chartHTML += `
+            <div style="display: flex; flex-direction: column; align-items: center; min-width: 60px;">
+                <div style="display: flex; gap: 4px; align-items: flex-end;">
+                    <div style="background: #10b981; width: 20px; height: ${revenueHeight}px; border-radius: 4px 4px 0 0;" title="Revenue: ₹${data.revenue.toFixed(0)}"></div>
+                    <div style="background: #ef4444; width: 20px; height: ${costsHeight}px; border-radius: 4px 4px 0 0;" title="Costs: ₹${data.costs.toFixed(0)}"></div>
+                </div>
+                <div style="font-size: 9px; margin-top: 5px; text-align: center;">${day}/${month}</div>
+                <div style="font-size: 8px; color: ${profit >= 0 ? '#10b981' : '#ef4444'};">₹${(profit / 1000).toFixed(1)}k</div>
+            </div>
+        `;
+    });
+    
+    chartHTML += '</div>';
+    chartHTML += '<div style="display: flex; gap: 16px; justify-content: center; margin-top: 12px; font-size: 12px;"><span>🟢 Revenue</span><span>🔴 Costs</span></div>';
+    chartContainer.innerHTML = chartHTML;
+}
+
+function renderHealthScorecard(data) {
+    const totalSales = data.sales.reduce((sum, s) => sum + (parseFloat(s.total) || 0), 0);
+    const totalPurchases = data.bills.reduce((sum, b) => sum + (parseFloat(b.total) || 0), 0);
+    const totalExpenses = data.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const totalProfit = totalSales - totalPurchases - totalExpenses;
+    
+    // Calculate outstanding amounts
+    const outstandingSales = data.sales.filter(s => !s.cleared && s.payment && s.payment.due > 0)
+        .reduce((sum, s) => sum + (parseFloat(s.payment.due) || 0), 0);
+    const outstandingPurchases = data.bills.filter(b => !b.cleared && b.payment && b.payment.due > 0)
+        .reduce((sum, b) => sum + (parseFloat(b.payment.due) || 0), 0);
+    
+    // Calculate metrics
+    const profitMargin = totalSales > 0 ? ((totalProfit / totalSales) * 100) : 0;
+    const cashFlow = totalSales - totalPurchases - totalExpenses - withdrawalsHistory.reduce((sum, w) => sum + (parseFloat(w.amount) || 0), 0);
+    const uniqueCustomers = new Set(data.sales.filter(s => s.customerName).map(s => s.customerName)).size;
+    
+    const container = document.getElementById('healthScorecard');
+    container.innerHTML = `
+        <div style="padding: 16px; background: ${profitMargin > 20 ? '#dcfce7' : profitMargin > 10 ? '#fef3c7' : '#fee2e2'}; border-radius: 8px;">
+            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Profit Margin</div>
+            <div style="font-size: 24px; font-weight: 700; color: ${profitMargin > 20 ? '#16a34a' : profitMargin > 10 ? '#ca8a04' : '#dc2626'};">${profitMargin.toFixed(1)}%</div>
+            <div style="font-size: 10px; color: #666; margin-top: 4px;">${profitMargin > 20 ? 'Excellent' : profitMargin > 10 ? 'Good' : 'Needs Improvement'}</div>
+        </div>
+        <div style="padding: 16px; background: ${cashFlow > 0 ? '#dcfce7' : '#fee2e2'}; border-radius: 8px;">
+            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Cash Flow</div>
+            <div style="font-size: 24px; font-weight: 700; color: ${cashFlow > 0 ? '#16a34a' : '#dc2626'};">₹${(cashFlow / 1000).toFixed(1)}k</div>
+            <div style="font-size: 10px; color: #666; margin-top: 4px;">${cashFlow > 0 ? 'Positive' : 'Negative'}</div>
+        </div>
+        <div style="padding: 16px; background: #dbeafe; border-radius: 8px;">
+            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Receivables</div>
+            <div style="font-size: 24px; font-weight: 700; color: #2563eb;">₹${(outstandingSales / 1000).toFixed(1)}k</div>
+            <div style="font-size: 10px; color: #666; margin-top: 4px;">To Collect</div>
+        </div>
+        <div style="padding: 16px; background: #fce7f3; border-radius: 8px;">
+            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Payables</div>
+            <div style="font-size: 24px; font-weight: 700; color: #db2777;">₹${(outstandingPurchases / 1000).toFixed(1)}k</div>
+            <div style="font-size: 10px; color: #666; margin-top: 4px;">To Pay</div>
+        </div>
+        <div style="padding: 16px; background: #e0e7ff; border-radius: 8px;">
+            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Active Customers</div>
+            <div style="font-size: 24px; font-weight: 700; color: #4f46e5;">${uniqueCustomers}</div>
+            <div style="font-size: 10px; color: #666; margin-top: 4px;">This Period</div>
+        </div>
+    `;
+}
+
+function renderSalesAnalytics() {
+    const data = getFilteredData();
+    
+    const totalSales = data.sales.reduce((sum, s) => sum + (parseFloat(s.total) || 0), 0);
+    const totalPurchases = data.bills.reduce((sum, b) => sum + (parseFloat(b.total) || 0), 0);
+    
+    document.getElementById('analyticsTotalSales').textContent = totalSales.toFixed(0);
+    document.getElementById('analyticsTotalPurchases').textContent = totalPurchases.toFixed(0);
+    document.getElementById('analyticsSalesCount').textContent = data.sales.length;
+    document.getElementById('analyticsPurchaseCount').textContent = data.bills.length;
+    
+    // Render sales vs purchases timeline
+    renderSalesPurchasesChart(data);
+    
+    // Render payment methods breakdown
+    renderPaymentMethodsChart(data);
+}
+
+function renderSalesPurchasesChart(data) {
+    const chartData = {};
+    
+    data.sales.forEach(sale => {
+        const date = new Date(sale.date).toLocaleDateString('en-IN');
+        if (!chartData[date]) chartData[date] = { sales: 0, purchases: 0 };
+        chartData[date].sales += parseFloat(sale.total) || 0;
+    });
+    
+    data.bills.forEach(bill => {
+        const date = new Date(bill.date).toLocaleDateString('en-IN');
+        if (!chartData[date]) chartData[date] = { sales: 0, purchases: 0 };
+        chartData[date].purchases += parseFloat(bill.total) || 0;
+    });
+    
+    const sortedDates = Object.keys(chartData).sort((a, b) => new Date(a) - new Date(b)).slice(-14);
+    const maxValue = Math.max(...sortedDates.map(date => Math.max(chartData[date].sales, chartData[date].purchases)));
+    
+    const container = document.getElementById('salesPurchasesChart');
+    let html = '<div style="display: flex; align-items: flex-end; justify-content: space-around; height: 220px; padding: 10px; gap: 8px; overflow-x: auto;">';
+    
+    sortedDates.forEach(date => {
+        const d = chartData[date];
+        const salesHeight = maxValue > 0 ? Math.max(10, (d.sales / maxValue) * 180) : 10;
+        const purchasesHeight = maxValue > 0 ? Math.max(10, (d.purchases / maxValue) * 180) : 10;
+        const [day, month] = date.split('/');
+        
+        html += `
+            <div style="display: flex; flex-direction: column; align-items: center; min-width: 60px;">
+                <div style="display: flex; gap: 4px; align-items: flex-end;">
+                    <div style="background: #10b981; width: 20px; height: ${salesHeight}px; border-radius: 4px 4px 0 0;" title="Sales: ₹${d.sales.toFixed(0)}"></div>
+                    <div style="background: #f59e0b; width: 20px; height: ${purchasesHeight}px; border-radius: 4px 4px 0 0;" title="Purchases: ₹${d.purchases.toFixed(0)}"></div>
+                </div>
+                <div style="font-size: 9px; margin-top: 5px;">${day}/${month}</div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    html += '<div style="display: flex; gap: 16px; justify-content: center; margin-top: 12px; font-size: 12px;"><span>🟢 Sales</span><span>🟠 Purchases</span></div>';
+    container.innerHTML = html;
+}
+
+function renderPaymentMethodsChart(data) {
+    let cash = 0, online = 0, due = 0;
+    
+    data.sales.forEach(sale => {
+        if (sale.payment) {
+            cash += parseFloat(sale.payment.cash) || 0;
+            online += parseFloat(sale.payment.online) || 0;
+            due += parseFloat(sale.payment.due) || 0;
+        }
+    });
+    
+    data.bills.forEach(bill => {
+        if (bill.payment) {
+            cash += parseFloat(bill.payment.cash) || 0;
+            online += parseFloat(bill.payment.online) || 0;
+            due += parseFloat(bill.payment.due) || 0;
+        }
+    });
+    
+    const total = cash + online + due;
+    const cashPercent = total > 0 ? (cash / total * 100) : 0;
+    const onlinePercent = total > 0 ? (online / total * 100) : 0;
+    const duePercent = total > 0 ? (due / total * 100) : 0;
+    
+    const container = document.getElementById('paymentMethodsChart');
+    container.innerHTML = `
+        <div style="display: flex; gap: 40px; align-items: center; flex-wrap: wrap; justify-content: center;">
+            <div style="text-align: center;">
+                <div style="width: 120px; height: 120px; border-radius: 50%; background: conic-gradient(
+                    #10b981 0deg ${cashPercent * 3.6}deg,
+                    #3b82f6 ${cashPercent * 3.6}deg ${(cashPercent + onlinePercent) * 3.6}deg,
+                    #ef4444 ${(cashPercent + onlinePercent) * 3.6}deg 360deg
+                ); display: flex; align-items: center; justify-content: center; position: relative;">
+                    <div style="width: 80px; height: 80px; border-radius: 50%; background: #1a1a1a; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700;">₹${(total / 1000).toFixed(1)}k</div>
+                </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 16px; height: 16px; background: #10b981; border-radius: 4px;"></div>
+                    <div>
+                        <div style="font-size: 12px; color: #888;">Cash</div>
+                        <div style="font-size: 16px; font-weight: 600;">₹${(cash / 1000).toFixed(1)}k (${cashPercent.toFixed(1)}%)</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 16px; height: 16px; background: #3b82f6; border-radius: 4px;"></div>
+                    <div>
+                        <div style="font-size: 12px; color: #888;">Online</div>
+                        <div style="font-size: 16px; font-weight: 600;">₹${(online / 1000).toFixed(1)}k (${onlinePercent.toFixed(1)}%)</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 16px; height: 16px; background: #ef4444; border-radius: 4px;"></div>
+                    <div>
+                        <div style="font-size: 12px; color: #888;">Due</div>
+                        <div style="font-size: 16px; font-weight: 600;">₹${(due / 1000).toFixed(1)}k (${duePercent.toFixed(1)}%)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderItemsAnalytics() {
+    const data = getFilteredData();
+    
+    // Analyze items from sales
+    const itemStats = {};
+    
+    data.sales.forEach(sale => {
+        sale.items.forEach(item => {
+            if (!itemStats[item.name]) {
+                itemStats[item.name] = { 
+                    name: item.name, 
+                    soldQty: 0, 
+                    soldRevenue: 0, 
+                    purchasedQty: 0, 
+                    purchasedCost: 0 
+                };
+            }
+            itemStats[item.name].soldQty += parseFloat(item.qty) || 0;
+            itemStats[item.name].soldRevenue += parseFloat(item.total) || 0;
+        });
+    });
+    
+    data.bills.forEach(bill => {
+        bill.items.forEach(item => {
+            if (!itemStats[item.name]) {
+                itemStats[item.name] = { 
+                    name: item.name, 
+                    soldQty: 0, 
+                    soldRevenue: 0, 
+                    purchasedQty: 0, 
+                    purchasedCost: 0 
+                };
+            }
+            itemStats[item.name].purchasedQty += parseFloat(item.qty) || 0;
+            itemStats[item.name].purchasedCost += parseFloat(item.total) || 0;
+        });
+    });
+    
+    const itemsArray = Object.values(itemStats);
+    
+    // Top by revenue
+    const topByRevenue = [...itemsArray].sort((a, b) => b.soldRevenue - a.soldRevenue).slice(0, 10);
+    renderTopItemsList('topSellingItemsRevenue', topByRevenue, 'revenue');
+    
+    // Top by quantity
+    const topByQty = [...itemsArray].sort((a, b) => b.soldQty - a.soldQty).slice(0, 10);
+    renderTopItemsList('topSellingItemsQuantity', topByQty, 'quantity');
+    
+    // Top purchased
+    const topPurchased = [...itemsArray].sort((a, b) => b.purchasedQty - a.purchasedQty).slice(0, 10);
+    renderTopItemsList('topPurchasedItems', topPurchased, 'purchased');
+    
+    // Profitability
+    renderItemProfitability(itemsArray);
+}
+
+function renderTopItemsList(containerId, items, type) {
+    const container = document.getElementById(containerId);
+    
+    if (items.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No data available</p>';
+        return;
+    }
+    
+    let html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
+    
+    items.forEach((item, index) => {
+        const value = type === 'revenue' ? item.soldRevenue : 
+                     type === 'quantity' ? item.soldQty : 
+                     item.purchasedQty;
+        const label = type === 'revenue' ? `₹${value.toFixed(0)}` : 
+                     `${value.toFixed(1)}kg`;
+        const maxValue = items[0] ? (type === 'revenue' ? items[0].soldRevenue : 
+                                     type === 'quantity' ? items[0].soldQty : 
+                                     items[0].purchasedQty) : 1;
+        const percentage = maxValue > 0 ? (value / maxValue * 100) : 0;
+        
+        html += `
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="min-width: 24px; font-weight: 700; color: ${index < 3 ? '#f59e0b' : '#666'};">${index + 1}</div>
+                <div style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="font-weight: 500;">${item.name}</span>
+                        <span style="font-weight: 600; color: #10b981;">${label}</span>
+                    </div>
+                    <div style="width: 100%; height: 8px; background: #333; border-radius: 4px; overflow: hidden;">
+                        <div style="width: ${percentage}%; height: 100%; background: linear-gradient(90deg, #10b981, #059669); transition: width 0.3s;"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function renderItemProfitability(items) {
+    const profitableItems = items
+        .filter(item => item.soldRevenue > 0 && item.purchasedCost > 0)
+        .map(item => ({
+            ...item,
+            profit: item.soldRevenue - item.purchasedCost,
+            margin: ((item.soldRevenue - item.purchasedCost) / item.soldRevenue * 100)
+        }))
+        .sort((a, b) => b.profit - a.profit)
+        .slice(0, 10);
+    
+    const container = document.getElementById('itemProfitability');
+    
+    if (profitableItems.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No data available</p>';
+        return;
+    }
+    
+    let html = `
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #2a2a2a; border-bottom: 2px solid #444;">
+                    <th style="padding: 12px; text-align: left;">Item</th>
+                    <th style="padding: 12px; text-align: right;">Revenue</th>
+                    <th style="padding: 12px; text-align: right;">Cost</th>
+                    <th style="padding: 12px; text-align: right;">Profit</th>
+                    <th style="padding: 12px; text-align: right;">Margin</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    profitableItems.forEach(item => {
+        html += `
+            <tr style="border-bottom: 1px solid #333;">
+                <td style="padding: 12px; font-weight: 500;">${item.name}</td>
+                <td style="padding: 12px; text-align: right;">₹${item.soldRevenue.toFixed(0)}</td>
+                <td style="padding: 12px; text-align: right;">₹${item.purchasedCost.toFixed(0)}</td>
+                <td style="padding: 12px; text-align: right; color: ${item.profit > 0 ? '#10b981' : '#ef4444'}; font-weight: 600;">₹${item.profit.toFixed(0)}</td>
+                <td style="padding: 12px; text-align: right; color: ${item.margin > 20 ? '#10b981' : item.margin > 10 ? '#f59e0b' : '#ef4444'}; font-weight: 600;">${item.margin.toFixed(1)}%</td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function renderCustomersAnalytics() {
+    const data = getFilteredData();
+    
+    // Analyze customers
+    const customerStats = {};
+    
+    data.sales.forEach(sale => {
+        if (!sale.customerName) return;
+        if (!customerStats[sale.customerName]) {
+            customerStats[sale.customerName] = {
+                name: sale.customerName,
+                revenue: 0,
+                transactions: 0,
+                totalDue: 0,
+                clearedTransactions: 0
+            };
+        }
+        customerStats[sale.customerName].revenue += parseFloat(sale.total) || 0;
+        customerStats[sale.customerName].transactions++;
+        if (sale.payment && sale.payment.due) {
+            customerStats[sale.customerName].totalDue += parseFloat(sale.payment.due) || 0;
+        }
+        if (sale.cleared) {
+            customerStats[sale.customerName].clearedTransactions++;
+        }
+    });
+    
+    const customersArray = Object.values(customerStats);
+    const topCustomers = [...customersArray].sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+    
+    // Render top customers
+    renderTopCustomers(topCustomers);
+    
+    // Analyze suppliers
+    const supplierStats = {};
+    data.bills.forEach(bill => {
+        if (!bill.customerName) return;
+        if (!supplierStats[bill.customerName]) {
+            supplierStats[bill.customerName] = {
+                name: bill.customerName,
+                volume: 0,
+                transactions: 0
+            };
+        }
+        supplierStats[bill.customerName].volume += parseFloat(bill.total) || 0;
+        supplierStats[bill.customerName].transactions++;
+    });
+    
+    const suppliersArray = Object.values(supplierStats);
+    const topSuppliers = [...suppliersArray].sort((a, b) => b.volume - a.volume).slice(0, 10);
+    renderTopSuppliers(topSuppliers);
+    
+    // Payment behavior
+    renderPaymentBehavior(customersArray);
+    
+    // Customer activity
+    renderCustomerActivity(data, customersArray);
+}
+
+function renderTopCustomers(customers) {
+    const container = document.getElementById('topCustomersByRevenue');
+    
+    if (customers.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No customer data available</p>';
+        return;
+    }
+    
+    let html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
+    
+    customers.forEach((customer, index) => {
+        const maxRevenue = customers[0].revenue;
+        const percentage = (customer.revenue / maxRevenue * 100);
+        
+        html += `
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="min-width: 24px; font-weight: 700; color: ${index < 3 ? '#f59e0b' : '#666'};">${index + 1}</div>
+                <div style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="font-weight: 500;">${customer.name}</span>
+                        <span style="font-weight: 600; color: #10b981;">₹${customer.revenue.toFixed(0)} (${customer.transactions} txns)</span>
+                    </div>
+                    <div style="width: 100%; height: 8px; background: #333; border-radius: 4px; overflow: hidden;">
+                        <div style="width: ${percentage}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #1d4ed8);"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function renderTopSuppliers(suppliers) {
+    const container = document.getElementById('topSuppliersByVolume');
+    
+    if (suppliers.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No supplier data available</p>';
+        return;
+    }
+    
+    let html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
+    
+    suppliers.forEach((supplier, index) => {
+        const maxVolume = suppliers[0].volume;
+        const percentage = (supplier.volume / maxVolume * 100);
+        
+        html += `
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="min-width: 24px; font-weight: 700; color: ${index < 3 ? '#f59e0b' : '#666'};">${index + 1}</div>
+                <div style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="font-weight: 500;">${supplier.name}</span>
+                        <span style="font-weight: 600; color: #f59e0b;">₹${supplier.volume.toFixed(0)} (${supplier.transactions} txns)</span>
+                    </div>
+                    <div style="width: 100%; height: 8px; background: #333; border-radius: 4px; overflow: hidden;">
+                        <div style="width: ${percentage}%; height: 100%; background: linear-gradient(90deg, #f59e0b, #d97706);"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function renderPaymentBehavior(customers) {
+    const container = document.getElementById('customerPaymentBehavior');
+    
+    const onTime = customers.filter(c => c.totalDue === 0).length;
+    const pending = customers.filter(c => c.totalDue > 0).length;
+    const totalDue = customers.reduce((sum, c) => sum + c.totalDue, 0);
+    
+    container.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div style="padding: 20px; background: #dcfce7; border-radius: 8px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 700; color: #16a34a;">${onTime}</div>
+                <div style="font-size: 14px; color: #15803d; margin-top: 4px;">Cleared Customers</div>
+            </div>
+            <div style="padding: 20px; background: #fee2e2; border-radius: 8px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 700; color: #dc2626;">${pending}</div>
+                <div style="font-size: 14px; color: #991b1b; margin-top: 4px;">Pending Payments</div>
+            </div>
+            <div style="padding: 20px; background: #fef3c7; border-radius: 8px; text-align: center;">
+                <div style="font-size: 32px; font-weight: 700; color: #ca8a04;">₹${(totalDue / 1000).toFixed(1)}k</div>
+                <div style="font-size: 14px; color: #a16207; margin-top: 4px;">Total Outstanding</div>
+            </div>
+        </div>
+    `;
+}
+
+function renderCustomerActivity(data, customers) {
+    const container = document.getElementById('customerActivity');
+    
+    const totalCustomers = customers.length;
+    const avgTransactions = totalCustomers > 0 ? (data.sales.length / totalCustomers) : 0;
+    const avgRevenue = totalCustomers > 0 ? (customers.reduce((sum, c) => sum + c.revenue, 0) / totalCustomers) : 0;
+    
+    container.innerHTML = `
+        <div style="padding: 16px; background: #1e293b; border-radius: 8px; text-align: center;">
+            <div style="font-size: 24px; font-weight: 700;">${totalCustomers}</div>
+            <div style="font-size: 11px; color: #888; margin-top: 4px;">Total Customers</div>
+        </div>
+        <div style="padding: 16px; background: #1e293b; border-radius: 8px; text-align: center;">
+            <div style="font-size: 24px; font-weight: 700;">${avgTransactions.toFixed(1)}</div>
+            <div style="font-size: 11px; color: #888; margin-top: 4px;">Avg Transactions</div>
+        </div>
+        <div style="padding: 16px; background: #1e293b; border-radius: 8px; text-align: center;">
+            <div style="font-size: 24px; font-weight: 700;">₹${(avgRevenue / 1000).toFixed(1)}k</div>
+            <div style="font-size: 11px; color: #888; margin-top: 4px;">Avg Revenue/Customer</div>
+        </div>
+    `;
+}
+
+async function markOutstandingAsCleared(transactionId, transactionType) {
+    try {
+        const collection = transactionType === 'purchase' ? 'bills' : 'sales';
+        
+        await db.collection(collection).doc(String(transactionId)).update({
+            cleared: true,
+            clearedAt: new Date().toLocaleString('en-IN'),
+            clearedBy: currentUser ? currentUser.uid : 'unknown',
+            clearedByName: currentUser ? currentUser.name : 'Unknown'
+        });
+        
+        // Update local data
+        if (transactionType === 'purchase') {
+            const bill = billHistory.find(b => String(b.id) === String(transactionId));
+            if (bill) {
+                bill.cleared = true;
+            }
+        } else {
+            const sale = salesHistory.find(s => String(s.id) === String(transactionId));
+            if (sale) {
+                sale.cleared = true;
+            }
+        }
+        
+        hapticFeedback('light');
+        showToast('✓ Outstanding marked as cleared');
+        renderDue();
+    } catch (error) {
+        console.error('Error marking outstanding as cleared:', error);
+        showModal('Error: ' + error.message);
+    }
+}
+
 async function reprintPayment(index) {
     const payment = paymentsHistory[index];
     await printPaymentReceipt(payment);
     showToast('✓ Receipt printed');
 }
 
+// Global error handlers for debugging
+window.addEventListener('error', function(event) {
+    console.error('[GLOBAL ERROR]', event.error);
+    console.error('[GLOBAL ERROR] Message:', event.message);
+    console.error('[GLOBAL ERROR] Stack:', event.error?.stack);
+});
+
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('[UNHANDLED PROMISE REJECTION]', event.reason);
+    console.error('[UNHANDLED PROMISE] Stack:', event.reason?.stack);
+});
+
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('[DEBUG] DOM Content Loaded');
     // Wait for Firebase auth to initialize
     hideLoading();
     
@@ -3634,6 +6630,7 @@ async function loadUserDataAndInitialize() {
         await loadSalesFromFirestore();
         await loadPaymentsFromFirestore();
         await loadStockAdjustmentsFromFirestore();
+        await loadWithdrawalsFromFirestore();
         
         // Initialize UI
         renderItems();
@@ -3641,9 +6638,19 @@ async function loadUserDataAndInitialize() {
         loadSettings();
         updateModeUI();
         renderPaymentsHistory();
+        renderSalesHistory();
+        renderDue();
         updateCustomerOptions();
+        updateExpensePersonOptions();
+        updateWithdrawalPersonOptions();
         updateUserDisplay();
         applyRoleBasedRestrictions();
+        
+        // Restore draft bill if exists
+        const draftRestored = restoreBillDraft();
+        if (draftRestored) {
+            showToast('📋 Draft bill restored');
+        }
         
         // Initialize dark mode if enabled
         const darkModeEnabled = localStorage.getItem('darkMode') === 'true';
@@ -3651,10 +6658,13 @@ async function loadUserDataAndInitialize() {
             document.body.classList.add('dark-mode');
         }
         
-        // Set today's date as default for custom filter
+        // Set today's date as default for custom filter and withdrawal date
         const today = new Date().toISOString().split('T')[0];
         if (document.getElementById('dateTo')) {
             document.getElementById('dateTo').value = today;
+        }
+        if (document.getElementById('withdrawalDate')) {
+            document.getElementById('withdrawalDate').value = today;
         }
         
         // Set billing as default active nav item
@@ -3690,6 +6700,15 @@ async function loadUserDataAndInitialize() {
         await showModal('Failed to load data. Please try again.');
     }
 }
+
+// Warn before leaving page with unsaved bill
+window.addEventListener('beforeunload', function(e) {
+    if (billItems.length > 0 || currentWeights.length > 0) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved items in your bill. Are you sure you want to leave?';
+        return e.returnValue;
+    }
+});
 
 // -------------------- USER MANAGEMENT --------------------
 
@@ -3916,8 +6935,53 @@ window.showTabFromNav = function(tabId, event) {
     originalShowTabFromNav(tabId, event);
     if (tabId === 'users' && userRole === 'owner') {
         loadUsers();
+    } else if (tabId === 'due') {
+        renderDue();
     }
 };
+
+window.filterDue = filterDue;
+window.filterSalesTab = filterSalesTab;
+window.markSaleAsCleared = markSaleAsCleared;
+window.recordPayment = recordPayment;
+window.filterExpenseTab = filterExpenseTab;
+window.saveBusinessExpense = saveBusinessExpense;
+window.savePersonalExpense = savePersonalExpense;
+window.saveAndPrintBusinessExpense = saveAndPrintBusinessExpense;
+window.saveAndPrintPersonalExpense = saveAndPrintPersonalExpense;
+window.markOutstandingAsCleared = markOutstandingAsCleared;
+window.showOutstandingDetails = showOutstandingDetails;
+window.reprintBill = reprintBill;
+window.reprintSale = reprintSale;
+window.closeBillDetails = closeBillDetails;
+window.editBillDetails = editBillDetails;
+window.filterFinanceTab = filterFinanceTab;
+window.recordWithdrawal = recordWithdrawal;
+window.filterAnalyticsTab = filterAnalyticsTab;
+window.setAnalyticsPeriod = setAnalyticsPeriod;
+window.pickContactNumber = pickContactNumber;
+window.shareOnWhatsApp = shareOnWhatsApp;
+
+function filterStockTab(view, evt) {
+    // Update button states
+    const buttons = document.querySelectorAll('#stock .filter-btn');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    if (evt) evt.target.classList.add('active');
+    
+    // Show/hide sections
+    const currentSection = document.getElementById('currentStockSection');
+    const adjustmentSection = document.getElementById('stockAdjustmentSection');
+    
+    if (view === 'current') {
+        currentSection.style.display = 'block';
+        adjustmentSection.style.display = 'none';
+    } else {
+        currentSection.style.display = 'none';
+        adjustmentSection.style.display = 'block';
+    }
+}
+
+window.filterStockTab = filterStockTab;
 
 function escapeHtml(text) {
     const map = {

@@ -7,6 +7,10 @@
     "@capacitor/android": "^7.4.4",
     "@capacitor/cli": "^7.4.4",
     "@capacitor/core": "^7.4.4",
+    "canvas": "^3.2.0",
+    "capacitor-thermal-printer": "^0.2.5",
+    "cordova-plugin-bluetooth-serial": "^0.4.7",
+    "escpos-buffer": "^4.1.0",
     "firebase": "^12.6.0",
     "servor": "^4.0.2"
   },
