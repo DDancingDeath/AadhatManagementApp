@@ -1,0 +1,78 @@
+<!-- 
+    MODULAR SCRIPT LOADING TEMPLATE
+    Add these script tags to your index.html BEFORE the closing </body> tag
+    Replace or comment out the old script.js reference
+-->
+
+<!-- 1. Firebase Configuration (keep existing) -->
+<script src="firebaseConfig.js"></script>
+
+<!-- 2. External Libraries (keep existing) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+<!-- 3. Core Utilities (no dependencies) -->
+<script src="js/utils/constants.js"></script>
+<script src="js/utils/state.js"></script>
+<script src="js/utils/helpers.js"></script>
+
+<!-- 4. UI Layer (depends on state) -->
+<script src="js/ui/ui-manager.js"></script>
+<script src="js/ui/navigation.js"></script>
+
+<!-- 5. Services (depends on utilities and Firebase) -->
+<script src="js/firebase/firestore-service.js"></script>
+<script src="js/services/printer.js"></script>
+
+<!-- 6. Authentication (depends on Firebase and UI) -->
+<script src="js/auth/authentication.js"></script>
+
+<!-- 7. Business Logic Modules (depends on all above) -->
+<script src="js/modules/items.js"></script>
+<!-- Uncomment these as you create the modules:
+<script src="js/modules/billing.js"></script>
+<script src="js/modules/sales.js"></script>
+<script src="js/modules/stock.js"></script>
+<script src="js/modules/payments.js"></script>
+<script src="js/modules/reports.js"></script>
+<script src="js/modules/finance.js"></script>
+<script src="js/modules/users.js"></script>
+-->
+
+<!-- 8. TEMPORARY: Keep old script.js for remaining functions -->
+<!-- This can be removed once all modules are created -->
+<script src="script.js"></script>
+
+<!-- 9. Main Initialization (MUST BE LAST) -->
+<script src="js/main.js"></script>
+
+<!--
+    MIGRATION NOTES:
+    
+    1. The above order is critical - do not rearrange
+    2. All modules export to window for backward compatibility
+    3. script.js is temporarily kept for functions not yet modularized
+    4. Once all modules are created, you can remove script.js
+    5. Test thoroughly after each module addition
+    
+    COMPLETED MODULES:
+    ✅ constants.js - Application constants
+    ✅ state.js - Global state management  
+    ✅ helpers.js - Utility functions
+    ✅ ui-manager.js - UI utilities
+    ✅ navigation.js - Tab and menu navigation
+    ✅ firestore-service.js - Firebase operations
+    ✅ printer.js - Bluetooth printer
+    ✅ authentication.js - Login/register/logout
+    ✅ items.js - Items and rates management
+    ✅ main.js - App initialization
+    
+    REMAINING TO CREATE:
+    - billing.js - Purchase bill creation
+    - sales.js - Sales management
+    - stock.js - Stock tracking
+    - payments.js - Payments and expenses
+    - reports.js - Reports and analytics
+    - finance.js - Finance calculations
+    - users.js - User management
+-->
