@@ -1,0 +1,81 @@
+:root {
+  --primary-color: #007bff;
+  --success-color: #28a745;
+  --danger-color: #dc3545;
+  --warning-color: #ffc107;
+  --dark-color: #212529;
+  --light-bg: #f8f9fa;
+  --white: #ffffff;
+  --border-color: #dee2e6;
+  --text-secondary: #6c757d;
+  --shadow: 0 2px 8px rgba(0,0,0,0.1);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+/* Dark Mode Variables */
+body.dark-mode {
+  --primary-color: #4a9eff;
+  --success-color: #40c057;
+  --danger-color: #ff6b6b;
+  --warning-color: #ffd43b;
+  --dark-color: #e9ecef;
+  --light-bg: #1a1a1a;
+  --white: #2d2d2d;
+  --border-color: #404040;
+  --text-secondary: #adb5bd;
+  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+body.dark-mode {
+  background: var(--light-bg);
+  color: var(--dark-color);
+}
+
+body.dark-mode .tab,
+body.dark-mode .item-card,
+body.dark-mode .bill-item-row,
+body.dark-mode .settings-card,
+body.dark-mode .stock-item,
+body.dark-mode .report-card,
+body.dark-mode .date-filter-card,
+body.dark-mode .popular-item,
+body.dark-mode .item-report {
+  background: var(--white);
+  color: var(--dark-color);
+}
+
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea {
+  background: #3a3a3a;
+  color: var(--dark-color);
+  border-color: var(--border-color);
+}
+
+body.dark-mode input::placeholder {
+  color: #888;
+}
+
+body.dark-mode .top-bar {
+  background: #2d2d2d;
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .side-nav {
+  background: #2d2d2d;
+}
+
+body.dark-mode .nav-menu a {
+  color: var(--dark-color);
+}
+
+body.dark-mode .nav-menu a:hover {
+  background: #3a3a3a;
+}
+
+body.dark-mode .modal-box {
+  background: #2d2d2d;
+  color: var(--dark-color);
+}
+

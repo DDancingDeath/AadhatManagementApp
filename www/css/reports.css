@@ -1,0 +1,130 @@
+.report-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.report-card {
+  background: linear-gradient(135deg, var(--white), #f8f9fa);
+  padding: 24px 16px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  border: 2px solid var(--border-color);
+}
+
+.report-card h3 {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 12px 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.report-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary-color);
+  margin: 0;
+}
+
+.popular-item {
+  background: var(--white);
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--border-color);
+}
+
+/* -------------------- SETTINGS -------------------- */
+.settings-card {
+  background: var(--white);
+  padding: 20px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.settings-card h3 {
+  margin: 0 0 16px 0;
+  color: var(--primary-color);
+  font-size: 18px;
+  font-weight: 700;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--light-bg);
+}
+
+.setting-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 8px 0 16px 0;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.danger-btn {
+  background: var(--danger-color);
+  color: var(--white);
+  border: none;
+  padding: 16px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  box-shadow: var(--shadow);
+  transition: transform 0.2s;
+}
+
+.danger-btn:active {
+  transform: scale(0.98);
+}
+
+/* -------------------- DATE FILTER -------------------- */
+.date-filter-card {
+  background: var(--white);
+  padding: 20px;
+  border-radius: 16px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.filter-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-btn {
+  background: var(--light-bg);
+  border: 2px solid var(--border-color);
+  color: var(--dark-color);
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex: 1;
+  min-width: 80px;
+}
+
+.filter-btn.active {
+  background: var(--primary-color);
+  color: var(--white);
+  border-color: var(--primary-color);
+}
+
+.filter-btn:active {
+  transform: scale(0.98);
+}
+
+/* -------------------- STOCK -------------------- */

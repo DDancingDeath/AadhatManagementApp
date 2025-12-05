@@ -1,0 +1,32 @@
+.tab {
+  display: none;
+  padding: 70px 16px 24px 16px;
+  max-width: 480px;
+  min-height: 100vh;
+  margin: 0 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tab.active {
+  display: block;
+}
+
+.tab h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--dark-color);
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid var(--primary-color);
+}
+
+.tab h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--dark-color);
+  margin: 20px 0 12px 0;
+}
+
+/* -------------------- ITEMS & RATES -------------------- */

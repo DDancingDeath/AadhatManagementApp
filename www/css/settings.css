@@ -1,0 +1,45 @@
+/* -------------------- SETTINGS -------------------- */
+.settings-card {
+  background: var(--white);
+  padding: 20px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.settings-card h3 {
+  margin: 0 0 16px 0;
+  color: var(--primary-color);
+  font-size: 18px;
+  font-weight: 700;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--light-bg);
+}
+
+.setting-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 8px 0 16px 0;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.danger-btn {
+  background: var(--danger-color);
+  color: var(--white);
+  border: none;
+  padding: 16px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  box-shadow: var(--shadow);
+  transition: transform 0.2s;
+}
+
+.danger-btn:active {
+  transform: scale(0.98);
+}
+

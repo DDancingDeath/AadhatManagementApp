@@ -1,0 +1,148 @@
+/* -------------------- BILL TOTALS -------------------- */
+.bill-totals {
+  background: var(--white);
+  padding: 14px;
+  border-radius: 10px;
+  margin: 16px 0;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 15px;
+}
+
+.total-row span {
+  font-weight: 700;
+}
+
+.total-row strong {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.labor-input-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  gap: 8px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.labor-input-row input[type="number"] {
+  width: 120px;
+  padding: 8px;
+  text-align: right;
+  font-size: 16px;
+  font-weight: 600;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  margin: 0;
+  max-width: 120px;
+}
+
+.grand-total {
+  padding-top: 10px !important;
+  margin-top: 8px;
+  font-size: 16px !important;
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  padding: 10px !important;
+  border-radius: 8px;
+  margin: 8px -4px;
+}
+
+.grand-total span {
+  font-weight: 700;
+}
+
+.grand-total strong {
+  font-size: 20px !important;
+  color: var(--success-color) !important;
+}
+
+.payment-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  gap: 12px;
+}
+
+.payment-row label {
+  margin: 0;
+  font-weight: 600;
+  font-size: 15px;
+  flex: 1;
+}
+
+.payment-row span {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.payment-row strong {
+  font-size: 18px;
+  color: var(--primary-color);
+  transition: color 0.3s;
+}
+
+.payment-row input[type="number"] {
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+  padding: 8px;
+  text-align: right;
+  font-size: 16px;
+  font-weight: 600;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.payment-row.payment-total {
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  padding: 10px;
+  border-radius: 8px;
+  margin: 8px -4px;
+  transition: background 0.3s;
+}
+
+.payment-row.payment-total span {
+  font-weight: 700;
+}
+
+.payment-row.payment-total strong {
+  font-size: 18px;
+}
+
+.payment-row.payment-excess {
+  background: linear-gradient(135deg, #ffebee, #ffcdd2) !important;
+}
+
+.payment-row.payment-excess strong {
+  color: var(--danger-color) !important;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+

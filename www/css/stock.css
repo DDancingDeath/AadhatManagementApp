@@ -1,0 +1,37 @@
+.stock-item {
+  background: var(--white);
+  padding: 18px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+  border-left: 4px solid var(--success-color);
+}
+
+.stock-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.stock-details {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.stock-details strong {
+  color: var(--dark-color);
+}
+
+.stock-low {
+  border-left-color: var(--warning-color);
+}
+
+.stock-out {
+  border-left-color: var(--danger-color);
+  opacity: 0.7;
+}
+
+/* -------------------- CHART -------------------- */
