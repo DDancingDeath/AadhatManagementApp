@@ -9,6 +9,16 @@ import { ItemsManager } from './modules/items.js';
 import { PrinterService, printerManager } from './services/printer.js';
 import { BillingManager } from './modules/billing.js';
 
+// Import template loader utility
+import { TemplateLoader } from './utils/template-loader.js';
+
+// Load and inject HTML templates from separate .html files
+async function injectTemplates() {
+    console.log('Loading templates from HTML files...');
+    const templates = await TemplateLoader.loadAllTemplates();
+    TemplateLoader.injectTemplates(templates);
+}
+
 // Global error handlers for debugging
 window.addEventListener('error', function(event) {
     console.error('Global error:', event.error);
@@ -128,10 +138,13 @@ async function loadUserDataAndInitialize() {
 }
 
 // Initialize app on DOM ready
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM loaded, initializing app...');
     
-    // Initialize Firebase auth listener
+    // STEP 1: Load and inject all HTML templates from .html files
+    await injectTemplates();
+    
+    // STEP 2: Initialize Firebase auth listener
     if (typeof firebase !== 'undefined' && firebase.auth) {
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
@@ -144,7 +157,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Set up event listeners
+    // STEP 3: Set up event listeners
     setupEventListeners();
 });
 

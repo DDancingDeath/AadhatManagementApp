@@ -1,0 +1,93 @@
+<div id="payments" class="tab">
+        <h2>Miscellaneous Expenses</h2>
+
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterExpenseTab('business', event)">Business Expenses</button>
+            <button class="filter-btn" onclick="filterExpenseTab('personal', event)">Personal Expenses</button>
+        </div>
+
+        <!-- Business Expenses Section -->
+        <div id="businessExpenseSection">
+            <div class="form-row">
+                <label>Expense Type:</label>
+                <input type="text" id="businessExpenseType" list="businessExpenseTypeOptions" placeholder="Enter expense type" />
+                <datalist id="businessExpenseTypeOptions">
+                    <option value="Labor">
+                    <option value="Staff Salary">
+                    <option value="Weighing Machine">
+                    <option value="Electricity">
+                    <option value="Rent">
+                    <option value="Maintenance">
+                    <option value="Transportation">
+                </datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="businessExpenseAmount" placeholder="Enter amount" />
+            </div>
+
+            <div class="form-row">
+                <label>Person Name (Optional):</label>
+                <input type="text" id="businessExpensePerson" list="businessExpensePersonOptions" placeholder="Enter name" />
+                <datalist id="businessExpensePersonOptions"></datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Remarks (Optional):</label>
+                <input type="text" id="businessExpenseRemarks" placeholder="Enter remarks" />
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="save-btn" onclick="saveBusinessExpense()">Save Expense</button>
+                <button class="print-btn" onclick="saveAndPrintBusinessExpense()">Print Expense</button>
+            </div>
+
+            <h3>Business Expense History</h3>
+            <div id="businessExpenseHistoryList">
+                <p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>
+            </div>
+        </div>
+
+        <!-- Personal Expenses Section -->
+        <div id="personalExpenseSection" style="display: none;">
+            <div class="form-row">
+                <label>Expense Type:</label>
+                <input type="text" id="personalExpenseType" list="personalExpenseTypeOptions" placeholder="Enter expense type" />
+                <datalist id="personalExpenseTypeOptions">
+                    <option value="Newspaper">
+                    <option value="Bike Servicing">
+                    <option value="Phone Bill">
+                    <option value="Personal Shopping">
+                    <option value="Medical">
+                    <option value="Entertainment">
+                </datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="personalExpenseAmount" placeholder="Enter amount" />
+            </div>
+
+            <div class="form-row">
+                <label>Person Name (Optional):</label>
+                <input type="text" id="personalExpensePerson" list="personalExpensePersonOptions" placeholder="Enter name" />
+                <datalist id="personalExpensePersonOptions"></datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Remarks (Optional):</label>
+                <input type="text" id="personalExpenseRemarks" placeholder="Enter remarks" />
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="save-btn" onclick="savePersonalExpense()">Save Expense</button>
+                <button class="print-btn" onclick="saveAndPrintPersonalExpense()">Print Expense</button>
+            </div>
+
+            <h3>Personal Expense History</h3>
+            <div id="personalExpenseHistoryList">
+                <p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>
+            </div>
+        </div>
+    </div>

@@ -1,0 +1,112 @@
+<div id="reports" class="tab">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
+            <h2 style="margin: 0;">Reports</h2>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="quick-add-btn-inline" onclick="exportToCSV()">📊 Export CSV</button>
+                <button class="quick-add-btn-inline" onclick="exportToPDF()">📄 Export PDF</button>
+            </div>
+        </div>
+        
+        <div class="date-filter-card">
+            <div class="date-filter-buttons">
+                <button class="filter-btn active" onclick="setDateFilter('today', event)">Today</button>
+                <button class="filter-btn" onclick="setDateFilter('week', event)">This Week</button>
+                <button class="filter-btn" onclick="setDateFilter('month', event)">This Month</button>
+                <button class="filter-btn" onclick="setDateFilter('custom', event)">Custom</button>
+            </div>
+            
+            <div id="customDateRange" style="display: none; margin-top: 16px;">
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 140px;">
+                        <label>From:</label>
+                        <input type="date" id="dateFrom" onchange="applyCustomDateFilter()" />
+                    </div>
+                    <div style="flex: 1; min-width: 140px;">
+                        <label>To:</label>
+                        <input type="date" id="dateTo" onchange="applyCustomDateFilter()" />
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="settings-card">
+            <h3>Filters</h3>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+                <div style="flex: 1; min-width: 140px;">
+                    <label>Transaction Type:</label>
+                    <select id="reportTransactionFilter" onchange="applyReportFilters()">
+                        <option value="all">All Transactions</option>
+                        <option value="purchase">Purchase Only</option>
+                        <option value="sale">Sale Only</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 140px;">
+                    <label>Item Filter:</label>
+                    <select id="reportItemFilter" onchange="applyReportFilters()">
+                        <option value="all">All Items</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 140px;">
+                    <label>Customer Filter:</label>
+                    <select id="reportCustomerFilter" onchange="applyReportFilters()">
+                        <option value="all">All Customers</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <div class="report-cards">
+            <div class="report-card">
+                <h3>Total Purchases</h3>
+                <p class="report-value">₹ <span id="totalSales">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Total Bills</h3>
+                <p class="report-value"><span id="totalBills">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Labor Cost</h3>
+                <p class="report-value">₹ <span id="totalLabour">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Cash Payment</h3>
+                <p class="report-value">₹ <span id="totalCash">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Online Payment</h3>
+                <p class="report-value">₹ <span id="totalOnline">0</span></p>
+            </div>
+
+            <div class="report-card">
+                <h3>Total Payment</h3>
+                <p class="report-value">₹ <span id="totalPaymentReport">0</span></p>
+            </div>
+
+            <div class="report-card" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+                <h3>Purchase Outstanding</h3>
+                <p class="report-value" style="color: #dc3545;">₹ <span id="purchaseOutstanding">0</span></p>
+            </div>
+
+            <div class="report-card" style="background: #d1ecf1; border-left: 4px solid #17a2b8;">
+                <h3>Sale Outstanding</h3>
+                <p class="report-value" style="color: #28a745;">₹ <span id="saleOutstanding">0</span></p>
+            </div>
+        </div>
+
+        <h3>Purchase Trends</h3>
+        <div class="chart-container">
+            <canvas id="purchaseChart"></canvas>
+        </div>
+
+        <h3>Popular Items</h3>
+        <div id="popularItems">
+            <p style="text-align: center; color: #888;">No data available</p>
+        </div>
+
+        <h3>Item-wise Purchase Details</h3>
+        <div id="itemWiseReport"></div>
+    </div>

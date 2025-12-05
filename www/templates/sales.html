@@ -1,0 +1,73 @@
+<div id="sales" class="tab">
+        <h2>Wholesale Sales</h2>
+
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterSalesTab('sales', event)">Sales</button>
+            <button class="filter-btn" onclick="filterSalesTab('outstanding', event)">Outstanding</button>
+        </div>
+
+        <div id="salesEntrySection">
+            <div class="form-row" style="margin-bottom: 16px;">
+                <label style="width: 100px;">Customer:</label>
+                <input type="text" id="wholesaleCustomerName" list="wholesaleCustomerOptions" placeholder="Enter customer name" style="flex: 1;" />
+                <datalist id="wholesaleCustomerOptions"></datalist>
+            </div>
+
+            <label>Select Item:</label>
+        <select id="sellItem" onchange="loadSellItemDetails()">
+            <option value="">Select item</option>
+        </select>
+
+        <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 12px 0;">
+            <div style="font-size: 14px; color: #333;">
+                <strong>Available Stock:</strong> <span id="availableStock">-</span> kg<br>
+                <strong>Avg Purchase Rate:</strong> ₹<span id="avgPurchaseRate">-</span>/kg
+            </div>
+        </div>
+
+        <label>Selling Rate (₹/kg):</label>
+        <input type="number" inputmode="decimal" id="sellRate" placeholder="Enter selling rate" />
+
+        <div class="weight-input-row">
+            <div style="flex: 1;">
+                <label>Quantity (kg):</label>
+                <input type="number" inputmode="decimal" id="sellQuantity" placeholder="Enter quantity" />
+            </div>
+            <button class="quick-add-btn" onclick="addToSalesBill()">Add to Bill</button>
+        </div>
+
+        <h3>Sale Items</h3>
+        <table id="salesTable">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Rate</th>
+                    <th>Qty</th>
+                    <th>Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div class="bill-totals">
+            <div class="total-row grand-total">
+                <span>Total Sale Amount:</span>
+                <strong>₹ <span id="salesTotalAmount">0</span></strong>
+            </div>
+        </div>
+
+        <button class="print-btn" onclick="completeSale()">Complete Sale</button>
+
+        <h3>Sales History</h3>
+        <div id="salesHistoryList">
+            <p style="text-align: center; color: #888; margin-top: 20px;">No sales yet</p>
+        </div>
+        </div>
+
+        <div id="salesOutstandingSection" style="display: none;">
+            <div id="salesOutstandingList">
+                <p style="text-align: center; color: #888; margin-top: 20px;">No outstanding payments</p>
+            </div>
+        </div>
+    </div>

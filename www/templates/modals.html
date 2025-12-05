@@ -1,0 +1,32 @@
+<!-- Modal Popup -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-box" id="modalBox">
+            <div class="modal-header">
+                <h3 id="modalTitle">Alert</h3>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <p id="modalMessage">This is a message</p>
+            </div>
+            <div class="modal-footer" id="modalFooter">
+                <button class="modal-btn modal-btn-cancel" id="modalCancelBtn" onclick="closeModal(false)">Cancel</button>
+                <button class="modal-btn modal-btn-confirm" id="modalConfirmBtn" onclick="closeModal(true)">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BILL DETAILS OVERLAY -->
+    <div class="bill-details-overlay" id="billDetailsOverlay">
+        <div class="bill-details-container">
+            <div class="bill-details-header">
+                <h2 id="billDetailsTitle">Bill Details</h2>
+                <button class="bill-details-close" onclick="closeBillDetails()">✕</button>
+            </div>
+            <div class="bill-details-content" id="billDetailsContent">
+                <!-- Bill content will be inserted here -->
+            </div>
+            <div class="bill-details-footer">
+                <button class="btn-secondary" onclick="closeBillDetails()">Close</button>
+                <button class="btn-primary" id="billEditBtn" onclick="editBillDetails()">Edit</button>
+            </div>
+        </div>
+    </div>

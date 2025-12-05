@@ -1,0 +1,158 @@
+<div id="analytics" class="tab">
+        <h2>Business Analytics</h2>
+
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterAnalyticsTab('overview', event)">Overview</button>
+            <button class="filter-btn" onclick="filterAnalyticsTab('sales', event)">Sales</button>
+            <button class="filter-btn" onclick="filterAnalyticsTab('items', event)">Items</button>
+            <button class="filter-btn" onclick="filterAnalyticsTab('customers', event)">Customers</button>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div class="settings-card" style="margin-bottom: 20px;">
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <label style="font-weight: 500;">Period:</label>
+                <button class="filter-btn" onclick="setAnalyticsPeriod('7days', event)">Last 7 Days</button>
+                <button class="filter-btn active" onclick="setAnalyticsPeriod('30days', event)">Last 30 Days</button>
+                <button class="filter-btn" onclick="setAnalyticsPeriod('90days', event)">Last 90 Days</button>
+                <button class="filter-btn" onclick="setAnalyticsPeriod('all', event)">All Time</button>
+            </div>
+        </div>
+
+        <!-- OVERVIEW SECTION -->
+        <div id="analyticsOverviewSection">
+            <!-- Key Metrics -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div class="stats-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Transactions</div>
+                    <div style="font-size: 28px; font-weight: 700;"><span id="analyticsTransactionCount">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Avg Transaction Value</div>
+                    <div style="font-size: 28px; font-weight: 700;">₹<span id="analyticsAvgTransaction">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Profit</div>
+                    <div style="font-size: 28px; font-weight: 700;">₹<span id="analyticsTotalProfit">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Profit Margin</div>
+                    <div style="font-size: 28px; font-weight: 700;"><span id="analyticsProfitMargin">0</span>%</div>
+                </div>
+            </div>
+
+            <!-- Daily Trends Chart -->
+            <div class="settings-card">
+                <h3>Daily Revenue & Profit Trend</h3>
+                <div id="dailyTrendChart" style="height: 250px; overflow-x: auto;">
+                    <!-- Chart will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Business Health Score -->
+            <div class="settings-card">
+                <h3>Business Health Scorecard</h3>
+                <div id="healthScorecard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+                    <!-- Scorecard will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- SALES ANALYTICS SECTION -->
+        <div id="analyticsSalesSection" style="display: none;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div class="stats-card" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Sales</div>
+                    <div style="font-size: 28px; font-weight: 700;">₹<span id="analyticsTotalSales">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Purchases</div>
+                    <div style="font-size: 28px; font-weight: 700;">₹<span id="analyticsTotalPurchases">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #834d9b 0%, #d04ed6 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Sales Count</div>
+                    <div style="font-size: 28px; font-weight: 700;"><span id="analyticsSalesCount">0</span></div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%); color: white;">
+                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Purchase Count</div>
+                    <div style="font-size: 28px; font-weight: 700;"><span id="analyticsPurchaseCount">0</span></div>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Sales vs Purchases Timeline</h3>
+                <div id="salesPurchasesChart" style="height: 250px; overflow-x: auto;">
+                    <!-- Chart will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Payment Methods Breakdown</h3>
+                <div id="paymentMethodsChart" style="height: 200px; display: flex; justify-content: center; align-items: center; gap: 40px;">
+                    <!-- Pie chart will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ITEMS ANALYTICS SECTION -->
+        <div id="analyticsItemsSection" style="display: none;">
+            <div class="settings-card">
+                <h3>Top Selling Items (By Revenue)</h3>
+                <div id="topSellingItemsRevenue">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Top Selling Items (By Quantity)</h3>
+                <div id="topSellingItemsQuantity">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Most Purchased Items</h3>
+                <div id="topPurchasedItems">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Item Profitability Analysis</h3>
+                <div id="itemProfitability">
+                    <!-- Table will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- CUSTOMERS ANALYTICS SECTION -->
+        <div id="analyticsCustomersSection" style="display: none;">
+            <div class="settings-card">
+                <h3>Top Customers by Revenue</h3>
+                <div id="topCustomersByRevenue">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Top Suppliers by Volume</h3>
+                <div id="topSuppliersByVolume">
+                    <!-- List will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Customer Payment Behavior</h3>
+                <div id="customerPaymentBehavior">
+                    <!-- Analysis will be rendered here -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h3>Customer Activity</h3>
+                <div id="customerActivity" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
+                    <!-- Stats will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>

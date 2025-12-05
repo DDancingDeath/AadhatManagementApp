@@ -1,0 +1,60 @@
+<div id="stock" class="tab">
+        <h2>Stock Management</h2>
+        
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterStockTab('current', event)">Current Stock</button>
+            <button class="filter-btn" onclick="filterStockTab('adjustment', event)">Stock Adjustment</button>
+        </div>
+
+        <div id="currentStockSection">
+            <h3>Current Stock</h3>
+            <div id="stockList">
+                <p style="text-align: center; color: #888; margin-top: 40px;">No stock data available</p>
+            </div>
+        </div>
+
+        <div id="stockAdjustmentSection" style="display: none;">
+            <div class="settings-card">
+                <h3>Manual Stock Adjustment</h3>
+                
+                <div class="form-row">
+                    <label>Select Item:</label>
+                    <select id="adjustItem" onchange="loadAdjustItemStock()">
+                        <option value="">Select item</option>
+                    </select>
+                </div>
+                
+                <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 12px 0;">
+                    <div style="font-size: 14px; color: #333;">
+                        <strong>Current Stock:</strong> <span id="currentStockDisplay">-</span> kg
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <label>Adjustment Type:</label>
+                    <select id="adjustType" onchange="updateAdjustmentPlaceholder()">
+                        <option value="add">Add Stock (+)</option>
+                        <option value="remove">Remove Stock (-)</option>
+                        <option value="set">Set Stock (=)</option>
+                    </select>
+                </div>
+                
+                <div class="form-row">
+                    <label>Quantity (kg):</label>
+                    <input type="number" inputmode="decimal" id="adjustQuantity" placeholder="Enter quantity" />
+                </div>
+                
+                <div class="form-row">
+                    <label>Reason (Optional):</label>
+                    <input type="text" id="adjustReason" placeholder="e.g., Damaged goods, Manual count" />
+                </div>
+                
+                <button class="add-to-bill-btn" onclick="applyStockAdjustment()">Apply Adjustment</button>
+            </div>
+            
+            <h3>Adjustment History</h3>
+            <div id="adjustmentHistory">
+                <p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>
+            </div>
+        </div>
+    </div>

@@ -1,0 +1,121 @@
+<div id="finance" class="tab">
+        <h2>Finance & Accounting</h2>
+
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="filterFinanceTab('overview', event)">Overview</button>
+            <button class="filter-btn" onclick="filterFinanceTab('transactions', event)">Transactions</button>
+            <button class="filter-btn" onclick="filterFinanceTab('withdrawals', event)">Withdrawals</button>
+        </div>
+
+        <!-- OVERVIEW SECTION -->
+        <div id="financeOverviewSection">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <!-- Current Balance Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Current Balance</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="currentBalance">0</span></div>
+                </div>
+
+                <!-- Total Revenue Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Revenue</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalRevenue">0</span></div>
+                </div>
+
+                <!-- Total Profit Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Profit</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalProfit">0</span></div>
+                </div>
+
+                <!-- Business Expenses Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Business Expenses</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="businessExpensesTotal">0</span></div>
+                </div>
+
+                <!-- Personal Expenses Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); color: white;">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Personal Expenses</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="personalExpensesTotal">0</span></div>
+                </div>
+
+                <!-- Total Withdrawals Card -->
+                <div class="stats-card" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333;">
+                    <div style="font-size: 14px; opacity: 0.8; margin-bottom: 8px;">Total Withdrawals</div>
+                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalWithdrawals">0</span></div>
+                </div>
+            </div>
+
+            <!-- Monthly Trends -->
+            <div class="settings-card">
+                <h3>Monthly Profit Trend</h3>
+                <div id="monthlyProfitChart" style="height: 200px; display: flex; align-items: flex-end; gap: 8px; padding: 20px 0;">
+                    <!-- Chart will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Account Breakdown -->
+            <div class="settings-card">
+                <h3>Account Breakdown</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding: 12px; text-align: left;">Description</th>
+                            <th style="padding: 12px; text-align: right;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountBreakdownTable">
+                        <!-- Breakdown will be rendered here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TRANSACTIONS SECTION -->
+        <div id="financeTransactionsSection" style="display: none;">
+            <div class="settings-card">
+                <h3>All Financial Transactions</h3>
+                <div id="allTransactionsList">
+                    <!-- Transactions will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- WITHDRAWALS SECTION -->
+        <div id="financeWithdrawalsSection" style="display: none;">
+            <div class="settings-card">
+                <h3>Record Money Withdrawal</h3>
+                
+                <div class="form-row">
+                    <label>Amount (₹):</label>
+                    <input type="number" inputmode="decimal" id="withdrawalAmount" placeholder="Enter amount" />
+                </div>
+
+                <div class="form-row">
+                    <label>Withdrawn By:</label>
+                    <input type="text" id="withdrawalPerson" list="withdrawalPersonOptions" placeholder="Enter name" />
+                    <datalist id="withdrawalPersonOptions"></datalist>
+                </div>
+
+                <div class="form-row">
+                    <label>Purpose:</label>
+                    <input type="text" id="withdrawalPurpose" placeholder="Enter purpose (Optional)" />
+                </div>
+
+                <div class="form-row">
+                    <label>Date:</label>
+                    <input type="date" id="withdrawalDate" />
+                </div>
+
+                <button class="save-btn" onclick="recordWithdrawal()">Record Withdrawal</button>
+            </div>
+
+            <div class="settings-card">
+                <h3>Withdrawal History</h3>
+                <div id="withdrawalHistoryList">
+                    <p style="text-align: center; color: #888; margin-top: 40px;">No withdrawals recorded yet</p>
+                </div>
+            </div>
+        </div>
+    </div>

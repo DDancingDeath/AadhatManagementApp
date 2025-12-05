@@ -1,0 +1,14 @@
+<div id="items" class="tab">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
+            <h2 style="margin: 0;">Items</h2>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="quick-add-btn-inline" onclick="exportItemsToExcel()">📊 Export Excel</button>
+                <button class="quick-add-btn-inline" onclick="document.getElementById('importItemsFile').click()">📥 Import Excel</button>
+            </div>
+        </div>
+        <input type="file" id="importItemsFile" accept=".xlsx,.xls,.csv" style="display: none;" onchange="importItemsFromExcel(event)" />
+        
+        <div id="itemsList"></div>
+
+        <button class="add-item-btn" onclick="addItem()">+ Add Item</button>
+    </div>

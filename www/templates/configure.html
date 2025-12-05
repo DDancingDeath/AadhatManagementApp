@@ -1,0 +1,20 @@
+<div id="configure" class="tab">
+        <h2>Configure</h2>
+
+        <div class="settings-card">
+            <h3>Labor Charges</h3>
+            
+            <label>Heavy Packet Weight Threshold (kg):</label>
+            <input type="number" inputmode="decimal" id="settingHeavyWeight" placeholder="30" value="30" onchange="saveSettings()" />
+            <p class="setting-description">Packets above this weight will incur labor charges</p>
+
+            <label>Labor Charge per Heavy Packet (₹):</label>
+            <input type="number" inputmode="decimal" id="settingLaborRate" placeholder="6" value="6" onchange="saveSettings()" />
+            <p class="setting-description">Amount charged for each heavy packet</p>
+
+            <label class="checkbox-label">
+                <input type="checkbox" id="settingAutoLabor" checked onchange="saveSettings()">
+                <span>Enable automatic labor charges by default</span>
+            </label>
+        </div>
+    </div>

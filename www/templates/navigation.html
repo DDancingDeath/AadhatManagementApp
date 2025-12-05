@@ -1,0 +1,83 @@
+<!-- Hamburger Menu Button -->
+    <button class="hamburger" onclick="toggleMenu()">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+
+    <!-- Side Navigation -->
+    <div class="side-nav" id="sideNav">
+        <div class="nav-header">
+            <h2>Aadhat Billing</h2>
+            <button class="close-btn" onclick="toggleMenu()">×</button>
+        </div>
+        <nav class="nav-menu">
+            <a href="#" onclick="showTabFromNav('billing', event)">
+                <span class="nav-icon">📋</span>
+                Billing
+            </a>
+            <a href="#" onclick="showTabFromNav('payments', event)">
+                <span class="nav-icon">💳</span>
+                Miscellaneous
+            </a>
+            <a href="#" onclick="showTabFromNav('items', event)">
+                <span class="nav-icon">📦</span>
+                Items
+            </a>
+            <a href="#" onclick="showTabFromNav('stock', event)">
+                <span class="nav-icon">📊</span>
+                Stock
+            </a>
+            <a href="#" onclick="showTabFromNav('sales', event)">
+                <span class="nav-icon">💰</span>
+                Sales
+            </a>
+            <a href="#" onclick="showTabFromNav('history', event)">
+                <span class="nav-icon">📜</span>
+                History
+            </a>
+            <a href="#" onclick="showTabFromNav('due', event)">
+                <span class="nav-icon">💸</span>
+                Outstanding
+            </a>
+            <a href="#" onclick="showTabFromNav('reports', event)">
+                <span class="nav-icon">📈</span>
+                Reports
+            </a>
+            <a href="#" onclick="showTabFromNav('configure', event)">
+                <span class="nav-icon">🔧</span>
+                Configure
+            </a>
+            <a href="#" onclick="showTabFromNav('settings', event)">
+                <span class="nav-icon">⚙️</span>
+                Settings
+            </a>
+            <a href="#" onclick="showTabFromNav('finance', event)">
+                <span class="nav-icon">💰</span>
+                Finance
+            </a>
+            <a href="#" onclick="showTabFromNav('analytics', event)">
+                <span class="nav-icon">📊</span>
+                Analytics
+            </a>
+            <a href="#" onclick="showTabFromNav('users', event)" id="usersNavLink" style="display: none;">
+                <span class="nav-icon">👥</span>
+                Users
+            </a>
+            <a href="#" onclick="showTabFromNav('chat', event)">
+                <span class="nav-icon">💬</span>
+                AI Assistant
+            </a>
+        </nav>
+    </div>
+
+    <!-- Overlay -->
+    <div class="overlay" id="overlay" onclick="toggleMenu()"></div>
+
+    <!-- Loading Spinner -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
