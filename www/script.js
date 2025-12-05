@@ -1060,6 +1060,29 @@ class BluetoothPrinterManager {
             };
             
             // Build receipt content on temporary canvas
+            
+            // STEP 1: Show weights breakdown FIRST for items with multiple weights
+            tempCtx.font = '18px Arial';
+            tempCtx.fillStyle = '#000000';
+            
+            billData.items.forEach(item => {
+                if (item.weights && item.weights.length > 1) {
+                    // Item name with weight count
+                    y = drawLeft(`${item.name} (${item.weights.length} वजन)`, y, 18);
+                    
+                    // Show weights 6 per line
+                    for (let i = 0; i < item.weights.length; i += 6) {
+                        const weightsLine = item.weights.slice(i, i + 6)
+                            .map(w => w.toFixed(1))
+                            .join(' ');
+                        y = drawLeft(weightsLine, y, 16);
+                    }
+                    
+                    y = addSpacing(y, 8);
+                }
+            });
+            
+            // STEP 2: Receipt header
             const receiptY = y;
             y = drawCenter('Receipt', y, 26, true);
             // Draw underline for Receipt
@@ -1086,19 +1109,10 @@ class BluetoothPrinterManager {
             y += 24;
             y = addSpacing(y, 8);
             
-            // Items
+            // Items summary (without weight breakdown in line)
             tempCtx.font = '18px Arial';
             billData.items.forEach(item => {
-                let weightsStr = '';
-                if (item.weights) {
-                    if (item.weights.length === 1) {
-                        weightsStr = item.qty + 'kg';
-                    } else {
-                        weightsStr = item.qty + 'kg (' + item.weights.join('+') + ')';
-                    }
-                } else {
-                    weightsStr = item.qty + 'kg';
-                }
+                const weightsStr = item.qty + 'kg';
                 
                 tempCtx.fillStyle = '#000000';
                 tempCtx.fillText(item.name.substring(0, 11), 15, y);
@@ -3737,6 +3751,16 @@ async function printBill() {
 async function printViaBluetooth(billData) {
     try {
         console.log('[DEBUG] printViaBluetooth started');
+        
+        // Use the ES6 module printer manager if available
+        if (window.printerManager && window.printerManager.device) {
+            console.log('[DEBUG] Using ES6 module printer manager');
+            await window.printerManager.write(billData);
+            console.log('[DEBUG] Print completed successfully');
+            return;
+        }
+        
+        // Fallback to legacy printerManager
         if (!connectedPrinter) {
             throw new Error('Printer not connected');
         }

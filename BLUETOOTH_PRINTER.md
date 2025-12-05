@@ -112,30 +112,40 @@ The app now supports direct Bluetooth printing to 80mm thermal printers using ES
 ### Receipt Format
 
 ```
-           PURCHASE RECEIPT
-        
-        27/11/2025, 10:30 AM
---------------------------------
-वस्तु        दर     मात्रा   कुल
---------------------------------
-प्याज         ₹50     10kg   ₹500
-  (5+5)
-टमाटर      ₹60     15kg   ₹900
-  (8+7)
---------------------------------
-कुल:                     ₹1400
-मजदूरी:     6 × 2 = ₹12
-पैकेट:                       3
---------------------------------
+प्याज (40 वजन)
+10.0 10.0 10.0 10.0 10.0 10.0
+10.0 10.0 10.0 10.0 10.0 10.0
+10.0 10.0 10.0 10.0 10.0 10.0
+10.0 10.0 10.0 10.0 10.0 10.0
+10.0 10.0 10.0 10.0 10.0 10.0
+10.0 10.0 10.0 10.0
 
-       कुल भुगतान: ₹1388
-
---------------------------------
-ऑनलाइन:                  ₹700
-नकद:                     ₹688
+              Receipt
+      27/11/2025, 10:30 AM
+────────────────────────────
+वस्तु        दर     मात्रा      कुल
+────────────────────────────
+प्याज       ₹50     400kg     ₹20000
+टमाटर      ₹60      15kg      ₹900
+────────────────────────────
+कुल                          ₹20900
+मज़दूरी         6 × 2 =       ₹12
+────────────────────────────
+       कुल भुगतान: ₹20912
 
            धन्यवाद!
 ```
+
+**Format Details:**
+- **Weights first**: Multiple weights listed at the top (6 per line) with Hindi item name
+- **Receipt header**: Centered "Receipt" with date/time
+- **Box drawing separators**: Using ─ character for cleaner look
+- **Item table**: Hindi headers (वस्तु, दर, मात्रा, कुल)
+- **Summary only**: Item rows show totals only, weights already shown above
+- **Single weights**: No weight breakdown, just item summary
+- **Hindi labels**: All labels in Devanagari (कुल, मज़दूरी, धन्यवाद)
+- **Bold grand total**: कुल भुगतान centered and bold
+- **Bitmap rendering**: Uses canvas for proper Hindi font rendering
 
 ### Bluetooth Plugin Details
 

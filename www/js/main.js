@@ -6,7 +6,8 @@ import { NavigationManager } from './ui/navigation.js';
 import { AuthManager } from './auth/authentication.js';
 import { FirebaseService } from './firebase/firestore-service.js';
 import { ItemsManager } from './modules/items.js';
-import { PrinterService } from './services/printer.js';
+import { PrinterService, printerManager } from './services/printer.js';
+import { BillingManager } from './modules/billing.js';
 
 // Global error handlers for debugging
 window.addEventListener('error', function(event) {
@@ -181,12 +182,68 @@ window.app = {
         importExcel: (evt) => ItemsManager.importFromExcel(evt)
     },
     
+    // Billing
+    billing: {
+        // Weight management
+        addWeight: () => BillingManager.addWeight(),
+        renderWeights: () => BillingManager.renderWeights(),
+        removeWeight: (idx) => BillingManager.removeWeight(idx),
+        clearWeights: () => BillingManager.clearWeights(),
+        
+        // Purchase bill
+        addToBill: (autoAdd) => BillingManager.addToBill(autoAdd),
+        renderBill: () => BillingManager.renderBill(),
+        deleteBillItem: (idx) => BillingManager.deleteBillItem(idx),
+        updateTotals: () => BillingManager.updateTotals(),
+        updatePaymentTotal: () => BillingManager.updatePaymentTotal(),
+        fillPayableAmount: (type) => BillingManager.fillPayableAmount(type),
+        saveBill: () => BillingManager.saveBillToHistory(),
+        
+        // Sales bill
+        addToSalesBill: () => BillingManager.addToSalesBill(),
+        renderSalesBill: () => BillingManager.renderSalesBill(),
+        removeSalesItem: (idx) => BillingManager.removeSalesItem(idx),
+        updateSalePaymentTotal: () => BillingManager.updateSalePaymentTotal(),
+        fillSalePayableAmount: (type) => BillingManager.fillSalePayableAmount(type),
+        completeSale: () => BillingManager.completeSale(),
+        
+        // Print bill
+        printBill: async () => {
+            const billItems = BillingManager.getBillItems();
+            if (billItems.length === 0) {
+                UIManager.showToast('No items in bill');
+                return;
+            }
+            
+            const billData = {
+                items: billItems,
+                billTotal: parseFloat(document.getElementById('billTotal')?.textContent || 0),
+                laborCharges: parseFloat(document.getElementById('laborCharges')?.value || 0),
+                totalPackets: parseInt(document.getElementById('totalPackets')?.textContent || 0),
+                amountPayable: parseFloat(document.getElementById('grandTotal')?.textContent || 0),
+                customerName: document.getElementById('customerName')?.value || '',
+                isPurchase: true,
+                isAutoLabor: true,
+                date: new Date().toISOString()
+            };
+            
+            try {
+                await PrinterService.printBill(billData);
+                UIManager.showToast('Bill printed successfully!');
+            } catch (error) {
+                console.error('Print error:', error);
+                UIManager.showToast('Print failed: ' + error.message);
+            }
+        }
+    },
+    
     // Printer
     printer: {
         scan: () => PrinterService.scanDevices(),
         disconnect: () => PrinterService.disconnect(),
         test: () => PrinterService.testPrint(),
-        updateStatus: () => PrinterService.updateStatus()
+        updateStatus: () => PrinterService.updateStatus(),
+        print: (billData) => PrinterService.printBill(billData)
     },
     
     // UI
@@ -196,7 +253,31 @@ window.app = {
         showToast: (msg, duration) => UIManager.showToast(msg, duration),
         showModal: (msg, title, showCancel) => UIManager.showModal(msg, title, showCancel),
         closeModal: (result) => UIManager.closeModal(result)
+    },
+    
+    // Legacy script.js function bridges (for functions not yet modularized)
+    // These will delegate to script.js until they're moved to modules
+    legacy: {
+        // These functions still exist in script.js
+        showTab: (tabId, evt) => typeof window.showTab === 'function' ? window.showTab(tabId, evt) : null,
+        loadItemsDropdown: () => typeof window.loadItemsDropdown === 'function' ? window.loadItemsDropdown() : null,
+        loadRates: () => typeof window.loadRates === 'function' ? window.loadRates() : null,
+        handleRateChange: () => typeof window.handleRateChange === 'function' ? window.handleRateChange() : null,
+        renderHistory: () => typeof window.renderHistory === 'function' ? window.renderHistory() : null,
+        renderSalesHistory: () => typeof window.renderSalesHistory === 'function' ? window.renderSalesHistory() : null,
+        renderStock: () => typeof window.renderStock === 'function' ? window.renderStock() : null,
+        renderReports: () => typeof window.renderReports === 'function' ? window.renderReports() : null,
+        renderDue: () => typeof window.renderDue === 'function' ? window.renderDue() : null,
+        renderSalesOutstanding: () => typeof window.renderSalesOutstanding === 'function' ? window.renderSalesOutstanding() : null,
+        loadSellItemDropdown: () => typeof window.loadSellItemDropdown === 'function' ? window.loadSellItemDropdown() : null,
+        loadSellItemDetails: () => typeof window.loadSellItemDetails === 'function' ? window.loadSellItemDetails() : null,
+        saveBillOnly: () => typeof window.saveBillOnly === 'function' ? window.saveBillOnly() : null,
+        toggleTransactionMode: () => typeof window.toggleTransactionMode === 'function' ? window.toggleTransactionMode() : null
     }
 };
+
+// Expose printer manager globally for script.js compatibility
+window.printerManager = printerManager;
+window.connectedPrinter = printerManager;
 
 console.log('Main app script loaded (ES6 modules)');
