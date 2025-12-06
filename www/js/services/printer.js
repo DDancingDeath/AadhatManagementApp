@@ -90,21 +90,12 @@ class BluetoothPrinterManager {
         }
     }
 
-    async write(billData) {
-        if (!this.device) {
-            throw new Error('Not connected to device');
-        }
-
-        if (!window.bluetoothSerial) {
-            throw new Error('Bluetooth Serial plugin not available');
-        }
+    async generateBillCanvas(billData) {
+        console.log('[CANVAS] Building receipt as image...');
         
-        console.log('[WRITE] Building receipt as image...');
-        
-        try {
-            // STEP 1: Create large temporary canvas for drawing
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
+        // STEP 1: Create large temporary canvas for drawing
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
             
             // Set canvas size for 58mm thermal printer (384 pixels width)
             const width = 384;
@@ -147,8 +138,8 @@ class BluetoothPrinterManager {
             
             billData.items.forEach(item => {
                 if (item.weights && item.weights.length > 1) {
-                    // Item name with weight count
-                    y = drawLeft(`${item.name} (${item.weights.length} वजन)`, y, 18);
+                    // Item name with packet count and total weight
+                    y = drawLeft(`${item.name} (${item.weights.length} पैकेट, ${item.qty.toFixed(1)} kg)`, y, 18);
                     
                     // Show weights 6 per line
                     for (let i = 0; i < item.weights.length; i += 6) {
@@ -192,12 +183,13 @@ class BluetoothPrinterManager {
             // Items summary (without weight breakdown in line)
             tempCtx.font = '18px Arial';
             billData.items.forEach(item => {
-                const weightsStr = item.qty + 'kg';
+                const packetsCount = item.weights ? item.weights.length : 1;
+                const quantityStr = `${packetsCount}p/${item.qty}kg`;
                 
                 tempCtx.fillStyle = '#000000';
                 tempCtx.fillText(item.name.substring(0, 11), 15, y);
                 tempCtx.fillText('₹' + item.rate, 140, y);
-                tempCtx.fillText(weightsStr, 220, y);
+                tempCtx.fillText(quantityStr, 220, y);
                 tempCtx.fillText('₹' + item.total, 310, y);
                 y += 24;
             });
@@ -213,35 +205,41 @@ class BluetoothPrinterManager {
             tempCtx.fillText(totalText, width - totalWidth - 15, y);
             y += 24;
             
+            // Labor charges (subtract for purchase) - show only if > 0
             if (billData.isPurchase && billData.laborCharges > 0) {
                 tempCtx.fillText('मजदूरी:', 15, y);
                 
-                // Show calculation only if auto-calculated, else show just the amount
-                const settings = AppState.settings || DEFAULT_SETTINGS;
-                if (billData.isAutoLabor) {
-                    const totalPackets = billData.totalPackets || 0;
-                    const laborText = settings.laborRate + ' × ' + totalPackets + ' = ₹' + billData.laborCharges;
-                    const laborWidth = tempCtx.measureText(laborText).width;
-                    tempCtx.fillText(laborText, width - laborWidth - 15, y);
-                } else {
-                    const laborText = '₹' + billData.laborCharges;
-                    const laborWidth = tempCtx.measureText(laborText).width;
-                    tempCtx.fillText(laborText, width - laborWidth - 15, y);
-                }
-                
+                // Show calculation only if auto-calculated (laborCalc exists)
+                const laborText = billData.laborCalc 
+                    ? `${billData.laborCalc} = ₹${billData.laborCharges}`
+                    : `₹${billData.laborCharges}`;
+                const laborWidth = tempCtx.measureText(laborText).width;
+                tempCtx.fillText(laborText, width - laborWidth - 15, y);
                 y += 24;
             }
             
-            tempCtx.fillText('पैकेट:', 15, y);
-            const packetText = String(billData.totalPackets);
-            const packetWidth = tempCtx.measureText(packetText).width;
-            tempCtx.fillText(packetText, width - packetWidth - 15, y);
-            y += 24;
-            
             y = addSpacing(y, 12);
             
-            // Grand total
-            y = drawCenter('कुल भुगतान: ₹' + billData.amountPayable, y, 24, true);
+            // Total Payable (after labor deduction)
+            tempCtx.font = 'bold 20px Arial';
+            tempCtx.fillText('कुल भुगतान:', 15, y);
+            const amountPayable = billData.amountPayable || billData.grandTotal || (billData.billTotal - (billData.laborCharges || 0));
+            const payableText = '₹' + amountPayable.toFixed(2);
+            const payableWidth = tempCtx.measureText(payableText).width;
+            tempCtx.fillText(payableText, width - payableWidth - 15, y);
+            y += 28;
+            
+            y = addSpacing(y, 8);
+            
+            // Show due amount if present
+            tempCtx.font = '18px Arial';
+            if (billData.dueAmount && billData.dueAmount > 0) {
+                tempCtx.fillText('बाकी:', 15, y);
+                const dueText = '₹' + billData.dueAmount.toFixed(2);
+                const dueWidth = tempCtx.measureText(dueText).width;
+                tempCtx.fillText(dueText, width - dueWidth - 15, y);
+                y += 24;
+            }
             
             console.log('[WRITE] Drawing complete, height:', y);
             
@@ -254,7 +252,25 @@ class BluetoothPrinterManager {
             // Copy only the used portion from temp canvas
             finalCtx.drawImage(tempCanvas, 0, 0, width, y, 0, 0, width, y);
             
-            console.log('[WRITE] Canvas rendered, converting to bitmap...');
+            console.log('[CANVAS] Canvas rendered successfully');
+            return finalCanvas;
+    }
+
+    async write(billData) {
+        if (!this.device) {
+            throw new Error('Not connected to device');
+        }
+
+        if (!window.bluetoothSerial) {
+            throw new Error('Bluetooth Serial plugin not available');
+        }
+        
+        console.log('[WRITE] Generating bill canvas...');
+        
+        try {
+            const finalCanvas = await this.generateBillCanvas(billData);
+            
+            console.log('[WRITE] Converting to bitmap...');
             
             // Get image data from FINAL canvas
             const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
@@ -439,15 +455,77 @@ const PrinterService = {
                 return true;
             } catch (error) {
                 console.error('Bluetooth print failed:', error);
-                const retry = confirm('Bluetooth print failed. Use web print instead?');
+                const retry = confirm('Bluetooth print failed. Show bill preview?');
                 if (retry) {
-                    return await this.printViaWeb(billData);
+                    return await this.showBillPreview(billData);
                 }
                 throw error;
             }
         } else {
-            // Fall back to web print
-            return await this.printViaWeb(billData);
+            // No Bluetooth printer - show preview
+            return await this.showBillPreview(billData);
+        }
+    },
+
+    async showBillPreview(billData) {
+        try {
+            // Generate canvas using the same method as Bluetooth printing
+            const canvas = await this.manager.generateBillCanvas(billData);
+            
+            // Convert canvas to data URL
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            // Show in a modal or preview element
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            `;
+            
+            const img = document.createElement('img');
+            img.src = dataUrl;
+            img.style.cssText = `
+                max-width: 90%;
+                max-height: 80vh;
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            `;
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = 'Close';
+            closeBtn.style.cssText = `
+                margin-top: 20px;
+                padding: 12px 24px;
+                background: #007bff;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+            `;
+            closeBtn.onclick = () => document.body.removeChild(modal);
+            
+            modal.appendChild(img);
+            modal.appendChild(closeBtn);
+            document.body.appendChild(modal);
+            
+            return true;
+        } catch (error) {
+            console.error('Preview generation failed:', error);
+            UIManager.showToast('Failed to generate bill preview');
+            return false;
         }
     },
 

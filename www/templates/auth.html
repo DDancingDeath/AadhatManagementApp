@@ -7,8 +7,8 @@
             </div>
             
             <div class="auth-tabs">
-                <button class="auth-tab active" onclick="showAuthTab('login'); return false;">Login</button>
-                <button class="auth-tab" onclick="showAuthTab('register'); return false;">Register</button>
+                <button class="auth-tab active" onclick="window.app.auth.showTab('login'); return false;">Login</button>
+                <button class="auth-tab" onclick="window.app.auth.showTab('register'); return false;">Register</button>
             </div>
             
             <!-- Login Form -->
@@ -22,8 +22,8 @@
                     <label>Password</label>
                     <input type="password" id="loginPassword" placeholder="Enter your password" autocomplete="current-password">
                 </div>
-                <button class="auth-btn" onclick="handleLogin()">Login</button>
-                <p class="auth-link">Forgot password? <a href="#" onclick="handleForgotPassword()">Reset it</a></p>
+                <button class="auth-btn" onclick="window.app.auth.login()">Login</button>
+                <p class="auth-link">Forgot password? <a href="#" onclick="window.app.auth.forgotPassword()">Reset it</a></p>
             </div>
             
             <!-- Register Form -->
@@ -45,8 +45,8 @@
                     <label>Confirm Password</label>
                     <input type="password" id="registerConfirmPassword" placeholder="Confirm your password" autocomplete="new-password">
                 </div>
-                <button class="auth-btn" onclick="handleRegister()">Create Account</button>
-                <p class="auth-link">Already have an account? <a href="#" onclick="showAuthTab('login'); return false;">Login</a></p>
+                <button class="auth-btn" onclick="window.app.auth.register()">Create Account</button>
+                <p class="auth-link">Already have an account? <a href="#" onclick="window.app.auth.showTab('login'); return false;">Login</a></p>
             </div>
         </div>
     </div>

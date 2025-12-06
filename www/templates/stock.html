@@ -2,8 +2,8 @@
         <h2>Stock Management</h2>
         
         <div class="filter-buttons" style="margin-bottom: 20px;">
-            <button class="filter-btn active" onclick="filterStockTab('current', event)">Current Stock</button>
-            <button class="filter-btn" onclick="filterStockTab('adjustment', event)">Stock Adjustment</button>
+            <button class="filter-btn active" onclick="window.app.stock.filterTab('current', event)">Current Stock</button>
+            <button class="filter-btn" onclick="window.app.stock.filterTab('adjustment', event)">Stock Adjustment</button>
         </div>
 
         <div id="currentStockSection">
@@ -19,7 +19,7 @@
                 
                 <div class="form-row">
                     <label>Select Item:</label>
-                    <select id="adjustItem" onchange="loadAdjustItemStock()">
+                    <select id="adjustItem" onchange="window.app.stock.loadAdjustItemStock()">
                         <option value="">Select item</option>
                     </select>
                 </div>
@@ -32,10 +32,10 @@
                 
                 <div class="form-row">
                     <label>Adjustment Type:</label>
-                    <select id="adjustType" onchange="updateAdjustmentPlaceholder()">
-                        <option value="add">Add Stock (+)</option>
-                        <option value="remove">Remove Stock (-)</option>
-                        <option value="set">Set Stock (=)</option>
+                    <select id="adjustType" onchange="window.app.stock.updateAdjustmentPlaceholder()">
+                        <option value="add">Add Stock</option>
+                        <option value="remove">Remove Stock</option>
+                        <option value="set">Set Stock</option>
                     </select>
                 </div>
                 
@@ -49,7 +49,7 @@
                     <input type="text" id="adjustReason" placeholder="e.g., Damaged goods, Manual count" />
                 </div>
                 
-                <button class="add-to-bill-btn" onclick="applyStockAdjustment()">Apply Adjustment</button>
+                <button class="add-to-bill-btn" onclick="window.app.stock.applyAdjustment()">Apply Adjustment</button>
             </div>
             
             <h3>Adjustment History</h3>

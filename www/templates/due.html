@@ -2,8 +2,8 @@
         <h2>Outstanding</h2>
         
         <div style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
-            <button class="filter-btn active" onclick="filterDue('purchase', event)">Purchases</button>
-            <button class="filter-btn" onclick="filterDue('sale', event)">Sales</button>
+            <button class="filter-btn active" onclick="window.app.outstanding.filterDue('purchase', event)">Purchases</button>
+            <button class="filter-btn" onclick="window.app.outstanding.filterDue('sale', event)">Sales</button>
         </div>
 
         <div id="dueList">

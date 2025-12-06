@@ -147,11 +147,17 @@ const AuthManager = {
             AppState.userName = userData.name || 'User';
             
             console.log('Login successful! Role:', AppState.userRole);
-            UIManager.hideLoading();
             UIManager.showToast('Login successful!');
             
+            // Hide auth screen and initialize app
             document.getElementById('authScreen').style.display = 'none';
-            await window.loadUserDataAndInitialize();
+            
+            // Initialize the app
+            if (window.initializeApp) {
+                await window.initializeApp();
+            }
+            
+            UIManager.hideLoading();
             
         } catch (error) {
             console.error('Login error:', error);
@@ -367,13 +373,5 @@ const AuthManager = {
         });
     }
 };
-
-// Initialize auth tabs
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => AuthManager.initAuthTabs());
-} else {
-    AuthManager.initAuthTabs();
-}
-
 // Export AuthManager
 export { AuthManager };

@@ -27,13 +27,43 @@ const NavigationManager = {
         sideNav.classList.remove('active');
         overlay.classList.remove('active');
         
-        // Show tab
-        this.showTab(tabId + 'Tab');
+        // Show tab (use tabId directly, not tabId + 'Tab')
+        this.showTab(tabId);
         UIManager.hapticFeedback('light');
         
         // Load users when Users tab is shown
         if (tabId === 'users' && typeof window.loadUsers === 'function') {
             window.loadUsers();
+        }
+        
+        // Render items table when Items tab is shown
+        if (tabId === 'items' && window.app?.items) {
+            setTimeout(() => window.app.items.renderTable(), 100);
+        }
+        
+        // Render history when History tab is shown
+        if (tabId === 'history' && window.app?.history) {
+            setTimeout(() => window.app.history.render(), 100);
+        }
+        
+        // Render outstanding when Due tab is shown
+        if (tabId === 'due' && window.app?.outstanding) {
+            setTimeout(() => window.app.outstanding.renderDue(), 100);
+        }
+        
+        // Render sales history when Sales tab is shown
+        if (tabId === 'sales' && window.app?.sales) {
+            setTimeout(() => window.app.sales.renderHistory(), 100);
+        }
+        
+        // Render reports when Reports tab is shown
+        if (tabId === 'reports' && window.app?.reports) {
+            setTimeout(() => window.app.reports.renderReports(), 100);
+        }
+        
+        // Initialize configure sub-tabs when Configure tab is shown
+        if (tabId === 'configure' && window.app?.configure) {
+            setTimeout(() => window.app.configure.showSubTab('items'), 100);
         }
     },
 

@@ -16,60 +16,59 @@ const ItemsManager = {
         container.innerHTML = '';
         
         AppState.items.forEach((item, index) => {
+            // Initialize rates arrays if they don't exist
+            if (!item.rates) item.rates = [];
+            if (!item.saleRates) item.saleRates = [];
+            
             const itemCard = document.createElement('div');
             itemCard.className = 'item-card';
             
-            let purchaseRatesHTML = '';
-            if (item.purchaseRates && item.purchaseRates.length > 0) {
-                purchaseRatesHTML = item.purchaseRates.map((rate, rateIndex) => `
-                    <div class="rate-group">
-                        <input type="number" class="rate-input purchase" 
-                               value="${rate}" 
-                               onchange="ItemsManager.updateRate(${index}, ${rateIndex}, this.value)"
-                               placeholder="Purchase Rate">
-                        <button class="delete-rate" onclick="ItemsManager.deleteRate(${index}, ${rateIndex})">×</button>
-                    </div>
-                `).join('');
-            }
+            // Build purchase rates HTML
+            const purchaseRatesHTML = item.rates.map((rate, rateIndex) => `
+                <div class="rate-group">
+                    <input type="number" class="rate-input purchase" 
+                           value="${rate}" 
+                           oninput="window.app.items.updateRate(${index}, ${rateIndex}, this.value)"
+                           placeholder="Rate">
+                    <button class="delete-rate" onclick="window.app.items.deleteRate(${index}, ${rateIndex})">×</button>
+                </div>
+            `).join('');
             
-            let saleRatesHTML = '';
-            if (item.saleRates && item.saleRates.length > 0) {
-                saleRatesHTML = item.saleRates.map((rate, rateIndex) => `
-                    <div class="rate-group">
-                        <input type="number" class="rate-input sale" 
-                               value="${rate}" 
-                               onchange="ItemsManager.updateSaleRate(${index}, ${rateIndex}, this.value)"
-                               placeholder="Sale Rate">
-                        <button class="delete-rate" onclick="ItemsManager.deleteSaleRate(${index}, ${rateIndex})">×</button>
-                    </div>
-                `).join('');
-            }
+            // Build sale rates HTML
+            const saleRatesHTML = item.saleRates.map((rate, rateIndex) => `
+                <div class="rate-group">
+                    <input type="number" class="rate-input sale" 
+                           value="${rate}" 
+                           oninput="window.app.items.updateSaleRate(${index}, ${rateIndex}, this.value)"
+                           placeholder="Rate">
+                    <button class="delete-rate" onclick="window.app.items.deleteSaleRate(${index}, ${rateIndex})">×</button>
+                </div>
+            `).join('');
             
             itemCard.innerHTML = `
                 <div class="item-header">
                     <input type="text" class="item-name-input" 
                            value="${item.name}" 
-                           onchange="ItemsManager.updateItemName(${index}, this.value)"
-                           placeholder="Item Name">
-                    ${AppState.settings.showHindi ? `
-                        <input type="text" class="item-name-input" 
-                               value="${item.hindiName || ''}" 
-                               onchange="ItemsManager.updateItemHindiName(${index}, this.value)"
-                               placeholder="Hindi Name"
-                               style="margin-top: 8px;">
-                    ` : ''}
-                    <button class="delete-item-btn" onclick="ItemsManager.deleteItem(${index})">Delete</button>
+                           oninput="window.app.items.updateName(${index}, this.value)"
+                           placeholder="Enter item name (English)">
+                    <button class="delete-item-btn" onclick="window.app.items.deleteItem(${index})">Delete</button>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px; display: block;">Hindi Name:</label>
+                    <input type="text" 
+                           value="${item.hindiName || ''}" 
+                           oninput="window.app.items.updateHindiName(${index}, this.value)"
+                           placeholder="हिंदी नाम"
+                           style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 8px; font-size: 15px;">
                 </div>
                 <div class="item-row">
-                    <div class="rates-container">
-                        <h4>Purchase Rates:</h4>
-                        ${purchaseRatesHTML}
-                        <button class="add-rate-plus purchase" onclick="ItemsManager.addRate(${index})">+ Add Purchase Rate</button>
+                    <div style="margin-bottom: 8px;">
+                        <label style="font-size: 14px; font-weight: 600; color: #007bff; margin-bottom: 8px; display: block;">Purchase Rates (₹/kg):</label>
+                        <div class="rates-container">${purchaseRatesHTML}<button class="add-rate-plus purchase" onclick="window.app.items.addRate(${index})">+</button></div>
                     </div>
-                    <div class="rates-container">
-                        <h4>Sale Rates:</h4>
-                        ${saleRatesHTML}
-                        <button class="add-rate-plus sale" onclick="ItemsManager.addSaleRate(${index})">+ Add Sale Rate</button>
+                    <div>
+                        <label style="font-size: 14px; font-weight: 600; color: #28a745; margin-bottom: 8px; display: block;">Sale Rates (₹/kg):</label>
+                        <div class="rates-container">${saleRatesHTML}<button class="add-rate-plus sale" onclick="window.app.items.addSaleRate(${index})">+</button></div>
                     </div>
                 </div>
             `;
@@ -81,10 +80,10 @@ const ItemsManager = {
     // Add new item
     async addItem() {
         const newItem = {
-            name: 'New Item',
+            name: '',
             hindiName: '',
-            purchaseRates: [0],
-            saleRates: [0]
+            rates: [],
+            saleRates: []
         };
         
         UIManager.showLoading();
@@ -131,7 +130,10 @@ const ItemsManager = {
 
     // Add purchase rate
     async addRate(index) {
-        AppState.items[index].purchaseRates.push(0);
+        if (!AppState.items[index].rates) {
+            AppState.items[index].rates = [];
+        }
+        AppState.items[index].rates.push('');
         await FirebaseService.saveItem(AppState.items[index]);
         this.renderItems();
     },
@@ -139,7 +141,7 @@ const ItemsManager = {
     // Update purchase rate (AUTO-SAVE with debounce)
     updateRate(itemIndex, rateIndex, value) {
         clearTimeout(this.updateTimers[`rate_${itemIndex}_${rateIndex}`]);
-        AppState.items[itemIndex].purchaseRates[rateIndex] = parseFloat(value) || 0;
+        AppState.items[itemIndex].rates[rateIndex] = Number(value);
         
         this.updateTimers[`rate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
             try {
@@ -152,7 +154,7 @@ const ItemsManager = {
 
     // Delete purchase rate
     async deleteRate(itemIndex, rateIndex) {
-        AppState.items[itemIndex].purchaseRates.splice(rateIndex, 1);
+        AppState.items[itemIndex].rates.splice(rateIndex, 1);
         await FirebaseService.saveItem(AppState.items[itemIndex]);
         this.renderItems();
     },
@@ -162,7 +164,7 @@ const ItemsManager = {
         if (!AppState.items[index].saleRates) {
             AppState.items[index].saleRates = [];
         }
-        AppState.items[index].saleRates.push(0);
+        AppState.items[index].saleRates.push('');
         await FirebaseService.saveItem(AppState.items[index]);
         this.renderItems();
     },
@@ -173,7 +175,7 @@ const ItemsManager = {
         if (!AppState.items[itemIndex].saleRates) {
             AppState.items[itemIndex].saleRates = [];
         }
-        AppState.items[itemIndex].saleRates[rateIndex] = parseFloat(value) || 0;
+        AppState.items[itemIndex].saleRates[rateIndex] = Number(value);
         
         this.updateTimers[`salerate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
             try {
@@ -292,6 +294,44 @@ const ItemsManager = {
             console.error('Import error:', error);
             UIManager.hideLoading();
             UIManager.showToast('Failed to import items: ' + error.message);
+        }
+    },
+
+    // Render items table view
+    renderItemsTable() {
+        const tbody = document.getElementById('itemsViewTableBody');
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        
+        AppState.items.forEach((item) => {
+            // Determine which name to display based on settings
+            const displayName = (AppState.settings.showHindi && item.hindiName) 
+                ? item.hindiName 
+                : item.name;
+            
+            // Format purchase rates
+            const purchaseRates = item.rates && item.rates.length > 0 
+                ? item.rates.map(r => `₹${r}`).join(', ') 
+                : '-';
+            
+            // Format sale rates
+            const saleRates = item.saleRates && item.saleRates.length > 0 
+                ? item.saleRates.map(r => `₹${r}`).join(', ') 
+                : '-';
+            
+            const row = document.createElement('tr');
+            row.style.borderBottom = '1px solid #eee';
+            row.innerHTML = `
+                <td style="padding: 12px; font-weight: 500;">${displayName || item.name || '-'}</td>
+                <td style="padding: 12px; color: #666;">${purchaseRates}</td>
+                <td style="padding: 12px; color: #666;">${saleRates}</td>
+            `;
+            tbody.appendChild(row);
+        });
+        
+        if (AppState.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="padding: 24px; text-align: center; color: #999;">No items found</td></tr>';
         }
     }
 };

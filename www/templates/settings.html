@@ -5,13 +5,13 @@
             <h3>Appearance</h3>
             
             <label class="checkbox-label">
-                <input type="checkbox" id="settingDarkMode" onchange="toggleDarkMode()">
+                <input type="checkbox" id="settingDarkMode" onchange="window.app.settings.toggleDarkMode()">
                 <span>🌙 Enable Dark Mode</span>
             </label>
             <p class="setting-description">Switch between light and dark theme</p>
 
             <label class="checkbox-label">
-                <input type="checkbox" id="settingShowHindi" onchange="saveSettings()">
+                <input type="checkbox" id="settingShowHindi" onchange="window.app.settings.save()">
                 <span>Show item names in Hindi</span>
             </label>
             <p class="setting-description">Display Hindi names in the app (Bills always use Hindi names)</p>
@@ -21,8 +21,8 @@
             <h3>Bluetooth Printer</h3>
             
             <label class="checkbox-label">
-                <input type="checkbox" id="settingBluetoothEnabled" onchange="toggleBluetoothPrinter()">
-                <span>Enable Bluetooth Printing</span>
+                <input type="checkbox" id="settingBluetoothEnabled" onchange="window.app.settings.toggleBluetoothPrinter()">
+                <span>Enable Bluetooth Printer</span>
             </label>
             <p class="setting-description">Use Bluetooth thermal printer for bill printing</p>
             

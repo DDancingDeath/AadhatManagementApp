@@ -112,13 +112,16 @@ The app now supports direct Bluetooth printing to 80mm thermal printers using ES
 ### Receipt Format
 
 ```
-प्याज (40 वजन)
+Dhan (40 packets, 400.0 kg)
 10.0 10.0 10.0 10.0 10.0 10.0
 10.0 10.0 10.0 10.0 10.0 10.0
 10.0 10.0 10.0 10.0 10.0 10.0
 10.0 10.0 10.0 10.0 10.0 10.0
 10.0 10.0 10.0 10.0 10.0 10.0
 10.0 10.0 10.0 10.0
+
+Mahua (2 packets, 50.0 kg)
+20.0 30.0
 
               Receipt
       27/11/2025, 10:30 AM
@@ -137,15 +140,15 @@ The app now supports direct Bluetooth printing to 80mm thermal printers using ES
 ```
 
 **Format Details:**
-- **Weights first**: Multiple weights listed at the top (6 per line) with Hindi item name
-- **Receipt header**: Centered "Receipt" with date/time
+- **Weights first**: Items with multiple packets show weight breakdown at top with item name, packet count, and total weight
+- **Weight format**: 6 weights per line, shown with 1 decimal place
+- **Receipt header**: Centered "Receipt" with date/time follows weight details
 - **Box drawing separators**: Using ─ character for cleaner look
-- **Item table**: Hindi headers (वस्तु, दर, मात्रा, कुल)
+- **Item table**: Headers (Item, Rate, Quantity, Total) in English
+- **Bill Items section**: Clear "Bill Items" header before the table
 - **Summary only**: Item rows show totals only, weights already shown above
-- **Single weights**: No weight breakdown, just item summary
-- **Hindi labels**: All labels in Devanagari (कुल, मज़दूरी, धन्यवाद)
-- **Bold grand total**: कुल भुगतान centered and bold
-- **Bitmap rendering**: Uses canvas for proper Hindi font rendering
+- **Single weights**: No weight breakdown for items with 1 packet
+- **Bold grand total**: Total Payable centered and bold
 
 ### Bluetooth Plugin Details
 

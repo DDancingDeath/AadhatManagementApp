@@ -12,11 +12,146 @@ let saleItems = [];
 let weights = [];
 
 const BillingManager = {
+    // -------------------- MODE TOGGLE --------------------
+    
+    currentMode: 'purchase', // 'purchase' or 'sale'
+    
+    toggleMode() {
+        const purchaseSection = document.getElementById('purchaseSection');
+        const saleSection = document.getElementById('saleSection');
+        const title = document.getElementById('billingTitle');
+        const toggleBtn = document.getElementById('modeToggleBtn');
+        
+        if (!purchaseSection || !saleSection) return;
+        
+        if (this.currentMode === 'purchase') {
+            // Switch to sale mode
+            this.currentMode = 'sale';
+            purchaseSection.style.display = 'none';
+            saleSection.style.display = 'block';
+            title.textContent = 'Sale Entry';
+            toggleBtn.innerHTML = '📦 Switch to Purchase';
+            
+            // Load sale dropdown
+            this.loadSaleItemsDropdown();
+        } else {
+            // Switch to purchase mode
+            this.currentMode = 'purchase';
+            saleSection.style.display = 'none';
+            purchaseSection.style.display = 'block';
+            title.textContent = 'Purchase Entry';
+            toggleBtn.innerHTML = '💰 Switch to Sale';
+        }
+        
+        UIManager.hapticFeedback();
+    },
+    
+    // -------------------- ITEMS & RATES LOADING --------------------
+    
+    loadItemsDropdown() {
+        const select = document.getElementById('billItem');
+        if (!select) return;
+        
+        select.innerHTML = '';
+        
+        AppState.items.forEach((item, index) => {
+            const opt = document.createElement('option');
+            opt.value = index;
+            const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+            opt.textContent = displayName;
+            select.appendChild(opt);
+        });
+        
+        if (AppState.items.length > 0) {
+            this.loadRates();
+        }
+        this.clearWeights();
+    },
+    
+    loadSaleItemsDropdown() {
+        const select = document.getElementById('saleItem');
+        if (!select) return;
+        
+        select.innerHTML = '';
+        
+        AppState.items.forEach((item, index) => {
+            const opt = document.createElement('option');
+            opt.value = index;
+            const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+            opt.textContent = displayName;
+            select.appendChild(opt);
+        });
+        
+        if (AppState.items.length > 0) {
+            this.loadSaleRates();
+        }
+    },
+    
+    loadRates() {
+        const itemIndex = document.getElementById('billItem')?.value;
+        const rateInput = document.getElementById('billRate');
+        const rateDatalist = document.getElementById('rateOptions');
+        
+        if (!rateInput || !rateDatalist) return;
+        
+        rateDatalist.innerHTML = '';
+        rateInput.value = '';
+        rateInput.placeholder = 'Select or enter rate';
+        
+        if (itemIndex !== undefined && itemIndex !== '') {
+            const item = AppState.items[parseInt(itemIndex)];
+            if (item && item.rates && item.rates.length > 0) {
+                item.rates.forEach(rate => {
+                    const option = document.createElement('option');
+                    option.value = rate;
+                    rateDatalist.appendChild(option);
+                });
+                
+                // Set first rate as default
+                rateInput.value = item.rates[0];
+            }
+        }
+    },
+    
+    loadSaleRates() {
+        const itemIndex = document.getElementById('saleItem')?.value;
+        const rateInput = document.getElementById('saleRate');
+        const rateDatalist = document.getElementById('saleRateOptions');
+        
+        if (!rateInput || !rateDatalist) return;
+        
+        rateDatalist.innerHTML = '';
+        rateInput.value = '';
+        rateInput.placeholder = 'Select or enter rate';
+        
+        if (itemIndex !== undefined && itemIndex !== '') {
+            const item = AppState.items[parseInt(itemIndex)];
+            if (item && item.saleRates && item.saleRates.length > 0) {
+                item.saleRates.forEach(rate => {
+                    const option = document.createElement('option');
+                    option.value = rate;
+                    rateDatalist.appendChild(option);
+                });
+                
+                // Set first sale rate as default
+                rateInput.value = item.saleRates[0];
+            } else if (item && item.rates && item.rates.length > 0) {
+                // Fallback to purchase rates if no sale rates
+                item.rates.forEach(rate => {
+                    const option = document.createElement('option');
+                    option.value = rate;
+                    rateDatalist.appendChild(option);
+                });
+                rateInput.value = item.rates[0];
+            }
+        }
+    },
+    
     // -------------------- WEIGHT MANAGEMENT --------------------
     
-    async addWeight() {
-        const weightInput = document.getElementById('weightInput');
-        const weight = parseFloat(weightInput.value);
+    async addWeight(autoAddToBill = false) {
+        const weightInput = document.getElementById('newWeight');
+        const weight = parseFloat(weightInput?.value);
         
         if (!weight || weight <= 0) {
             UIManager.showToast('Please enter a valid weight');
@@ -29,29 +164,38 @@ const BillingManager = {
         
         this.renderWeights();
         UIManager.hapticFeedback();
+        
+        // If auto-add flag is set and this is the first/only weight, add to bill directly
+        if (autoAddToBill && weights.length === 1) {
+            await this.addToBill(true);
+        }
     },
     
     renderWeights() {
-        const container = document.getElementById('weightsContainer');
+        const container = document.getElementById('weightsDisplay');
         if (!container) return;
         
+        const totalWeightsSpan = document.getElementById('totalWeights');
+        const totalPacketsSpan = document.getElementById('totalPackets');
+        
         if (weights.length === 0) {
-            container.innerHTML = '<p class="no-data">No weights added</p>';
+            container.innerHTML = '';
+            if (totalWeightsSpan) totalWeightsSpan.textContent = '0';
+            if (totalPacketsSpan) totalPacketsSpan.textContent = '0';
             return;
         }
         
         const total = weights.reduce((sum, w) => sum + w, 0);
         
+        if (totalWeightsSpan) totalWeightsSpan.textContent = total.toFixed(1);
+        if (totalPacketsSpan) totalPacketsSpan.textContent = weights.length;
+        
         container.innerHTML = `
-            <div class="weights-header">
-                <span>Total: ${total.toFixed(2)}kg (${weights.length} packets)</span>
-                <button onclick="app.billing.clearWeights()" class="btn-clear">Clear All</button>
-            </div>
-            <div class="weights-list">
+            <div class="weights-compact-list">
                 ${weights.map((w, i) => `
                     <div class="weight-chip">
-                        <span>${w.toFixed(2)}kg</span>
-                        <button onclick="app.billing.removeWeight(${i})" class="btn-remove">×</button>
+                        <span>${w.toFixed(1)}</span>
+                        <button class="weight-chip-remove" onclick="window.app.billing.removeWeight(${i})">×</button>
                     </div>
                 `).join('')}
             </div>
@@ -73,16 +217,16 @@ const BillingManager = {
     // -------------------- PURCHASE BILL MANAGEMENT --------------------
     
     async addToBill(autoAdd = false) {
-        const itemSelect = document.getElementById('itemName');
-        const rateSelect = document.getElementById('itemRate');
-        const customRate = document.getElementById('customRate');
+        const itemSelect = document.getElementById('billItem');
+        const rateInput = document.getElementById('billRate');
+        const weightInput = document.getElementById('newWeight');
         
-        if (!itemSelect || !rateSelect) return;
+        if (!itemSelect || !rateInput) return;
         
-        const itemName = itemSelect.value;
-        const rate = parseFloat(customRate.value || rateSelect.value);
+        const itemIndex = parseInt(itemSelect.value);
+        const rate = parseFloat(rateInput.value);
         
-        if (!itemName) {
+        if (itemIndex === undefined || itemIndex === '' || isNaN(itemIndex)) {
             UIManager.showToast('Please select an item');
             return;
         }
@@ -92,20 +236,32 @@ const BillingManager = {
             return;
         }
         
+        // If there's a weight typed in the input but not added, add it first
+        const pendingWeight = parseFloat(weightInput?.value);
+        if (pendingWeight && pendingWeight > 0) {
+            weights.push(pendingWeight);
+            weightInput.value = '';
+            this.renderWeights();
+        }
+        
         if (weights.length === 0) {
             UIManager.showToast('Please add at least one weight');
+            return;
+        }
+        
+        const item = AppState.items[itemIndex];
+        if (!item) {
+            UIManager.showToast('Item not found');
             return;
         }
         
         const qty = weights.reduce((sum, w) => sum + w, 0);
         const total = qty * rate;
         
-        // Find item's Hindi name
-        const item = AppState.database.items.find(i => i.name === itemName);
-        const hindiName = item?.hindiName || itemName;
+        const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         
         billItems.push({
-            name: hindiName,
+            name: displayName,
             rate,
             qty,
             total,
@@ -119,56 +275,81 @@ const BillingManager = {
         this.renderBill();
         
         // Reset form
-        document.getElementById('weightInput').value = '';
-        if (customRate) customRate.value = '';
+        const newWeightInput = document.getElementById('newWeight');
+        if (newWeightInput) {
+            newWeightInput.value = '';
+            newWeightInput.focus();
+        }
         
         UIManager.hapticFeedback();
-        UIManager.showToast(`Added ${hindiName} to bill`);
-        
-        // Focus back to weight input
-        document.getElementById('weightInput').focus();
+        UIManager.showToast(`Added ${displayName} to bill`);
     },
     
     renderBill() {
-        const container = document.getElementById('billItemsList');
-        if (!container) return;
+        const tbody = document.querySelector('#billTable tbody');
+        const weightBreakdownSection = document.getElementById('weightBreakdownSection');
+        if (!tbody) return;
+        
+        const totalPacketsInBillSpan = document.getElementById('totalPacketsInBill');
+        const billTotalSpan = document.getElementById('billTotal');
         
         if (billItems.length === 0) {
-            container.innerHTML = '<p class="no-data">No items in bill</p>';
-            document.getElementById('billTotal').textContent = '0';
-            document.getElementById('totalPackets').textContent = '0';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
+            if (billTotalSpan) billTotalSpan.textContent = '0';
+            if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = '0';
+            if (weightBreakdownSection) weightBreakdownSection.innerHTML = '';
+            this.updateTotals();
             return;
         }
         
-        let html = '<div class="bill-items">';
-        billItems.forEach((item, index) => {
-            const weightsDisplay = item.weights.length > 1 
-                ? `(${item.weights.join(' + ')})` 
-                : '';
+        // Render weight breakdown for items with 2 or more packets
+        if (weightBreakdownSection) {
+            const itemsWithMultipleWeights = billItems.filter(item => item.weights.length >= 2);
             
-            html += `
-                <div class="bill-item">
-                    <div class="bill-item-header">
-                        <strong>${item.name}</strong>
-                        <button onclick="app.billing.deleteBillItem(${index})" class="btn-remove">×</button>
-                    </div>
-                    <div class="bill-item-details">
-                        <span>₹${item.rate} × ${item.qty}kg ${weightsDisplay}</span>
-                        <span class="item-total">₹${item.total.toFixed(2)}</span>
-                    </div>
-                </div>
-            `;
-        });
-        html += '</div>';
+            if (itemsWithMultipleWeights.length > 0) {
+                weightBreakdownSection.innerHTML = itemsWithMultipleWeights.map(item => {
+                    const weightsPerLine = 6;
+                    const weightLines = [];
+                    for (let i = 0; i < item.weights.length; i += weightsPerLine) {
+                        const lineWeights = item.weights.slice(i, i + weightsPerLine);
+                        weightLines.push(lineWeights.map(w => w.toFixed(1)).join(' '));
+                    }
+                    
+                    return `
+                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #007bff;">
+                            <div style="font-weight: 600; margin-bottom: 8px; color: #333;">
+                                ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
+                            </div>
+                            <div style="font-family: monospace; font-size: 13px; line-height: 1.6; color: #555;">
+                                ${weightLines.join('<br>')}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                weightBreakdownSection.innerHTML = '';
+            }
+        }
         
-        container.innerHTML = html;
+        // Render bill items table (without weight breakdown in rows)
+        tbody.innerHTML = billItems.map((item, index) => {
+            return `
+                <tr>
+                    <td>${item.name}</td>
+                    <td>₹${item.rate.toFixed(2)}</td>
+                    <td>${item.qty.toFixed(1)} kg</td>
+                    <td>₹${item.total.toFixed(2)}</td>
+                    <td><button onclick="window.app.billing.deleteBillItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
+                </tr>
+            `;
+        }).join('');
         
         // Update totals
         const billTotal = billItems.reduce((sum, item) => sum + item.total, 0);
         const totalPackets = billItems.reduce((sum, item) => sum + item.weights.length, 0);
         
-        document.getElementById('billTotal').textContent = billTotal.toFixed(2);
-        document.getElementById('totalPackets').textContent = totalPackets;
+        if (billTotalSpan) billTotalSpan.textContent = billTotal.toFixed(2);
+        if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = totalPackets;
         
         this.updateTotals();
     },
@@ -181,25 +362,40 @@ const BillingManager = {
     
     updateTotals() {
         const billTotal = parseFloat(document.getElementById('billTotal')?.textContent || 0);
-        const totalPackets = parseInt(document.getElementById('totalPackets')?.textContent || 0);
-        const laborRateInput = document.getElementById('laborRate');
-        const laborChargesInput = document.getElementById('laborCharges');
+        const totalPackets = parseInt(document.getElementById('totalPacketsInBill')?.textContent || 0);
+        const autoLaborCheckbox = document.getElementById('autoLaborCharge');
+        const laborCalculationSpan = document.getElementById('laborCalculation');
+        const laborChargesInput = document.getElementById('manualLaborCharges');
         
         // Calculate labor charges if auto-labor is enabled
-        const settings = AppState.settings || DEFAULT_SETTINGS;
-        if (settings.autoCalculateLabor && laborRateInput) {
-            const laborRate = parseFloat(laborRateInput.value) || 6;
-            const laborCharges = laborRate * totalPackets;
+        let laborCharges = 0;
+        if (autoLaborCheckbox?.checked) {
+            const laborRate = 6; // Default labor rate
+            laborCharges = laborRate * totalPackets;
             if (laborChargesInput) {
-                laborChargesInput.value = laborCharges.toFixed(2);
+                laborChargesInput.value = laborCharges.toFixed(0);
+                laborChargesInput.disabled = false;
+            }
+            if (laborCalculationSpan) {
+                laborCalculationSpan.textContent = `${laborRate} × ${totalPackets}`;
+            }
+        } else {
+            if (laborChargesInput) {
+                laborChargesInput.value = '0';
+                laborChargesInput.disabled = true;
+            }
+            if (laborCalculationSpan) {
+                laborCalculationSpan.textContent = '';
             }
         }
         
-        // Calculate grand total
-        const laborCharges = parseFloat(laborChargesInput?.value || 0);
-        const grandTotal = billTotal + laborCharges;
+        // Calculate grand total (subtract labor charges for purchase if checkbox is checked)
+        if (autoLaborCheckbox?.checked) {
+            laborCharges = parseFloat(laborChargesInput?.value || 0);
+        }
+        const grandTotal = billTotal - laborCharges;
         
-        const grandTotalElement = document.getElementById('grandTotal');
+        const grandTotalElement = document.getElementById('amountPayable');
         if (grandTotalElement) {
             grandTotalElement.textContent = grandTotal.toFixed(2);
         }
@@ -208,31 +404,46 @@ const BillingManager = {
     },
     
     updatePaymentTotal() {
-        const grandTotal = parseFloat(document.getElementById('grandTotal')?.textContent || 0);
+        const grandTotal = parseFloat(document.getElementById('amountPayable')?.textContent || 0);
         const onlinePayment = parseFloat(document.getElementById('onlinePayment')?.value || 0);
         const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
         
+        // Total paid should only include online and cash, not due
         const totalPaid = onlinePayment + cashPayment;
-        const balance = grandTotal - totalPaid;
         
-        const balanceElement = document.getElementById('paymentBalance');
-        if (balanceElement) {
-            balanceElement.textContent = balance.toFixed(2);
-            balanceElement.className = balance === 0 ? 'balanced' : (balance > 0 ? 'due' : 'excess');
+        const totalPaymentElement = document.getElementById('totalPayment');
+        if (totalPaymentElement) {
+            totalPaymentElement.textContent = totalPaid.toFixed(2);
         }
     },
     
     fillPayableAmount(type) {
-        const grandTotal = parseFloat(document.getElementById('grandTotal')?.textContent || 0);
+        const grandTotal = parseFloat(document.getElementById('amountPayable')?.textContent || 0);
         const onlineInput = document.getElementById('onlinePayment');
         const cashInput = document.getElementById('cashPayment');
+        const dueInput = document.getElementById('dueAmount');
+        const onlineCheckbox = document.getElementById('onlineCheckbox');
+        const cashCheckbox = document.getElementById('cashCheckbox');
+        const dueCheckbox = document.getElementById('dueCheckbox');
         
-        if (type === 'online' && onlineInput) {
-            onlineInput.value = grandTotal.toFixed(2);
+        if (type === 'online' && onlineCheckbox?.checked) {
+            if (onlineInput) onlineInput.value = grandTotal.toFixed(2);
             if (cashInput) cashInput.value = '0';
-        } else if (type === 'cash' && cashInput) {
-            cashInput.value = grandTotal.toFixed(2);
+            if (dueInput) dueInput.value = '0';
+            if (cashCheckbox) cashCheckbox.checked = false;
+            if (dueCheckbox) dueCheckbox.checked = false;
+        } else if (type === 'cash' && cashCheckbox?.checked) {
+            if (cashInput) cashInput.value = grandTotal.toFixed(2);
             if (onlineInput) onlineInput.value = '0';
+            if (dueInput) dueInput.value = '0';
+            if (onlineCheckbox) onlineCheckbox.checked = false;
+            if (dueCheckbox) dueCheckbox.checked = false;
+        } else if (type === 'due' && dueCheckbox?.checked) {
+            if (dueInput) dueInput.value = grandTotal.toFixed(2);
+            if (onlineInput) onlineInput.value = '0';
+            if (cashInput) cashInput.value = '0';
+            if (onlineCheckbox) onlineCheckbox.checked = false;
+            if (cashCheckbox) cashCheckbox.checked = false;
         }
         
         this.updatePaymentTotal();
@@ -247,26 +458,36 @@ const BillingManager = {
         }
         
         const billTotal = parseFloat(document.getElementById('billTotal').textContent);
-        const laborCharges = parseFloat(document.getElementById('laborCharges')?.value || 0);
-        const totalPackets = parseInt(document.getElementById('totalPackets').textContent);
-        const grandTotal = billTotal + laborCharges;
+        const laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
+        const totalPackets = parseInt(document.getElementById('totalPacketsInBill').textContent);
+        const grandTotal = parseFloat(document.getElementById('amountPayable').textContent);
         const onlinePayment = parseFloat(document.getElementById('onlinePayment')?.value || 0);
         const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
+        const dueAmount = parseFloat(document.getElementById('dueAmount')?.value || 0);
         const customerName = document.getElementById('customerName')?.value || '';
+        const comments = document.getElementById('billComments')?.value || '';
+        
+        // Get labor calculation string if auto-labor was used
+        const laborCalculationSpan = document.getElementById('laborCalculation');
+        const laborCalc = laborCalculationSpan?.textContent || null;
         
         const bill = {
             id: generateId(),
             items: billItems,
             billTotal,
             laborCharges,
+            laborCalc,
             totalPackets,
             grandTotal,
+            amountPayable: grandTotal,
             onlinePayment,
             cashPayment,
+            dueAmount,
             customerName,
+            comments,
             isPurchase: true,
             date: new Date().toISOString(),
-            userId: AppState.auth.uid,
+            userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
             timestamp: Date.now()
         };
         
@@ -308,17 +529,17 @@ const BillingManager = {
     // -------------------- SALES BILL MANAGEMENT --------------------
     
     async addToSalesBill() {
-        const itemSelect = document.getElementById('saleItemName');
-        const rateInput = document.getElementById('saleItemRate');
-        const qtyInput = document.getElementById('saleItemQty');
+        const itemSelect = document.getElementById('saleItem');
+        const rateInput = document.getElementById('saleRate');
+        const weightInput = document.getElementById('saleWeight');
         
-        if (!itemSelect || !rateInput || !qtyInput) return;
+        if (!itemSelect || !rateInput || !weightInput) return;
         
-        const itemName = itemSelect.value;
+        const itemIndex = parseInt(itemSelect.value);
         const rate = parseFloat(rateInput.value);
-        const qty = parseFloat(qtyInput.value);
+        const qty = parseFloat(weightInput.value);
         
-        if (!itemName) {
+        if (itemIndex === undefined || itemIndex === '' || isNaN(itemIndex)) {
             UIManager.showToast('Please select an item');
             return;
         }
@@ -333,8 +554,16 @@ const BillingManager = {
             return;
         }
         
+        const item = AppState.items[itemIndex];
+        if (!item) {
+            UIManager.showToast('Item not found');
+            return;
+        }
+        
+        const itemName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        
         // Check stock
-        const stock = AppState.database.stock?.find(s => s.itemName === itemName);
+        const stock = AppState.database.stock?.find(s => s.itemName === item.name);
         if (!stock || stock.quantity < qty) {
             const available = stock?.quantity || 0;
             UIManager.showToast(`Insufficient stock! Available: ${available}kg`);
@@ -354,41 +583,36 @@ const BillingManager = {
         this.renderSalesBill();
         
         // Reset inputs
-        qtyInput.value = '';
-        rateInput.value = '';
+        weightInput.value = '';
+        weightInput.focus();
         
         UIManager.hapticFeedback();
         UIManager.showToast(`Added ${itemName} to sale`);
     },
     
     renderSalesBill() {
-        const container = document.getElementById('salesBillItemsList');
-        if (!container) return;
+        const tbody = document.querySelector('#saleTable tbody');
+        if (!tbody) return;
         
         if (saleItems.length === 0) {
-            container.innerHTML = '<p class="no-data">No items in sale</p>';
-            document.getElementById('salesBillTotal').textContent = '0';
+            tbody.innerHTML = '<tr><td colspan="5" class="no-data">No items added</td></tr>';
+            this.updateSaleTotals();
             return;
         }
         
-        let html = '<div class="bill-items">';
-        saleItems.forEach((item, index) => {
-            html += `
-                <div class="bill-item">
-                    <div class="bill-item-header">
-                        <strong>${item.name}</strong>
-                        <button onclick="app.billing.removeSalesItem(${index})" class="btn-remove">×</button>
-                    </div>
-                    <div class="bill-item-details">
-                        <span>₹${item.rate} × ${item.qty}kg</span>
-                        <span class="item-total">₹${item.total.toFixed(2)}</span>
-                    </div>
-                </div>
-            `;
-        });
-        html += '</div>';
+        tbody.innerHTML = saleItems.map((item, index) => `
+            <tr>
+                <td>${item.name}</td>
+                <td>₹${item.rate.toFixed(2)}</td>
+                <td>${item.qty.toFixed(2)} kg</td>
+                <td>₹${item.total.toFixed(2)}</td>
+                <td>
+                    <button class="delete-btn" onclick="window.app.billing.removeSaleItem(${index})" title="Remove">🗑️</button>
+                </td>
+            </tr>
+        `).join('');
         
-        container.innerHTML = html;
+        this.updateSaleTotals();
         
         // Update total
         const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
@@ -400,22 +624,72 @@ const BillingManager = {
     removeSalesItem(index) {
         saleItems.splice(index, 1);
         this.renderSalesBill();
+        this.updateSaleTotals();
+    },
+    
+    removeSaleItem(index) {
+        saleItems.splice(index, 1);
+        this.renderSalesBill();
         UIManager.hapticFeedback();
     },
     
+    updateSaleTotals() {
+        const total = saleItems.reduce((sum, item) => sum + item.total, 0);
+        
+        const saleTotalEl = document.getElementById('saleTotal');
+        const amountReceivableEl = document.getElementById('amountReceivable');
+        
+        if (saleTotalEl) saleTotalEl.textContent = total.toFixed(2);
+        if (amountReceivableEl) amountReceivableEl.textContent = total.toFixed(2);
+        
+        this.updateSalePaymentTotal();
+    },
+    
     updateSalePaymentTotal() {
-        const salesTotal = parseFloat(document.getElementById('salesBillTotal')?.textContent || 0);
+        const total = saleItems.reduce((sum, item) => sum + item.total, 0);
         const saleOnline = parseFloat(document.getElementById('saleOnlinePayment')?.value || 0);
         const saleCash = parseFloat(document.getElementById('saleCashPayment')?.value || 0);
         
-        const totalPaid = saleOnline + saleCash;
-        const balance = salesTotal - totalPaid;
+        const totalReceived = saleOnline + saleCash;
+        const balance = total - totalReceived;
         
-        const balanceElement = document.getElementById('salePaymentBalance');
-        if (balanceElement) {
-            balanceElement.textContent = balance.toFixed(2);
-            balanceElement.className = balance === 0 ? 'balanced' : (balance > 0 ? 'due' : 'excess');
+        const totalReceivedEl = document.getElementById('totalReceived');
+        const saleDueEl = document.getElementById('saleDueAmount');
+        
+        if (totalReceivedEl) totalReceivedEl.textContent = totalReceived.toFixed(2);
+        if (saleDueEl) saleDueEl.value = balance > 0 ? balance.toFixed(2) : 0;
+    },
+    
+    fillReceivableAmount(type) {
+        const total = saleItems.reduce((sum, item) => sum + item.total, 0);
+        const onlineInput = document.getElementById('saleOnlinePayment');
+        const cashInput = document.getElementById('saleCashPayment');
+        const dueInput = document.getElementById('saleDueAmount');
+        const onlineCheckbox = document.getElementById('saleOnlineCheckbox');
+        const cashCheckbox = document.getElementById('saleCashCheckbox');
+        const dueCheckbox = document.getElementById('saleDueCheckbox');
+        
+        if (type === 'online' && onlineCheckbox?.checked) {
+            if (onlineInput) onlineInput.value = total.toFixed(2);
+            if (cashInput) cashInput.value = '0';
+            if (dueInput) dueInput.value = '0';
+            if (cashCheckbox) cashCheckbox.checked = false;
+            if (dueCheckbox) dueCheckbox.checked = false;
+        } else if (type === 'cash' && cashCheckbox?.checked) {
+            if (cashInput) cashInput.value = total.toFixed(2);
+            if (onlineInput) onlineInput.value = '0';
+            if (dueInput) dueInput.value = '0';
+            if (onlineCheckbox) onlineCheckbox.checked = false;
+            if (dueCheckbox) dueCheckbox.checked = false;
+        } else if (type === 'due' && dueCheckbox?.checked) {
+            if (dueInput) dueInput.value = total.toFixed(2);
+            if (onlineInput) onlineInput.value = '0';
+            if (cashInput) cashInput.value = '0';
+            if (onlineCheckbox) onlineCheckbox.checked = false;
+            if (cashCheckbox) cashCheckbox.checked = false;
         }
+        
+        this.updateSalePaymentTotal();
     },
     
     fillSalePayableAmount(type) {
@@ -440,10 +714,12 @@ const BillingManager = {
             return;
         }
         
-        const salesTotal = parseFloat(document.getElementById('salesBillTotal').textContent);
+        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
         const saleOnline = parseFloat(document.getElementById('saleOnlinePayment')?.value || 0);
         const saleCash = parseFloat(document.getElementById('saleCashPayment')?.value || 0);
+        const saleDue = parseFloat(document.getElementById('saleDueAmount')?.value || 0);
         const saleCustomer = document.getElementById('saleCustomerName')?.value || '';
+        const saleComments = document.getElementById('saleComments')?.value || '';
         
         const sale = {
             id: generateId(),
@@ -451,7 +727,9 @@ const BillingManager = {
             total: salesTotal,
             onlinePayment: saleOnline,
             cashPayment: saleCash,
+            dueAmount: saleDue,
             customerName: saleCustomer,
+            comments: saleComments,
             isPurchase: false,
             date: new Date().toISOString(),
             userId: AppState.auth.uid,
@@ -481,6 +759,21 @@ const BillingManager = {
             if (document.getElementById('saleCashPayment')) {
                 document.getElementById('saleCashPayment').value = '0';
             }
+            if (document.getElementById('saleDueAmount')) {
+                document.getElementById('saleDueAmount').value = '0';
+            }
+            if (document.getElementById('saleComments')) {
+                document.getElementById('saleComments').value = '';
+            }
+            if (document.getElementById('saleOnlineCheckbox')) {
+                document.getElementById('saleOnlineCheckbox').checked = false;
+            }
+            if (document.getElementById('saleCashCheckbox')) {
+                document.getElementById('saleCashCheckbox').checked = false;
+            }
+            if (document.getElementById('saleDueCheckbox')) {
+                document.getElementById('saleDueCheckbox').checked = false;
+            }
             
             UIManager.hideLoading();
             UIManager.showToast('Sale completed successfully!');
@@ -491,6 +784,105 @@ const BillingManager = {
             UIManager.showToast('Failed to complete sale: ' + error.message);
             console.error('Complete sale error:', error);
         }
+    },
+    
+    // Contact picker helpers
+    async pickContact() {
+        try {
+            if ('contacts' in navigator && 'ContactsManager' in window) {
+                const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+                if (contacts && contacts.length > 0) {
+                    const contact = contacts[0];
+                    const nameInput = document.getElementById('customerName');
+                    if (nameInput && contact.name && contact.name.length > 0) {
+                        nameInput.value = contact.name[0];
+                    }
+                }
+            } else {
+                UIManager.showToast('Contact picker not supported');
+            }
+        } catch (error) {
+            console.error('Pick contact error:', error);
+        }
+    },
+    
+    async pickSaleContact() {
+        try {
+            if ('contacts' in navigator && 'ContactsManager' in window) {
+                const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+                if (contacts && contacts.length > 0) {
+                    const contact = contacts[0];
+                    const nameInput = document.getElementById('saleCustomerName');
+                    if (nameInput && contact.name && contact.name.length > 0) {
+                        nameInput.value = contact.name[0];
+                    }
+                }
+            } else {
+                UIManager.showToast('Contact picker not supported');
+            }
+        } catch (error) {
+            console.error('Pick contact error:', error);
+        }
+    },
+    
+    async shareWhatsApp() {
+        if (billItems.length === 0) {
+            UIManager.showToast('No items in bill');
+            return;
+        }
+        
+        const total = billItems.reduce((sum, item) => sum + item.total, 0);
+        const laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
+        const grandTotal = total + laborCharges;
+        const customer = document.getElementById('customerName')?.value || 'Customer';
+        
+        let message = `*Purchase Bill*\n\n`;
+        message += `Customer: ${customer}\n`;
+        message += `Date: ${new Date().toLocaleDateString('en-IN')}\n\n`;
+        message += `*Items:*\n`;
+        
+        billItems.forEach(item => {
+            message += `${item.name}\n`;
+            message += `  Rate: ₹${item.rate.toFixed(2)} × ${item.qty.toFixed(2)}kg = ₹${item.total.toFixed(2)}\n`;
+        });
+        
+        message += `\n*Purchase Total: ₹${total.toFixed(2)}*\n`;
+        if (laborCharges > 0) {
+            message += `Labor Charges: ₹${laborCharges.toFixed(2)}\n`;
+            message += `*Total Payable: ₹${grandTotal.toFixed(2)}*`;
+        }
+        
+        const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+        window.open(url, '_blank');
+    },
+    
+    async shareSaleWhatsApp() {
+        if (saleItems.length === 0) {
+            UIManager.showToast('No items in sale');
+            return;
+        }
+        
+        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
+        const customer = document.getElementById('saleCustomerName')?.value || 'Customer';
+        
+        let message = `*Sale Bill*\n\n`;
+        message += `Customer: ${customer}\n`;
+        message += `Date: ${new Date().toLocaleDateString('en-IN')}\n\n`;
+        message += `*Items:*\n`;
+        
+        saleItems.forEach(item => {
+            message += `${item.name}\n`;
+            message += `  Rate: ₹${item.rate.toFixed(2)} × ${item.qty.toFixed(2)}kg = ₹${item.total.toFixed(2)}\n`;
+        });
+        
+        message += `\n*Total: ₹${salesTotal.toFixed(2)}*`;
+        
+        const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+        window.open(url, '_blank');
+    },
+    
+    async printSale() {
+        UIManager.showToast('Print functionality coming soon');
     },
     
     // Expose state for access

@@ -2,17 +2,17 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
             <h2 style="margin: 0;">Reports</h2>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button class="quick-add-btn-inline" onclick="exportToCSV()">📊 Export CSV</button>
-                <button class="quick-add-btn-inline" onclick="exportToPDF()">📄 Export PDF</button>
+                <button class="quick-add-btn-inline" onclick="window.app.reports.exportCSV()">📊 Export CSV</button>
+                <button class="quick-add-btn-inline" onclick="window.app.reports.exportPDF()">📄 Export PDF</button>
             </div>
         </div>
         
         <div class="date-filter-card">
             <div class="date-filter-buttons">
-                <button class="filter-btn active" onclick="setDateFilter('today', event)">Today</button>
-                <button class="filter-btn" onclick="setDateFilter('week', event)">This Week</button>
-                <button class="filter-btn" onclick="setDateFilter('month', event)">This Month</button>
-                <button class="filter-btn" onclick="setDateFilter('custom', event)">Custom</button>
+                <button class="filter-btn active" onclick="window.app.dateFilter.setFilter('today', event)">Today</button>
+                <button class="filter-btn" onclick="window.app.dateFilter.setFilter('week', event)">This Week</button>
+                <button class="filter-btn" onclick="window.app.dateFilter.setFilter('month', event)">This Month</button>
+                <button class="filter-btn" onclick="window.app.dateFilter.setFilter('custom', event)">Custom</button>
             </div>
             
             <div id="customDateRange" style="display: none; margin-top: 16px;">

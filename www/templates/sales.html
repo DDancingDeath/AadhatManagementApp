@@ -2,8 +2,8 @@
         <h2>Wholesale Sales</h2>
 
         <div class="filter-buttons" style="margin-bottom: 20px;">
-            <button class="filter-btn active" onclick="filterSalesTab('sales', event)">Sales</button>
-            <button class="filter-btn" onclick="filterSalesTab('outstanding', event)">Outstanding</button>
+            <button class="filter-btn active" onclick="window.app.sales.filterTab('sales', event)">Sales</button>
+            <button class="filter-btn" onclick="window.app.sales.filterTab('outstanding', event)">Outstanding</button>
         </div>
 
         <div id="salesEntrySection">
@@ -33,7 +33,7 @@
                 <label>Quantity (kg):</label>
                 <input type="number" inputmode="decimal" id="sellQuantity" placeholder="Enter quantity" />
             </div>
-            <button class="quick-add-btn" onclick="addToSalesBill()">Add to Bill</button>
+            <button class="quick-add-btn" onclick="window.app.billing.addToSalesBill()">Add to Bill</button>
         </div>
 
         <h3>Sale Items</h3>
@@ -57,7 +57,7 @@
             </div>
         </div>
 
-        <button class="print-btn" onclick="completeSale()">Complete Sale</button>
+        <button class="print-btn" onclick="window.app.billing.completeSale()">Complete Sale</button>
 
         <h3>Sales History</h3>
         <div id="salesHistoryList">

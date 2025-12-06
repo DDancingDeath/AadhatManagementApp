@@ -8,6 +8,16 @@ import { FirebaseService } from './firebase/firestore-service.js';
 import { ItemsManager } from './modules/items.js';
 import { PrinterService, printerManager } from './services/printer.js';
 import { BillingManager } from './modules/billing.js';
+import { StockManager } from './modules/stock.js';
+import { SalesManager } from './modules/sales.js';
+import { HistoryManager } from './modules/history.js';
+import { OutstandingManager } from './modules/outstanding.js';
+import { ReportsManager } from './modules/reports.js';
+import { PaymentsManager } from './modules/miscellaneous.js';
+import { SettingsManager } from './modules/settings.js';
+import { DateFilterManager } from './modules/datefilter.js';
+import { UsersManager } from './modules/users.js';
+import { ConfigureManager } from './modules/configure.js';
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
@@ -112,12 +122,24 @@ async function loadUserDataAndInitialize() {
             window.restoreBillDraft();
         }
         
+        // Show app content
+        const appContent = document.getElementById('appContent');
+        if (appContent) {
+            appContent.classList.remove('hidden');
+        }
+        
+        // Show the billing tab by default
+        NavigationManager.showTab('billing');
+        
         // Initialize UI
         AuthManager.updateUserDisplay();
         AuthManager.applyRoleBasedRestrictions();
         
         // Render initial views
         ItemsManager.renderItems();
+        BillingManager.loadItemsDropdown();
+        PaymentsManager.updateExpensePersonOptions();
+        PaymentsManager.renderPaymentsHistory();
         
         // Update printer status
         PrinterService.updateStatus();
@@ -144,11 +166,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     // STEP 1: Load and inject all HTML templates from .html files
     await injectTemplates();
     
-    // STEP 2: Initialize Firebase auth listener
+    // STEP 2: Initialize auth tabs after templates are loaded
+    AuthManager.initAuthTabs();
+    
+    // STEP 3: Initialize Firebase auth listener
     if (typeof firebase !== 'undefined' && firebase.auth) {
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
                 console.log('User is signed in:', user.uid);
+                const authScreen = document.getElementById('authScreen');
+                if (authScreen && authScreen.style.display !== 'none') {
+                    authScreen.style.display = 'none';
+                }
                 loadUserDataAndInitialize();
             } else {
                 console.log('No user signed in');
@@ -157,9 +186,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
     }
     
-    // STEP 3: Set up event listeners
+    // STEP 4: Set up event listeners
     setupEventListeners();
 });
+
+// Expose loadUserDataAndInitialize for manual login trigger
+window.initializeApp = loadUserDataAndInitialize;
+
+// Expose functions needed by Firebase listeners
+window.renderPaymentsHistory = () => PaymentsManager.renderPaymentsHistory();
 
 // Expose clean API to window for HTML event handlers
 window.app = {
@@ -181,6 +216,7 @@ window.app = {
     // Items Management
     items: {
         render: () => ItemsManager.renderItems(),
+        renderTable: () => ItemsManager.renderItemsTable(),
         add: () => ItemsManager.addItem(),
         updateName: (idx, val) => ItemsManager.updateItemName(idx, val),
         updateHindiName: (idx, val) => ItemsManager.updateItemHindiName(idx, val),
@@ -190,13 +226,17 @@ window.app = {
         addSaleRate: (idx) => ItemsManager.addSaleRate(idx),
         updateSaleRate: (iIdx, rIdx, val) => ItemsManager.updateSaleRate(iIdx, rIdx, val),
         deleteSaleRate: (iIdx, rIdx) => ItemsManager.deleteSaleRate(iIdx, rIdx),
-        delete: (idx) => ItemsManager.deleteItem(idx),
+        deleteItem: (idx) => ItemsManager.deleteItem(idx),
         exportExcel: () => ItemsManager.exportToExcel(),
         importExcel: (evt) => ItemsManager.importFromExcel(evt)
     },
     
     // Billing
     billing: {
+        // Items & Rates loading
+        loadItemsDropdown: () => BillingManager.loadItemsDropdown(),
+        loadRates: () => BillingManager.loadRates(),
+        
         // Weight management
         addWeight: () => BillingManager.addWeight(),
         renderWeights: () => BillingManager.renderWeights(),
@@ -247,7 +287,28 @@ window.app = {
                 console.error('Print error:', error);
                 UIManager.showToast('Print failed: ' + error.message);
             }
-        }
+        },
+        
+        // Mode toggle between Purchase and Sale
+        toggleMode: () => {
+            BillingManager.toggleMode();
+        },
+        
+        // Contact picker
+        pickContact: () => BillingManager.pickContact(),
+        pickSaleContact: () => BillingManager.pickSaleContact(),
+        
+        // WhatsApp share
+        shareWhatsApp: () => BillingManager.shareWhatsApp(),
+        shareSaleWhatsApp: () => BillingManager.shareSaleWhatsApp(),
+        
+        // Sale methods
+        loadSaleRates: () => BillingManager.loadSaleRates(),
+        updateSalePaymentTotal: () => BillingManager.updateSalePaymentTotal(),
+        fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
+        completeSale: () => BillingManager.completeSale(),
+        printSale: () => BillingManager.printSale(),
+        removeSaleItem: (index) => BillingManager.removeSaleItem(index)
     },
     
     // Printer
@@ -259,6 +320,107 @@ window.app = {
         print: (billData) => PrinterService.printBill(billData)
     },
     
+    // Stock
+    stock: {
+        filterTab: (view, evt) => StockManager.filterStockTab(view, evt),
+        render: () => StockManager.renderStock(),
+        loadAdjustItemStock: () => StockManager.loadAdjustItemStock(),
+        updateAdjustmentPlaceholder: () => StockManager.updateAdjustmentPlaceholder(),
+        applyAdjustment: () => StockManager.applyStockAdjustment(),
+        renderAdjustmentHistory: () => StockManager.renderAdjustmentHistory()
+    },
+    
+    // Sales
+    sales: {
+        filterTab: (view, evt) => SalesManager.filterSalesTab(view, evt),
+        renderHistory: () => SalesManager.renderSalesHistory(),
+        renderOutstanding: () => SalesManager.renderSalesOutstanding(),
+        recordPayment: (saleId) => SalesManager.recordPayment(saleId),
+        markSaleAsCleared: (saleId) => SalesManager.markSaleAsCleared(saleId),
+        reprintSale: (index) => SalesManager.reprintSale(index)
+    },
+    
+    // History
+    history: {
+        saveBillToHistory: () => HistoryManager.saveBillToHistory(),
+        render: () => HistoryManager.renderHistory(),
+        reprintBill: (index) => HistoryManager.reprintBill(index),
+        closeBillDetails: () => HistoryManager.closeBillDetails(),
+        editBillDetails: () => {
+            UIManager.showToast('Edit bill - coming soon');
+            console.log('editBillDetails - not yet implemented');
+        }
+    },
+    
+    // Outstanding
+    outstanding: {
+        filterDue: (filter, evt) => OutstandingManager.filterDue(filter, evt),
+        renderDue: () => OutstandingManager.renderDue(),
+        markAsCleared: (txnId, txnType) => OutstandingManager.markAsCleared(txnId, txnType),
+        showDetails: (txnId, txnType) => OutstandingManager.showDetails(txnId, txnType)
+    },
+    
+    // Reports
+    reports: {
+        renderReports: () => ReportsManager.renderReports(),
+        applyFilters: () => ReportsManager.applyFilters(),
+        exportCSV: () => ReportsManager.exportToCSV(),
+        exportPDF: () => {
+            UIManager.showToast('PDF export - coming soon');
+            console.log('exportPDF - not yet implemented');
+        }
+    },
+    
+    // Payments
+    payments: {
+        filterExpenseTab: (view, evt) => PaymentsManager.filterExpenseTab(view, evt),
+        saveBusinessExpense: () => PaymentsManager.saveBusinessExpense(),
+        savePersonalExpense: () => PaymentsManager.savePersonalExpense(),
+        renderHistory: () => PaymentsManager.renderPaymentsHistory(),
+        updateExpensePersonOptions: () => PaymentsManager.updateExpensePersonOptions(),
+        saveAndPrintBusiness: () => {
+            UIManager.showToast('Print business expense - coming soon');
+            console.log('saveAndPrintBusiness - not yet implemented');
+        },
+        saveAndPrintPersonal: () => {
+            UIManager.showToast('Print personal expense - coming soon');
+            console.log('saveAndPrintPersonal - not yet implemented');
+        }
+    },
+    
+    // Configure
+    configure: {
+        showSubTab: (subTab) => ConfigureManager.showSubTab(subTab)
+    },
+    
+    // Settings
+    settings: {
+        load: () => SettingsManager.loadSettings(),
+        save: () => SettingsManager.saveSettings(),
+        toggleDarkMode: () => SettingsManager.toggleDarkMode(),
+        clearAllData: () => SettingsManager.clearAllData(),
+        toggleBluetoothPrinter: () => SettingsManager.toggleBluetoothPrinter(),
+        scanBluetoothDevices: () => SettingsManager.scanBluetoothDevices(),
+        connectToPrinter: (id, name) => SettingsManager.connectToPrinter(id, name),
+        disconnectPrinter: () => SettingsManager.disconnectPrinter(),
+        updatePrinterStatus: () => SettingsManager.updatePrinterStatus(),
+        testPrint: () => SettingsManager.testPrint()
+    },
+    
+    // Date Filter
+    dateFilter: {
+        setFilter: (filter, evt) => DateFilterManager.setDateFilter(filter, evt),
+        applyCustomFilter: () => DateFilterManager.applyCustomDateFilter()
+    },
+    
+    // Users
+    users: {
+        load: () => UsersManager.loadUsers(),
+        approveUser: (userId, role) => UsersManager.approveUser(userId, role),
+        rejectUser: (userId) => UsersManager.rejectUser(userId),
+        showChangeRoleDialog: (userId, userName, currentRole) => UsersManager.showChangeRoleDialog(userId, userName, currentRole)
+    },
+    
     // UI
     ui: {
         showLoading: () => UIManager.showLoading(),
@@ -266,26 +428,6 @@ window.app = {
         showToast: (msg, duration) => UIManager.showToast(msg, duration),
         showModal: (msg, title, showCancel) => UIManager.showModal(msg, title, showCancel),
         closeModal: (result) => UIManager.closeModal(result)
-    },
-    
-    // Legacy script.js function bridges (for functions not yet modularized)
-    // These will delegate to script.js until they're moved to modules
-    legacy: {
-        // These functions still exist in script.js
-        showTab: (tabId, evt) => typeof window.showTab === 'function' ? window.showTab(tabId, evt) : null,
-        loadItemsDropdown: () => typeof window.loadItemsDropdown === 'function' ? window.loadItemsDropdown() : null,
-        loadRates: () => typeof window.loadRates === 'function' ? window.loadRates() : null,
-        handleRateChange: () => typeof window.handleRateChange === 'function' ? window.handleRateChange() : null,
-        renderHistory: () => typeof window.renderHistory === 'function' ? window.renderHistory() : null,
-        renderSalesHistory: () => typeof window.renderSalesHistory === 'function' ? window.renderSalesHistory() : null,
-        renderStock: () => typeof window.renderStock === 'function' ? window.renderStock() : null,
-        renderReports: () => typeof window.renderReports === 'function' ? window.renderReports() : null,
-        renderDue: () => typeof window.renderDue === 'function' ? window.renderDue() : null,
-        renderSalesOutstanding: () => typeof window.renderSalesOutstanding === 'function' ? window.renderSalesOutstanding() : null,
-        loadSellItemDropdown: () => typeof window.loadSellItemDropdown === 'function' ? window.loadSellItemDropdown() : null,
-        loadSellItemDetails: () => typeof window.loadSellItemDetails === 'function' ? window.loadSellItemDetails() : null,
-        saveBillOnly: () => typeof window.saveBillOnly === 'function' ? window.saveBillOnly() : null,
-        toggleTransactionMode: () => typeof window.toggleTransactionMode === 'function' ? window.toggleTransactionMode() : null
     }
 };
 

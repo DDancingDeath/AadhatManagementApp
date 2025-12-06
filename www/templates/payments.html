@@ -2,8 +2,8 @@
         <h2>Miscellaneous Expenses</h2>
 
         <div class="filter-buttons" style="margin-bottom: 20px;">
-            <button class="filter-btn active" onclick="filterExpenseTab('business', event)">Business Expenses</button>
-            <button class="filter-btn" onclick="filterExpenseTab('personal', event)">Personal Expenses</button>
+            <button class="filter-btn active" onclick="window.app.payments.filterExpenseTab('business', event)">Business Expenses</button>
+            <button class="filter-btn" onclick="window.app.payments.filterExpenseTab('personal', event)">Personal Expenses</button>
         </div>
 
         <!-- Business Expenses Section -->
@@ -39,8 +39,8 @@
             </div>
 
             <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button class="save-btn" onclick="saveBusinessExpense()">Save Expense</button>
-                <button class="print-btn" onclick="saveAndPrintBusinessExpense()">Print Expense</button>
+                <button class="save-btn" onclick="window.app.payments.saveBusinessExpense()">Save Expense</button>
+                <button class="print-btn" onclick="window.app.payments.saveAndPrintBusiness()">Print Expense</button>
             </div>
 
             <h3>Business Expense History</h3>
@@ -81,8 +81,8 @@
             </div>
 
             <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button class="save-btn" onclick="savePersonalExpense()">Save Expense</button>
-                <button class="print-btn" onclick="saveAndPrintPersonalExpense()">Print Expense</button>
+                <button class="save-btn" onclick="window.app.payments.savePersonalExpense()">Save Expense</button>
+                <button class="print-btn" onclick="window.app.payments.saveAndPrintPersonal()">Print Expense</button>
             </div>
 
             <h3>Personal Expense History</h3>
