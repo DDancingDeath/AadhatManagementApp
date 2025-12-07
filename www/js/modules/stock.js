@@ -28,35 +28,66 @@ export class StockManager {
 
         container.innerHTML = "";
         
-        // Filter to show only items with quantity > 0
-        const availableStock = Object.keys(stock)
-            .filter(itemName => stock[itemName].quantity > 0)
-            .sort();
+        // Consolidate stock by itemId to prevent duplicates
+        const consolidatedStock = {};
+        Object.keys(stock).forEach(key => {
+            // Key could be itemId or old name-based key
+            const item = AppState.items.find(i => i.id === key || i.name === key || i.hindiName === key);
+            if (!item) return;
+            
+            const itemId = item.id;
+            if (!consolidatedStock[itemId]) {
+                consolidatedStock[itemId] = {
+                    itemId: item.id,
+                    name: item.name,
+                    hindiName: item.hindiName,
+                    quantity: 0,
+                    totalValue: 0,
+                    rate: 0
+                };
+            }
+            
+            consolidatedStock[itemId].quantity += stock[key].quantity || 0;
+            consolidatedStock[itemId].totalValue += (stock[key].quantity || 0) * (stock[key].rate || 0);
+        });
         
-        if (availableStock.length === 0) {
+        // Calculate weighted average rates
+        Object.values(consolidatedStock).forEach(item => {
+            if (item.quantity > 0 && item.totalValue > 0) {
+                item.rate = item.totalValue / item.quantity;
+            }
+            delete item.totalValue;
+        });
+        
+        // Filter and sort
+        const stockWithDetails = Object.values(consolidatedStock)
+            .filter(item => item.quantity > 0)
+            .sort((a, b) => a.name.localeCompare(b.name));
+        
+        if (stockWithDetails.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No stock available</p>';
             return;
         }
         
-        availableStock.forEach(itemName => {
-            const item = stock[itemName];
+        stockWithDetails.forEach(item => {
+            const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
             const div = document.createElement("div");
             div.className = "stock-item";
             
             div.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <div style="font-weight: 600; font-size: 15px;">${itemName}</div>
+                        <div style="font-weight: 600; font-size: 15px;">${displayName}</div>
                         <div style="color: #666; font-size: 13px; margin-top: 4px;">
                             Rate: ₹${item.rate ? item.rate.toFixed(2) : '0.00'}/kg
                         </div>
                     </div>
                     <div style="text-align: right;">
                         <div style="font-size: 18px; font-weight: 700; color: #28a745;">
-                            ${item.quantity.toFixed(2)} kg
+                            ${item.quantity.toFixed(1)} kg
                         </div>
                         <div style="color: #666; font-size: 12px; margin-top: 4px;">
-                            ≈ ₹${(item.quantity * (item.rate || 0)).toFixed(2)}
+                            ≈ ₹${Math.round(item.quantity * (item.rate || 0))}
                         </div>
                     </div>
                 </div>
@@ -101,7 +132,8 @@ export class StockManager {
         AppState.items.forEach(item => {
             const option = document.createElement("option");
             option.value = item.name;
-            option.textContent = item.name;
+            const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+            option.textContent = displayName;
             select.appendChild(option);
         });
     }
@@ -112,13 +144,28 @@ export class StockManager {
         
         if (!display) return;
 
-        if (!itemName) {
-            display.textContent = "-";
+        if (!itemName || itemName === '') {
+            display.textContent = "";
             return;
         }
 
-        const currentStock = AppState.stock[itemName]?.quantity || 0;
-        display.textContent = currentStock.toFixed(2);
+        // Find the item to get both English and Hindi names
+        const item = AppState.items.find(i => i.name === itemName);
+        if (!item) {
+            display.textContent = "0.00";
+            return;
+        }
+
+        // Check stock using both English and Hindi names
+        let quantity = 0;
+        if (AppState.stock[item.name]) {
+            quantity += AppState.stock[item.name].quantity || 0;
+        }
+        if (item.hindiName && AppState.stock[item.hindiName]) {
+            quantity += AppState.stock[item.hindiName].quantity || 0;
+        }
+        
+        display.textContent = quantity.toFixed(1);
     }
 
     static updateAdjustmentPlaceholder() {
@@ -171,7 +218,11 @@ export class StockManager {
                 break;
         }
 
+        // Find item to get itemId
+        const item = AppState.items.find(i => i.name === itemName);
+        
         const adjustment = {
+            itemId: item?.id || null,
             itemName,
             adjustType,
             quantity,
@@ -179,6 +230,7 @@ export class StockManager {
             newStock,
             reason,
             date: new Date().toLocaleString('en-IN'),
+            timestamp: Date.now(),
             createdBy: AppState.currentUser?.uid || 'unknown',
             createdByName: AppState.userName || 'User'
         };
@@ -194,9 +246,18 @@ export class StockManager {
             document.getElementById("adjustQuantity").value = "";
             document.getElementById("adjustReason").value = "";
             
+            // Recalculate stock from Firebase data to ensure accuracy
+            const freshStock = await FirebaseService.calculateStock();
+            AppState.stock = freshStock;
+            
             UIManager.showToast("Stock adjustment applied successfully");
             this.renderAdjustmentHistory();
             this.loadAdjustItemStock();
+            
+            // Refresh current stock tab if it's visible
+            if (document.getElementById('stockCurrentSection')?.classList.contains('active')) {
+                this.renderStock();
+            }
         } catch (error) {
             console.error("Stock adjustment error:", error);
             UIManager.showToast("Failed to apply adjustment");
@@ -209,6 +270,13 @@ export class StockManager {
 
         const adjustments = await FirebaseService.loadStockAdjustments();
         AppState.stockAdjustments = adjustments;
+        
+        // Sort by timestamp/date (newest first)
+        adjustments.sort((a, b) => {
+            const timeA = a.timestamp || new Date(a.date).getTime();
+            const timeB = b.timestamp || new Date(b.date).getTime();
+            return timeB - timeA;
+        });
 
         if (adjustments.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>';
@@ -217,7 +285,7 @@ export class StockManager {
 
         container.innerHTML = "";
         
-        adjustments.slice().reverse().forEach(adj => {
+        adjustments.forEach(adj => {
             const div = document.createElement("div");
             div.className = "history-item";
             
@@ -230,17 +298,26 @@ export class StockManager {
             const typeLabel = typeLabels[adjustType] || 'Adjusted';
             const typeColor = typeColors[adjustType] || '#6c757d';
             
+            // Find item to show in correct language
+            const item = AppState.items.find(i => i.id === adj.itemId || i.name === adj.itemName);
+            const displayName = (AppState.settings.showHindi && item?.hindiName) ? item.hindiName : (item?.name || adj.itemName || 'Unknown Item');
+            
+            // Get rate from current stock
+            const stockKey = adj.itemId || adj.itemName;
+            const itemRate = AppState.stock[stockKey]?.rate || 0;
+            
             div.innerHTML = `
                 <div class="history-header">
-                    <strong>${adj.itemName || 'Unknown Item'}</strong>
+                    <strong>${displayName}</strong>
                     <span style="color: ${typeColor}; font-weight: 600;">
                         ${typeLabel} ${quantity !== 'Unknown' ? quantity + ' kg' : ''}
                     </span>
                 </div>
                 <div class="history-date">${adj.date || 'Unknown date'}${adj.createdByName ? ` • By: ${adj.createdByName}` : ''}</div>
                 <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                    ${itemRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${itemRate.toFixed(2)}/kg</div>` : ''}
                     <div style="font-size: 13px; color: #666;">
-                        ${(adj.previousStock || 0).toFixed(2)} kg → ${(adj.newStock || 0).toFixed(2)} kg
+                        ${(adj.previousStock || 0).toFixed(1)} kg → ${(adj.newStock || 0).toFixed(1)} kg
                     </div>
                     ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${adj.reason}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
                 </div>

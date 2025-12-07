@@ -8,7 +8,9 @@ export class TemplateLoader {
             if (!response.ok) {
                 throw new Error(`Failed to load template: ${templateName}`);
             }
-            return await response.text();
+            const content = await response.text();
+            console.log(`Template ${templateName} loaded, length: ${content.length}`);
+            return content;
         } catch (error) {
             console.error(`Error loading template ${templateName}:`, error);
             return '';
@@ -26,6 +28,7 @@ export class TemplateLoader {
             'due',
             'stock',
             'sales',
+            'retail-sales',
             'payments',
             'reports',
             'configure',
@@ -66,6 +69,15 @@ export class TemplateLoader {
         appContent.insertAdjacentHTML('beforeend', templates.due);
         appContent.insertAdjacentHTML('beforeend', templates.stock);
         appContent.insertAdjacentHTML('beforeend', templates.sales);
+        
+        // Debug: Check if retail-sales template was loaded
+        if (templates['retail-sales']) {
+            console.log('✅ Retail-sales template loaded, length:', templates['retail-sales'].length);
+            appContent.insertAdjacentHTML('beforeend', templates['retail-sales']);
+        } else {
+            console.error('❌ Retail-sales template is empty or undefined!');
+        }
+        
         appContent.insertAdjacentHTML('beforeend', templates.payments);
         appContent.insertAdjacentHTML('beforeend', templates.reports);
         appContent.insertAdjacentHTML('beforeend', templates.configure);

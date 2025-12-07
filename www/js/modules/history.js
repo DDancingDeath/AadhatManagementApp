@@ -108,17 +108,29 @@ export class HistoryManager {
     }
 
     static renderHistory() {
-        const billHistory = AppState.billHistory;
+        const billHistory = AppState.billHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
         const container = document.getElementById("historyList");
         
-        if (!billHistory || billHistory.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No purchase history yet</p>';
+        // Combine and sort all transactions by timestamp
+        const allTransactions = [
+            ...billHistory.map(b => ({ ...b, type: 'purchase' })),
+            ...retailSalesHistory.map(s => ({ ...s, type: 'retail' }))
+        ].sort((a, b) => {
+            const timeA = a.timestamp || new Date(a.date).getTime();
+            const timeB = b.timestamp || new Date(b.date).getTime();
+            return timeB - timeA;
+        });
+        
+        if (allTransactions.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No history yet</p>';
             return;
         }
 
         container.innerHTML = "";
 
-        billHistory.forEach((bill, billIndex) => {
+        allTransactions.forEach((bill, index) => {
+            const billIndex = bill.type === 'purchase' ? billHistory.findIndex(b => b.id === bill.id) : -1;
             const div = document.createElement("div");
             div.className = "history-item";
             
@@ -137,20 +149,106 @@ export class HistoryManager {
                 </div>
             ` : '';
             
+            // Generate short bill number from ID
+            const billNumber = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
+            const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
+            const typeLabel = bill.type === 'retail' ? 'Sale' : 'Bill';
+            const typeColor = bill.type === 'retail' ? '#22c55e' : '#007bff';
+            
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">Bill #${bill.id}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
-                    <span style="color: #007bff; font-weight: 700;">₹ ${bill.total}</span>
+                    <span style="cursor: pointer; color: ${typeColor}; text-decoration: underline;" onclick="window.app.history.${bill.type === 'retail' ? 'viewRetailSale' : 'reprintBill'}(${billIndex >= 0 ? billIndex : `'${bill.id}'`})">${typeLabel} #${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
+                    <span style="color: ${typeColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
-                <div class="history-date">${bill.date}${bill.createdByName ? ` • By: <strong>${bill.createdByName}</strong>` : ''}</div>
+                <div class="history-date">${bill.date}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
                 <div class="history-summary">
-                    ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets • ${totalWeight}kg
+                    ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets • ${totalWeight.toFixed(1)}kg
                 </div>
                 ${paymentHTML}
             `;
             
             container.appendChild(div);
         });
+    }
+
+    static viewRetailSale(saleId) {
+        const sale = AppState.retailSalesHistory.find(s => s.id === saleId);
+        if (!sale) {
+            UIManager.showToast('Sale not found');
+            return;
+        }
+        
+        // Similar modal display as reprintBill but for retail sales
+        const itemsHTML = sale.items.map(item => {
+            return `
+                <tr>
+                    <td>${item.name}</td>
+                    <td style="text-align: center;">${item.packets || 0}</td>
+                    <td>${item.qty || 0} kg</td>
+                    <td>₹${item.rate}</td>
+                    <td><strong>₹${Math.round(item.total)}</strong></td>
+                </tr>
+            `;
+        }).join('');
+        
+        const payment = sale.payment || {};
+        const paymentHTML = (payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
+            <div class="bill-payment-section">
+                <h4>Payment Details</h4>
+                ${payment.online > 0 ? `<div class="bill-payment-row"><span>Online:</span><strong>₹${Math.round(payment.online)}</strong></div>` : ''}
+                ${payment.cash > 0 ? `<div class="bill-payment-row"><span>Cash:</span><strong>₹${Math.round(payment.cash)}</strong></div>` : ''}
+                ${payment.due > 0 ? `<div class="bill-payment-row" style="color: #dc3545;"><span>Due:</span><strong>₹${Math.round(payment.due)}</strong></div>` : ''}
+            </div>
+        ` : '';
+        
+        const content = `
+            <div class="bill-info-section">
+                ${sale.customerName ? `
+                    <div class="bill-info-row">
+                        <div class="bill-info-label">Customer:</div>
+                        <div class="bill-info-value"><strong>${sale.customerName}</strong></div>
+                    </div>
+                ` : ''}
+                <div class="bill-info-row">
+                    <div class="bill-info-label">Date:</div>
+                    <div class="bill-info-value">${sale.date}</div>
+                </div>
+                ${sale.userName ? `
+                    <div class="bill-info-row">
+                        <div class="bill-info-label">Created By:</div>
+                        <div class="bill-info-value">${sale.userName}</div>
+                    </div>
+                ` : ''}
+            </div>
+            
+            <table class="bill-items-table">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th style="text-align: center;">Packets</th>
+                        <th>Qty</th>
+                        <th>Rate</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${itemsHTML}
+                </tbody>
+            </table>
+            
+            <div class="bill-totals-section">
+                <div class="bill-totals-row total">
+                    <span>Total:</span>
+                    <strong>₹${Math.round(sale.saleTotal || sale.amountReceivable || 0)}</strong>
+                </div>
+            </div>
+            
+            ${paymentHTML}
+        `;
+        
+        document.getElementById('billDetailsTitle').textContent = `Sale #${sale.id}`;
+        document.getElementById('billDetailsContent').innerHTML = content;
+        document.getElementById('billDetailsOverlay').classList.add('active');
     }
 
     static async reprintBill(index) {
@@ -166,7 +264,7 @@ export class HistoryManager {
             return `
                 <tr>
                     <td>${item.name}</td>
-                    <td>${item.packets || 0}</td>
+                    <td style="text-align: center;">${item.packets || 0}</td>
                     <td>${weightsDisplay}</td>
                     <td>${item.qty || 0} kg</td>
                     <td>₹${item.rate}</td>
@@ -224,7 +322,7 @@ export class HistoryManager {
             <div class="bill-totals-section">
                 <div class="bill-totals-row">
                     <span>Bill Total:</span>
-                    <strong>₹${bill.total}</strong>
+                    <strong>₹${bill.billTotal || bill.grandTotal || bill.amountPayable || 0}</strong>
                 </div>
                 ${bill.laborCharges > 0 ? `
                     <div class="bill-totals-row">
@@ -233,7 +331,7 @@ export class HistoryManager {
                     </div>
                     <div class="bill-totals-row total">
                         <span>Amount Payable:</span>
-                        <strong>₹${(bill.total - bill.laborCharges).toFixed(2)}</strong>
+                        <strong>₹${Math.round(parseFloat(bill.billTotal || bill.grandTotal || 0) + parseFloat(bill.laborCharges || 0))}</strong>
                     </div>
                 ` : ''}
             </div>

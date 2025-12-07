@@ -227,7 +227,7 @@ const ItemsManager = {
             const data = AppState.items.map(item => ({
                 'Item Name': item.name,
                 'Hindi Name': item.hindiName || '',
-                'Purchase Rates': (item.purchaseRates || []).join(', '),
+                'Purchase Rates': (item.rates || []).join(', '),
                 'Sale Rates': (item.saleRates || []).join(', ')
             }));
             
@@ -247,6 +247,17 @@ const ItemsManager = {
         const file = event.target.files[0];
         if (!file) return;
         
+        const confirmed = await UIManager.showModal(
+            'This will delete ALL existing items and replace them with items from the Excel file. Continue?',
+            'Confirm Import',
+            true
+        );
+        
+        if (!confirmed) {
+            event.target.value = '';
+            return;
+        }
+        
         UIManager.showLoading();
         
         try {
@@ -255,39 +266,36 @@ const ItemsManager = {
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
             const jsonData = XLSX.utils.sheet_to_json(worksheet);
             
+            // Delete all existing items
+            for (const item of AppState.items) {
+                await FirebaseService.deleteItem(item.id);
+            }
+            AppState.items = [];
+            
+            // Import new items
             let imported = 0;
-            let updated = 0;
             
             for (const row of jsonData) {
                 const itemName = row['Item Name']?.trim();
                 if (!itemName) continue;
                 
-                const existingItem = AppState.items.find(item => item.name.toLowerCase() === itemName.toLowerCase());
-                
                 const itemData = {
                     name: itemName,
                     hindiName: row['Hindi Name'] || '',
-                    purchaseRates: row['Purchase Rates'] ? 
-                        row['Purchase Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0) : [0],
+                    rates: row['Purchase Rates'] ? 
+                        row['Purchase Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0) : [],
                     saleRates: row['Sale Rates'] ? 
-                        row['Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0) : [0]
+                        row['Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0) : []
                 };
                 
-                if (existingItem) {
-                    itemData.id = existingItem.id;
-                    await FirebaseService.saveItem(itemData);
-                    Object.assign(existingItem, itemData);
-                    updated++;
-                } else {
-                    const savedItem = await FirebaseService.saveItem(itemData);
-                    AppState.items.push(savedItem);
-                    imported++;
-                }
+                const savedItem = await FirebaseService.saveItem(itemData);
+                AppState.items.push(savedItem);
+                imported++;
             }
             
             this.renderItems();
             UIManager.hideLoading();
-            UIManager.showToast(`Import complete! ${imported} new items, ${updated} updated`);
+            UIManager.showToast(`Import complete! ${imported} items imported`);
             
             event.target.value = '';
         } catch (error) {

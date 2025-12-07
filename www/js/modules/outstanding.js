@@ -59,7 +59,12 @@ export class OutstandingManager {
             });
         }
         
-        dueTransactions.sort((a, b) => b.outstanding - a.outstanding);
+        // Sort by date (newest first) - use timestamp if available, otherwise parse date
+        dueTransactions.sort((a, b) => {
+            const dateA = a.timestamp || new Date(a.date).getTime();
+            const dateB = b.timestamp || new Date(b.date).getTime();
+            return dateB - dateA;
+        });
         
         if (dueTransactions.length === 0) {
             const message = currentDueFilter === 'purchase' ? 'No outstanding purchase amounts' : 'No outstanding sale amounts';
@@ -84,21 +89,21 @@ export class OutstandingManager {
             div.innerHTML = `
                 <div class="history-header">
                     <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">${billLabel} #${transaction.id}</span>${transaction.customerName ? ` • <strong>${transaction.customerName}</strong>` : ''}
-                    <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${transaction.outstanding.toFixed(2)}</span>
+                    <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
                 </div>
                 <div class="history-date">${transaction.date}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>
                 <div style="background: ${bgColor}; border-left: 4px solid ${borderColor}; padding: 12px; margin: 12px 0; border-radius: 4px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                         <span>${totalLabel}:</span>
-                        <strong>₹${transaction.totalAmount.toFixed(2)}</strong>
+                        <strong>₹${Math.round(transaction.totalAmount)}</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                         <span>${paidLabel}:</span>
-                        <strong>₹${transaction.paidAmount.toFixed(2)}</strong>
+                        <strong>₹${Math.round(transaction.paidAmount)}</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; border-top: 2px solid ${borderColor}; padding-top: 6px; margin-top: 6px;">
                         <span style="font-weight: 600;">Outstanding:</span>
-                        <strong style="color: ${headerColor}; font-size: 16px;">₹${transaction.outstanding.toFixed(2)}</strong>
+                        <strong style="color: ${headerColor}; font-size: 16px;">₹${Math.round(transaction.outstanding)}</strong>
                     </div>
                     <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #ddd;">
                         <label style="display: flex; align-items: center; cursor: pointer;">

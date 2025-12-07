@@ -261,6 +261,7 @@ const BillingManager = {
         const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         
         billItems.push({
+            itemId: item.id,
             name: displayName,
             rate,
             qty,
@@ -338,7 +339,7 @@ const BillingManager = {
                     <td>${item.name}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
-                    <td>₹${item.total.toFixed(2)}</td>
+                    <td>₹${Math.round(item.total)}</td>
                     <td><button onclick="window.app.billing.deleteBillItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
                 </tr>
             `;
@@ -348,7 +349,7 @@ const BillingManager = {
         const billTotal = billItems.reduce((sum, item) => sum + item.total, 0);
         const totalPackets = billItems.reduce((sum, item) => sum + item.weights.length, 0);
         
-        if (billTotalSpan) billTotalSpan.textContent = billTotal.toFixed(2);
+        if (billTotalSpan) billTotalSpan.textContent = Math.round(billTotal);
         if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = totalPackets;
         
         this.updateTotals();
@@ -397,7 +398,7 @@ const BillingManager = {
         
         const grandTotalElement = document.getElementById('amountPayable');
         if (grandTotalElement) {
-            grandTotalElement.textContent = grandTotal.toFixed(2);
+            grandTotalElement.textContent = Math.round(grandTotal);
         }
         
         this.updatePaymentTotal();
@@ -413,7 +414,7 @@ const BillingManager = {
         
         const totalPaymentElement = document.getElementById('totalPayment');
         if (totalPaymentElement) {
-            totalPaymentElement.textContent = totalPaid.toFixed(2);
+            totalPaymentElement.textContent = Math.round(totalPaid);
         }
     },
     
@@ -427,19 +428,19 @@ const BillingManager = {
         const dueCheckbox = document.getElementById('dueCheckbox');
         
         if (type === 'online' && onlineCheckbox?.checked) {
-            if (onlineInput) onlineInput.value = grandTotal.toFixed(2);
+            if (onlineInput) onlineInput.value = Math.round(grandTotal);
             if (cashInput) cashInput.value = '0';
             if (dueInput) dueInput.value = '0';
             if (cashCheckbox) cashCheckbox.checked = false;
             if (dueCheckbox) dueCheckbox.checked = false;
         } else if (type === 'cash' && cashCheckbox?.checked) {
-            if (cashInput) cashInput.value = grandTotal.toFixed(2);
+            if (cashInput) cashInput.value = Math.round(grandTotal);
             if (onlineInput) onlineInput.value = '0';
             if (dueInput) dueInput.value = '0';
             if (onlineCheckbox) onlineCheckbox.checked = false;
             if (dueCheckbox) dueCheckbox.checked = false;
         } else if (type === 'due' && dueCheckbox?.checked) {
-            if (dueInput) dueInput.value = grandTotal.toFixed(2);
+            if (dueInput) dueInput.value = Math.round(grandTotal);
             if (onlineInput) onlineInput.value = '0';
             if (cashInput) cashInput.value = '0';
             if (onlineCheckbox) onlineCheckbox.checked = false;
@@ -501,19 +502,37 @@ const BillingManager = {
             this.renderBill();
             this.renderWeights();
             
-            // Reset form
+            // Reset form completely
             if (document.getElementById('customerName')) {
                 document.getElementById('customerName').value = '';
             }
             if (document.getElementById('onlinePayment')) {
-                document.getElementById('onlinePayment').value = '0';
+                document.getElementById('onlinePayment').value = '';
             }
             if (document.getElementById('cashPayment')) {
-                document.getElementById('cashPayment').value = '0';
+                document.getElementById('cashPayment').value = '';
             }
-            if (document.getElementById('laborCharges')) {
-                document.getElementById('laborCharges').value = '0';
+            if (document.getElementById('dueAmount')) {
+                document.getElementById('dueAmount').value = '';
             }
+            if (document.getElementById('manualLaborCharges')) {
+                document.getElementById('manualLaborCharges').value = '0';
+            }
+            if (document.getElementById('billComments')) {
+                document.getElementById('billComments').value = '';
+            }
+            if (document.getElementById('onlineCheckbox')) {
+                document.getElementById('onlineCheckbox').checked = false;
+            }
+            if (document.getElementById('cashCheckbox')) {
+                document.getElementById('cashCheckbox').checked = false;
+            }
+            if (document.getElementById('dueCheckbox')) {
+                document.getElementById('dueCheckbox').checked = false;
+            }
+            
+            // Reset totals
+            this.updateTotals();
             
             UIManager.hideLoading();
             UIManager.showToast('Bill saved successfully!');
@@ -573,6 +592,7 @@ const BillingManager = {
         const total = qty * rate;
         
         saleItems.push({
+            itemId: item.id,
             name: itemName,
             rate,
             qty,
@@ -604,8 +624,8 @@ const BillingManager = {
             <tr>
                 <td>${item.name}</td>
                 <td>₹${item.rate.toFixed(2)}</td>
-                <td>${item.qty.toFixed(2)} kg</td>
-                <td>₹${item.total.toFixed(2)}</td>
+                <td>${item.qty.toFixed(1)} kg</td>
+                <td>₹${Math.round(item.total)}</td>
                 <td>
                     <button class="delete-btn" onclick="window.app.billing.removeSaleItem(${index})" title="Remove">🗑️</button>
                 </td>
@@ -616,7 +636,7 @@ const BillingManager = {
         
         // Update total
         const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-        document.getElementById('salesBillTotal').textContent = salesTotal.toFixed(2);
+        document.getElementById('salesBillTotal').textContent = Math.round(salesTotal);
         
         this.updateSalePaymentTotal();
     },
@@ -639,8 +659,8 @@ const BillingManager = {
         const saleTotalEl = document.getElementById('saleTotal');
         const amountReceivableEl = document.getElementById('amountReceivable');
         
-        if (saleTotalEl) saleTotalEl.textContent = total.toFixed(2);
-        if (amountReceivableEl) amountReceivableEl.textContent = total.toFixed(2);
+        if (saleTotalEl) saleTotalEl.textContent = Math.round(total);
+        if (amountReceivableEl) amountReceivableEl.textContent = Math.round(total);
         
         this.updateSalePaymentTotal();
     },
@@ -656,8 +676,8 @@ const BillingManager = {
         const totalReceivedEl = document.getElementById('totalReceived');
         const saleDueEl = document.getElementById('saleDueAmount');
         
-        if (totalReceivedEl) totalReceivedEl.textContent = totalReceived.toFixed(2);
-        if (saleDueEl) saleDueEl.value = balance > 0 ? balance.toFixed(2) : 0;
+        if (totalReceivedEl) totalReceivedEl.textContent = Math.round(totalReceived);
+        if (saleDueEl) saleDueEl.value = balance > 0 ? Math.round(balance) : 0;
     },
     
     fillReceivableAmount(type) {
@@ -670,19 +690,19 @@ const BillingManager = {
         const dueCheckbox = document.getElementById('saleDueCheckbox');
         
         if (type === 'online' && onlineCheckbox?.checked) {
-            if (onlineInput) onlineInput.value = total.toFixed(2);
+            if (onlineInput) onlineInput.value = Math.round(total);
             if (cashInput) cashInput.value = '0';
             if (dueInput) dueInput.value = '0';
             if (cashCheckbox) cashCheckbox.checked = false;
             if (dueCheckbox) dueCheckbox.checked = false;
         } else if (type === 'cash' && cashCheckbox?.checked) {
-            if (cashInput) cashInput.value = total.toFixed(2);
+            if (cashInput) cashInput.value = Math.round(total);
             if (onlineInput) onlineInput.value = '0';
             if (dueInput) dueInput.value = '0';
             if (onlineCheckbox) onlineCheckbox.checked = false;
             if (dueCheckbox) dueCheckbox.checked = false;
         } else if (type === 'due' && dueCheckbox?.checked) {
-            if (dueInput) dueInput.value = total.toFixed(2);
+            if (dueInput) dueInput.value = Math.round(total);
             if (onlineInput) onlineInput.value = '0';
             if (cashInput) cashInput.value = '0';
             if (onlineCheckbox) onlineCheckbox.checked = false;
@@ -698,10 +718,10 @@ const BillingManager = {
         const cashInput = document.getElementById('saleCashPayment');
         
         if (type === 'online' && onlineInput) {
-            onlineInput.value = salesTotal.toFixed(2);
+            onlineInput.value = Math.round(salesTotal);
             if (cashInput) cashInput.value = '0';
         } else if (type === 'cash' && cashInput) {
-            cashInput.value = salesTotal.toFixed(2);
+            cashInput.value = Math.round(salesTotal);
             if (onlineInput) onlineInput.value = '0';
         }
         
@@ -846,10 +866,10 @@ const BillingManager = {
             message += `  Rate: ₹${item.rate.toFixed(2)} × ${item.qty.toFixed(2)}kg = ₹${item.total.toFixed(2)}\n`;
         });
         
-        message += `\n*Purchase Total: ₹${total.toFixed(2)}*\n`;
+        message += `\n*Purchase Total: ₹${Math.round(total)}*\n`;
         if (laborCharges > 0) {
-            message += `Labor Charges: ₹${laborCharges.toFixed(2)}\n`;
-            message += `*Total Payable: ₹${grandTotal.toFixed(2)}*`;
+            message += `Labor Charges: ₹${Math.round(laborCharges)}\n`;
+            message += `*Total Payable: ₹${Math.round(grandTotal)}*`;
         }
         
         const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
@@ -875,14 +895,40 @@ const BillingManager = {
             message += `  Rate: ₹${item.rate.toFixed(2)} × ${item.qty.toFixed(2)}kg = ₹${item.total.toFixed(2)}\n`;
         });
         
-        message += `\n*Total: ₹${salesTotal.toFixed(2)}*`;
+        message += `\n*Total: ₹${Math.round(salesTotal)}*`;
         
         const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
         window.open(url, '_blank');
     },
     
     async printSale() {
-        UIManager.showToast('Print functionality coming soon');
+        if (saleItems.length === 0) {
+            UIManager.showToast('No items in sale');
+            return;
+        }
+        
+        // Collect sale data before saving
+        const saleData = {
+            items: saleItems,
+            saleTotal: parseFloat(document.getElementById('saleTotal')?.textContent || 0),
+            totalPackets: parseInt(document.getElementById('totalPacketsInSale')?.textContent || 0),
+            customerName: document.getElementById('saleCustomerName')?.value || '',
+            isPurchase: false,
+            date: new Date().toISOString()
+        };
+        
+        try {
+            // Save the sale
+            await this.completeSale();
+            
+            // Print the sale data we collected
+            await PrinterService.printBill(saleData);
+            
+            UIManager.showToast('Sale saved and printed!');
+        } catch (error) {
+            console.error('Print error:', error);
+            UIManager.showToast('Error: ' + error.message);
+        }
     },
     
     // Expose state for access

@@ -10,6 +10,7 @@ import { PrinterService, printerManager } from './services/printer.js';
 import { BillingManager } from './modules/billing.js';
 import { StockManager } from './modules/stock.js';
 import { SalesManager } from './modules/sales.js';
+import { RetailSalesManager } from './modules/retail-sales.js';
 import { HistoryManager } from './modules/history.js';
 import { OutstandingManager } from './modules/outstanding.js';
 import { ReportsManager } from './modules/reports.js';
@@ -88,10 +89,11 @@ async function loadUserDataAndInitialize() {
         // Load all data from Firestore
         console.log('Loading data from Firestore...');
         
-        const [items, bills, sales, payments, stockAdjustments, withdrawals] = await Promise.all([
+        const [items, bills, sales, retailSales, payments, stockAdjustments, withdrawals] = await Promise.all([
             FirebaseService.loadItems(),
             FirebaseService.loadBills(),
             FirebaseService.loadSales(),
+            FirebaseService.loadRetailSales(),
             FirebaseService.loadPayments(),
             FirebaseService.loadStockAdjustments(),
             FirebaseService.loadWithdrawals()
@@ -100,6 +102,7 @@ async function loadUserDataAndInitialize() {
         AppState.items = items;
         AppState.billHistory = bills;
         AppState.salesHistory = sales;
+        AppState.retailSalesHistory = retailSales;
         AppState.paymentsHistory = payments;
         AppState.stockAdjustments = stockAdjustments;
         AppState.withdrawalsHistory = withdrawals;
@@ -108,6 +111,7 @@ async function loadUserDataAndInitialize() {
             items: items.length,
             bills: bills.length,
             sales: sales.length,
+            retailSales: retailSales.length,
             payments: payments.length
         });
         
@@ -266,7 +270,7 @@ window.app = {
         fillSalePayableAmount: (type) => BillingManager.fillSalePayableAmount(type),
         completeSale: () => BillingManager.completeSale(),
         
-        // Print bill
+        // Print bill (saves and prints)
         printBill: async () => {
             const billItems = BillingManager.getBillItems();
             if (billItems.length === 0) {
@@ -274,24 +278,29 @@ window.app = {
                 return;
             }
             
+            // Collect bill data before saving
             const billData = {
                 items: billItems,
                 billTotal: parseFloat(document.getElementById('billTotal')?.textContent || 0),
-                laborCharges: parseFloat(document.getElementById('laborCharges')?.value || 0),
-                totalPackets: parseInt(document.getElementById('totalPackets')?.textContent || 0),
-                amountPayable: parseFloat(document.getElementById('grandTotal')?.textContent || 0),
+                laborCharges: parseFloat(document.getElementById('manualLaborCharges')?.value || 0),
+                totalPackets: parseInt(document.getElementById('totalPacketsInBill')?.textContent || 0),
+                amountPayable: parseFloat(document.getElementById('amountPayable')?.textContent || 0),
                 customerName: document.getElementById('customerName')?.value || '',
                 isPurchase: true,
-                isAutoLabor: true,
                 date: new Date().toISOString()
             };
             
             try {
+                // Save the bill
+                await BillingManager.saveBillToHistory();
+                
+                // Print the bill data we collected
                 await PrinterService.printBill(billData);
-                UIManager.showToast('Bill printed successfully!');
+                
+                UIManager.showToast('Bill saved and printed!');
             } catch (error) {
                 console.error('Print error:', error);
-                UIManager.showToast('Print failed: ' + error.message);
+                UIManager.showToast('Error: ' + error.message);
             }
         },
         
@@ -334,6 +343,22 @@ window.app = {
         updateAdjustmentPlaceholder: () => StockManager.updateAdjustmentPlaceholder(),
         applyAdjustment: () => StockManager.applyStockAdjustment(),
         renderAdjustmentHistory: () => StockManager.renderAdjustmentHistory()
+    },
+    
+    // Retail Sales
+    retailSales: {
+        switchToPurchase: () => RetailSalesManager.switchToPurchase(),
+        pickContact: () => RetailSalesManager.pickContact(),
+        loadItemsDropdown: () => RetailSalesManager.loadItemsDropdown(),
+        loadItemRates: () => RetailSalesManager.loadItemRates(),
+        addItem: () => RetailSalesManager.addItem(),
+        addToBill: () => RetailSalesManager.addToBill(),
+        renderBill: () => RetailSalesManager.renderBill(),
+        updatePaymentTotal: () => RetailSalesManager.updatePaymentTotal(),
+        fillReceivable: (type) => RetailSalesManager.fillReceivable(type),
+        saveSale: () => RetailSalesManager.saveSale(),
+        shareWhatsApp: () => RetailSalesManager.shareWhatsApp(),
+        printSale: () => RetailSalesManager.printSale()
     },
     
     // Sales

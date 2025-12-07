@@ -78,6 +78,30 @@ const FirebaseService = {
         return sale;
     },
 
+    // Load retail sales from Firestore
+    async loadRetailSales() {
+        const snapshot = await db.collection('retailSales').orderBy('date', 'desc').get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    // Save retail sale to Firestore
+    async saveRetailSale(sale) {
+        if (!sale.userId && AppState.currentUser) {
+            sale.userId = AppState.currentUser.uid;
+        }
+        if (!sale.userName && AppState.userName) {
+            sale.userName = AppState.userName;
+        }
+        
+        if (sale.id) {
+            await db.collection('retailSales').doc(sale.id).set(sale);
+        } else {
+            const docRef = await db.collection('retailSales').add(sale);
+            sale.id = docRef.id;
+        }
+        return sale;
+    },
+
     // Load payments from Firestore
     async loadPayments() {
         const snapshot = await db.collection('payments').orderBy('date', 'desc').get();
@@ -151,17 +175,29 @@ const FirebaseService = {
     async calculateStock() {
         const stock = {};
         
+        // Helper function to get item key (use itemId if available, otherwise name)
+        const getItemKey = (item) => {
+            if (item.itemId) {
+                const foundItem = AppState.items.find(i => i.id === item.itemId);
+                return foundItem ? foundItem.id : item.name;
+            }
+            // For old data without itemId, find by name
+            const foundItem = AppState.items.find(i => i.name === item.name || i.hindiName === item.name);
+            return foundItem ? foundItem.id : item.name;
+        };
+        
         // Add from purchases
         AppState.billHistory.forEach(bill => {
             if (bill.items && Array.isArray(bill.items)) {
                 bill.items.forEach(item => {
-                    if (!stock[item.name]) {
-                        stock[item.name] = { quantity: 0, rate: 0, totalValue: 0 };
+                    const key = getItemKey(item);
+                    if (!stock[key]) {
+                        stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
                     }
-                    const qty = parseFloat(item.quantity) || 0;
+                    const qty = parseFloat(item.qty || item.quantity) || 0;
                     const rate = parseFloat(item.rate) || 0;
-                    stock[item.name].quantity += qty;
-                    stock[item.name].totalValue += qty * rate;
+                    stock[key].quantity += qty;
+                    stock[key].totalValue += qty * rate;
                 });
             }
         });
@@ -170,11 +206,41 @@ const FirebaseService = {
         AppState.salesHistory.forEach(sale => {
             if (sale.items && Array.isArray(sale.items)) {
                 sale.items.forEach(item => {
-                    if (stock[item.name]) {
-                        const qty = parseFloat(item.quantity) || 0;
-                        stock[item.name].quantity -= qty;
+                    const key = getItemKey(item);
+                    if (stock[key]) {
+                        const qty = parseFloat(item.qty || item.quantity) || 0;
+                        stock[key].quantity -= qty;
                     }
                 });
+            }
+        });
+        
+        // Apply stock adjustments
+        AppState.stockAdjustments.forEach(adj => {
+            // Use itemId if available, otherwise fallback to itemName
+            const key = adj.itemId || adj.itemName;
+            if (key) {
+                if (!stock[key]) {
+                    stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
+                }
+                
+                // Apply the adjustment based on type
+                switch (adj.adjustType) {
+                    case 'add':
+                        stock[key].quantity += parseFloat(adj.quantity) || 0;
+                        break;
+                    case 'remove':
+                        stock[key].quantity -= parseFloat(adj.quantity) || 0;
+                        break;
+                    case 'set':
+                        // For 'set' type, we need to set to the newStock value if available
+                        if (adj.newStock !== undefined) {
+                            stock[key].quantity = parseFloat(adj.newStock) || 0;
+                        } else {
+                            stock[key].quantity = parseFloat(adj.quantity) || 0;
+                        }
+                        break;
+                }
             }
         });
         
@@ -225,6 +291,14 @@ const FirebaseService = {
             }
             if (typeof window.renderSalesOutstanding === 'function') {
                 window.renderSalesOutstanding();
+            }
+        });
+        
+        // Listen to retail sales collection
+        db.collection('retailSales').orderBy('date', 'desc').onSnapshot(snapshot => {
+            AppState.retailSalesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (typeof window.renderHistory === 'function') {
+                window.renderHistory();
             }
         });
         
