@@ -64,12 +64,6 @@ const NavigationManager = {
             setTimeout(() => window.app.sales.renderHistory(), 100);
         }
         
-        // Initialize retail sales when Retail Sales tab is shown
-        if (tabId === 'retail-sales' && window.app?.retailSales) {
-            console.log('Navigation: Initializing retail-sales tab');
-            setTimeout(() => window.app.retailSales.loadItemsDropdown(), 100);
-        }
-        
         // Render stock when Stock tab is shown
         if (tabId === 'stock' && window.app?.stock) {
             setTimeout(() => window.app.stock.filterTab('current'), 100);
@@ -88,16 +82,12 @@ const NavigationManager = {
 
     // Show tab
     showTab(tabId, evt) {
-        console.log('Navigation: showTab called with tabId:', tabId);
         const tabs = document.querySelectorAll('.tab');
         tabs.forEach(tab => tab.classList.remove('active'));
         
         const selectedTab = document.getElementById(tabId);
         if (selectedTab) {
-            console.log('Navigation: Found tab element for', tabId);
             selectedTab.classList.add('active');
-        } else {
-            console.error('Navigation: Tab element not found for', tabId);
         }
         
         if (evt) {

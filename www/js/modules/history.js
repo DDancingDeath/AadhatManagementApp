@@ -109,14 +109,10 @@ export class HistoryManager {
 
     static renderHistory() {
         const billHistory = AppState.billHistory || [];
-        const retailSalesHistory = AppState.retailSalesHistory || [];
         const container = document.getElementById("historyList");
         
-        // Combine and sort all transactions by timestamp
-        const allTransactions = [
-            ...billHistory.map(b => ({ ...b, type: 'purchase' })),
-            ...retailSalesHistory.map(s => ({ ...s, type: 'retail' }))
-        ].sort((a, b) => {
+        // Sort bills by timestamp (newest first)
+        const allTransactions = [...billHistory].sort((a, b) => {
             const timeA = a.timestamp || new Date(a.date).getTime();
             const timeB = b.timestamp || new Date(b.date).getTime();
             return timeB - timeA;
@@ -130,7 +126,7 @@ export class HistoryManager {
         container.innerHTML = "";
 
         allTransactions.forEach((bill, index) => {
-            const billIndex = bill.type === 'purchase' ? billHistory.findIndex(b => b.id === bill.id) : -1;
+            const billIndex = billHistory.findIndex(b => b.id === bill.id);
             const div = document.createElement("div");
             div.className = "history-item";
             
@@ -152,13 +148,11 @@ export class HistoryManager {
             // Generate short bill number from ID
             const billNumber = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
-            const typeLabel = bill.type === 'retail' ? 'Sale' : 'Bill';
-            const typeColor = bill.type === 'retail' ? '#22c55e' : '#007bff';
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${typeColor}; text-decoration: underline;" onclick="window.app.history.${bill.type === 'retail' ? 'viewRetailSale' : 'reprintBill'}(${billIndex >= 0 ? billIndex : `'${bill.id}'`})">${typeLabel} #${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
-                    <span style="color: ${typeColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
+                    <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
+                    <span style="color: #007bff; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
                 <div class="history-date">${bill.date}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
                 <div class="history-summary">
@@ -171,6 +165,7 @@ export class HistoryManager {
         });
     }
 
+    /* Removed - retail sales now integrated in billing
     static viewRetailSale(saleId) {
         const sale = AppState.retailSalesHistory.find(s => s.id === saleId);
         if (!sale) {
@@ -250,6 +245,7 @@ export class HistoryManager {
         document.getElementById('billDetailsContent').innerHTML = content;
         document.getElementById('billDetailsOverlay').classList.add('active');
     }
+    */
 
     static async reprintBill(index) {
         const billHistory = AppState.billHistory;

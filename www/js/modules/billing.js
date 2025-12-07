@@ -16,21 +16,26 @@ const BillingManager = {
     
     currentMode: 'purchase', // 'purchase' or 'sale'
     
-    toggleMode() {
+    switchMode(mode, event) {
         const purchaseSection = document.getElementById('purchaseSection');
         const saleSection = document.getElementById('saleSection');
-        const title = document.getElementById('billingTitle');
-        const toggleBtn = document.getElementById('modeToggleBtn');
+        const purchaseBtn = document.getElementById('purchaseModeBtn');
+        const saleBtn = document.getElementById('saleModeBtn');
         
         if (!purchaseSection || !saleSection) return;
         
-        if (this.currentMode === 'purchase') {
+        // Update button states
+        if (event) {
+            const buttons = document.querySelectorAll('.filter-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+        
+        if (mode === 'sale') {
             // Switch to sale mode
             this.currentMode = 'sale';
             purchaseSection.style.display = 'none';
             saleSection.style.display = 'block';
-            title.textContent = 'Sale Entry';
-            toggleBtn.innerHTML = '📦 Switch to Purchase';
             
             // Load sale dropdown
             this.loadSaleItemsDropdown();
@@ -39,8 +44,6 @@ const BillingManager = {
             this.currentMode = 'purchase';
             saleSection.style.display = 'none';
             purchaseSection.style.display = 'block';
-            title.textContent = 'Purchase Entry';
-            toggleBtn.innerHTML = '💰 Switch to Sale';
         }
         
         UIManager.hapticFeedback();
@@ -69,10 +72,17 @@ const BillingManager = {
     },
     
     loadSaleItemsDropdown() {
+        console.log('📋 loadSaleItemsDropdown called');
         const select = document.getElementById('saleItem');
-        if (!select) return;
+        if (!select) {
+            console.error('❌ saleItem select not found!');
+            return;
+        }
+        console.log('✅ saleItem select found, loading items...');
         
         select.innerHTML = '';
+        
+        console.log('📦 Loading items into sale dropdown, count:', AppState.items.length);
         
         AppState.items.forEach((item, index) => {
             const opt = document.createElement('option');
@@ -81,6 +91,8 @@ const BillingManager = {
             opt.textContent = displayName;
             select.appendChild(opt);
         });
+        
+        console.log('✅ Sale dropdown populated with', select.options.length, 'items');
         
         if (AppState.items.length > 0) {
             this.loadSaleRates();

@@ -27,12 +27,8 @@ export class RetailSalesManager {
     }
 
     static loadItemsDropdown() {
-        console.log('RetailSalesManager: loadItemsDropdown called');
         const select = document.getElementById('retailItem');
-        if (!select) {
-            console.error('RetailSalesManager: retailItem select not found!');
-            return;
-        }
+        if (!select) return;
 
         select.innerHTML = '<option value="">Select item</option>';
         AppState.items.forEach((item, index) => {

@@ -78,30 +78,6 @@ const FirebaseService = {
         return sale;
     },
 
-    // Load retail sales from Firestore
-    async loadRetailSales() {
-        const snapshot = await db.collection('retailSales').orderBy('date', 'desc').get();
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    },
-
-    // Save retail sale to Firestore
-    async saveRetailSale(sale) {
-        if (!sale.userId && AppState.currentUser) {
-            sale.userId = AppState.currentUser.uid;
-        }
-        if (!sale.userName && AppState.userName) {
-            sale.userName = AppState.userName;
-        }
-        
-        if (sale.id) {
-            await db.collection('retailSales').doc(sale.id).set(sale);
-        } else {
-            const docRef = await db.collection('retailSales').add(sale);
-            sale.id = docRef.id;
-        }
-        return sale;
-    },
-
     // Load payments from Firestore
     async loadPayments() {
         const snapshot = await db.collection('payments').orderBy('date', 'desc').get();
@@ -291,14 +267,6 @@ const FirebaseService = {
             }
             if (typeof window.renderSalesOutstanding === 'function') {
                 window.renderSalesOutstanding();
-            }
-        });
-        
-        // Listen to retail sales collection
-        db.collection('retailSales').orderBy('date', 'desc').onSnapshot(snapshot => {
-            AppState.retailSalesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (typeof window.renderHistory === 'function') {
-                window.renderHistory();
             }
         });
         
