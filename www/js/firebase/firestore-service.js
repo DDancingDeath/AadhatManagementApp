@@ -153,31 +153,41 @@ const FirebaseService = {
         
         // Add from purchases
         AppState.billHistory.forEach(bill => {
-            bill.items.forEach(item => {
-                if (!stock[item.name]) {
-                    stock[item.name] = { quantity: 0, avgRate: 0, totalValue: 0 };
-                }
-                stock[item.name].quantity += item.quantity;
-                stock[item.name].totalValue += item.quantity * item.rate;
-            });
+            if (bill.items && Array.isArray(bill.items)) {
+                bill.items.forEach(item => {
+                    if (!stock[item.name]) {
+                        stock[item.name] = { quantity: 0, rate: 0, totalValue: 0 };
+                    }
+                    const qty = parseFloat(item.quantity) || 0;
+                    const rate = parseFloat(item.rate) || 0;
+                    stock[item.name].quantity += qty;
+                    stock[item.name].totalValue += qty * rate;
+                });
+            }
         });
         
         // Subtract from sales
         AppState.salesHistory.forEach(sale => {
-            sale.items.forEach(item => {
-                if (stock[item.name]) {
-                    stock[item.name].quantity -= item.quantity;
-                }
-            });
+            if (sale.items && Array.isArray(sale.items)) {
+                sale.items.forEach(item => {
+                    if (stock[item.name]) {
+                        const qty = parseFloat(item.quantity) || 0;
+                        stock[item.name].quantity -= qty;
+                    }
+                });
+            }
         });
         
-        // Calculate average rates
+        // Calculate average rates and clean up
         Object.keys(stock).forEach(itemName => {
-            if (stock[itemName].quantity > 0) {
-                stock[itemName].avgRate = stock[itemName].totalValue / stock[itemName].quantity;
+            const s = stock[itemName];
+            if (s.quantity > 0 && s.totalValue > 0) {
+                s.rate = s.totalValue / s.quantity;
             } else {
-                stock[itemName].avgRate = 0;
+                s.rate = 0;
             }
+            // Remove totalValue as it's not needed in the final result
+            delete s.totalValue;
         });
         
         return stock;

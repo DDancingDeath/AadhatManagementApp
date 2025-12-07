@@ -135,6 +135,12 @@ async function loadUserDataAndInitialize() {
         AuthManager.updateUserDisplay();
         AuthManager.applyRoleBasedRestrictions();
         
+        // Update username in navigation
+        const userNameDisplay = document.getElementById('currentUserName');
+        if (userNameDisplay) {
+            userNameDisplay.textContent = AppState.userName || 'User';
+        }
+        
         // Render initial views
         ItemsManager.renderItems();
         BillingManager.loadItemsDropdown();

@@ -31,17 +31,17 @@
                     <strong>Status:</strong> <span id="printerStatusText">Not connected</span>
                 </div>
                 
-                <button class="add-item-btn" onclick="scanBluetoothDevices()" style="margin-bottom: 8px;">
+                <button class="add-item-btn" onclick="window.app.settings.scanBluetoothDevices()" style="margin-bottom: 8px;">
                     🔍 Scan for Printers
                 </button>
                 
                 <div id="bluetoothDevicesList"></div>
                 
-                <button class="danger-btn" onclick="disconnectPrinter()" id="disconnectBtn" style="display: none; margin-top: 12px;">
+                <button class="danger-btn" onclick="window.app.settings.disconnectPrinter()" id="disconnectBtn" style="display: none; margin-top: 12px;">
                     Disconnect Printer
                 </button>
                 
-                <button class="add-item-btn" onclick="testPrint()" id="testPrintBtn" style="display: none; margin-top: 8px;">
+                <button class="add-item-btn" onclick="window.app.settings.testPrint()" id="testPrintBtn" style="display: none; margin-top: 8px;">
                     🖨️ Test Print
                 </button>
             </div>
@@ -56,13 +56,13 @@
 
         <div class="settings-card">
             <h3>Data Management</h3>
-            <button class="danger-btn" onclick="clearAllData()">Clear All Data</button>
+            <button class="danger-btn" onclick="window.app.settings.clearAllData()">Clear All Data</button>
             <p class="setting-description">This will delete all items, bills, and history. This action cannot be undone.</p>
         </div>
         
         <div class="settings-card">
             <h3>Account</h3>
             <p><strong>Email:</strong> <span id="userEmail">-</span></p>
-            <button class="danger-btn" onclick="handleLogout()">Logout</button>
+            <button class="danger-btn" onclick="window.app.auth.logout()">Logout</button>
         </div>
     </div>

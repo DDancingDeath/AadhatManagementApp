@@ -307,12 +307,14 @@ const AuthManager = {
     updateUserDisplay() {
         const userNameDisplay = document.getElementById('userNameDisplay');
         const userRoleDisplay = document.getElementById('userRoleDisplay');
-        const userEmailDisplay = document.getElementById('userEmailDisplay');
+        const userEmailDisplay = document.getElementById('userEmail');
         
         if (userNameDisplay) userNameDisplay.textContent = AppState.userName;
         if (userRoleDisplay) userRoleDisplay.textContent = AppState.userRole.toUpperCase();
-        if (userEmailDisplay && AppState.currentUser) {
-            userEmailDisplay.textContent = AppState.currentUser.email;
+        
+        const user = AppState.currentUser || firebase.auth().currentUser;
+        if (userEmailDisplay && user) {
+            userEmailDisplay.textContent = user.email || '-';
         }
     },
 
@@ -320,6 +322,13 @@ const AuthManager = {
     applyRoleBasedRestrictions() {
         const isOwnerOrManager = AppState.userRole === 'owner' || AppState.userRole === 'manager';
         const isOwner = AppState.userRole === 'owner';
+        
+        // Update username display in navigation
+        const userNameDisplay = document.getElementById('currentUserName');
+        if (userNameDisplay) {
+            const roleBadge = isOwner ? ' 👑' : (isOwnerOrManager ? ' 🔑' : '');
+            userNameDisplay.textContent = (AppState.userName || 'User') + roleBadge;
+        }
         
         // Hide/show tabs based on role
         const restrictedTabs = {
@@ -338,16 +347,25 @@ const AuthManager = {
         // Hide/show nav menu items
         const navItems = document.querySelectorAll('.nav-menu a');
         navItems.forEach(item => {
-            const tabId = item.getAttribute('onclick')?.match(/showTabFromNav\('([^']+)'/)?.[1];
+            const onclick = item.getAttribute('onclick');
+            const tabId = onclick?.match(/showTab\('([^']+)'/)?.[1];
             if (tabId) {
                 if (tabId === 'finance' && !isOwnerOrManager) {
                     item.style.display = 'none';
+                } else if (tabId === 'finance' && isOwnerOrManager) {
+                    item.style.display = 'block';
                 }
+                
                 if (tabId === 'analytics' && !isOwnerOrManager) {
                     item.style.display = 'none';
+                } else if (tabId === 'analytics' && isOwnerOrManager) {
+                    item.style.display = 'block';
                 }
+                
                 if (tabId === 'users' && !isOwner) {
                     item.style.display = 'none';
+                } else if (tabId === 'users' && isOwner) {
+                    item.style.display = 'block';
                 }
             }
         });

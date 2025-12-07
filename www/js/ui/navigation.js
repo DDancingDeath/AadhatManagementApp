@@ -16,10 +16,18 @@ const NavigationManager = {
     showTabFromNav(tabId, event) {
         if (event) {
             event.preventDefault();
-            const links = document.querySelectorAll('.nav-menu a');
-            links.forEach(link => link.classList.remove('active'));
-            event.currentTarget.classList.add('active');
         }
+        
+        // Update active state for navigation links
+        const links = document.querySelectorAll('.nav-menu a');
+        links.forEach(link => {
+            link.classList.remove('active');
+            // Check if this link's onclick contains the tabId
+            const onclick = link.getAttribute('onclick');
+            if (onclick && onclick.includes(`'${tabId}'`)) {
+                link.classList.add('active');
+            }
+        });
         
         // Close menu
         const sideNav = document.querySelector('.side-nav');
@@ -32,8 +40,8 @@ const NavigationManager = {
         UIManager.hapticFeedback('light');
         
         // Load users when Users tab is shown
-        if (tabId === 'users' && typeof window.loadUsers === 'function') {
-            window.loadUsers();
+        if (tabId === 'users' && window.app?.users) {
+            setTimeout(() => window.app.users.load(), 100);
         }
         
         // Render items table when Items tab is shown
@@ -54,6 +62,11 @@ const NavigationManager = {
         // Render sales history when Sales tab is shown
         if (tabId === 'sales' && window.app?.sales) {
             setTimeout(() => window.app.sales.renderHistory(), 100);
+        }
+        
+        // Render stock when Stock tab is shown
+        if (tabId === 'stock' && window.app?.stock) {
+            setTimeout(() => window.app.stock.filterTab('current'), 100);
         }
         
         // Render reports when Reports tab is shown

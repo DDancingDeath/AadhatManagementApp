@@ -34,7 +34,7 @@
             <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
                 <div style="flex: 1; min-width: 140px;">
                     <label>Transaction Type:</label>
-                    <select id="reportTransactionFilter" onchange="applyReportFilters()">
+                    <select id="reportTransactionFilter" onchange="window.app.reports.applyFilters()">
                         <option value="all">All Transactions</option>
                         <option value="purchase">Purchase Only</option>
                         <option value="sale">Sale Only</option>
@@ -42,13 +42,13 @@
                 </div>
                 <div style="flex: 1; min-width: 140px;">
                     <label>Item Filter:</label>
-                    <select id="reportItemFilter" onchange="applyReportFilters()">
+                    <select id="reportItemFilter" onchange="window.app.reports.applyFilters()">
                         <option value="all">All Items</option>
                     </select>
                 </div>
                 <div style="flex: 1; min-width: 140px;">
                     <label>Customer Filter:</label>
-                    <select id="reportCustomerFilter" onchange="applyReportFilters()">
+                    <select id="reportCustomerFilter" onchange="window.app.reports.applyFilters()">
                         <option value="all">All Customers</option>
                     </select>
                 </div>

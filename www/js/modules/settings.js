@@ -4,7 +4,7 @@ import { UIManager } from '../ui/ui-manager.js';
 
 export class SettingsManager {
     static loadSettings() {
-        const { settings } = AppState.getState();
+        const { settings } = AppState;
         
         document.getElementById('settingHeavyWeight').value = settings.heavyWeightThreshold;
         document.getElementById('settingLaborRate').value = settings.laborRate;
@@ -22,7 +22,7 @@ export class SettingsManager {
         
         const bluetoothCheckbox = document.getElementById('settingBluetoothEnabled');
         if (bluetoothCheckbox) {
-            const { printerSettings } = AppState.getState();
+            const { printerSettings } = AppState;
             bluetoothCheckbox.checked = printerSettings.enabled || false;
             const section = document.getElementById('bluetoothPrinterSection');
             if (section) {
@@ -48,20 +48,18 @@ export class SettingsManager {
     }
 
     static saveSettings() {
-        const state = AppState.getState();
+        AppState.settings.heavyWeightThreshold = Number(document.getElementById('settingHeavyWeight').value) || 30;
+        AppState.settings.laborRate = Number(document.getElementById('settingLaborRate').value) || 6;
+        AppState.settings.autoLaborEnabled = document.getElementById('settingAutoLabor').checked;
+        AppState.settings.showHindi = document.getElementById('settingShowHindi').checked;
         
-        state.settings.heavyWeightThreshold = Number(document.getElementById('settingHeavyWeight').value) || 30;
-        state.settings.laborRate = Number(document.getElementById('settingLaborRate').value) || 6;
-        state.settings.autoLaborEnabled = document.getElementById('settingAutoLabor').checked;
-        state.settings.showHindi = document.getElementById('settingShowHindi').checked;
-        
-        localStorage.setItem('settings', JSON.stringify(state.settings));
+        localStorage.setItem('settings', JSON.stringify(AppState.settings));
         
         UIManager.hapticFeedback('light');
         UIManager.showToast('Settings saved successfully');
         
-        window.app.items.renderItems();
-        window.app.items.loadItemsDropdown();
+        window.app.items.render();
+        window.app.billing.loadItemsDropdown();
     }
 
     static async clearAllData() {
@@ -71,17 +69,70 @@ export class SettingsManager {
             true
         );
         
-        if (confirmed) {
+        if (!confirmed) return;
+        
+        UIManager.showLoading();
+        
+        try {
+            const db = firebase.firestore();
+            const user = firebase.auth().currentUser;
+            
+            if (!user) {
+                UIManager.showToast('Error: User not authenticated');
+                UIManager.hideLoading();
+                return;
+            }
+            
+            // Delete all items
+            const itemsSnapshot = await db.collection('items').get();
+            const itemsDeletePromises = itemsSnapshot.docs.map(doc => doc.ref.delete());
+            await Promise.all(itemsDeletePromises);
+            
+            // Delete all bills
+            const billsSnapshot = await db.collection('bills').get();
+            const billsDeletePromises = billsSnapshot.docs.map(doc => doc.ref.delete());
+            await Promise.all(billsDeletePromises);
+            
+            // Delete all sales
+            const salesSnapshot = await db.collection('sales').get();
+            const salesDeletePromises = salesSnapshot.docs.map(doc => doc.ref.delete());
+            await Promise.all(salesDeletePromises);
+            
+            // Delete all payments
+            const paymentsSnapshot = await db.collection('payments').get();
+            const paymentsDeletePromises = paymentsSnapshot.docs.map(doc => doc.ref.delete());
+            await Promise.all(paymentsDeletePromises);
+            
+            // Delete all stock adjustments
+            const adjustmentsSnapshot = await db.collection('stockAdjustments').get();
+            const adjustmentsDeletePromises = adjustmentsSnapshot.docs.map(doc => doc.ref.delete());
+            await Promise.all(adjustmentsDeletePromises);
+            
+            // Delete all withdrawals
+            const withdrawalsSnapshot = await db.collection('withdrawals').get();
+            const withdrawalsDeletePromises = withdrawalsSnapshot.docs.map(doc => doc.ref.delete());
+            await Promise.all(withdrawalsDeletePromises);
+            
+            // Clear local storage
             localStorage.clear();
-            location.reload();
+            
+            UIManager.hideLoading();
+            UIManager.showToast('All data cleared successfully');
+            
+            // Reload the page
+            setTimeout(() => location.reload(), 1000);
+            
+        } catch (error) {
+            console.error('Error clearing data:', error);
+            UIManager.hideLoading();
+            UIManager.showToast('Error clearing data: ' + error.message);
         }
     }
 
     static toggleBluetoothPrinter() {
         const enabled = document.getElementById('settingBluetoothEnabled').checked;
-        const state = AppState.getState();
-        state.printerSettings.enabled = enabled;
-        localStorage.setItem('printerSettings', JSON.stringify(state.printerSettings));
+        AppState.printerSettings.enabled = enabled;
+        localStorage.setItem('printerSettings', JSON.stringify(AppState.printerSettings));
         
         const section = document.getElementById('bluetoothPrinterSection');
         if (section) {
@@ -139,10 +190,9 @@ export class SettingsManager {
             UIManager.hapticFeedback('medium');
             await window.app.printer.connect(deviceId);
             
-            const state = AppState.getState();
-            state.printerSettings.deviceId = deviceId;
-            state.printerSettings.deviceName = deviceName;
-            localStorage.setItem('printerSettings', JSON.stringify(state.printerSettings));
+            AppState.printerSettings.deviceId = deviceId;
+            AppState.printerSettings.deviceName = deviceName;
+            localStorage.setItem('printerSettings', JSON.stringify(AppState.printerSettings));
             
             this.updatePrinterStatus();
             UIManager.showToast('✓ Connected to ' + deviceName);
@@ -160,10 +210,9 @@ export class SettingsManager {
             UIManager.hapticFeedback('light');
             await window.app.printer.disconnect();
             
-            const state = AppState.getState();
-            state.printerSettings.deviceId = null;
-            state.printerSettings.deviceName = null;
-            localStorage.setItem('printerSettings', JSON.stringify(state.printerSettings));
+            AppState.printerSettings.deviceId = null;
+            AppState.printerSettings.deviceName = null;
+            localStorage.setItem('printerSettings', JSON.stringify(AppState.printerSettings));
             
             this.updatePrinterStatus();
             UIManager.showToast('Printer disconnected');
@@ -173,7 +222,7 @@ export class SettingsManager {
     }
 
     static updatePrinterStatus() {
-        const { printerSettings } = AppState.getState();
+        const { printerSettings } = AppState;
         const statusText = document.getElementById('printerStatusText');
         const disconnectBtn = document.getElementById('disconnectBtn');
         const testPrintBtn = document.getElementById('testPrintBtn');

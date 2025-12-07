@@ -4,11 +4,12 @@ import { UIManager } from '../ui/ui-manager.js';
 
 export class UsersManager {
     static async loadUsers() {
-        const { userRole } = AppState.getState();
+        const userRole = AppState.userRole;
         if (userRole !== 'owner') return;
         
         try {
-            const usersSnapshot = await window.db.collection('users').orderBy('createdAt', 'desc').get();
+            const db = firebase.firestore();
+            const usersSnapshot = await db.collection('users').orderBy('createdAt', 'desc').get();
             
             const pendingUsers = [];
             const activeUsers = [];
@@ -47,16 +48,16 @@ export class UsersManager {
                     <p style="color: #999; font-size: 12px;">Registered: ${user.createdAt ? new Date(user.createdAt.toDate()).toLocaleDateString() : 'Recently'}</p>
                 </div>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button onclick="app.users.approveUser('${user.id}', 'owner')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    <button onclick="window.app.users.approveUser('${user.id}', 'owner')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         👑 Owner
                     </button>
-                    <button onclick="app.users.approveUser('${user.id}', 'manager')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #764ba2; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    <button onclick="window.app.users.approveUser('${user.id}', 'manager')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #764ba2; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         👔 Manager
                     </button>
-                    <button onclick="app.users.approveUser('${user.id}', 'staff')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    <button onclick="window.app.users.approveUser('${user.id}', 'staff')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         👤 Staff
                     </button>
-                    <button onclick="app.users.rejectUser('${user.id}')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #f56565; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    <button onclick="window.app.users.rejectUser('${user.id}')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #f56565; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         ❌ Reject
                     </button>
                 </div>
@@ -91,7 +92,7 @@ export class UsersManager {
                             </span>
                         </div>
                         ${user.id !== (AppState.currentUser ? AppState.currentUser.uid : null) ? `
-                            <button onclick="app.users.showChangeRoleDialog('${user.id}', '${user.name}', '${user.role}')" style="padding: 6px 12px; background: #f7fafc; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer;">
+                            <button onclick="window.app.users.showChangeRoleDialog('${user.id}', '${user.name}', '${user.role}')" style="padding: 6px 12px; background: #f7fafc; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer;">
                                 Edit
                             </button>
                         ` : '<span style="color: #999; font-size: 12px; padding: 8px;">(You)</span>'}
@@ -103,10 +104,11 @@ export class UsersManager {
 
     static async approveUser(userId, role) {
         try {
-            await window.db.collection('users').doc(userId).update({
+            const db = firebase.firestore();
+            await db.collection('users').doc(userId).update({
                 role: role,
                 status: 'active',
-                approvedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                approvedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
             
             UIManager.hapticFeedback('medium');
@@ -123,7 +125,8 @@ export class UsersManager {
         if (!confirmed) return;
         
         try {
-            await window.db.collection('users').doc(userId).delete();
+            const db = firebase.firestore();
+            await db.collection('users').doc(userId).delete();
             
             UIManager.hapticFeedback('light');
             UIManager.showToast('Registration rejected');
@@ -164,9 +167,10 @@ export class UsersManager {
 
     static async changeUserRole(userId, newRole) {
         try {
-            await window.db.collection('users').doc(userId).update({
+            const db = firebase.firestore();
+            await db.collection('users').doc(userId).update({
                 role: newRole,
-                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
             
             UIManager.hapticFeedback('medium');

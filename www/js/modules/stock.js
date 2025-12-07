@@ -28,7 +28,17 @@ export class StockManager {
 
         container.innerHTML = "";
         
-        Object.keys(stock).sort().forEach(itemName => {
+        // Filter to show only items with quantity > 0
+        const availableStock = Object.keys(stock)
+            .filter(itemName => stock[itemName].quantity > 0)
+            .sort();
+        
+        if (availableStock.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No stock available</p>';
+            return;
+        }
+        
+        availableStock.forEach(itemName => {
             const item = stock[itemName];
             const div = document.createElement("div");
             div.className = "stock-item";
@@ -42,7 +52,7 @@ export class StockManager {
                         </div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-size: 18px; font-weight: 700; color: ${item.quantity > 0 ? '#28a745' : '#dc3545'};">
+                        <div style="font-size: 18px; font-weight: 700; color: #28a745;">
                             ${item.quantity.toFixed(2)} kg
                         </div>
                         <div style="color: #666; font-size: 12px; margin-top: 4px;">
@@ -66,7 +76,14 @@ export class StockManager {
         if (sections[section]) sections[section].style.display = 'block';
 
         document.querySelectorAll('#stock .filter-btn').forEach(btn => btn.classList.remove('active'));
-        if (event?.target) event.target.classList.add('active');
+        if (event?.target) {
+            event.target.classList.add('active');
+        } else {
+            // If no event (programmatic call), set the active button based on section
+            const btnIndex = section === 'current' ? 0 : 1;
+            const buttons = document.querySelectorAll('#stock .filter-btn');
+            if (buttons[btnIndex]) buttons[btnIndex].classList.add('active');
+        }
 
         if (section === 'current') {
             this.renderStock();
@@ -207,19 +224,25 @@ export class StockManager {
             const typeLabels = { add: 'Added', remove: 'Removed', set: 'Set to' };
             const typeColors = { add: '#28a745', remove: '#dc3545', set: '#007bff' };
             
+            // Handle legacy data that might not have adjustType or quantity
+            const adjustType = adj.adjustType || 'set';
+            const quantity = adj.quantity !== undefined ? adj.quantity : 'Unknown';
+            const typeLabel = typeLabels[adjustType] || 'Adjusted';
+            const typeColor = typeColors[adjustType] || '#6c757d';
+            
             div.innerHTML = `
                 <div class="history-header">
-                    <strong>${adj.itemName}</strong>
-                    <span style="color: ${typeColors[adj.adjustType]}; font-weight: 600;">
-                        ${typeLabels[adj.adjustType]} ${adj.quantity} kg
+                    <strong>${adj.itemName || 'Unknown Item'}</strong>
+                    <span style="color: ${typeColor}; font-weight: 600;">
+                        ${typeLabel} ${quantity !== 'Unknown' ? quantity + ' kg' : ''}
                     </span>
                 </div>
-                <div class="history-date">${adj.date}${adj.createdByName ? ` • By: ${adj.createdByName}` : ''}</div>
+                <div class="history-date">${adj.date || 'Unknown date'}${adj.createdByName ? ` • By: ${adj.createdByName}` : ''}</div>
                 <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
                     <div style="font-size: 13px; color: #666;">
                         ${(adj.previousStock || 0).toFixed(2)} kg → ${(adj.newStock || 0).toFixed(2)} kg
                     </div>
-                    ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${adj.reason}</em></div>` : ''}
+                    ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${adj.reason}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
                 </div>
             `;
             
