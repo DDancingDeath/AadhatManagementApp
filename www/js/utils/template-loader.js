@@ -56,25 +56,24 @@ export class TemplateLoader {
         const appContent = document.createElement('div');
         appContent.id = 'appContent';
         appContent.className = 'hidden';
-        
-        // Inject all tab content
-        appContent.innerHTML = templates.navigation + 
-                              templates.billing + 
-                              templates.items + 
-                              templates.history + 
-                              templates.due + 
-                              templates.stock + 
-                              templates.sales + 
-                              templates.payments + 
-                              templates.reports + 
-                              templates.configure + 
-                              templates.settings + 
-                              templates.finance + 
-                              templates.analytics + 
-                              templates.users + 
-                              templates.chat;
-        
         document.body.appendChild(appContent);
+        
+        // Inject each template individually using insertAdjacentHTML to ensure proper DOM parsing
+        appContent.insertAdjacentHTML('beforeend', templates.navigation);
+        appContent.insertAdjacentHTML('beforeend', templates.billing);
+        appContent.insertAdjacentHTML('beforeend', templates.items);
+        appContent.insertAdjacentHTML('beforeend', templates.history);
+        appContent.insertAdjacentHTML('beforeend', templates.due);
+        appContent.insertAdjacentHTML('beforeend', templates.stock);
+        appContent.insertAdjacentHTML('beforeend', templates.sales);
+        appContent.insertAdjacentHTML('beforeend', templates.payments);
+        appContent.insertAdjacentHTML('beforeend', templates.reports);
+        appContent.insertAdjacentHTML('beforeend', templates.configure);
+        appContent.insertAdjacentHTML('beforeend', templates.settings);
+        appContent.insertAdjacentHTML('beforeend', templates.finance);
+        appContent.insertAdjacentHTML('beforeend', templates.analytics);
+        appContent.insertAdjacentHTML('beforeend', templates.users);
+        appContent.insertAdjacentHTML('beforeend', templates.chat);
         
         // Inject modals at the end
         document.body.insertAdjacentHTML('beforeend', templates.modals);
