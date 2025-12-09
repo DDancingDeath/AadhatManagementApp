@@ -168,9 +168,13 @@
                 </div>
             </div>
 
-            <div class="summary-row" style="display: flex; justify-content: space-between; padding: 12px; background: #f0fdf4; border-radius: 8px; margin-top: 12px; font-weight: 500;">
-                <span>Total: <span id="saleRunningTotal">0</span> kg</span>
-                <span>Packets: <span id="salePacketCount">0</span></span>
+            <div class="bill-summary">
+                <div class="summary-item">
+                    <span>Total: <strong><span id="saleRunningTotal">0</span> kg</strong></span>
+                </div>
+                <div class="summary-item">
+                    <span>Packets: <strong><span id="salePacketCount">0</span></strong></span>
+                </div>
             </div>
             
             <button onclick="window.app.billing.addToSalesBill()" class="add-to-bill-btn" style="width: 100%; margin-top: 12px; background: #22c55e;">Add to Bill</button>
@@ -237,7 +241,7 @@
             </button>
             <button class="save-btn save-sale-btn" id="saveSaleBtn" onclick="window.app.billing.completeSale()" style="flex: 1; min-width: 140px;">Save</button>
             <button class="print-btn print-sale-btn" id="printSaleBtn" onclick="window.app.billing.printSale()" style="flex: 1; min-width: 140px;">Print</button>
-        </div>
+                </div>
         </div>
         <!-- END SALE SECTION -->
 
