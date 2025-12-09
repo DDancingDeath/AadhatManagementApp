@@ -27,7 +27,11 @@ const BillingManager = {
         // Update button states
         if (event) {
             const buttons = document.querySelectorAll('.filter-btn');
-            buttons.forEach(btn => btn.classList.remove('active'));
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.background = '';
+                btn.style.borderColor = '';
+            });
             event.currentTarget.classList.add('active');
         }
         
@@ -37,6 +41,12 @@ const BillingManager = {
             purchaseSection.style.display = 'none';
             saleSection.style.display = 'block';
             
+            // Style sale button green when active
+            if (saleBtn.classList.contains('active')) {
+                saleBtn.style.background = '#22c55e';
+                saleBtn.style.borderColor = '#22c55e';
+            }
+            
             // Load sale dropdown
             this.loadSaleItemsDropdown();
         } else {
@@ -44,6 +54,8 @@ const BillingManager = {
             this.currentMode = 'purchase';
             saleSection.style.display = 'none';
             purchaseSection.style.display = 'block';
+            
+            // Purchase button uses default blue when active
         }
         
         UIManager.hapticFeedback();
@@ -113,6 +125,7 @@ const BillingManager = {
         if (itemIndex !== undefined && itemIndex !== '') {
             const item = AppState.items[parseInt(itemIndex)];
             if (item && item.rates && item.rates.length > 0) {
+                console.log(`Loading ${item.rates.length} rates for ${item.name}:`, item.rates);
                 item.rates.forEach(rate => {
                     const option = document.createElement('option');
                     option.value = rate;
@@ -121,6 +134,9 @@ const BillingManager = {
                 
                 // Set first rate as default
                 rateInput.value = item.rates[0];
+                console.log(`✅ Loaded ${item.rates.length} rate options`);
+            } else {
+                console.log('No rates found for item:', item);
             }
         }
     },
@@ -629,6 +645,7 @@ const BillingManager = {
         if (saleItems.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" class="no-data">No items added</td></tr>';
             this.updateSaleTotals();
+            this.updateSaleRunningTotal();
             return;
         }
         
@@ -645,6 +662,7 @@ const BillingManager = {
         `).join('');
         
         this.updateSaleTotals();
+        this.updateSaleRunningTotal();
         
         // Update total
         const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
@@ -675,6 +693,17 @@ const BillingManager = {
         if (amountReceivableEl) amountReceivableEl.textContent = Math.round(total);
         
         this.updateSalePaymentTotal();
+    },
+
+    updateSaleRunningTotal() {
+        const totalQty = saleItems.reduce((sum, item) => sum + item.qty, 0);
+        const packetCount = saleItems.length;
+        
+        const runningTotalEl = document.getElementById('saleRunningTotal');
+        const packetCountEl = document.getElementById('salePacketCount');
+        
+        if (runningTotalEl) runningTotalEl.textContent = totalQty.toFixed(1);
+        if (packetCountEl) packetCountEl.textContent = packetCount;
     },
     
     updateSalePaymentTotal() {
@@ -772,10 +801,7 @@ const BillingManager = {
             UIManager.showLoading();
             await FirebaseService.saveSale(sale);
             
-            // Update stock
-            for (const item of saleItems) {
-                await FirebaseService.reduceStock(item.name, item.qty);
-            }
+            // Stock will be automatically recalculated from sales
             
             // Clear sale
             saleItems = [];

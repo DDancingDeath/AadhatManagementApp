@@ -1,12 +1,11 @@
 <div id="billing" class="tab active">
 
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
-            <div style="display: flex; gap: 12px;">
-                <button class="filter-btn active" id="purchaseModeBtn" onclick="window.app.billing.switchMode('purchase', event)">Purchase</button>
-                <button class="filter-btn" id="saleModeBtn" onclick="window.app.billing.switchMode('sale', event)">Sale</button>
-            </div>
-            <span id="draftIndicator" style="font-size: 12px; color: #28a745; display: none;">💾 Draft saved</span>
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" id="purchaseModeBtn" onclick="window.app.billing.switchMode('purchase', event)">Purchase</button>
+            <button class="filter-btn" id="saleModeBtn" onclick="window.app.billing.switchMode('sale', event)">Sale</button>
         </div>
+        
+        <span id="draftIndicator" style="font-size: 12px; color: #28a745; display: none; margin-bottom: 12px;">💾 Draft saved</span>
 
         <!-- PURCHASE SECTION -->
         <div id="purchaseSection" style="display: block;">
@@ -88,9 +87,9 @@
                 <input type="number" inputmode="decimal" id="manualLaborCharges" value="0" oninput="window.app.billing.updateTotals();" placeholder="0" />
             </div>
             
-            <div class="total-row grand-total">
+            <div class="total-row grand-total" style="background: linear-gradient(135deg, #e3f2fd, #bbdefb);">
                 <span>Total Payable:</span>
-                <strong>₹ <span id="amountPayable">0</span></strong>
+                <strong style="color: #1976d2 !important;">₹ <span id="amountPayable">0</span></strong>
             </div>
 
             <div class="payment-row">
@@ -105,7 +104,7 @@
                 <input type="number" inputmode="decimal" id="cashPayment" oninput="window.app.billing.updatePaymentTotal();" placeholder="0" />
             </div>
             
-            <div class="payment-row payment-total">
+            <div class="payment-row payment-total" style="background: linear-gradient(135deg, #e3f2fd, #bbdefb); color: #1976d2;">
                 <span>Total Paid:</span>
                 <strong>₹ <span id="totalPayment">0</span></strong>
             </div>
@@ -144,12 +143,12 @@
             <label style="width: 100px;">Customer:</label>
             <div style="display: flex; gap: 8px; flex: 1; align-items: center;">
                 <input type="text" id="saleCustomerName" list="saleCustomerOptions" placeholder="Enter customer name (Optional)" style="flex: 1;" />
-                <button onclick="window.app.billing.pickSaleContact()" style="padding: 8px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px; display: flex; align-items: center; justify-content: center;" title="Pick Contact">👤</button>
+                <button onclick="window.app.billing.pickSaleContact()" style="padding: 8px 12px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px; display: flex; align-items: center; justify-content: center;" title="Pick Contact">👤</button>
             </div>
             <datalist id="saleCustomerOptions"></datalist>
         </div>
 
-        <div class="bill-totals" style="padding: 16px; margin-bottom: 16px; background: #f0fdf4; border: 2px solid #22c55e; border-radius: 12px;">
+        <div class="bill-totals" style="padding: 16px; margin-bottom: 16px; border-radius: 12px;">
             <div class="form-row">
                 <label>Item:</label>
                 <select id="saleItem" onchange="window.app.billing.loadSaleRates()"></select>
@@ -165,8 +164,13 @@
                 <label>Weight (kg):</label>
                 <div style="display: flex; gap: 8px; flex: 1;">
                     <input type="number" inputmode="decimal" id="saleWeight" placeholder="Enter weight" style="flex: 1;" onkeypress="if(event.key === 'Enter') { event.preventDefault(); window.app.billing.addToSalesBill(); }" />
-                    <button class="quick-add-btn-inline" onclick="window.app.billing.addToSalesBill()">Add</button>
+                    <button class="quick-add-btn-inline" onclick="window.app.billing.addToSalesBill()" style="background: #22c55e; border-color: #22c55e;">Add</button>
                 </div>
+            </div>
+
+            <div class="summary-row" style="display: flex; justify-content: space-between; padding: 12px; background: #f0fdf4; border-radius: 8px; margin-top: 12px; font-weight: 500;">
+                <span>Total: <span id="saleRunningTotal">0</span> kg</span>
+                <span>Packets: <span id="salePacketCount">0</span></span>
             </div>
             
             <button onclick="window.app.billing.addToSalesBill()" class="add-to-bill-btn" style="width: 100%; margin-top: 12px; background: #22c55e;">Add to Bill</button>
@@ -189,10 +193,10 @@
         <div class="bill-totals">
             <div class="total-row">
                 <span>Sale Total:</span>
-                <strong>₹ <span id="saleTotal">0</span></strong>
+                <strong style="color: #22c55e;">₹ <span id="saleTotal">0</span></strong>
             </div>
             
-            <div class="total-row grand-total" style="background: #d4edda; color: #155724;">
+            <div class="total-row grand-total">
                 <span>Total Receivable:</span>
                 <strong>₹ <span id="amountReceivable">0</span></strong>
             </div>
@@ -209,9 +213,9 @@
                 <input type="number" inputmode="decimal" id="saleCashPayment" oninput="window.app.billing.updateSalePaymentTotal();" placeholder="0" />
             </div>
             
-            <div class="payment-row payment-total" style="background: #cce5ff; color: #004085;">
+            <div class="payment-row payment-total" style="background: linear-gradient(135deg, #e8f5e9, #c8e6c9); color: #2e7d32;">
                 <span>Total Received:</span>
-                <strong>₹ <span id="totalReceived">0</span></strong>
+                <strong style="color: #22c55e;">₹ <span id="totalReceived">0</span></strong>
             </div>
             
             <div class="payment-row">
@@ -231,10 +235,8 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                 WhatsApp
             </button>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
-            <button class="save-btn" id="saveSaleBtn" onclick="window.app.billing.completeSale()" style="padding: 14px; font-size: 16px; font-weight: 600;">Save</button>
-            <button class="print-btn" id="printSaleBtn" onclick="window.app.billing.printSale()" style="padding: 14px; font-size: 16px; font-weight: 600;">Print</button>
+            <button class="save-btn save-sale-btn" id="saveSaleBtn" onclick="window.app.billing.completeSale()" style="flex: 1; min-width: 140px;">Save</button>
+            <button class="print-btn print-sale-btn" id="printSaleBtn" onclick="window.app.billing.printSale()" style="flex: 1; min-width: 140px;">Print</button>
         </div>
         </div>
         <!-- END SALE SECTION -->
