@@ -111,15 +111,18 @@ export class HistoryManager {
         const billHistory = AppState.billHistory || [];
         const container = document.getElementById("historyList");
         
+        // Filter to show only purchase bills by default
+        const purchaseBills = billHistory.filter(bill => bill.type === 'purchase');
+        
         // Sort bills by timestamp (newest first)
-        const allTransactions = [...billHistory].sort((a, b) => {
+        const allTransactions = [...purchaseBills].sort((a, b) => {
             const timeA = a.timestamp || new Date(a.date).getTime();
             const timeB = b.timestamp || new Date(b.date).getTime();
             return timeB - timeA;
         });
         
         if (allTransactions.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No history yet</p>';
+            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No purchase history yet</p>';
             return;
         }
 
@@ -342,5 +345,71 @@ export class HistoryManager {
 
     static closeBillDetails() {
         document.getElementById('billDetailsOverlay').classList.remove('active');
+    }
+
+    static filterHistory(type, event) {
+        // Update button states
+        const buttons = event.target.parentElement.querySelectorAll('.filter-btn');
+        buttons.forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        const billHistory = AppState.billHistory || [];
+        const container = document.getElementById("historyList");
+        
+        // Filter bills by type
+        const filteredBills = billHistory.filter(bill => bill.type === type);
+        
+        // Sort by timestamp (newest first)
+        const sortedBills = filteredBills.sort((a, b) => {
+            const timeA = a.timestamp || new Date(a.date).getTime();
+            const timeB = b.timestamp || new Date(b.date).getTime();
+            return timeB - timeA;
+        });
+        
+        if (sortedBills.length === 0) {
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">No ${type} history yet</p>`;
+            return;
+        }
+
+        container.innerHTML = "";
+
+        sortedBills.forEach(bill => {
+            const billIndex = billHistory.findIndex(b => b.id === bill.id);
+            const div = document.createElement("div");
+            div.className = "history-item";
+            
+            const totalPackets = bill.items.reduce((sum, item) => sum + (item.packets || 0), 0);
+            const totalWeight = bill.items.reduce((sum, item) => sum + (item.qty || 0), 0);
+            
+            const paymentParts = [];
+            if (bill.payment) {
+                if (bill.payment.online > 0) paymentParts.push(`Online: ₹${bill.payment.online}`);
+                if (bill.payment.cash > 0) paymentParts.push(`Cash: ₹${bill.payment.cash}`);
+                if (bill.payment.due > 0) paymentParts.push(`Due: ₹${bill.payment.due}`);
+            }
+            const paymentHTML = paymentParts.length > 0 ? `
+                <div class="history-payment">
+                    ${paymentParts.join(' | ')}
+                </div>
+            ` : '';
+            
+            // Generate short bill number from ID
+            const billNumber = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
+            const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
+            
+            div.innerHTML = `
+                <div class="history-header">
+                    <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
+                    <span style="color: #007bff; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
+                </div>
+                <div class="history-date">${bill.date}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
+                <div class="history-summary">
+                    ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets • ${totalWeight.toFixed(1)}kg
+                </div>
+                ${paymentHTML}
+            `;
+            
+            container.appendChild(div);
+        });
     }
 }

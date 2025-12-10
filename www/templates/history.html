@@ -1,5 +1,10 @@
 <div id="history" class="tab">
         
+        <div style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+            <button class="filter-btn active" onclick="window.app.history.filterHistory('purchase', event)">Purchase</button>
+            <button class="filter-btn" onclick="window.app.history.filterHistory('sale', event)">Sale</button>
+        </div>
+
         <div id="historyList">
             <p style="text-align: center; color: #888; margin-top: 40px;">No billing history yet</p>
         </div>

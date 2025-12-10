@@ -1,21 +1,21 @@
-#billTable {
+#billTable, #saleTable {
   width: 100%;
   margin-top: 16px;
   table-layout: fixed;
 }
 
-#billTable thead {
+#billTable thead, #saleTable thead {
   display: table-header-group;
   background: var(--light-bg);
   font-weight: 600;
   color: var(--dark-color);
 }
 
-#billTable thead tr {
+#billTable thead tr, #saleTable thead tr {
   display: table-row;
 }
 
-#billTable thead th {
+#billTable thead th, #saleTable thead th {
   display: table-cell;
   padding: 10px 8px;
   text-align: center;
@@ -23,13 +23,13 @@
   font-size: 14px;
 }
 
-#billTable tbody tr {
+#billTable tbody tr, #saleTable tbody tr {
   display: table-row;
   background: var(--white);
   border-bottom: 1px solid var(--border-color);
 }
 
-#billTable td {
+#billTable td, #saleTable td {
   display: table-cell;
   padding: 12px 8px;
   text-align: center;
@@ -40,20 +40,20 @@
   max-width: 0;
 }
 
-#billTable td:before {
+#billTable td:before, #saleTable td:before {
   display: none;
 }
 
-#billTable td:first-child {
+#billTable td:first-child, #saleTable td:first-child {
   text-align: left;
   font-weight: 600;
 }
 
-#billTable td:last-child {
+#billTable td:last-child, #saleTable td:last-child {
   text-align: center;
 }
 
-.remove-bill-item {
+.remove-bill-item, .remove-sale-item {
   background: var(--danger-color);
   color: var(--white);
   border: none;
