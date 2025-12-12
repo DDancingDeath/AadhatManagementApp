@@ -4,6 +4,24 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 
 export class HistoryManager {
+    // Helper to format date consistently
+    static formatDate(dateString) {
+        try {
+            const date = new Date(dateString);
+            // Format: DD/MM/YYYY, HH:MM AM/PM
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const hours = date.getHours();
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours % 12 || 12;
+            return `${day}/${month}/${year}, ${displayHours}:${minutes} ${ampm}`;
+        } catch (e) {
+            return dateString; // Fallback to original if parsing fails
+        }
+    }
+
     static async saveBillToHistory() {
         const billItems = AppState.billItems;
         const settings = AppState.settings;
@@ -109,10 +127,16 @@ export class HistoryManager {
 
     static renderHistory() {
         const billHistory = AppState.billHistory || [];
+        const salesHistory = AppState.salesHistory || [];
         const container = document.getElementById("historyList");
         
+        // Combine bills and sales, marking purchases with type
+        const bills = billHistory.map(b => ({ ...b, type: b.type || 'purchase', isPurchase: true }));
+        const sales = salesHistory.map(s => ({ ...s, type: s.type || 'sale', isPurchase: false }));
+        const allHistory = [...bills, ...sales];
+        
         // Filter to show only purchase bills by default
-        const purchaseBills = billHistory.filter(bill => bill.type === 'purchase');
+        const purchaseBills = allHistory.filter(bill => bill.type === 'purchase');
         
         // Sort bills by timestamp (newest first)
         const allTransactions = [...purchaseBills].sort((a, b) => {
@@ -129,35 +153,46 @@ export class HistoryManager {
         container.innerHTML = "";
 
         allTransactions.forEach((bill, index) => {
-            const billIndex = billHistory.findIndex(b => b.id === bill.id);
+            const billIndex = bill.isPurchase 
+                ? billHistory.findIndex(b => b.id === bill.id)
+                : -1;
             const div = document.createElement("div");
             div.className = "history-item";
+            div.setAttribute('data-type', bill.type);
             
             const totalPackets = bill.items.reduce((sum, item) => sum + (item.packets || 0), 0);
             const totalWeight = bill.items.reduce((sum, item) => sum + (item.qty || 0), 0);
             
             const paymentParts = [];
+            // Handle both old and new payment structures with color coding
             if (bill.payment) {
-                if (bill.payment.online > 0) paymentParts.push(`Online: ₹${bill.payment.online}`);
-                if (bill.payment.cash > 0) paymentParts.push(`Cash: ₹${bill.payment.cash}`);
-                if (bill.payment.due > 0) paymentParts.push(`Due: ₹${bill.payment.due}`);
+                if (bill.payment.online > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.payment.online)}</span>`);
+                if (bill.payment.cash > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.payment.cash)}</span>`);
+                if (bill.payment.due > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.payment.due)}</span>`);
+            } else {
+                // Fallback to old direct fields
+                if (bill.onlinePayment > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.onlinePayment)}</span>`);
+                if (bill.cashPayment > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.cashPayment)}</span>`);
+                if (bill.dueAmount > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.dueAmount)}</span>`);
             }
             const paymentHTML = paymentParts.length > 0 ? `
                 <div class="history-payment">
-                    ${paymentParts.join(' | ')}
+                    ${paymentParts.join(' ')}
                 </div>
             ` : '';
             
             // Generate short bill number from ID
             const billNumber = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
+            const formattedDate = this.formatDate(bill.date);
+            const itemColor = bill.type === 'sale' ? '#28a745' : '#007bff';
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
-                    <span style="color: #007bff; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
+                    <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
-                <div class="history-date">${bill.date}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
+                <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
                 <div class="history-summary">
                     ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets • ${totalWeight.toFixed(1)}kg
                 </div>
@@ -354,10 +389,16 @@ export class HistoryManager {
         event.target.classList.add('active');
 
         const billHistory = AppState.billHistory || [];
+        const salesHistory = AppState.salesHistory || [];
         const container = document.getElementById("historyList");
         
+        // Combine bills and sales
+        const bills = billHistory.map(b => ({ ...b, type: b.type || 'purchase', isPurchase: true }));
+        const sales = salesHistory.map(s => ({ ...s, type: s.type || 'sale', isPurchase: false }));
+        const allHistory = [...bills, ...sales];
+        
         // Filter bills by type
-        const filteredBills = billHistory.filter(bill => bill.type === type);
+        const filteredBills = allHistory.filter(bill => bill.type === type);
         
         // Sort by timestamp (newest first)
         const sortedBills = filteredBills.sort((a, b) => {
@@ -374,35 +415,46 @@ export class HistoryManager {
         container.innerHTML = "";
 
         sortedBills.forEach(bill => {
-            const billIndex = billHistory.findIndex(b => b.id === bill.id);
+            const billIndex = bill.isPurchase 
+                ? billHistory.findIndex(b => b.id === bill.id)
+                : -1;
             const div = document.createElement("div");
             div.className = "history-item";
+            div.setAttribute('data-type', bill.type);
             
             const totalPackets = bill.items.reduce((sum, item) => sum + (item.packets || 0), 0);
             const totalWeight = bill.items.reduce((sum, item) => sum + (item.qty || 0), 0);
             
             const paymentParts = [];
+            // Handle both old and new payment structures with color coding
             if (bill.payment) {
-                if (bill.payment.online > 0) paymentParts.push(`Online: ₹${bill.payment.online}`);
-                if (bill.payment.cash > 0) paymentParts.push(`Cash: ₹${bill.payment.cash}`);
-                if (bill.payment.due > 0) paymentParts.push(`Due: ₹${bill.payment.due}`);
+                if (bill.payment.online > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.payment.online)}</span>`);
+                if (bill.payment.cash > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.payment.cash)}</span>`);
+                if (bill.payment.due > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.payment.due)}</span>`);
+            } else {
+                // Fallback to old direct fields
+                if (bill.onlinePayment > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.onlinePayment)}</span>`);
+                if (bill.cashPayment > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.cashPayment)}</span>`);
+                if (bill.dueAmount > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.dueAmount)}</span>`);
             }
             const paymentHTML = paymentParts.length > 0 ? `
                 <div class="history-payment">
-                    ${paymentParts.join(' | ')}
+                    ${paymentParts.join(' ')}
                 </div>
             ` : '';
             
             // Generate short bill number from ID
             const billNumber = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
+            const formattedDate = HistoryManager.formatDate(bill.date);
+            const itemColor = bill.type === 'sale' ? '#28a745' : '#007bff';
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
-                    <span style="color: #007bff; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
+                    <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
-                <div class="history-date">${bill.date}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
+                <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
                 <div class="history-summary">
                     ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets • ${totalWeight.toFixed(1)}kg
                 </div>

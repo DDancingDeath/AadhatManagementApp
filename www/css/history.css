@@ -7,6 +7,14 @@
   border-left: 4px solid var(--primary-color);
 }
 
+.history-item[data-type="purchase"] {
+  border-left-color: #007bff;
+}
+
+.history-item[data-type="sale"] {
+  border-left-color: #28a745;
+}
+
 .history-header {
   display: flex;
   justify-content: space-between;
@@ -37,12 +45,33 @@
 
 .history-payment {
   font-size: 14px;
-  color: var(--success-color);
   margin: 8px 0;
-  font-weight: 600;
-  padding: 8px;
-  background: #d4edda;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.payment-badge {
+  display: inline-block;
+  padding: 6px 12px;
   border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.payment-online {
+  background: #cfe2ff;
+  color: #084298;
+}
+
+.payment-cash {
+  background: #d1e7dd;
+  color: #0f5132;
+}
+
+.payment-due {
+  background: #fff3cd;
+  color: #997404;
 }
 
 .history-items-detail {

@@ -23,11 +23,12 @@ export class OutstandingManager {
         
         if (currentDueFilter === 'purchase') {
             billHistory.forEach(bill => {
-                const totalPayable = bill.total || 0;
-                const onlinePaid = bill.payment ? (bill.payment.online || 0) : 0;
-                const cashPaid = bill.payment ? (bill.payment.cash || 0) : 0;
+                const totalPayable = bill.grandTotal || bill.amountPayable || bill.total || 0;
+                const onlinePaid = bill.payment ? (bill.payment.online || 0) : (bill.onlinePayment || 0);
+                const cashPaid = bill.payment ? (bill.payment.cash || 0) : (bill.cashPayment || 0);
+                const duePaid = bill.payment ? (bill.payment.due || 0) : (bill.dueAmount || 0);
                 const totalPaid = onlinePaid + cashPaid;
-                const outstanding = bill.payment?.due || (totalPayable - totalPaid);
+                const outstanding = duePaid > 0 ? duePaid : (totalPayable - totalPaid);
                 
                 if (outstanding > 0 && !bill.cleared) {
                     dueTransactions.push({
@@ -35,17 +36,20 @@ export class OutstandingManager {
                         transactionType: 'purchase',
                         outstanding: outstanding,
                         totalAmount: totalPayable,
-                        paidAmount: totalPaid
+                        paidAmount: totalPaid,
+                        onlinePaid: onlinePaid,
+                        cashPaid: cashPaid
                     });
                 }
             });
         } else if (currentDueFilter === 'sale') {
             salesHistory.forEach(sale => {
                 const totalReceivable = sale.total || 0;
-                const onlineReceived = sale.payment ? (sale.payment.online || 0) : 0;
-                const cashReceived = sale.payment ? (sale.payment.cash || 0) : 0;
+                const onlineReceived = sale.payment ? (sale.payment.online || 0) : (sale.onlinePayment || 0);
+                const cashReceived = sale.payment ? (sale.payment.cash || 0) : (sale.cashPayment || 0);
+                const dueReceived = sale.payment ? (sale.payment.due || 0) : (sale.dueAmount || 0);
                 const totalReceived = onlineReceived + cashReceived;
-                const outstanding = sale.payment?.due || (totalReceivable - totalReceived);
+                const outstanding = dueReceived > 0 ? dueReceived : (totalReceivable - totalReceived);
                 
                 if (outstanding > 0 && !sale.cleared) {
                     dueTransactions.push({
@@ -53,7 +57,9 @@ export class OutstandingManager {
                         transactionType: 'sale',
                         outstanding: outstanding,
                         totalAmount: totalReceivable,
-                        paidAmount: totalReceived
+                        paidAmount: totalReceived,
+                        onlineReceived: onlineReceived,
+                        cashReceived: cashReceived
                     });
                 }
             });
@@ -85,10 +91,13 @@ export class OutstandingManager {
         dueTransactions.forEach(transaction => {
             const div = document.createElement("div");
             div.className = "history-item";
+            div.setAttribute('data-type', transaction.transactionType);
+            
+            const itemColor = transaction.transactionType === 'sale' ? '#28a745' : '#007bff';
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">${billLabel} #${transaction.id}</span>${transaction.customerName ? ` • <strong>${transaction.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">${billLabel} #${transaction.id}</span>${transaction.customerName ? ` • <strong>${transaction.customerName}</strong>` : ''}
                     <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
                 </div>
                 <div class="history-date">${transaction.date}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>

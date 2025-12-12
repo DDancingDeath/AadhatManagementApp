@@ -507,10 +507,17 @@ const BillingManager = {
             dueAmount,
             customerName,
             comments,
+            type: 'purchase',
             isPurchase: true,
             date: new Date().toISOString(),
             userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            payment: {
+                online: onlinePayment,
+                cash: cashPayment,
+                due: dueAmount,
+                total: onlinePayment + cashPayment + dueAmount
+            }
         };
         
         try {
@@ -879,11 +886,18 @@ const BillingManager = {
             dueAmount: saleDue,
             customerName: saleCustomer,
             comments: saleComments,
+            type: 'sale',
             isPurchase: false,
             date: new Date().toISOString(),
             userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
             userName: AppState.userName || 'User',
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            payment: {
+                online: saleOnline,
+                cash: saleCash,
+                due: saleDue,
+                total: saleOnline + saleCash + saleDue
+            }
         };
         
         try {

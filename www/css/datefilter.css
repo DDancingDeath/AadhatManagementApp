@@ -34,6 +34,18 @@
   border-color: var(--primary-color);
 }
 
+.filter-btn.filter-purchase.active {
+  background: #007bff;
+  border-color: #007bff;
+  color: white;
+}
+
+.filter-btn.filter-sale.active {
+  background: #28a745;
+  border-color: #28a745;
+  color: white;
+}
+
 .filter-btn:active {
   transform: scale(0.98);
 }
