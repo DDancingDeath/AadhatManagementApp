@@ -3,6 +3,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { PrinterService } from '../services/printer.js';
 import { formatCurrency, debounce, generateId } from '../utils/helpers.js';
 import { DEFAULT_SETTINGS } from '../utils/constants.js';
 
@@ -880,7 +881,8 @@ const BillingManager = {
             comments: saleComments,
             isPurchase: false,
             date: new Date().toISOString(),
-            userId: AppState.auth.uid,
+            userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
+            userName: AppState.userName || 'User',
             timestamp: Date.now()
         };
         
@@ -918,6 +920,10 @@ const BillingManager = {
             }
             if (document.getElementById('saleDueCheckbox')) {
                 document.getElementById('saleDueCheckbox').checked = false;
+            }
+            // Reset total received display
+            if (document.getElementById('totalReceived')) {
+                document.getElementById('totalReceived').textContent = '0';
             }
             
             UIManager.hideLoading();
@@ -1033,12 +1039,23 @@ const BillingManager = {
         }
         
         // Collect sale data before saving
+        const saleTotal = parseFloat(document.getElementById('saleTotal')?.textContent || 0);
+        const totalPackets = parseInt(document.getElementById('totalSalePacketsInBill')?.textContent || 0);
+        
         const saleData = {
-            items: saleItems,
-            saleTotal: parseFloat(document.getElementById('saleTotal')?.textContent || 0),
-            totalPackets: parseInt(document.getElementById('totalPacketsInSale')?.textContent || 0),
+            items: saleItems.map(item => ({
+                name: item.name,
+                rate: item.rate,
+                qty: item.qty,
+                total: item.total,
+                weights: item.weights || [item.qty]
+            })),
+            billTotal: saleTotal,
+            amountPayable: saleTotal,
+            totalPackets: totalPackets,
             customerName: document.getElementById('saleCustomerName')?.value || '',
             isPurchase: false,
+            laborCharges: 0,
             date: new Date().toISOString()
         };
         

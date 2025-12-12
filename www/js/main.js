@@ -363,6 +363,7 @@ window.app = {
         render: () => HistoryManager.renderHistory(),
         reprintBill: (index) => HistoryManager.reprintBill(index),
         closeBillDetails: () => HistoryManager.closeBillDetails(),
+        filterHistory: (type, event) => HistoryManager.filterHistory(type, event),
         editBillDetails: () => {
             UIManager.showToast('Edit bill - coming soon');
             console.log('editBillDetails - not yet implemented');
