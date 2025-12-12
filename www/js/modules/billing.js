@@ -162,17 +162,11 @@ const BillingManager = {
                     option.value = rate;
                     rateDatalist.appendChild(option);
                 });
-                
                 // Set first sale rate as default
                 rateInput.value = item.saleRates[0];
-            } else if (item && item.rates && item.rates.length > 0) {
-                // Fallback to purchase rates if no sale rates
-                item.rates.forEach(rate => {
-                    const option = document.createElement('option');
-                    option.value = rate;
-                    rateDatalist.appendChild(option);
-                });
-                rateInput.value = item.rates[0];
+            } else {
+                // No sale rates available, leave dropdown empty and input blank
+                rateInput.value = '';
             }
         }
     },
