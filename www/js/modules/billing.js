@@ -10,6 +10,7 @@ import { DEFAULT_SETTINGS } from '../utils/constants.js';
 let billItems = [];
 let saleItems = [];
 let weights = [];
+let saleWeights = [];
 
 const BillingManager = {
     // -------------------- MODE TOGGLE --------------------
@@ -109,6 +110,7 @@ const BillingManager = {
         if (AppState.items.length > 0) {
             this.loadSaleRates();
         }
+        this.clearSaleWeights();
     },
     
     loadRates() {
@@ -575,16 +577,80 @@ const BillingManager = {
     
     // -------------------- SALES BILL MANAGEMENT --------------------
     
-    async addToSalesBill() {
+    async addSaleWeight(autoAddToBill = false) {
+        const weightInput = document.getElementById('saleWeight');
+        const weight = parseFloat(weightInput?.value);
+        
+        if (!weight || weight <= 0) {
+            UIManager.showToast('Please enter a valid weight');
+            return;
+        }
+        
+        saleWeights.push(weight);
+        weightInput.value = '';
+        weightInput.focus();
+        
+        this.renderSaleWeights();
+        UIManager.hapticFeedback();
+        
+        // If auto-add flag is set and this is the first/only weight, add to bill directly
+        if (autoAddToBill && saleWeights.length === 1) {
+            await this.addToSalesBill(true);
+        }
+    },
+    
+    renderSaleWeights() {
+        const container = document.getElementById('saleWeightsDisplay');
+        if (!container) return;
+        
+        const totalWeightsSpan = document.getElementById('saleRunningTotal');
+        const totalPacketsSpan = document.getElementById('salePacketCount');
+        
+        if (saleWeights.length === 0) {
+            container.innerHTML = '';
+            if (totalWeightsSpan) totalWeightsSpan.textContent = '0';
+            if (totalPacketsSpan) totalPacketsSpan.textContent = '0';
+            return;
+        }
+        
+        const total = saleWeights.reduce((sum, w) => sum + w, 0);
+        
+        if (totalWeightsSpan) totalWeightsSpan.textContent = total.toFixed(1);
+        if (totalPacketsSpan) totalPacketsSpan.textContent = saleWeights.length;
+        
+        container.innerHTML = `
+            <div class="weights-compact-list">
+                ${saleWeights.map((w, i) => `
+                    <div class="weight-chip">
+                        <span>${w.toFixed(1)}</span>
+                        <button class="weight-chip-remove" onclick="window.app.billing.removeSaleWeight(${i})">×</button>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    },
+    
+    removeSaleWeight(index) {
+        saleWeights.splice(index, 1);
+        this.renderSaleWeights();
+        UIManager.hapticFeedback();
+    },
+    
+    clearSaleWeights() {
+        saleWeights = [];
+        this.renderSaleWeights();
+        UIManager.hapticFeedback();
+    },
+    
+    async addToSalesBill(autoAdd = false) {
         const itemSelect = document.getElementById('saleItem');
         const rateInput = document.getElementById('saleRate');
         const weightInput = document.getElementById('saleWeight');
         
-        if (!itemSelect || !rateInput || !weightInput) return;
+        if (!itemSelect || !rateInput) return;
         
         const itemIndex = parseInt(itemSelect.value);
         const rate = parseFloat(rateInput.value);
-        const qty = parseFloat(weightInput.value);
         
         if (itemIndex === undefined || itemIndex === '' || isNaN(itemIndex)) {
             UIManager.showToast('Please select an item');
@@ -596,9 +662,21 @@ const BillingManager = {
             return;
         }
         
-        if (!qty || qty <= 0) {
-            UIManager.showToast('Please enter a valid quantity');
-            return;
+        // Use accumulated weights if available, otherwise fall back to single weight input
+        let qty;
+        let packets;
+        
+        if (saleWeights.length > 0) {
+            qty = saleWeights.reduce((sum, w) => sum + w, 0);
+            packets = saleWeights.length;
+        } else {
+            const singleWeight = parseFloat(weightInput?.value);
+            if (!singleWeight || singleWeight <= 0) {
+                UIManager.showToast('Please add weights or enter a quantity');
+                return;
+            }
+            qty = singleWeight;
+            packets = 1;
         }
         
         const item = AppState.items[itemIndex];
@@ -609,10 +687,18 @@ const BillingManager = {
         
         const itemName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         
-        // Check stock
-        const stock = AppState.database.stock?.find(s => s.itemName === item.name);
-        if (!stock || stock.quantity < qty) {
-            const available = stock?.quantity || 0;
+        // Check stock - stock is keyed by item ID
+        const stockItem = AppState.stock?.[item.id] || AppState.stock?.[item.name];
+        console.log('Stock check:', { 
+            itemId: item.id,
+            itemName: item.name,
+            stockItem, 
+            availableStock: stockItem?.quantity,
+            requestedQty: qty
+        });
+        
+        if (!stockItem || stockItem.quantity < qty) {
+            const available = stockItem?.quantity || 0;
             UIManager.showToast(`Insufficient stock! Available: ${available}kg`);
             return;
         }
@@ -624,15 +710,23 @@ const BillingManager = {
             name: itemName,
             rate,
             qty,
+            packets,
             total,
             timestamp: Date.now()
         });
         
         this.renderSalesBill();
         
-        // Reset inputs
-        weightInput.value = '';
-        weightInput.focus();
+        // Clear weights and reset inputs
+        saleWeights = [];
+        this.renderSaleWeights();
+        
+        itemSelect.selectedIndex = 0;
+        rateInput.value = '';
+        if (weightInput) weightInput.value = '';
+        
+        // Focus back to item selection
+        itemSelect.focus();
         
         UIManager.hapticFeedback();
         UIManager.showToast(`Added ${itemName} to sale`);
@@ -640,10 +734,15 @@ const BillingManager = {
     
     renderSalesBill() {
         const tbody = document.querySelector('#saleTable tbody');
+        const totalSalePacketsSpan = document.getElementById('totalSalePacketsInBill');
+        const saleTotalSpan = document.getElementById('saleTotal');
+        
         if (!tbody) return;
         
         if (saleItems.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="no-data">No items added</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
+            if (saleTotalSpan) saleTotalSpan.textContent = '0';
+            if (totalSalePacketsSpan) totalSalePacketsSpan.textContent = '0';
             this.updateSaleTotals();
             this.updateSaleRunningTotal();
             return;
@@ -655,19 +754,19 @@ const BillingManager = {
                 <td>₹${item.rate.toFixed(2)}</td>
                 <td>${item.qty.toFixed(1)} kg</td>
                 <td>₹${Math.round(item.total)}</td>
-                <td>
-                    <button class="delete-btn" onclick="window.app.billing.removeSaleItem(${index})" title="Remove">🗑️</button>
-                </td>
+                <td><button onclick="window.app.billing.removeSaleItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
             </tr>
         `).join('');
         
+        // Update totals
+        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
+        const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 1), 0);
+        
+        if (saleTotalSpan) saleTotalSpan.textContent = Math.round(salesTotal);
+        if (totalSalePacketsSpan) totalSalePacketsSpan.textContent = totalPackets;
+        
         this.updateSaleTotals();
         this.updateSaleRunningTotal();
-        
-        // Update total
-        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-        document.getElementById('salesBillTotal').textContent = Math.round(salesTotal);
-        
         this.updateSalePaymentTotal();
     },
     
@@ -712,13 +811,11 @@ const BillingManager = {
         const saleCash = parseFloat(document.getElementById('saleCashPayment')?.value || 0);
         
         const totalReceived = saleOnline + saleCash;
-        const balance = total - totalReceived;
         
         const totalReceivedEl = document.getElementById('totalReceived');
-        const saleDueEl = document.getElementById('saleDueAmount');
         
         if (totalReceivedEl) totalReceivedEl.textContent = Math.round(totalReceived);
-        if (saleDueEl) saleDueEl.value = balance > 0 ? Math.round(balance) : 0;
+        // Don't auto-populate due amount - user enters manually (parity with purchase)
     },
     
     fillReceivableAmount(type) {
@@ -980,6 +1077,10 @@ const BillingManager = {
     
     getWeights() {
         return weights;
+    },
+    
+    getSaleWeights() {
+        return saleWeights;
     }
 };
 

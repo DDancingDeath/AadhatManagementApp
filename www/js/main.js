@@ -241,7 +241,9 @@ window.app = {
     billing: {
         // Items & Rates loading
         loadItemsDropdown: () => BillingManager.loadItemsDropdown(),
+        loadSaleItemsDropdown: () => BillingManager.loadSaleItemsDropdown(),
         loadRates: () => BillingManager.loadRates(),
+        loadSaleRates: () => BillingManager.loadSaleRates(),
         
         // Weight management
         addWeight: () => BillingManager.addWeight(),
@@ -259,11 +261,17 @@ window.app = {
         saveBill: () => BillingManager.saveBillToHistory(),
         
         // Sales bill
-        addToSalesBill: () => BillingManager.addToSalesBill(),
+        addSaleWeight: (autoAdd) => BillingManager.addSaleWeight(autoAdd),
+        renderSaleWeights: () => BillingManager.renderSaleWeights(),
+        removeSaleWeight: (idx) => BillingManager.removeSaleWeight(idx),
+        clearSaleWeights: () => BillingManager.clearSaleWeights(),
+        addToSalesBill: (autoAdd) => BillingManager.addToSalesBill(autoAdd),
         renderSalesBill: () => BillingManager.renderSalesBill(),
         removeSalesItem: (idx) => BillingManager.removeSalesItem(idx),
+        removeSaleItem: (idx) => BillingManager.removeSaleItem(idx),
         updateSalePaymentTotal: () => BillingManager.updateSalePaymentTotal(),
         fillSalePayableAmount: (type) => BillingManager.fillSalePayableAmount(type),
+        fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
         completeSale: () => BillingManager.completeSale(),
         
         // Print bill (saves and prints)
