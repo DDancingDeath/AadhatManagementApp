@@ -78,6 +78,24 @@ const FirebaseService = {
         return sale;
     },
 
+    // Save retail sale to Firestore
+    async saveRetailSale(sale) {
+        if (!sale.userId && AppState.currentUser) {
+            sale.userId = AppState.currentUser.uid;
+        }
+        if (!sale.userName && AppState.userName) {
+            sale.userName = AppState.userName;
+        }
+        
+        if (sale.id) {
+            await db.collection('sales').doc(sale.id).set(sale);
+        } else {
+            const docRef = await db.collection('sales').add(sale);
+            sale.id = docRef.id;
+        }
+        return sale;
+    },
+
     // Load payments from Firestore
     async loadPayments() {
         const snapshot = await db.collection('payments').orderBy('date', 'desc').get();

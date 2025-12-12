@@ -147,13 +147,10 @@ const BillingManager = {
         const itemIndex = document.getElementById('saleItem')?.value;
         const rateInput = document.getElementById('saleRate');
         const rateDatalist = document.getElementById('saleRateOptions');
-        
         if (!rateInput || !rateDatalist) return;
-        
         rateDatalist.innerHTML = '';
         rateInput.value = '';
         rateInput.placeholder = 'Select or enter rate';
-        
         if (itemIndex !== undefined && itemIndex !== '') {
             const item = AppState.items[parseInt(itemIndex)];
             if (item && item.saleRates && item.saleRates.length > 0) {
@@ -162,11 +159,10 @@ const BillingManager = {
                     option.value = rate;
                     rateDatalist.appendChild(option);
                 });
-                // Set first sale rate as default
-                rateInput.value = item.saleRates[0];
+                // Optionally set first sale rate as default (commented out to allow custom entry)
+                // rateInput.value = item.saleRates[0];
             } else {
-                // No sale rates available, leave dropdown empty and input blank
-                rateInput.value = '';
+                // No sale rates available, leave datalist empty and input blank
             }
         }
     },
