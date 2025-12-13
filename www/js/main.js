@@ -67,6 +67,23 @@ function setupEventListeners() {
             e.returnValue = '';
         }
     });
+    
+    // Auto-save triggers for text field changes
+    const autoSaveFields = [
+        'customerName', 'billComments', 'manualLaborCharges',
+        'saleCustomerName', 'saleComments'
+    ];
+    
+    autoSaveFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.addEventListener('input', () => {
+                if (window.app?.billing?.triggerAutoSave) {
+                    window.app.billing.triggerAutoSave();
+                }
+            });
+        }
+    });
 }
 
 // Load user data and initialize app
@@ -144,8 +161,12 @@ async function loadUserDataAndInitialize() {
         // Render initial views
         ItemsManager.renderItems();
         BillingManager.loadItemsDropdown();
+        BillingManager.updateDraftCount();
         PaymentsManager.updateExpensePersonOptions();
         PaymentsManager.renderPaymentsHistory();
+        
+        // Check for auto-saved bill
+        await BillingManager.checkAutoSave();
         
         // Update printer status
         PrinterService.updateStatus();
@@ -180,6 +201,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
                 console.log('User is signed in:', user.uid);
+                // Set current user in AppState
+                AppState.currentUser = user;
                 const authScreen = document.getElementById('authScreen');
                 if (authScreen && authScreen.style.display !== 'none') {
                     authScreen.style.display = 'none';
@@ -187,6 +210,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 loadUserDataAndInitialize();
             } else {
                 console.log('No user signed in');
+                AppState.currentUser = null;
                 document.getElementById('authScreen').style.display = 'flex';
             }
         });
@@ -325,7 +349,20 @@ window.app = {
         fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
         completeSale: () => BillingManager.completeSale(),
         printSale: () => BillingManager.printSale(),
-        removeSaleItem: (index) => BillingManager.removeSaleItem(index)
+        removeSaleItem: (index) => BillingManager.removeSaleItem(index),
+        
+        // Draft management
+        saveDraft: () => BillingManager.saveDraft(),
+        showDrafts: () => BillingManager.showDrafts(),
+        closeDrafts: () => BillingManager.closeDrafts(),
+        loadDraft: (index) => BillingManager.loadDraft(index),
+        deleteDraft: (index) => BillingManager.deleteDraft(index),
+        clearBill: () => BillingManager.clearBill(),
+        updateDraftCount: () => BillingManager.updateDraftCount(),
+        
+        // Auto-save management
+        triggerAutoSave: () => BillingManager.triggerAutoSave(),
+        checkAutoSave: () => BillingManager.checkAutoSave()
     },
     
     // Printer

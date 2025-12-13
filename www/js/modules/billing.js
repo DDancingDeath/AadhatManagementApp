@@ -12,11 +12,14 @@ let billItems = [];
 let saleItems = [];
 let weights = [];
 let saleWeights = [];
+let autoSaveTimer = null;
+const AUTO_SAVE_DELAY = 2000; // Auto-save 2 seconds after last change
 
 const BillingManager = {
     // -------------------- MODE TOGGLE --------------------
     
     currentMode: 'purchase', // 'purchase' or 'sale'
+    autoSaveEnabled: true,
     
     switchMode(mode, event) {
         const purchaseSection = document.getElementById('purchaseSection');
@@ -184,6 +187,7 @@ const BillingManager = {
         weightInput.focus();
         
         this.renderWeights();
+        this.triggerAutoSave();
         UIManager.hapticFeedback();
         
         // If auto-add flag is set and this is the first/only weight, add to bill directly
@@ -226,12 +230,14 @@ const BillingManager = {
     removeWeight(index) {
         weights.splice(index, 1);
         this.renderWeights();
+        this.triggerAutoSave();
         UIManager.hapticFeedback();
     },
     
     clearWeights() {
         weights = [];
         this.renderWeights();
+        this.triggerAutoSave();
         UIManager.hapticFeedback();
     },
     
@@ -295,6 +301,7 @@ const BillingManager = {
         weights = [];
         this.renderWeights();
         this.renderBill();
+        this.triggerAutoSave();
         
         // Reset form
         const newWeightInput = document.getElementById('newWeight');
@@ -379,6 +386,7 @@ const BillingManager = {
     deleteBillItem(index) {
         billItems.splice(index, 1);
         this.renderBill();
+        this.triggerAutoSave();
         UIManager.hapticFeedback();
     },
     
@@ -562,6 +570,9 @@ const BillingManager = {
             // Reset totals
             this.updateTotals();
             
+            // Delete auto-save since bill is completed
+            await this.deleteAutoSave();
+            
             UIManager.hideLoading();
             UIManager.showToast('Bill saved successfully!');
             UIManager.hapticFeedback('success');
@@ -589,6 +600,7 @@ const BillingManager = {
         weightInput.focus();
         
         this.renderSaleWeights();
+        this.triggerAutoSave();
         UIManager.hapticFeedback();
         
         // If auto-add flag is set and this is the first/only weight, add to bill directly
@@ -631,12 +643,14 @@ const BillingManager = {
     removeSaleWeight(index) {
         saleWeights.splice(index, 1);
         this.renderSaleWeights();
+        this.triggerAutoSave();
         UIManager.hapticFeedback();
     },
     
     clearSaleWeights() {
         saleWeights = [];
         this.renderSaleWeights();
+        this.triggerAutoSave();
         UIManager.hapticFeedback();
     },
     
@@ -714,6 +728,7 @@ const BillingManager = {
         });
         
         this.renderSalesBill();
+        this.triggerAutoSave();
         
         // Clear weights and reset inputs
         saleWeights = [];
@@ -772,11 +787,13 @@ const BillingManager = {
         saleItems.splice(index, 1);
         this.renderSalesBill();
         this.updateSaleTotals();
+        this.triggerAutoSave();
     },
     
     removeSaleItem(index) {
         saleItems.splice(index, 1);
         this.renderSalesBill();
+        this.triggerAutoSave();
         UIManager.hapticFeedback();
     },
     
@@ -940,6 +957,9 @@ const BillingManager = {
                 document.getElementById('totalReceived').textContent = '0';
             }
             
+            // Delete auto-save since sale is completed
+            await this.deleteAutoSave();
+            
             UIManager.hideLoading();
             UIManager.showToast('Sale completed successfully!');
             UIManager.hapticFeedback('success');
@@ -1102,6 +1122,401 @@ const BillingManager = {
     
     getSaleWeights() {
         return saleWeights;
+    },
+
+    // -------------------- DRAFT MANAGEMENT --------------------
+    
+    async saveDraft() {
+        const mode = this.currentMode;
+        
+        // Get current user from Firebase Auth
+        const currentUser = firebase.auth().currentUser;
+        if (!currentUser) {
+            UIManager.showToast('Please login to save drafts');
+            return;
+        }
+
+        const draft = {
+            id: generateId(),
+            userId: currentUser.uid,
+            userName: AppState.userName || currentUser.email || 'User',
+            mode: mode,
+            timestamp: Date.now(),
+            date: new Date().toLocaleString('en-IN')
+        };
+
+        if (mode === 'purchase') {
+            // Check for unsaved weight in input field
+            const weightInput = document.getElementById('newWeight');
+            const pendingWeight = parseFloat(weightInput?.value);
+            if (pendingWeight && pendingWeight > 0) {
+                weights.push(pendingWeight);
+                weightInput.value = '';
+                this.renderWeights();
+            }
+
+            if (billItems.length === 0 && weights.length === 0) {
+                UIManager.showToast('No items or weights to save as draft');
+                return;
+            }
+            draft.items = [...billItems];
+            draft.weights = [...weights];
+            draft.customerName = document.getElementById('customerName')?.value || '';
+            draft.laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
+            draft.comments = document.getElementById('billComments')?.value || '';
+            draft.billTotal = parseFloat(document.getElementById('billTotal')?.textContent || 0);
+        } else {
+            // Check for unsaved weight in input field
+            const saleWeightInput = document.getElementById('saleWeight');
+            const pendingSaleWeight = parseFloat(saleWeightInput?.value);
+            if (pendingSaleWeight && pendingSaleWeight > 0) {
+                saleWeights.push(pendingSaleWeight);
+                saleWeightInput.value = '';
+                this.renderSaleWeights();
+            }
+
+            if (saleItems.length === 0 && saleWeights.length === 0) {
+                UIManager.showToast('No items or weights to save as draft');
+                return;
+            }
+            draft.items = [...saleItems];
+            draft.weights = [...saleWeights];
+            draft.customerName = document.getElementById('saleCustomerName')?.value || '';
+            draft.comments = document.getElementById('saleComments')?.value || '';
+            draft.saleTotal = parseFloat(document.getElementById('saleTotal')?.textContent || 0);
+        }
+
+        try {
+            // Save to Firestore
+            await db.collection('drafts').doc(draft.id).set(draft);
+            
+            UIManager.showToast('✓ Draft saved to cloud!');
+            UIManager.hapticFeedback('light');
+            await this.updateDraftCount();
+
+            // Clear current bill
+            this.clearBill();
+        } catch (error) {
+            console.error('Failed to save draft:', error);
+            UIManager.showToast('Failed to save draft');
+        }
+    },
+
+    clearBill() {
+        if (this.currentMode === 'purchase') {
+            billItems = [];
+            weights = [];
+            this.renderBill();
+            this.renderWeights();
+            document.getElementById('customerName').value = '';
+            document.getElementById('manualLaborCharges').value = '0';
+            document.getElementById('billComments').value = '';
+            document.getElementById('onlinePayment').value = '';
+            document.getElementById('cashPayment').value = '';
+            document.getElementById('dueAmount').value = '';
+            document.getElementById('onlineCheckbox').checked = false;
+            document.getElementById('cashCheckbox').checked = false;
+            document.getElementById('dueCheckbox').checked = false;
+        } else {
+            saleItems = [];
+            saleWeights = [];
+            this.renderSalesBill();
+            this.renderSaleWeights();
+            document.getElementById('saleCustomerName').value = '';
+            document.getElementById('saleComments').value = '';
+            document.getElementById('saleOnlinePayment').value = '';
+            document.getElementById('saleCashPayment').value = '';
+            document.getElementById('saleDueAmount').value = '';
+            document.getElementById('saleOnlineCheckbox').checked = false;
+            document.getElementById('saleCashCheckbox').checked = false;
+            document.getElementById('saleDueCheckbox').checked = false;
+        }
+        this.updateTotals();
+        this.deleteAutoSave(); // Delete auto-save when clearing bill
+    },
+
+    async showDrafts() {
+        const overlay = document.getElementById('draftsOverlay');
+        const content = document.getElementById('draftsContent');
+
+        try {
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) {
+                content.innerHTML = '<p style="text-align: center; color: #888; padding: 40px;">Please login to view drafts</p>';
+                overlay.classList.add('active');
+                return;
+            }
+
+            // Load drafts from Firestore
+            const snapshot = await db.collection('drafts')
+                .where('userId', '==', currentUser.uid)
+                .get();
+            
+            // Sort in memory instead of using orderBy to avoid index requirement
+            const drafts = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+            if (drafts.length === 0) {
+                content.innerHTML = '<p style="text-align: center; color: #888; padding: 40px;">No saved drafts</p>';
+            } else {
+                content.innerHTML = drafts.map((draft) => `
+                    <div class="history-item" style="margin-bottom: 12px;">
+                        <div class="history-header">
+                            <span style="font-weight: 600;">${draft.mode === 'purchase' ? '🔵 Purchase' : '🟢 Sale'} Draft</span>
+                            <span style="color: #666; font-size: 14px;">${draft.items?.length || 0} items${draft.weights?.length > 0 ? ` + ${draft.weights.length} weights` : ''}</span>
+                        </div>
+                        <div class="history-date">${draft.date}</div>
+                        ${draft.customerName ? `<div style="color: #666; font-size: 13px; margin-top: 4px;">Customer: ${draft.customerName}</div>` : ''}
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <button onclick="window.app.billing.loadDraft('${draft.id}')" style="flex: 1; padding: 8px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                                Load
+                            </button>
+                            <button onclick="window.app.billing.deleteDraft('${draft.id}')" style="flex: 1; padding: 8px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            overlay.classList.add('active');
+        } catch (error) {
+            console.error('Failed to load drafts:', error);
+            content.innerHTML = '<p style="text-align: center; color: #ef4444; padding: 40px;">Failed to load drafts</p>';
+            overlay.classList.add('active');
+        }
+    },
+
+    closeDrafts() {
+        document.getElementById('draftsOverlay').classList.remove('active');
+    },
+
+    async loadDraft(draftId) {
+        try {
+            // Load draft from Firestore
+            const draftDoc = await db.collection('drafts').doc(draftId).get();
+            
+            if (!draftDoc.exists) {
+                UIManager.showToast('Draft not found');
+                return;
+            }
+
+            const draft = draftDoc.data();
+
+            // Switch to correct mode
+            this.switchMode(draft.mode);
+
+            if (draft.mode === 'purchase') {
+                billItems = draft.items || [];
+                weights = draft.weights || [];
+                this.renderBill();
+                this.renderWeights();
+                if (draft.customerName) document.getElementById('customerName').value = draft.customerName;
+                if (draft.laborCharges) document.getElementById('manualLaborCharges').value = draft.laborCharges;
+                if (draft.comments) document.getElementById('billComments').value = draft.comments;
+            } else {
+                saleItems = draft.items || [];
+                saleWeights = draft.weights || [];
+                this.renderSalesBill();
+                this.renderSaleWeights();
+                if (draft.customerName) document.getElementById('saleCustomerName').value = draft.customerName;
+                if (draft.comments) document.getElementById('saleComments').value = draft.comments;
+            }
+
+            this.updateTotals();
+            this.closeDrafts();
+
+            // Delete the draft after loading
+            await db.collection('drafts').doc(draftId).delete();
+            await this.updateDraftCount();
+
+            UIManager.showToast('✓ Draft loaded!');
+            UIManager.hapticFeedback('light');
+        } catch (error) {
+            console.error('Failed to load draft:', error);
+            UIManager.showToast('Failed to load draft');
+        }
+    },
+
+    async deleteDraft(draftId) {
+        try {
+            await db.collection('drafts').doc(draftId).delete();
+            await this.updateDraftCount();
+            await this.showDrafts(); // Refresh the list
+            UIManager.showToast('Draft deleted');
+        } catch (error) {
+            console.error('Failed to delete draft:', error);
+            UIManager.showToast('Failed to delete draft');
+        }
+    },
+
+    async updateDraftCount() {
+        try {
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) return;
+            
+            const snapshot = await db.collection('drafts')
+                .where('userId', '==', currentUser.uid)
+                .get();
+            
+            const countElement = document.getElementById('draftCount');
+            if (countElement) {
+                countElement.textContent = snapshot.size;
+                countElement.style.display = snapshot.size > 0 ? 'inline-block' : 'none';
+            }
+        } catch (error) {
+            console.error('Failed to update draft count:', error);
+        }
+    },
+
+    // -------------------- AUTO-SAVE TO CLOUD --------------------
+
+    triggerAutoSave() {
+        if (!this.autoSaveEnabled) return;
+        
+        // Clear existing timer
+        if (autoSaveTimer) {
+            clearTimeout(autoSaveTimer);
+        }
+        
+        // Set new timer
+        autoSaveTimer = setTimeout(() => {
+            this.autoSaveToCloud();
+        }, AUTO_SAVE_DELAY);
+    },
+
+    async autoSaveToCloud() {
+        try {
+            if (!AppState.currentUser) return;
+            
+            const mode = this.currentMode;
+            const hasData = mode === 'purchase' 
+                ? (billItems.length > 0 || weights.length > 0)
+                : (saleItems.length > 0 || saleWeights.length > 0);
+            
+            if (!hasData) {
+                // No data to save, delete any existing auto-save
+                await this.deleteAutoSave();
+                return;
+            }
+
+            const autoSaveData = {
+                userId: AppState.currentUser.uid,
+                userName: AppState.userName,
+                mode: mode,
+                lastSaved: firebase.firestore.FieldValue.serverTimestamp(),
+                deviceInfo: navigator.userAgent
+            };
+
+            if (mode === 'purchase') {
+                autoSaveData.items = billItems;
+                autoSaveData.weights = weights;
+                autoSaveData.customerName = document.getElementById('customerName')?.value || '';
+                autoSaveData.laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
+                autoSaveData.comments = document.getElementById('billComments')?.value || '';
+                autoSaveData.billTotal = parseFloat(document.getElementById('billTotal')?.textContent || 0);
+            } else {
+                autoSaveData.items = saleItems;
+                autoSaveData.weights = saleWeights;
+                autoSaveData.customerName = document.getElementById('saleCustomerName')?.value || '';
+                autoSaveData.comments = document.getElementById('saleComments')?.value || '';
+                autoSaveData.saleTotal = parseFloat(document.getElementById('saleTotal')?.textContent || 0);
+            }
+
+            // Save to Firestore with user's UID as document ID
+            await db.collection('autoSaves').doc(AppState.currentUser.uid).set(autoSaveData);
+            
+        } catch (error) {
+            console.error('Auto-save failed:', error);
+        }
+    },
+
+    async deleteAutoSave() {
+        try {
+            if (!AppState.currentUser) return;
+            await db.collection('autoSaves').doc(AppState.currentUser.uid).delete();
+        } catch (error) {
+            // Ignore error if document doesn't exist
+            if (error.code !== 'not-found') {
+                console.error('Failed to delete auto-save:', error);
+            }
+        }
+    },
+
+    async checkAutoSave() {
+        try {
+            if (!AppState.currentUser) return;
+            
+            const autoSaveDoc = await db.collection('autoSaves').doc(AppState.currentUser.uid).get();
+            
+            if (!autoSaveDoc.exists) return;
+            
+            const autoSaveData = autoSaveDoc.data();
+            
+            // Show recovery prompt
+            const shouldRecover = confirm(
+                `Found an unsaved ${autoSaveData.mode === 'purchase' ? 'purchase' : 'sale'} bill from ${autoSaveData.lastSaved ? new Date(autoSaveData.lastSaved.toDate()).toLocaleString('en-IN') : 'earlier'}.\n\nDo you want to recover it?`
+            );
+            
+            if (shouldRecover) {
+                await this.recoverAutoSave(autoSaveData);
+            } else {
+                // User declined, delete the auto-save
+                await this.deleteAutoSave();
+            }
+        } catch (error) {
+            console.error('Failed to check auto-save:', error);
+        }
+    },
+
+    async recoverAutoSave(autoSaveData) {
+        try {
+            // Switch to correct mode
+            if (autoSaveData.mode !== this.currentMode) {
+                const modeBtn = autoSaveData.mode === 'purchase' 
+                    ? document.getElementById('purchaseModeBtn')
+                    : document.getElementById('saleModeBtn');
+                if (modeBtn) {
+                    this.switchMode(autoSaveData.mode, { currentTarget: modeBtn });
+                }
+            }
+
+            // Restore data
+            if (autoSaveData.mode === 'purchase') {
+                billItems = autoSaveData.items || [];
+                weights = autoSaveData.weights || [];
+                if (autoSaveData.customerName) {
+                    document.getElementById('customerName').value = autoSaveData.customerName;
+                }
+                if (autoSaveData.laborCharges) {
+                    document.getElementById('manualLaborCharges').value = autoSaveData.laborCharges;
+                }
+                if (autoSaveData.comments) {
+                    document.getElementById('billComments').value = autoSaveData.comments;
+                }
+                this.renderBill();
+                this.renderWeights();
+            } else {
+                saleItems = autoSaveData.items || [];
+                saleWeights = autoSaveData.weights || [];
+                if (autoSaveData.customerName) {
+                    document.getElementById('saleCustomerName').value = autoSaveData.customerName;
+                }
+                if (autoSaveData.comments) {
+                    document.getElementById('saleComments').value = autoSaveData.comments;
+                }
+                this.renderSale();
+                this.renderSaleWeights();
+            }
+
+            UIManager.showToast('✓ Bill recovered successfully!');
+            UIManager.hapticFeedback('success');
+            
+        } catch (error) {
+            console.error('Failed to recover auto-save:', error);
+            UIManager.showToast('Failed to recover bill');
+        }
     }
 };
 
