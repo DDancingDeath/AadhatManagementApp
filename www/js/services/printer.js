@@ -103,7 +103,7 @@ class BluetoothPrinterManager {
             drawLeft: (text, y, font) => {
                 ctx.font = `${font.weight} ${font.size}px Arial`;
                 ctx.fillStyle = '#000000';
-                ctx.fillText(text, config.padding.side, y);
+                ctx.fillText(text, 2, y);
                 return y + font.size + config.spacing.tiny;
             },
             
@@ -134,10 +134,10 @@ class BluetoothPrinterManager {
                 const itemObj = AppState.items.find(i => i.id === item.itemId || i.name === item.name);
                 const displayName = (itemObj && itemObj.hindiName) ? itemObj.hindiName : item.name;
                 
-                y = utils.drawLeft(`${displayName} (${item.weights.length} पैकेट, ${item.qty.toFixed(1)} kg)`, y, { size: 18, weight: 'normal' });
+                y = utils.drawLeft(`${displayName} (${item.weights.length} पैकेट, ${item.qty.toFixed(1)} kg)`, y, { size: 18, weight: 'bold' });
                 
                 const weightsText = item.weights.map(w => w.toFixed(1)).join(' ');
-                const maxWidth = 384 - 30;
+                const maxWidth = 380;
                 ctx.font = '16px Arial';
                 const words = weightsText.split(' ');
                 let line = '';
@@ -156,7 +156,7 @@ class BluetoothPrinterManager {
                 if (line) {
                     y = utils.drawLeft(line, y, { size: 16, weight: 'normal' });
                 }
-                y += 8;
+                y += 10;
             }
         });
         
@@ -165,7 +165,7 @@ class BluetoothPrinterManager {
 
     _drawReceiptHeader(ctx, config, utils, y) {
         y = utils.drawCenter('Receipt', y, config.fonts.title, true);
-        y += 4;
+        // y += 4;
         
         // Date/time
         const dateTime = new Date().toLocaleDateString('en-IN') + ' ' + 
@@ -263,13 +263,13 @@ class BluetoothPrinterManager {
             y += config.spacing.line;
         }
         
-        return y + 8;
+        return y;
     }
 
     async generateBillCanvas(billData) {
         const config = {
             width: 384, // 58mm thermal printer width
-            padding: { left: 10, right: 10, side: 15 },
+            padding: { left: 0, right: 0, side: 0 },
             fonts: {
                 title: { size: 26, weight: 'bold' },
                 header: { size: 20, weight: 'bold' },
@@ -278,7 +278,7 @@ class BluetoothPrinterManager {
                 small: { size: 16, weight: 'normal' },
                 total: { size: 21, weight: 'bold' }
             },
-            columns: { item: 10, rate: 110, quantity: 180, total: 295 },
+            columns: { item: 2, rate: 100, quantity: 190, total: 320 },
             spacing: { line: 24, section: 12, small: 8, tiny: 6 },
             lines: { thin: 1.5, normal: 2, bold: 3 }
         };
@@ -296,7 +296,7 @@ class BluetoothPrinterManager {
         
         // Drawing utilities
         const utils = this._createDrawingUtils(tempCtx, config);
-        let y = 30;
+        let y = 20;
 
         // Draw receipt sections
         y = this._drawWeightsBreakdown(tempCtx, billData, utils, y);
