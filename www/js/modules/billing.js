@@ -1738,12 +1738,9 @@ const BillingManager = {
             // Clear the form
             this.clearBill();
 
-            // Recalculate stock
-            await FirebaseService.calculateStockFromBills();
-
             // Navigate to history
             window.app.nav.showTab('history');
-            window.app.history.renderHistory();
+            window.app.history.render();
             
         } catch (error) {
             console.error('Failed to update bill:', error);

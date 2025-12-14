@@ -66,7 +66,7 @@ export class HistoryManager {
         
         const state = AppState;
         state.billHistory.unshift(bill);
-        await FirebaseService.calculateStockFromBills();
+        // Stock recalculation handled by script.js
         
         // Update finance overview if on Finance tab
         if (document.getElementById('financeOverview') && document.getElementById('financeOverview').style.display !== 'none') {
@@ -161,22 +161,12 @@ export class HistoryManager {
             div.setAttribute('data-type', bill.type);
             
             // Calculate packets: use weights array length if available, otherwise default to 1
-            const billId = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
-            console.log(`Bill ${billId} items:`, bill.items.map(item => ({
-                name: item.name,
-                weights: item.weights,
-                weightsLength: item.weights?.length,
-                packets: item.packets
-            })));
-            
             const totalPackets = bill.items.reduce((sum, item) => {
                 const packets = (item.weights && Array.isArray(item.weights) && item.weights.length > 0) 
                     ? item.weights.length 
                     : 1;
-                console.log(`  Item ${item.name}: weights=${item.weights?.length}, calculated packets=${packets}`);
                 return sum + packets;
             }, 0);
-            console.log(`  Total packets calculated: ${totalPackets}`);
             const totalWeight = bill.items.reduce((sum, item) => sum + (item.qty || 0), 0);
             
             const paymentParts = [];

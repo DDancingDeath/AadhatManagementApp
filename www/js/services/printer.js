@@ -90,215 +90,233 @@ class BluetoothPrinterManager {
         }
     }
 
-    async generateBillCanvas(billData) {
-        console.log('[CANVAS] Building receipt as image...');
-        
-        // STEP 1: Create large temporary canvas for drawing
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
+    _createDrawingUtils(ctx, config) {
+        return {
+            drawCenter: (text, y, font, bold = false) => {
+                ctx.font = `${bold ? 'bold ' : ''}${font.size}px Arial`;
+                ctx.fillStyle = '#000000';
+                const textWidth = ctx.measureText(text).width;
+                ctx.fillText(text, (config.width - textWidth) / 2, y);
+                return y + font.size + config.spacing.tiny;
+            },
             
-            // Set canvas size for 58mm thermal printer (384 pixels width)
-            const width = 384;
-            let y = 30;
-            tempCanvas.width = width;
-            tempCanvas.height = 2000; // Large temporary canvas
+            drawLeft: (text, y, font) => {
+                ctx.font = `${font.weight} ${font.size}px Arial`;
+                ctx.fillStyle = '#000000';
+                ctx.fillText(text, config.padding.side, y);
+                return y + font.size + config.spacing.tiny;
+            },
             
-            // White background with black text
-            tempCtx.fillStyle = '#ffffff';
-            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-            tempCtx.fillStyle = '#000000';
+            drawLine: (y, thickness = 2, sidePadding = 10) => {
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(sidePadding, y, config.width - sidePadding * 2, thickness);
+                return y;
+            },
             
-            // Helper function to draw centered text
-            const drawCenter = (text, yPos, fontSize = 20, bold = false) => {
-                tempCtx.font = `${bold ? 'bold ' : ''}${fontSize}px Arial`;
-                tempCtx.fillStyle = '#000000';
-                const textWidth = tempCtx.measureText(text).width;
-                tempCtx.fillText(text, (width - textWidth) / 2, yPos);
-                return yPos + fontSize + 6;
-            };
-            
-            // Helper function to draw left-aligned text
-            const drawLeft = (text, yPos, fontSize = 18) => {
-                tempCtx.font = `${fontSize}px Arial`;
-                tempCtx.fillStyle = '#000000';
-                tempCtx.fillText(text, 15, yPos);
-                return yPos + fontSize + 6;
-            };
-            
-            // Helper function to add spacing (no lines)
-            const addSpacing = (yPos, space = 12) => {
-                return yPos + space;
-            };
-            
-            // Build receipt content on temporary canvas
-            
-            // STEP 1: Show weights breakdown FIRST for items with multiple weights
-            tempCtx.font = '18px Arial';
-            tempCtx.fillStyle = '#000000';
-            
-            billData.items.forEach(item => {
-                if (item.weights && item.weights.length > 1) {
-                    // Get Hindi name if available
-                    const itemObj = AppState.items.find(i => i.id === item.itemId || i.name === item.name);
-                    const displayName = (itemObj && itemObj.hindiName) ? itemObj.hindiName : item.name;
-                    
-                    // Item name with packet count and total weight
-                    y = drawLeft(`${displayName} (${item.weights.length} पैकेट, ${item.qty.toFixed(1)} kg)`, y, 18);
-                    
-                    // Show weights - full width, wrapping as needed
-                    const weightsText = item.weights.map(w => w.toFixed(1)).join(' ');
-                    const maxWidth = width - 30; // 15px padding on each side
-                    tempCtx.font = '16px Arial';
-                    const words = weightsText.split(' ');
-                    let line = '';
-                    for (let i = 0; i < words.length; i++) {
-                        const testLine = line + (line ? ' ' : '') + words[i];
-                        const metrics = tempCtx.measureText(testLine);
-                        
-                        if (metrics.width > maxWidth && line) {
-                            y = drawLeft(line, y, 16);
-                            line = words[i];
-                        } else {
-                            line = testLine;
-                        }
-                    }
-                    if (line) {
-                        y = drawLeft(line, y, 16);
-                    }
-                    
-                    y = addSpacing(y, 8);
-                }
-            });
-            
-            // Draw separator line before Receipt
-            tempCtx.fillStyle = '#000000';
-            tempCtx.fillRect(15, y, width - 30, 2);
-            y = addSpacing(y, 12);
-            
-            // STEP 2: Receipt header
-            tempCtx.font = 'bold 26px Arial';
-            const receiptText = 'Receipt';
-            const receiptWidth = tempCtx.measureText(receiptText).width;
-            
-            // Draw overline above Receipt
-            tempCtx.fillStyle = '#000000';
-            tempCtx.fillRect((width - receiptWidth) / 2 - 5, y, receiptWidth + 10, 2);
-            y = addSpacing(y, 8);
-            
-            y = drawCenter('Receipt', y, 26, true);
-            
-            // Draw underline below Receipt
-            tempCtx.fillStyle = '#000000';
-            tempCtx.fillRect((width - receiptWidth) / 2 - 5, y, receiptWidth + 10, 2);
-            y = addSpacing(y, 10);
-
-            y = drawCenter(new Date().toLocaleDateString('en-IN') + ' ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }), y, 18);
-            y = addSpacing(y, 12);
-
-            if (billData.customerName) {
-                y = drawLeft('Customer: ' + billData.customerName, y, 18);
-                y += 8;
+            drawRow: (texts, y, font, alignments = ['left']) => {
+                ctx.font = `${font.weight} ${font.size}px Arial`;
+                ctx.fillStyle = '#000000';
+                texts.forEach((text, i) => {
+                    ctx.textAlign = alignments[i] || 'left';
+                    ctx.fillText(text, Object.values(config.columns)[i], y);
+                });
+                ctx.textAlign = 'left';
+                return y + config.spacing.line;
             }
+        };
+    }
 
-            // Table header with better spacing
-            tempCtx.font = 'bold 20px Arial';
-            tempCtx.fillStyle = '#000000';
-            tempCtx.textAlign = 'left';
-            tempCtx.fillText('वस्तु', 10, y);
-            tempCtx.fillText('दर(₹)', 110, y);
-            tempCtx.fillText('मात्रा(kg)', 180, y);
-            tempCtx.fillText('कुल(₹)', 295, y);
-            y += 24;
-            
-            // Draw line under header
-            tempCtx.fillStyle = '#000000';
-            tempCtx.fillRect(10, y, width - 20, 2);
-            y = addSpacing(y, 10);
-
-            // Items summary (show item name, rate, and total; do not show packets)
-            tempCtx.font = '19px Arial';
-            billData.items.forEach(item => {
-                // Get Hindi name if available
+    _drawWeightsBreakdown(ctx, billData, utils, y) {
+        ctx.font = `${DEFAULT_SETTINGS.fontSize || 18}px Arial`;
+        
+        billData.items.forEach(item => {
+            if (item.weights && item.weights.length > 1) {
                 const itemObj = AppState.items.find(i => i.id === item.itemId || i.name === item.name);
                 const displayName = (itemObj && itemObj.hindiName) ? itemObj.hindiName : item.name;
-                tempCtx.fillStyle = '#000000';
-                tempCtx.textAlign = 'left';
-                tempCtx.fillText(displayName.substring(0, 11), 10, y);
-                tempCtx.fillText(item.rate.toString(), 110, y);
-                tempCtx.fillText(item.qty.toString(), 180, y);
-                tempCtx.fillText(item.total.toString(), 295, y);
-                y += 24;
-            });
-
-            // Reset text alignment to left for totals section
-            tempCtx.textAlign = 'left';
-            
-            // Draw line before totals
-            tempCtx.fillStyle = '#000000';
-            tempCtx.fillRect(10, y, width - 20, 2);
-            y = addSpacing(y, 12);
-            
-            // Totals with proper alignment
-            tempCtx.font = '19px Arial';
-            tempCtx.fillStyle = '#000000';
-            tempCtx.fillText('कुल:', 10, y);
-            const totalText = '₹' + billData.billTotal;
-            const totalWidth = tempCtx.measureText(totalText).width;
-            tempCtx.fillText(totalText, width - totalWidth - 10, y);
-            y += 24;
-            
-            // Labor charges (subtract for purchase) - show only if > 0
-            if (billData.isPurchase && billData.laborCharges > 0) {
-                tempCtx.fillText('मजदूरी:', 10, y);
                 
-                // Show calculation only if auto-calculated (laborCalc exists)
-                const laborText = billData.laborCalc 
-                    ? `${billData.laborCalc} = ₹${billData.laborCharges}`
-                    : `₹${billData.laborCharges}`;
-                const laborWidth = tempCtx.measureText(laborText).width;
-                tempCtx.fillText(laborText, width - laborWidth - 10, y);
-                y += 24;
+                y = utils.drawLeft(`${displayName} (${item.weights.length} पैकेट, ${item.qty.toFixed(1)} kg)`, y, { size: 18, weight: 'normal' });
+                
+                const weightsText = item.weights.map(w => w.toFixed(1)).join(' ');
+                const maxWidth = 384 - 30;
+                ctx.font = '16px Arial';
+                const words = weightsText.split(' ');
+                let line = '';
+                
+                for (let i = 0; i < words.length; i++) {
+                    const testLine = line + (line ? ' ' : '') + words[i];
+                    const metrics = ctx.measureText(testLine);
+                    
+                    if (metrics.width > maxWidth && line) {
+                        y = utils.drawLeft(line, y, { size: 16, weight: 'normal' });
+                        line = words[i];
+                    } else {
+                        line = testLine;
+                    }
+                }
+                if (line) {
+                    y = utils.drawLeft(line, y, { size: 16, weight: 'normal' });
+                }
+                y += 8;
             }
+        });
+        
+        return y;
+    }
+
+    _drawReceiptHeader(ctx, config, utils, y) {
+        y = utils.drawCenter('Receipt', y, config.fonts.title, true);
+        y += 4;
+        
+        // Date/time
+        const dateTime = new Date().toLocaleDateString('en-IN') + ' ' + 
+                        new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        y = utils.drawCenter(dateTime, y, config.fonts.subtext);
+        y += config.spacing.section;
+        
+        return y;
+    }
+
+    _drawCustomerInfo(billData, utils, y) {
+        if (billData.customerName) {
+            y = utils.drawLeft('Customer: ' + billData.customerName, y, { size: 18, weight: 'normal' });
+            y += 8;
+        }
+        return y;
+    }
+
+    _drawItemsTable(ctx, billData, config, utils, y) {
+        // Table header
+        ctx.font = `bold ${config.fonts.header.size}px Arial`;
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'left';
+        ctx.fillText('वस्तु', config.columns.item, y);
+        ctx.fillText('दर(₹)', config.columns.rate, y);
+        ctx.fillText('मात्रा(kg)', config.columns.quantity, y);
+        ctx.fillText('कुल(₹)', config.columns.total, y);
+        y += config.spacing.line;
+        
+        // Items
+        ctx.font = `${config.fonts.body.size}px Arial`;
+        billData.items.forEach(item => {
+            const itemObj = AppState.items.find(i => i.id === item.itemId || i.name === item.name);
+            const displayName = (itemObj && itemObj.hindiName) ? itemObj.hindiName : item.name;
             
-            // Draw line before grand total
-            tempCtx.fillStyle = '#000000';
-            tempCtx.fillRect(10, y, width - 20, 2);
-            y = addSpacing(y, 12);
-            
-            // Total Payable (after labor deduction)
-            tempCtx.font = 'bold 21px Arial';
-            tempCtx.fillText('कुल भुगतान:', 10, y);
-            const amountPayable = billData.amountPayable || billData.grandTotal || (billData.billTotal - (billData.laborCharges || 0));
-            const payableText = '₹' + amountPayable.toFixed(2);
-            const payableWidth = tempCtx.measureText(payableText).width;
-            tempCtx.fillText(payableText, width - payableWidth - 10, y);
-            y += 26;
-            
-            y = addSpacing(y, 8);
-            
-            // Show due amount if present
-            tempCtx.font = '20px Arial';
-            if (billData.dueAmount && billData.dueAmount > 0) {
-                tempCtx.fillText('बाकी:', 10, y);
-                const dueText = '₹' + billData.dueAmount.toFixed(2);
-                const dueWidth = tempCtx.measureText(dueText).width;
-                tempCtx.fillText(dueText, width - dueWidth - 15, y);
-                y += 24;
-            }
-            
-            console.log('[WRITE] Drawing complete, height:', y);
-            
-            // STEP 2: Copy to final canvas with exact height
-            const finalCanvas = document.createElement('canvas');
-            finalCanvas.width = width;
-            finalCanvas.height = y;
-            const finalCtx = finalCanvas.getContext('2d');
-            
-            // Copy only the used portion from temp canvas
-            finalCtx.drawImage(tempCanvas, 0, 0, width, y, 0, 0, width, y);
-            
-            console.log('[CANVAS] Canvas rendered successfully');
-            return finalCanvas;
+            ctx.textAlign = 'left';
+            ctx.fillText(displayName.substring(0, 11), config.columns.item, y);
+            ctx.fillText(item.rate.toString(), config.columns.rate, y);
+            ctx.fillText(item.qty.toString(), config.columns.quantity, y);
+            ctx.fillText(item.total.toString(), config.columns.total, y);
+            y += config.spacing.line;
+        });
+        
+        // Add spacing before totals
+        y += 12;
+        
+        return y;
+    }
+
+    _drawTotalsSection(ctx, billData, config, utils, y) {
+        ctx.font = `${config.fonts.body.size}px Arial`;
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'left';
+        
+        // Subtotal
+        ctx.fillText('कुल:', config.padding.left, y);
+        const totalText = '₹' + billData.billTotal;
+        const totalWidth = ctx.measureText(totalText).width;
+        ctx.fillText(totalText, config.width - totalWidth - config.padding.left, y);
+        y += config.spacing.line;
+        
+        // Labor charges
+        if (billData.isPurchase && billData.laborCharges > 0) {
+            ctx.fillText('मजदूरी:', config.padding.left, y);
+            const laborText = billData.laborCalc 
+                ? `${billData.laborCalc} = ₹${billData.laborCharges}`
+                : `₹${billData.laborCharges}`;
+            const laborWidth = ctx.measureText(laborText).width;
+            ctx.fillText(laborText, config.width - laborWidth - config.padding.left, y);
+            y += config.spacing.line;
+        }
+        
+        // Add spacing before grand total
+        y += 8;
+        
+        // Grand total
+        ctx.font = `bold ${config.fonts.total.size}px Arial`;
+        ctx.fillText('कुल भुगतान:', config.padding.left, y);
+        const amountPayable = billData.amountPayable || billData.grandTotal || 
+                             (billData.billTotal - (billData.laborCharges || 0));
+        const payableText = '₹' + amountPayable.toFixed(2);
+        const payableWidth = ctx.measureText(payableText).width;
+        ctx.fillText(payableText, config.width - payableWidth - config.padding.left, y);
+        y += config.spacing.line;
+        
+        // Due amount (बकाया)
+        const dueAmount = billData.payment?.due || billData.dueAmount || 0;
+        if (dueAmount > 0) {
+            y += 4; // Small gap
+            ctx.font = `${config.fonts.body.size}px Arial`;
+            ctx.fillText('बकाया:', config.padding.left, y);
+            const dueText = '₹' + dueAmount.toFixed(2);
+            const dueWidth = ctx.measureText(dueText).width;
+            ctx.fillText(dueText, config.width - dueWidth - config.padding.left, y);
+            y += config.spacing.line;
+        }
+        
+        return y + 8;
+    }
+
+    async generateBillCanvas(billData) {
+        const config = {
+            width: 384, // 58mm thermal printer width
+            padding: { left: 10, right: 10, side: 15 },
+            fonts: {
+                title: { size: 26, weight: 'bold' },
+                header: { size: 20, weight: 'bold' },
+                body: { size: 19, weight: 'normal' },
+                subtext: { size: 18, weight: 'normal' },
+                small: { size: 16, weight: 'normal' },
+                total: { size: 21, weight: 'bold' }
+            },
+            columns: { item: 10, rate: 110, quantity: 180, total: 295 },
+            spacing: { line: 24, section: 12, small: 8, tiny: 6 },
+            lines: { thin: 1.5, normal: 2, bold: 3 }
+        };
+
+        // Create temporary canvas
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = config.width;
+        tempCanvas.height = 2000;
+        
+        // Initialize with white background
+        tempCtx.fillStyle = '#ffffff';
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        tempCtx.fillStyle = '#000000';
+        
+        // Drawing utilities
+        const utils = this._createDrawingUtils(tempCtx, config);
+        let y = 30;
+
+        // Draw receipt sections
+        y = this._drawWeightsBreakdown(tempCtx, billData, utils, y);
+        y += config.spacing.section;
+        
+        y = this._drawReceiptHeader(tempCtx, config, utils, y);
+        y = this._drawCustomerInfo(billData, utils, y);
+        y = this._drawItemsTable(tempCtx, billData, config, utils, y);
+        y = this._drawTotalsSection(tempCtx, billData, config, utils, y);
+        
+        // Copy to final canvas with exact height
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = config.width;
+        finalCanvas.height = y;
+        const finalCtx = finalCanvas.getContext('2d');
+        
+        // Copy only the used portion from temp canvas
+        finalCtx.drawImage(tempCanvas, 0, 0, config.width, y, 0, 0, config.width, y);
+        
+        return finalCanvas;
     }
 
     async write(billData) {

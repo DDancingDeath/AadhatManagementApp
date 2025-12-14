@@ -307,6 +307,10 @@ window.app = {
             }
             
             // Collect bill data before saving
+            const onlinePayment = parseFloat(document.getElementById('onlinePayment')?.value || 0);
+            const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
+            const duePayment = parseFloat(document.getElementById('dueAmount')?.value || 0);
+            
             const billData = {
                 items: billItems,
                 billTotal: parseFloat(document.getElementById('billTotal')?.textContent || 0),
@@ -315,7 +319,13 @@ window.app = {
                 amountPayable: parseFloat(document.getElementById('amountPayable')?.textContent || 0),
                 customerName: document.getElementById('customerName')?.value || '',
                 isPurchase: true,
-                date: new Date().toISOString()
+                date: new Date().toISOString(),
+                payment: {
+                    online: onlinePayment,
+                    cash: cashPayment,
+                    due: duePayment,
+                    total: onlinePayment + cashPayment + duePayment
+                }
             };
             
             try {
