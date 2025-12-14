@@ -138,8 +138,7 @@ const BillingManager = {
                     rateDatalist.appendChild(option);
                 });
                 
-                // Set first rate as default
-                rateInput.value = item.rates[0];
+                // Leave rate empty for user to select or type
                 console.log(`✅ Loaded ${item.rates.length} rate options`);
             } else {
                 console.log('No rates found for item:', item);
@@ -482,6 +481,11 @@ const BillingManager = {
     // -------------------- SAVE & PRINT --------------------
     
     async saveBillToHistory() {
+        // Check if in edit mode
+        if (this.editingBillIndex !== undefined) {
+            return this.saveEditedBill();
+        }
+        
         if (billItems.length === 0) {
             UIManager.showToast('No items in bill');
             return;
@@ -882,6 +886,11 @@ const BillingManager = {
     },
     
     async completeSale() {
+        // Check if in edit mode
+        if (this.editingBillIndex !== undefined) {
+            return this.saveEditedBill();
+        }
+        
         if (saleItems.length === 0) {
             UIManager.showToast('No items in sale');
             return;
@@ -1516,6 +1525,229 @@ const BillingManager = {
         } catch (error) {
             console.error('Failed to recover auto-save:', error);
             UIManager.showToast('Failed to recover bill');
+        }
+    },
+
+    // -------------------- EDIT BILL --------------------
+    
+    async editBill(billIndex) {
+        try {
+            const bill = AppState.billHistory[billIndex];
+            if (!bill) {
+                UIManager.showToast('Bill not found');
+                return;
+            }
+
+            // Store the bill being edited
+            this.editingBillIndex = billIndex;
+            this.editingBillId = bill.id;
+
+            // Switch to appropriate mode
+            const mode = bill.type === 'sale' ? 'sale' : 'purchase';
+            if (this.currentMode !== mode) {
+                const btn = mode === 'sale' ? document.getElementById('saleModeBtn') : document.getElementById('purchaseModeBtn');
+                this.switchMode(mode, { currentTarget: btn });
+            }
+
+            // Close the bill details modal
+            const overlay = document.getElementById('billDetailsOverlay');
+            if (overlay) overlay.classList.remove('active');
+
+            // Load bill data into form
+            if (mode === 'purchase') {
+                billItems = bill.items.map(item => ({ ...item }));
+                weights = [];
+                
+                // Load customer details
+                if (bill.customerName) {
+                    document.getElementById('customerName').value = bill.customerName;
+                }
+                if (bill.comments) {
+                    document.getElementById('billComments').value = bill.comments;
+                }
+                
+                // Load labor charges
+                if (bill.laborCharges) {
+                    document.getElementById('manualLaborCharges').value = bill.laborCharges;
+                }
+                
+                // Load payment details
+                if (bill.payment) {
+                    if (bill.payment.online > 0) {
+                        document.getElementById('onlinePayment').value = bill.payment.online;
+                        document.getElementById('onlineCheckbox').checked = true;
+                    }
+                    if (bill.payment.cash > 0) {
+                        document.getElementById('cashPayment').value = bill.payment.cash;
+                        document.getElementById('cashCheckbox').checked = true;
+                    }
+                    if (bill.payment.due > 0) {
+                        document.getElementById('dueAmount').value = bill.payment.due;
+                        document.getElementById('dueCheckbox').checked = true;
+                    }
+                }
+                
+                this.renderBill();
+                this.updateTotals();
+                
+                // Navigate to billing tab
+                window.app.nav.showTab('billing');
+                
+                UIManager.showToast('✏️ Editing bill - modify and save');
+            } else {
+                // Sale mode
+                saleItems = bill.items.map(item => ({ ...item }));
+                saleWeights = [];
+                
+                if (bill.customerName) {
+                    document.getElementById('saleCustomerName').value = bill.customerName;
+                }
+                if (bill.comments) {
+                    document.getElementById('saleComments').value = bill.comments;
+                }
+                
+                if (bill.payment) {
+                    if (bill.payment.online > 0) {
+                        document.getElementById('saleOnlinePayment').value = bill.payment.online;
+                        document.getElementById('saleOnlineCheckbox').checked = true;
+                    }
+                    if (bill.payment.cash > 0) {
+                        document.getElementById('saleCashPayment').value = bill.payment.cash;
+                        document.getElementById('saleCashCheckbox').checked = true;
+                    }
+                    if (bill.payment.due > 0) {
+                        document.getElementById('saleDueAmount').value = bill.payment.due;
+                        document.getElementById('saleDueCheckbox').checked = true;
+                    }
+                }
+                
+                this.renderSalesBill();
+                this.updateSaleTotals();
+                
+                window.app.nav.showTab('billing');
+                
+                UIManager.showToast('✏️ Editing sale - modify and save');
+            }
+            
+        } catch (error) {
+            console.error('Failed to load bill for editing:', error);
+            UIManager.showToast('Failed to load bill');
+        }
+    },
+
+    async saveEditedBill() {
+        try {
+            if (this.editingBillIndex === undefined) {
+                // Not in edit mode, proceed with normal save
+                return this.currentMode === 'purchase' ? this.saveBillToHistory() : this.completeSale();
+            }
+
+            const billIndex = this.editingBillIndex;
+            const bill = AppState.billHistory[billIndex];
+            
+            if (!bill) {
+                UIManager.showToast('Original bill not found');
+                return;
+            }
+
+            if (this.currentMode === 'purchase') {
+                // Update purchase bill
+                const billTotal = parseFloat(document.getElementById('billTotal').textContent);
+                const laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
+                const totalPackets = parseInt(document.getElementById('totalPacketsInBill').textContent);
+                const grandTotal = parseFloat(document.getElementById('amountPayable').textContent);
+                const onlinePayment = parseFloat(document.getElementById('onlinePayment')?.value || 0);
+                const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
+                const dueAmount = parseFloat(document.getElementById('dueAmount')?.value || 0);
+                const customerName = document.getElementById('customerName')?.value || '';
+                const comments = document.getElementById('billComments')?.value || '';
+                
+                const laborCalculationSpan = document.getElementById('laborCalculation');
+                const laborCalc = laborCalculationSpan?.textContent || null;
+
+                const updatedBill = {
+                    ...bill,
+                    items: billItems,
+                    billTotal,
+                    laborCharges,
+                    laborCalc,
+                    totalPackets,
+                    grandTotal,
+                    amountPayable: grandTotal,
+                    onlinePayment,
+                    cashPayment,
+                    dueAmount,
+                    customerName,
+                    comments,
+                    payment: {
+                        online: onlinePayment,
+                        cash: cashPayment,
+                        due: dueAmount,
+                        total: onlinePayment + cashPayment + dueAmount
+                    },
+                    editedAt: new Date().toISOString(),
+                    editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
+                };
+
+                await FirebaseService.updateBill(updatedBill);
+                AppState.billHistory[billIndex] = updatedBill;
+                
+                UIManager.showToast('✓ Bill updated successfully!');
+            } else {
+                // Update sale
+                const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
+                const saleOnline = parseFloat(document.getElementById('saleOnlinePayment')?.value || 0);
+                const saleCash = parseFloat(document.getElementById('saleCashPayment')?.value || 0);
+                const saleDue = parseFloat(document.getElementById('saleDueAmount')?.value || 0);
+                const saleCustomer = document.getElementById('saleCustomerName')?.value || '';
+                const saleComments = document.getElementById('saleComments')?.value || '';
+
+                const updatedSale = {
+                    ...bill,
+                    items: saleItems,
+                    total: salesTotal,
+                    saleTotal: salesTotal,
+                    onlinePayment: saleOnline,
+                    cashPayment: saleCash,
+                    dueAmount: saleDue,
+                    customerName: saleCustomer,
+                    comments: saleComments,
+                    payment: {
+                        online: saleOnline,
+                        cash: saleCash,
+                        due: saleDue,
+                        total: saleOnline + saleCash + saleDue
+                    },
+                    editedAt: new Date().toISOString(),
+                    editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
+                };
+
+                await FirebaseService.updateSale(updatedSale);
+                const saleIndex = AppState.salesHistory.findIndex(s => s.id === bill.id);
+                if (saleIndex !== -1) {
+                    AppState.salesHistory[saleIndex] = updatedSale;
+                }
+                
+                UIManager.showToast('✓ Sale updated successfully!');
+            }
+
+            // Clear editing state
+            this.editingBillIndex = undefined;
+            this.editingBillId = undefined;
+
+            // Clear the form
+            this.clearBill();
+
+            // Recalculate stock
+            await FirebaseService.calculateStockFromBills();
+
+            // Navigate to history
+            window.app.nav.showTab('history');
+            window.app.history.renderHistory();
+            
+        } catch (error) {
+            console.error('Failed to update bill:', error);
+            UIManager.showToast('Failed to update bill: ' + error.message);
         }
     }
 };

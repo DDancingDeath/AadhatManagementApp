@@ -138,103 +138,148 @@ class BluetoothPrinterManager {
             
             billData.items.forEach(item => {
                 if (item.weights && item.weights.length > 1) {
-                    // Item name with packet count and total weight
-                    y = drawLeft(`${item.name} (${item.weights.length} पैकेट, ${item.qty.toFixed(1)} kg)`, y, 18);
+                    // Get Hindi name if available
+                    const itemObj = AppState.items.find(i => i.id === item.itemId || i.name === item.name);
+                    const displayName = (itemObj && itemObj.hindiName) ? itemObj.hindiName : item.name;
                     
-                    // Show weights 6 per line
-                    for (let i = 0; i < item.weights.length; i += 6) {
-                        const weightsLine = item.weights.slice(i, i + 6)
-                            .map(w => w.toFixed(1))
-                            .join(' ');
-                        y = drawLeft(weightsLine, y, 16);
+                    // Item name with packet count and total weight
+                    y = drawLeft(`${displayName} (${item.weights.length} पैकेट, ${item.qty.toFixed(1)} kg)`, y, 18);
+                    
+                    // Show weights - full width, wrapping as needed
+                    const weightsText = item.weights.map(w => w.toFixed(1)).join(' ');
+                    const maxWidth = width - 30; // 15px padding on each side
+                    tempCtx.font = '16px Arial';
+                    const words = weightsText.split(' ');
+                    let line = '';
+                    for (let i = 0; i < words.length; i++) {
+                        const testLine = line + (line ? ' ' : '') + words[i];
+                        const metrics = tempCtx.measureText(testLine);
+                        
+                        if (metrics.width > maxWidth && line) {
+                            y = drawLeft(line, y, 16);
+                            line = words[i];
+                        } else {
+                            line = testLine;
+                        }
+                    }
+                    if (line) {
+                        y = drawLeft(line, y, 16);
                     }
                     
                     y = addSpacing(y, 8);
                 }
             });
             
-            // STEP 2: Receipt header
-            const receiptY = y;
-            y = drawCenter('Receipt', y, 26, true);
-            // Draw underline for Receipt
+            // Draw separator line before Receipt
             tempCtx.fillStyle = '#000000';
-            const receiptWidth = tempCtx.measureText('Receipt').width;
-            tempCtx.fillRect((width - receiptWidth) / 2, receiptY + 2, receiptWidth, 2);
-            
-            y = drawCenter(new Date().toLocaleDateString('en-IN') + ' ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }), y, 18);
+            tempCtx.fillRect(15, y, width - 30, 2);
             y = addSpacing(y, 12);
             
-            // Customer name if provided
+            // STEP 2: Receipt header
+            tempCtx.font = 'bold 26px Arial';
+            const receiptText = 'Receipt';
+            const receiptWidth = tempCtx.measureText(receiptText).width;
+            
+            // Draw overline above Receipt
+            tempCtx.fillStyle = '#000000';
+            tempCtx.fillRect((width - receiptWidth) / 2 - 5, y, receiptWidth + 10, 2);
+            y = addSpacing(y, 8);
+            
+            y = drawCenter('Receipt', y, 26, true);
+            
+            // Draw underline below Receipt
+            tempCtx.fillStyle = '#000000';
+            tempCtx.fillRect((width - receiptWidth) / 2 - 5, y, receiptWidth + 10, 2);
+            y = addSpacing(y, 10);
+
+            y = drawCenter(new Date().toLocaleDateString('en-IN') + ' ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }), y, 18);
+            y = addSpacing(y, 12);
+
             if (billData.customerName) {
                 y = drawLeft('Customer: ' + billData.customerName, y, 18);
                 y += 8;
             }
-            
-            // Table header
+
+            // Table header with better spacing
             tempCtx.font = 'bold 20px Arial';
             tempCtx.fillStyle = '#000000';
-            tempCtx.fillText('वस्तु', 15, y);
-            tempCtx.fillText('दर', 140, y);
-            tempCtx.fillText('मात्रा', 220, y);
-            tempCtx.fillText('कुल', 310, y);
+            tempCtx.textAlign = 'left';
+            tempCtx.fillText('वस्तु', 10, y);
+            tempCtx.fillText('दर(₹)', 110, y);
+            tempCtx.fillText('मात्रा(kg)', 180, y);
+            tempCtx.fillText('कुल(₹)', 295, y);
             y += 24;
-            y = addSpacing(y, 8);
             
-            // Items summary (without weight breakdown in line)
-            tempCtx.font = '18px Arial';
+            // Draw line under header
+            tempCtx.fillStyle = '#000000';
+            tempCtx.fillRect(10, y, width - 20, 2);
+            y = addSpacing(y, 10);
+
+            // Items summary (show item name, rate, and total; do not show packets)
+            tempCtx.font = '19px Arial';
             billData.items.forEach(item => {
-                const packetsCount = item.weights ? item.weights.length : 1;
-                const quantityStr = `${packetsCount}p/${item.qty}kg`;
-                
+                // Get Hindi name if available
+                const itemObj = AppState.items.find(i => i.id === item.itemId || i.name === item.name);
+                const displayName = (itemObj && itemObj.hindiName) ? itemObj.hindiName : item.name;
                 tempCtx.fillStyle = '#000000';
-                tempCtx.fillText(item.name.substring(0, 11), 15, y);
-                tempCtx.fillText('₹' + item.rate, 140, y);
-                tempCtx.fillText(quantityStr, 220, y);
-                tempCtx.fillText('₹' + item.total, 310, y);
+                tempCtx.textAlign = 'left';
+                tempCtx.fillText(displayName.substring(0, 11), 10, y);
+                tempCtx.fillText(item.rate.toString(), 110, y);
+                tempCtx.fillText(item.qty.toString(), 180, y);
+                tempCtx.fillText(item.total.toString(), 295, y);
                 y += 24;
             });
+
+            // Reset text alignment to left for totals section
+            tempCtx.textAlign = 'left';
             
+            // Draw line before totals
+            tempCtx.fillStyle = '#000000';
+            tempCtx.fillRect(10, y, width - 20, 2);
             y = addSpacing(y, 12);
             
             // Totals with proper alignment
-            tempCtx.font = '18px Arial';
+            tempCtx.font = '19px Arial';
             tempCtx.fillStyle = '#000000';
-            tempCtx.fillText('कुल:', 15, y);
+            tempCtx.fillText('कुल:', 10, y);
             const totalText = '₹' + billData.billTotal;
             const totalWidth = tempCtx.measureText(totalText).width;
-            tempCtx.fillText(totalText, width - totalWidth - 15, y);
+            tempCtx.fillText(totalText, width - totalWidth - 10, y);
             y += 24;
             
             // Labor charges (subtract for purchase) - show only if > 0
             if (billData.isPurchase && billData.laborCharges > 0) {
-                tempCtx.fillText('मजदूरी:', 15, y);
+                tempCtx.fillText('मजदूरी:', 10, y);
                 
                 // Show calculation only if auto-calculated (laborCalc exists)
                 const laborText = billData.laborCalc 
                     ? `${billData.laborCalc} = ₹${billData.laborCharges}`
                     : `₹${billData.laborCharges}`;
                 const laborWidth = tempCtx.measureText(laborText).width;
-                tempCtx.fillText(laborText, width - laborWidth - 15, y);
+                tempCtx.fillText(laborText, width - laborWidth - 10, y);
                 y += 24;
             }
             
+            // Draw line before grand total
+            tempCtx.fillStyle = '#000000';
+            tempCtx.fillRect(10, y, width - 20, 2);
             y = addSpacing(y, 12);
             
             // Total Payable (after labor deduction)
-            tempCtx.font = 'bold 20px Arial';
-            tempCtx.fillText('कुल भुगतान:', 15, y);
+            tempCtx.font = 'bold 21px Arial';
+            tempCtx.fillText('कुल भुगतान:', 10, y);
             const amountPayable = billData.amountPayable || billData.grandTotal || (billData.billTotal - (billData.laborCharges || 0));
             const payableText = '₹' + amountPayable.toFixed(2);
             const payableWidth = tempCtx.measureText(payableText).width;
-            tempCtx.fillText(payableText, width - payableWidth - 15, y);
-            y += 28;
+            tempCtx.fillText(payableText, width - payableWidth - 10, y);
+            y += 26;
             
             y = addSpacing(y, 8);
             
             // Show due amount if present
-            tempCtx.font = '18px Arial';
+            tempCtx.font = '20px Arial';
             if (billData.dueAmount && billData.dueAmount > 0) {
-                tempCtx.fillText('बाकी:', 15, y);
+                tempCtx.fillText('बाकी:', 10, y);
                 const dueText = '₹' + billData.dueAmount.toFixed(2);
                 const dueWidth = tempCtx.measureText(dueText).width;
                 tempCtx.fillText(dueText, width - dueWidth - 15, y);

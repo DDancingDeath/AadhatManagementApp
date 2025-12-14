@@ -160,7 +160,23 @@ export class HistoryManager {
             div.className = "history-item";
             div.setAttribute('data-type', bill.type);
             
-            const totalPackets = bill.items.reduce((sum, item) => sum + (item.packets || 0), 0);
+            // Calculate packets: use weights array length if available, otherwise default to 1
+            const billId = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
+            console.log(`Bill ${billId} items:`, bill.items.map(item => ({
+                name: item.name,
+                weights: item.weights,
+                weightsLength: item.weights?.length,
+                packets: item.packets
+            })));
+            
+            const totalPackets = bill.items.reduce((sum, item) => {
+                const packets = (item.weights && Array.isArray(item.weights) && item.weights.length > 0) 
+                    ? item.weights.length 
+                    : 1;
+                console.log(`  Item ${item.name}: weights=${item.weights?.length}, calculated packets=${packets}`);
+                return sum + packets;
+            }, 0);
+            console.log(`  Total packets calculated: ${totalPackets}`);
             const totalWeight = bill.items.reduce((sum, item) => sum + (item.qty || 0), 0);
             
             const paymentParts = [];
@@ -216,7 +232,7 @@ export class HistoryManager {
             return `
                 <tr>
                     <td>${item.name}</td>
-                    <td style="text-align: center;">${item.packets || 0}</td>
+                    <td style="text-align: center;">${item.weights?.length || 1}</td>
                     <td>${item.qty || 0} kg</td>
                     <td>₹${item.rate}</td>
                     <td><strong>₹${Math.round(item.total)}</strong></td>
@@ -293,12 +309,15 @@ export class HistoryManager {
             return;
         }
         
+        // Store bill index for edit functionality
+        window.currentBillIndex = index;
+        
         const itemsHTML = bill.items.map(item => {
             const weightsDisplay = item.weights ? item.weights.map(w => `${w}kg`).join(', ') : '';
             return `
                 <tr>
                     <td>${item.name}</td>
-                    <td style="text-align: center;">${item.packets || 0}</td>
+                    <td style="text-align: center;">${item.weights?.length || 1}</td>
                     <td>${weightsDisplay}</td>
                     <td>${item.qty || 0} kg</td>
                     <td>₹${item.rate}</td>
@@ -422,7 +441,13 @@ export class HistoryManager {
             div.className = "history-item";
             div.setAttribute('data-type', bill.type);
             
-            const totalPackets = bill.items.reduce((sum, item) => sum + (item.packets || 0), 0);
+            // Calculate packets from weights array
+            const totalPackets = bill.items.reduce((sum, item) => {
+                const packets = (item.weights && Array.isArray(item.weights) && item.weights.length > 0) 
+                    ? item.weights.length 
+                    : 1;
+                return sum + packets;
+            }, 0);
             const totalWeight = bill.items.reduce((sum, item) => sum + (item.qty || 0), 0);
             
             const paymentParts = [];

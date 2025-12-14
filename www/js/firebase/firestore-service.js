@@ -49,6 +49,15 @@ const FirebaseService = {
         return bill;
     },
 
+    // Update bill in Firestore
+    async updateBill(bill) {
+        if (!bill.id) {
+            throw new Error('Bill ID is required for update');
+        }
+        await db.collection('bills').doc(bill.id).set(bill);
+        return bill;
+    },
+
     // Delete bill from Firestore
     async deleteBill(billId) {
         await db.collection('bills').doc(billId).delete();
@@ -75,6 +84,15 @@ const FirebaseService = {
             const docRef = await db.collection('sales').add(sale);
             sale.id = docRef.id;
         }
+        return sale;
+    },
+
+    // Update sale in Firestore
+    async updateSale(sale) {
+        if (!sale.id) {
+            throw new Error('Sale ID is required for update');
+        }
+        await db.collection('sales').doc(sale.id).set(sale);
         return sale;
     },
 
