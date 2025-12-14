@@ -432,12 +432,12 @@ const PrinterService = {
 
     async scanDevices() {
         try {
-            await this.manager.connect();
-            this.updateStatus();
-            UIManager.showToast('Printer connected successfully!');
+            const devices = await this.manager.scan();
+            return devices;
         } catch (error) {
             console.error('Printer scan error:', error);
-            UIManager.showToast('Failed to connect printer: ' + error.message);
+            UIManager.showToast('Failed to scan devices: ' + error.message);
+            throw error;
         }
     },
 
