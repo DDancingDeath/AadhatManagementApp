@@ -12,34 +12,48 @@ class BluetoothPrinterManager {
 
     async scan() {
         if (!window.bluetoothSerial) {
-            throw new Error('Bluetooth Serial plugin not available');
+            const errorMsg = 'Bluetooth Serial plugin not available';
+            console.error('[SCAN]', errorMsg);
+            throw new Error(errorMsg);
         }
         
         return new Promise((resolve, reject) => {
             UIManager.showLoading();
-            window.bluetoothSerial.list(
-                (devices) => {
-                    UIManager.hideLoading();
-                    console.log('[SCAN] Found devices:', devices);
-                    resolve(devices);
-                },
-                (error) => {
-                    UIManager.hideLoading();
-                    console.error('[SCAN] Error:', error);
-                    reject(error);
-                }
-            );
+            
+            try {
+                console.log('[SCAN] Calling bluetoothSerial.list()...');
+                window.bluetoothSerial.list(
+                    (devices) => {
+                        UIManager.hideLoading();
+                        console.log('[SCAN] Found devices:', devices);
+                        resolve(devices || []);
+                    },
+                    (error) => {
+                        UIManager.hideLoading();
+                        const errorMsg = error || 'Failed to scan for devices';
+                        console.error('[SCAN] Error:', errorMsg);
+                        reject(new Error(errorMsg));
+                    }
+                );
+            } catch (error) {
+                UIManager.hideLoading();
+                const errorMsg = 'Bluetooth scan failed: ' + error.message;
+                console.error('[SCAN] Exception:', error);
+                reject(new Error(errorMsg));
+            }
         });
     }
 
     async connect(deviceId, deviceName = null) {
         try {
             if (!window.bluetoothSerial) {
-                throw new Error('Bluetooth Serial plugin not available');
+                const errorMsg = 'Bluetooth Serial plugin not available';
+                console.error('[CONNECT]', errorMsg);
+                throw new Error(errorMsg);
             }
             
             UIManager.showLoading();
-            console.log('[CONNECT] Connecting to:', deviceId);
+            console.log('[CONNECT] Connecting to:', deviceId, deviceName);
             
             return new Promise((resolve, reject) => {
                 window.bluetoothSerial.connect(
@@ -53,14 +67,16 @@ class BluetoothPrinterManager {
                     },
                     (error) => {
                         UIManager.hideLoading();
-                        console.error('[CONNECT] Error:', error);
-                        reject(error);
+                        const errorMsg = error || 'Connection failed';
+                        console.error('[CONNECT] Error:', errorMsg);
+                        reject(new Error(errorMsg));
                     }
                 );
             });
         } catch (error) {
             UIManager.hideLoading();
-            console.error('[CONNECT] Error:', error);
+            const errorMsg = 'Connection failed: ' + error.message;
+            console.error('[CONNECT] Exception:', error);
             throw error;
         }
     }
@@ -332,6 +348,7 @@ class BluetoothPrinterManager {
         
         try {
             const finalCanvas = await this.generateBillCanvas(billData);
+            const finalCtx = finalCanvas.getContext('2d');
             
             console.log('[WRITE] Converting to bitmap...');
             
@@ -441,6 +458,18 @@ const PrinterService = {
         }
     },
 
+    async connect(deviceId, deviceName) {
+        try {
+            await this.manager.connect(deviceId, deviceName);
+            this.updateStatus();
+            return true;
+        } catch (error) {
+            console.error('Printer connect error:', error);
+            UIManager.showToast('Failed to connect: ' + error.message);
+            throw error;
+        }
+    },
+
     async disconnect() {
         try {
             await this.manager.disconnect();
@@ -514,18 +543,20 @@ const PrinterService = {
         // Try Bluetooth first if available and connected
         if (this.manager.device && window.bluetoothSerial) {
             try {
+                console.log('[PRINT] Attempting Bluetooth print...');
                 await this.manager.write(billData);
+                console.log('[PRINT] Bluetooth print successful!');
+                UIManager.showToast('✓ Printed successfully');
                 return true;
             } catch (error) {
                 console.error('Bluetooth print failed:', error);
-                const retry = confirm('Bluetooth print failed. Show bill preview?');
-                if (retry) {
-                    return await this.showBillPreview(billData);
-                }
-                throw error;
+                UIManager.showToast('Print failed: ' + (error.message || error));
+                // Automatically show preview on Bluetooth failure
+                return await this.showBillPreview(billData);
             }
         } else {
             // No Bluetooth printer - show preview
+            console.log('[PRINT] No Bluetooth printer, showing preview');
             return await this.showBillPreview(billData);
         }
     },

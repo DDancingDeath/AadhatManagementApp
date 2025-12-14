@@ -31,12 +31,16 @@ async function injectTemplates() {
 
 // Global error handlers for debugging
 window.addEventListener('error', function(event) {
+    const errorMsg = event.error?.message || event.message || 'Unknown error';
     console.error('Global error:', event.error);
-    UIManager.showToast('An error occurred. Check console for details.');
+    alert('[DEBUG] Global error: ' + errorMsg);
+    UIManager.showToast('An error occurred: ' + errorMsg);
 });
 
 window.addEventListener('unhandledrejection', function(event) {
+    const errorMsg = event.reason?.message || event.reason || 'Unknown rejection';
     console.error('Unhandled promise rejection:', event.reason);
+    alert('[DEBUG] Unhandled rejection: ' + errorMsg);
 });
 
 // Setup event listeners
@@ -378,6 +382,7 @@ window.app = {
     // Printer
     printer: {
         scan: () => PrinterService.scanDevices(),
+        connect: (deviceId, deviceName) => PrinterService.connect(deviceId, deviceName),
         disconnect: () => PrinterService.disconnect(),
         test: () => PrinterService.testPrint(),
         updateStatus: () => PrinterService.updateStatus(),

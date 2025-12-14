@@ -147,15 +147,18 @@ export class SettingsManager {
             UIManager.hapticFeedback('light');
             
             if (!window.bluetoothSerial) {
-                await UIManager.showModal('Bluetooth is only available in the mobile app.\n\nWeb printing will be used instead.');
+                const msg = 'Bluetooth is only available in the mobile app.\n\nWeb printing will be used instead.';
+                console.log('[SETTINGS]', msg);
+                await UIManager.showModal(msg);
                 return;
             }
             
-            const devices = await window.app.printer.scanDevices();
+            const devices = await window.app.printer.scan();
             this.displayBluetoothDevices(devices);
         } catch (error) {
-            console.error('Scan error:', error);
-            await UIManager.showModal('Failed to scan devices: ' + error.message);
+            const errorMsg = 'Failed to scan devices: ' + (error.message || error);
+            console.error('[SETTINGS] Scan error:', error);
+            await UIManager.showModal(errorMsg);
         }
     }
 
@@ -170,18 +173,31 @@ export class SettingsManager {
         
         container.innerHTML = '<div style="margin-top: 12px;"><strong>Available Devices:</strong></div>';
         
-        devices.forEach(device => {
+        devices.forEach((device, index) => {
             const deviceCard = document.createElement('div');
-            deviceCard.style.cssText = 'background: #f5f5f5; padding: 12px; margin: 8px 0; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;';
+            deviceCard.style.cssText = 'background: #f5f5f5; padding: 12px; margin: 8px 0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;';
             const address = device.address || device.deviceId || device.id;
             const name = device.name || 'Unknown Device';
+            
+            // Store device info in a data attribute to avoid quote issues
+            deviceCard.setAttribute('data-device-id', address);
+            deviceCard.setAttribute('data-device-name', name);
+            
             deviceCard.innerHTML = `
                 <div>
                     <strong>${name}</strong><br>
                     <small style="color: #666;">${address}</small>
                 </div>
-                <button class="add-item-btn" onclick="app.settings.connectToPrinter('${address}', '${name}')">Connect</button>
+                <button class="add-item-btn" data-device-index="${index}">Connect</button>
             `;
+            
+            // Add click handler to the button
+            const button = deviceCard.querySelector('button');
+            button.addEventListener('click', () => {
+                console.log('[SETTINGS] Button clicked for:', address, name);
+                this.connectToPrinter(address, name);
+            });
+            
             container.appendChild(deviceCard);
         });
     }
@@ -189,7 +205,8 @@ export class SettingsManager {
     static async connectToPrinter(deviceId, deviceName) {
         try {
             UIManager.hapticFeedback('medium');
-            await window.app.printer.connect(deviceId);
+            
+            await window.app.printer.connect(deviceId, deviceName);
             
             AppState.printerSettings.deviceId = deviceId;
             AppState.printerSettings.deviceName = deviceName;
@@ -202,7 +219,9 @@ export class SettingsManager {
             if (container) container.innerHTML = '';
             
         } catch (error) {
-            await UIManager.showModal('Failed to connect: ' + error.message);
+            const errorMsg = 'Failed to connect: ' + (error.message || error);
+            console.error('[SETTINGS] Connect error:', error);
+            await UIManager.showModal(errorMsg);
         }
     }
 
