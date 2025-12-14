@@ -146,7 +146,7 @@ export class SettingsManager {
         try {
             UIManager.hapticFeedback('light');
             
-            if (!window.Capacitor || !window.Capacitor.Plugins.CapacitorThermalPrinter) {
+            if (!window.bluetoothSerial) {
                 await UIManager.showModal('Bluetooth is only available in the mobile app.\n\nWeb printing will be used instead.');
                 return;
             }
@@ -154,6 +154,7 @@ export class SettingsManager {
             const devices = await window.app.printer.scanDevices();
             this.displayBluetoothDevices(devices);
         } catch (error) {
+            console.error('Scan error:', error);
             await UIManager.showModal('Failed to scan devices: ' + error.message);
         }
     }
