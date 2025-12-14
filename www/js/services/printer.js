@@ -17,6 +17,36 @@ class BluetoothPrinterManager {
             throw new Error(errorMsg);
         }
         
+        // Request Bluetooth permissions on Android 12+
+        if (window.cordova && window.cordova.plugins && window.cordova.plugins.permissions) {
+            const permissions = window.cordova.plugins.permissions;
+            const permissionsToRequest = [
+                'android.permission.BLUETOOTH_SCAN',
+                'android.permission.BLUETOOTH_CONNECT',
+                'android.permission.ACCESS_FINE_LOCATION'
+            ];
+            
+            try {
+                await new Promise((resolve, reject) => {
+                    permissions.requestPermissions(
+                        permissionsToRequest,
+                        (status) => {
+                            if (status.hasPermission) {
+                                console.log('[SCAN] Permissions granted');
+                                resolve();
+                            } else {
+                                reject(new Error('Bluetooth permissions denied'));
+                            }
+                        },
+                        () => reject(new Error('Failed to request permissions'))
+                    );
+                });
+            } catch (permError) {
+                console.error('[SCAN] Permission error:', permError);
+                throw new Error('Bluetooth permissions required. Please grant permissions in app settings.');
+            }
+        }
+        
         return new Promise((resolve, reject) => {
             UIManager.showLoading();
             
