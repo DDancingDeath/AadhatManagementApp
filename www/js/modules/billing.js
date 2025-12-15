@@ -381,10 +381,23 @@ const BillingManager = {
         const billTotal = billItems.reduce((sum, item) => sum + item.total, 0);
         const totalPackets = billItems.reduce((sum, item) => sum + item.weights.length, 0);
         
+        // Calculate heavy packets (weight > 30kg threshold)
+        const heavyWeightThreshold = AppState.settings?.heavyWeightThreshold || 30;
+        const totalHeavyPackets = billItems.reduce((sum, item) => {
+            const heavyCount = item.weights.filter(w => w > heavyWeightThreshold).length;
+            return sum + heavyCount;
+        }, 0);
+        
         if (billTotalSpan) billTotalSpan.textContent = Math.round(billTotal);
         if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = totalPackets;
         
-        this.updateTotals();
+        // Clear manually set flag when items change
+        const laborChargesInput = document.getElementById('manualLaborCharges');
+        if (laborChargesInput) {
+            delete laborChargesInput.dataset.manuallySet;
+        }
+        
+        this.updateTotals(totalHeavyPackets);
     },
     
     deleteBillItem(index) {
@@ -394,39 +407,50 @@ const BillingManager = {
         UIManager.hapticFeedback();
     },
     
-    updateTotals() {
+    updateTotals(heavyPacketsCount = 0) {
         const billTotal = parseFloat(document.getElementById('billTotal')?.textContent || 0);
         const totalPackets = parseInt(document.getElementById('totalPacketsInBill')?.textContent || 0);
         const autoLaborCheckbox = document.getElementById('autoLaborCharge');
         const laborCalculationSpan = document.getElementById('laborCalculation');
         const laborChargesInput = document.getElementById('manualLaborCharges');
         
-        // Calculate labor charges if auto-labor is enabled
+        // Calculate labor charges if checkbox is checked
         let laborCharges = 0;
         if (autoLaborCheckbox?.checked) {
-            const laborRate = 6; // Default labor rate
-            laborCharges = laborRate * totalPackets;
+            const laborRate = AppState.settings?.laborRate || 6;
+            const autoCalculatedLabor = laborRate * heavyPacketsCount;
+            
+            // Only auto-calculate if the user hasn't manually edited the field
+            if (laborChargesInput && !laborChargesInput.dataset.manuallySet) {
+                laborChargesInput.value = autoCalculatedLabor.toFixed(0);
+            }
+            
             if (laborChargesInput) {
-                laborChargesInput.value = laborCharges.toFixed(0);
                 laborChargesInput.disabled = false;
+                laborChargesInput.style.opacity = '1';
+                laborChargesInput.style.cursor = 'text';
             }
             if (laborCalculationSpan) {
-                laborCalculationSpan.textContent = `${laborRate} × ${totalPackets}`;
+                laborCalculationSpan.textContent = `${laborRate} × ${heavyPacketsCount}`;
             }
+            
+            // Use the current value in the field
+            laborCharges = parseFloat(laborChargesInput?.value || 0);
         } else {
+            // Checkbox unchecked - no labor charges
             if (laborChargesInput) {
                 laborChargesInput.value = '0';
                 laborChargesInput.disabled = true;
+                laborChargesInput.style.opacity = '0.5';
+                laborChargesInput.style.cursor = 'not-allowed';
             }
             if (laborCalculationSpan) {
                 laborCalculationSpan.textContent = '';
             }
+            laborCharges = 0;
         }
         
-        // Calculate grand total (subtract labor charges for purchase if checkbox is checked)
-        if (autoLaborCheckbox?.checked) {
-            laborCharges = parseFloat(laborChargesInput?.value || 0);
-        }
+        // Calculate grand total (subtract labor charges for purchase)
         const grandTotal = billTotal - laborCharges;
         
         const grandTotalElement = document.getElementById('amountPayable');
@@ -506,9 +530,13 @@ const BillingManager = {
         const customerName = document.getElementById('customerName')?.value || '';
         const comments = document.getElementById('billComments')?.value || '';
         
-        // Get labor calculation string if auto-labor was used
+        // Get labor calculation string only if auto-labor was used (checkbox checked and not manually edited)
+        const autoLaborCheckbox = document.getElementById('autoLaborCharge');
+        const laborChargesInput = document.getElementById('manualLaborCharges');
         const laborCalculationSpan = document.getElementById('laborCalculation');
-        const laborCalc = laborCalculationSpan?.textContent || null;
+        const laborCalc = (autoLaborCheckbox?.checked && !laborChargesInput?.dataset.manuallySet) 
+            ? laborCalculationSpan?.textContent || null 
+            : null;
         
         const bill = {
             id: generateId(),

@@ -315,10 +315,19 @@ window.app = {
             const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
             const duePayment = parseFloat(document.getElementById('dueAmount')?.value || 0);
             
+            // Get labor calculation string only if auto-labor was used (checkbox checked and not manually edited)
+            const autoLaborCheckbox = document.getElementById('autoLaborCharge');
+            const laborChargesInput = document.getElementById('manualLaborCharges');
+            const laborCalculationSpan = document.getElementById('laborCalculation');
+            const laborCalc = (autoLaborCheckbox?.checked && !laborChargesInput?.dataset.manuallySet) 
+                ? laborCalculationSpan?.textContent || null 
+                : null;
+            
             const billData = {
                 items: billItems,
                 billTotal: parseFloat(document.getElementById('billTotal')?.textContent || 0),
                 laborCharges: parseFloat(document.getElementById('manualLaborCharges')?.value || 0),
+                laborCalc: laborCalc,
                 totalPackets: parseInt(document.getElementById('totalPacketsInBill')?.textContent || 0),
                 amountPayable: parseFloat(document.getElementById('amountPayable')?.textContent || 0),
                 customerName: document.getElementById('customerName')?.value || '',

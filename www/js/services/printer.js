@@ -275,12 +275,22 @@ class BluetoothPrinterManager {
         
         // Labor charges
         if (billData.isPurchase && billData.laborCharges > 0) {
-            ctx.fillText('मजदूरी:', config.padding.left, y);
-            const laborText = billData.laborCalc 
-                ? `${billData.laborCalc} = ₹${billData.laborCharges}`
-                : `₹${billData.laborCharges}`;
-            const laborWidth = ctx.measureText(laborText).width;
-            ctx.fillText(laborText, config.width - laborWidth - config.padding.left, y);
+            if (billData.laborCalc) {
+                // Show calculation in middle and amount on right
+                ctx.fillText('मजदूरी:', config.padding.left, y);
+                const calcWidth = ctx.measureText(billData.laborCalc).width;
+                const calcX = (config.width - calcWidth) / 2;
+                ctx.fillText(billData.laborCalc, calcX, y);
+                const laborText = `₹${billData.laborCharges}`;
+                const laborWidth = ctx.measureText(laborText).width;
+                ctx.fillText(laborText, config.width - laborWidth - config.padding.left, y);
+            } else {
+                // No calculation, just show amount
+                ctx.fillText('मजदूरी:', config.padding.left, y);
+                const laborText = `₹${billData.laborCharges}`;
+                const laborWidth = ctx.measureText(laborText).width;
+                ctx.fillText(laborText, config.width - laborWidth - config.padding.left, y);
+            }
             y += config.spacing.line;
         }
         
@@ -679,7 +689,7 @@ const PrinterService = {
         let laborDisplay = '';
         if (billData.isPurchase && billData.laborCharges > 0) {
             if (billData.isAutoLabor && billData.laborCalc) {
-                laborDisplay = `<div><span>मजदूरी:</span><span>${billData.laborCalc} = ₹${billData.laborCharges}</span></div>`;
+                laborDisplay = `<div><span>मजदूरी:</span><span style="flex: 1; text-align: center;">${billData.laborCalc}</span><span>₹${billData.laborCharges}</span></div>`;
             } else {
                 laborDisplay = `<div><span>मजदूरी:</span><span>₹${billData.laborCharges}</span></div>`;
             }

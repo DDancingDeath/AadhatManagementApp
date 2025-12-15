@@ -95,7 +95,10 @@
                     <span>Labor (₹):</span>
                 </label>
                 <span id="laborCalculation" style="color: #666; font-size: 13px;">6 × 0</span>
-                <input type="number" inputmode="decimal" id="manualLaborCharges" value="0" oninput="window.app.billing.updateTotals();" placeholder="0" />
+                <input type="number" inputmode="decimal" id="manualLaborCharges" value="0" 
+                       onchange="this.dataset.manuallySet = 'true'; window.app.billing.updateTotals();" 
+                       onfocus="this.dataset.manuallySet = 'true';" 
+                       placeholder="0" />
             </div>
             
             <div class="total-row grand-total" style="background: linear-gradient(135deg, #e3f2fd, #bbdefb);">
