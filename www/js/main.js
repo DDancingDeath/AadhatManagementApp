@@ -451,14 +451,8 @@ window.app = {
         savePersonalExpense: () => PaymentsManager.savePersonalExpense(),
         renderHistory: () => PaymentsManager.renderPaymentsHistory(),
         updateExpensePersonOptions: () => PaymentsManager.updateExpensePersonOptions(),
-        saveAndPrintBusiness: () => {
-            UIManager.showToast('Print business expense - coming soon');
-            console.log('saveAndPrintBusiness - not yet implemented');
-        },
-        saveAndPrintPersonal: () => {
-            UIManager.showToast('Print personal expense - coming soon');
-            console.log('saveAndPrintPersonal - not yet implemented');
-        }
+        saveAndPrintBusiness: () => PaymentsManager.saveAndPrintBusiness(),
+        saveAndPrintPersonal: () => PaymentsManager.saveAndPrintPersonal()
     },
     
     // Configure

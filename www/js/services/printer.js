@@ -184,7 +184,7 @@ class BluetoothPrinterManager {
                 
                 const weightsText = item.weights.map(w => w.toFixed(1)).join(' ');
                 const maxWidth = 380;
-                ctx.font = '16px Arial';
+                ctx.font = '17px Arial';
                 const words = weightsText.split(' ');
                 let line = '';
                 

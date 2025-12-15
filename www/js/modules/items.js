@@ -320,12 +320,12 @@ const ItemsManager = {
             
             // Format purchase rates
             const purchaseRates = item.rates && item.rates.length > 0 
-                ? item.rates.map(r => `₹${r}`).join(', ') 
+                ? item.rates.map(r => `${r}`).join(', ') 
                 : '-';
             
             // Format sale rates
             const saleRates = item.saleRates && item.saleRates.length > 0 
-                ? item.saleRates.map(r => `₹${r}`).join(', ') 
+                ? item.saleRates.map(r => `${r}`).join(', ') 
                 : '-';
             
             const row = document.createElement('tr');

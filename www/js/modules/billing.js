@@ -33,6 +33,11 @@ const BillingManager = {
         if (event) {
             const buttons = document.querySelectorAll('.filter-btn');
             buttons.forEach(btn => {
+                // Skip Save, Drafts, and Clear buttons
+                const buttonText = btn.textContent.trim();
+                if (buttonText.startsWith('💾') || buttonText.startsWith('📋') || buttonText.startsWith('🗑️')) {
+                    return;
+                }
                 btn.classList.remove('active');
                 btn.style.background = '';
                 btn.style.borderColor = '';

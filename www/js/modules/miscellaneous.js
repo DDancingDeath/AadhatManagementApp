@@ -181,4 +181,137 @@ export class PaymentsManager {
             </div>
         `).join('');
     }
+
+    static printExpenseReceipt(expense) {
+        const printContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Expense Receipt</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; }
+                    h2 { text-align: center; }
+                    .details { margin: 20px 0; }
+                    .details div { padding: 8px 0; border-bottom: 1px solid #eee; }
+                </style>
+            </head>
+            <body>
+                <h2>${expense.category === 'business' ? 'BUSINESS EXPENSE' : 'PERSONAL EXPENSE'}</h2>
+                <div class="details">
+                    <div><strong>Type:</strong> ${expense.type}</div>
+                    <div><strong>Amount:</strong> ₹${expense.amount}</div>
+                    ${expense.personName ? `<div><strong>Person:</strong> ${expense.personName}</div>` : ''}
+                    ${expense.remarks ? `<div><strong>Remarks:</strong> ${expense.remarks}</div>` : ''}
+                    <div><strong>Date:</strong> ${expense.date}</div>
+                </div>
+            </body>
+            </html>
+        `;
+
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(printContent);
+        doc.close();
+        
+        setTimeout(() => {
+            iframe.contentWindow.print();
+            setTimeout(() => document.body.removeChild(iframe), 500);
+        }, 250);
+    }
+
+    static async saveAndPrintBusiness() {
+        const type = document.getElementById('businessExpenseType').value.trim();
+        const personName = document.getElementById('businessExpensePerson').value.trim();
+        const amount = Number(document.getElementById('businessExpenseAmount').value);
+        const remarks = document.getElementById('businessExpenseRemarks').value.trim();
+
+        if (!type) {
+            UIManager.showModal('Please enter expense type');
+            return;
+        }
+
+        if (!amount || amount <= 0) {
+            UIManager.showModal('Please enter a valid amount');
+            return;
+        }
+
+        const expense = {
+            id: Date.now(),
+            type,
+            personName,
+            amount,
+            remarks,
+            category: 'business',
+            date: new Date().toLocaleString('en-IN'),
+            createdBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
+            createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
+        };
+
+        await FirebaseService.savePayment(expense);
+        
+        UIManager.hapticFeedback('medium');
+        UIManager.showToast('✓ Business expense saved');
+        
+        document.getElementById('businessExpenseType').value = '';
+        document.getElementById('businessExpensePerson').value = '';
+        document.getElementById('businessExpenseAmount').value = '';
+        document.getElementById('businessExpenseRemarks').value = '';
+        
+        if (window.app.finance && document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
+            window.app.finance.calculateOverview();
+        }
+
+        // Print the expense
+        this.printExpenseReceipt(expense);
+    }
+
+    static async saveAndPrintPersonal() {
+        const type = document.getElementById('personalExpenseType').value.trim();
+        const amount = Number(document.getElementById('personalExpenseAmount').value);
+        const personName = document.getElementById('personalExpensePerson').value.trim();
+        const remarks = document.getElementById('personalExpenseRemarks').value.trim();
+
+        if (!type) {
+            UIManager.showModal('Please enter expense type');
+            return;
+        }
+
+        if (!amount || amount <= 0) {
+            UIManager.showModal('Please enter a valid amount');
+            return;
+        }
+
+        const expense = {
+            id: Date.now(),
+            type,
+            personName,
+            amount,
+            remarks,
+            category: 'personal',
+            date: new Date().toLocaleString('en-IN'),
+            createdBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
+            createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
+        };
+
+        await FirebaseService.savePayment(expense);
+        
+        UIManager.hapticFeedback('medium');
+        UIManager.showToast('✓ Personal expense saved');
+        
+        document.getElementById('personalExpenseType').value = '';
+        document.getElementById('personalExpenseAmount').value = '';
+        document.getElementById('personalExpensePerson').value = '';
+        document.getElementById('personalExpenseRemarks').value = '';
+        
+        if (window.app.finance && document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
+            window.app.finance.calculateOverview();
+        }
+
+        // Print the expense
+        this.printExpenseReceipt(expense);
+    }
 }
