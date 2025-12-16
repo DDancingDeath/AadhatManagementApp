@@ -287,7 +287,7 @@ const BillingManager = {
         }
         
         const qty = weights.reduce((sum, w) => sum + w, 0);
-        const total = qty * rate;
+        const total = Math.round(qty * rate);
         
         const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         
@@ -752,7 +752,7 @@ const BillingManager = {
             return;
         }
         
-        const total = qty * rate;
+        const total = Math.round(qty * rate);
         
         saleItems.push({
             itemId: item.id,

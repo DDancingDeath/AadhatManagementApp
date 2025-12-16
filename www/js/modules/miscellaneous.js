@@ -182,45 +182,13 @@ export class PaymentsManager {
         `).join('');
     }
 
-    static printExpenseReceipt(expense) {
-        const printContent = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Expense Receipt</title>
-                <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; }
-                    h2 { text-align: center; }
-                    .details { margin: 20px 0; }
-                    .details div { padding: 8px 0; border-bottom: 1px solid #eee; }
-                </style>
-            </head>
-            <body>
-                <h2>${expense.category === 'business' ? 'BUSINESS EXPENSE' : 'PERSONAL EXPENSE'}</h2>
-                <div class="details">
-                    <div><strong>Type:</strong> ${expense.type}</div>
-                    <div><strong>Amount:</strong> ₹${expense.amount}</div>
-                    ${expense.personName ? `<div><strong>Person:</strong> ${expense.personName}</div>` : ''}
-                    ${expense.remarks ? `<div><strong>Remarks:</strong> ${expense.remarks}</div>` : ''}
-                    <div><strong>Date:</strong> ${expense.date}</div>
-                </div>
-            </body>
-            </html>
-        `;
-
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-        
-        const doc = iframe.contentWindow.document;
-        doc.open();
-        doc.write(printContent);
-        doc.close();
-        
-        setTimeout(() => {
-            iframe.contentWindow.print();
-            setTimeout(() => document.body.removeChild(iframe), 500);
-        }, 250);
+    static async printExpenseReceipt(expense) {
+        // Always use PrinterService for consistent preview/print experience
+        if (window.app && window.app.printer) {
+            await window.app.printer.printExpense(expense);
+        } else {
+            UIManager.showToast('Printer service not available');
+        }
     }
 
     static async saveAndPrintBusiness() {

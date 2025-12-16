@@ -251,7 +251,7 @@ class BluetoothPrinterManager {
             ctx.fillText(displayName.substring(0, 11), config.columns.item, y);
             ctx.fillText(item.rate.toString(), config.columns.rate, y);
             ctx.fillText(item.qty.toString(), config.columns.quantity, y);
-            ctx.fillText(item.total.toString(), config.columns.total, y);
+            ctx.fillText(Math.round(item.total).toString(), config.columns.total, y);
             y += config.spacing.line;
         });
         
@@ -482,6 +482,209 @@ class BluetoothPrinterManager {
             throw error;
         }
     }
+    
+    async generateExpenseCanvas(expense) {
+        const config = {
+            width: 384,
+            padding: { left: 0, right: 0, top: 0, bottom: 0 },
+            fonts: {
+                header: { size: 24, weight: 'bold' },
+                body: { size: 18, weight: 'normal' },
+                total: { size: 22, weight: 'bold' }
+            },
+            spacing: {
+                line: 28,
+                section: 16
+            }
+        };
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = config.width;
+        
+        // Calculate height needed
+        let estimatedHeight = 300; // Base height for expense
+        canvas.height = estimatedHeight;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#000000';
+        
+        let y = 20;
+        
+        // Header
+        ctx.font = `bold ${config.fonts.header.size}px Arial`;
+        ctx.textAlign = 'center';
+        const headerText = expense.category === 'business' ? 'BUSINESS EXPENSE' : 'PERSONAL EXPENSE';
+        ctx.fillText(headerText, config.width / 2, y);
+        y += config.fonts.header.size + config.spacing.section;
+        
+        // Separator line
+        ctx.fillRect(10, y, config.width - 20, 2);
+        y += config.spacing.section;
+        
+        // Details
+        ctx.font = `${config.fonts.body.size}px Arial`;
+        ctx.textAlign = 'left';
+        
+        // Type
+        ctx.fillText('Type:', 10, y);
+        ctx.fillText(expense.type, 120, y);
+        y += config.spacing.line;
+        
+        // Amount
+        ctx.font = `bold ${config.fonts.total.size}px Arial`;
+        ctx.fillText('Amount:', 10, y);
+        ctx.fillText(`₹${expense.amount}`, 120, y);
+        y += config.spacing.line + 5;
+        
+        ctx.font = `${config.fonts.body.size}px Arial`;
+        
+        // Person (if available)
+        if (expense.personName) {
+            ctx.fillText('Person:', 10, y);
+            ctx.fillText(expense.personName, 120, y);
+            y += config.spacing.line;
+        }
+        
+        // Remarks (if available)
+        if (expense.remarks) {
+            ctx.fillText('Remarks:', 10, y);
+            y += config.spacing.line;
+            
+            // Word wrap remarks
+            const maxWidth = config.width - 20;
+            const words = expense.remarks.split(' ');
+            let line = '';
+            
+            for (let word of words) {
+                const testLine = line + (line ? ' ' : '') + word;
+                const metrics = ctx.measureText(testLine);
+                
+                if (metrics.width > maxWidth && line) {
+                    ctx.fillText(line, 10, y);
+                    y += config.spacing.line;
+                    line = word;
+                } else {
+                    line = testLine;
+                }
+            }
+            
+            if (line) {
+                ctx.fillText(line, 10, y);
+                y += config.spacing.line;
+            }
+        }
+        
+        // Date
+        y += config.spacing.section;
+        ctx.fillRect(10, y, config.width - 20, 2);
+        y += config.spacing.section;
+        ctx.fillText('Date:', 10, y);
+        ctx.fillText(expense.date, 120, y);
+        y += config.spacing.line + 20;
+        
+        // Adjust canvas height to actual content
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = config.width;
+        finalCanvas.height = y;
+        
+        const finalCtx = finalCanvas.getContext('2d');
+        finalCtx.fillStyle = '#FFFFFF';
+        finalCtx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+        finalCtx.drawImage(canvas, 0, 0);
+        
+        return finalCanvas;
+    }
+    
+    async writeExpense(expense) {
+        if (!this.device) {
+            throw new Error('Not connected to device');
+        }
+
+        if (!window.bluetoothSerial) {
+            throw new Error('Bluetooth Serial plugin not available');
+        }
+        
+        console.log('[WRITE EXPENSE] Generating expense canvas...');
+        
+        try {
+            const finalCanvas = await this.generateExpenseCanvas(expense);
+            const finalCtx = finalCanvas.getContext('2d');
+            
+            console.log('[WRITE EXPENSE] Converting to bitmap...');
+            
+            // Get image data
+            const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
+            const pixels = imageData.data;
+            
+            // Convert to 1-bit monochrome bitmap
+            const threshold = 128;
+            const bytesPerLine = Math.ceil(finalCanvas.width / 8);
+            const bitmapData = [];
+            
+            for (let y = 0; y < finalCanvas.height; y++) {
+                const line = new Array(bytesPerLine).fill(0);
+                
+                for (let x = 0; x < finalCanvas.width; x++) {
+                    const pixelIndex = (y * finalCanvas.width + x) * 4;
+                    const r = pixels[pixelIndex];
+                    const g = pixels[pixelIndex + 1];
+                    const b = pixels[pixelIndex + 2];
+                    
+                    const gray = (r + g + b) / 3;
+                    
+                    if (gray < threshold) {
+                        const byteIndex = Math.floor(x / 8);
+                        const bitIndex = 7 - (x % 8);
+                        line[byteIndex] |= (1 << bitIndex);
+                    }
+                }
+                
+                bitmapData.push(...line);
+            }
+            
+            console.log('[WRITE EXPENSE] Bitmap created:', bitmapData.length, 'bytes');
+            
+            // Build ESC/POS commands
+            const commands = [];
+            
+            commands.push(0x1B, 0x40); // Initialize
+            commands.push(0x1B, 0x61, 0x01); // Center align
+            commands.push(0x1D, 0x76, 0x30, 0x00); // GS v 0 m
+            
+            commands.push(bytesPerLine & 0xFF);
+            commands.push((bytesPerLine >> 8) & 0xFF);
+            commands.push(finalCanvas.height & 0xFF);
+            commands.push((finalCanvas.height >> 8) & 0xFF);
+            
+            commands.push(...bitmapData);
+            
+            commands.push(0x1B, 0x64, 0x03); // Feed 3 lines
+            commands.push(0x1D, 0x56, 0x41, 0x03); // Partial cut
+            
+            console.log('[WRITE EXPENSE] Sending', commands.length, 'bytes to printer...');
+            
+            const commandBytes = new Uint8Array(commands);
+            
+            return new Promise((resolve, reject) => {
+                window.bluetoothSerial.write(
+                    commandBytes,
+                    () => {
+                        console.log('[WRITE EXPENSE] Print successful!');
+                        resolve(true);
+                    },
+                    (error) => {
+                        console.error('[WRITE EXPENSE] Print failed:', error);
+                        reject(error);
+                    }
+                );
+            });
+        } catch (error) {
+            console.error('[WRITE EXPENSE] Print failed:', error);
+            throw error;
+        }
+    }
 }
 
 const PrinterService = {
@@ -680,7 +883,7 @@ const PrinterService = {
                     <td>${item.name}</td>
                     <td>₹${item.rate}</td>
                     <td>${weightsDisplay}</td>
-                    <td>₹${item.total}</td>
+                    <td>₹${Math.round(item.total)}</td>
                 </tr>
             `;
         }).join("");
@@ -750,6 +953,94 @@ const PrinterService = {
         });
 
         return true;
+    },
+    
+    async printExpense(expense) {
+        // Try Bluetooth first if available and connected
+        if (this.manager.device && window.bluetoothSerial) {
+            try {
+                console.log('[PRINT EXPENSE] Attempting Bluetooth print...');
+                await this.manager.writeExpense(expense);
+                console.log('[PRINT EXPENSE] Bluetooth print successful!');
+                UIManager.showToast('✓ Expense printed successfully');
+                return true;
+            } catch (error) {
+                console.error('Bluetooth expense print failed:', error);
+                UIManager.showToast('Print failed: ' + (error.message || error));
+                // Automatically show preview on Bluetooth failure
+                return await this.showExpensePreview(expense);
+            }
+        } else {
+            // No Bluetooth printer - show preview
+            console.log('[PRINT EXPENSE] No Bluetooth printer, showing preview');
+            return await this.showExpensePreview(expense);
+        }
+    },
+    
+    async showExpensePreview(expense) {
+        try {
+            // Generate canvas for expense
+            const canvas = await this.manager.generateExpenseCanvas(expense);
+            
+            // Convert canvas to data URL
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            // Show in a modal
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            `;
+            
+            modal.innerHTML = `
+                <div style="background: white; padding: 20px; border-radius: 8px; max-width: 500px; max-height: 90vh; overflow: auto;">
+                    <h3 style="margin-top: 0; text-align: center;">Expense Receipt Preview</h3>
+                    <img src="${dataUrl}" style="width: 100%; height: auto; border: 1px solid #ddd;">
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button id="closePreview" style="flex: 1; padding: 12px; background: #ef4444; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer;">Close</button>
+                        <button id="downloadPreview" style="flex: 1; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer;">Download</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Close button
+            modal.querySelector('#closePreview').onclick = () => {
+                document.body.removeChild(modal);
+            };
+            
+            // Download button
+            modal.querySelector('#downloadPreview').onclick = () => {
+                const link = document.createElement('a');
+                link.download = `expense_${expense.id || Date.now()}.png`;
+                link.href = dataUrl;
+                link.click();
+            };
+            
+            // Close on background click
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            };
+            
+            return true;
+        } catch (error) {
+            console.error('Failed to show expense preview:', error);
+            UIManager.showToast('Failed to generate preview: ' + error.message);
+            return false;
+        }
     }
 };
 
