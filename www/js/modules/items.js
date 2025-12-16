@@ -228,7 +228,8 @@ const ItemsManager = {
                 'Item Name': item.name,
                 'Hindi Name': item.hindiName || '',
                 'Purchase Rates': (item.rates || []).join(', '),
-                'Sale Rates': (item.saleRates || []).join(', ')
+                'Retail-Sale Rates': (item.saleRates || []).join(', '),
+                'Wholesale Rates': (item.wholesaleRates || []).join(', ')
             }));
             
             const worksheet = XLSX.utils.json_to_sheet(data);
@@ -279,13 +280,31 @@ const ItemsManager = {
                 const itemName = row['Item Name']?.trim();
                 if (!itemName) continue;
                 
+                // Parse purchase rates
+                const purchaseRates = row['Purchase Rates'] ? 
+                    row['Purchase Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0) : [];
+                
+                // Parse sale rates - prioritize Retail-Sale Rates, fallback to Sale Rates
+                let saleRates = [];
+                if (row['Retail-Sale Rates']) {
+                    saleRates = row['Retail-Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0);
+                } else if (row['Retail Sale Rates']) {
+                    saleRates = row['Retail Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0);
+                } else if (row['Sale Rates']) {
+                    // Backward compatibility: map old "Sale Rates" to saleRates (retail)
+                    saleRates = row['Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0);
+                }
+                
+                // Parse wholesale rates (optional column)
+                const wholesaleRates = row['Wholesale Rates'] ? 
+                    row['Wholesale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0) : [];
+                
                 const itemData = {
                     name: itemName,
                     hindiName: row['Hindi Name'] || '',
-                    rates: row['Purchase Rates'] ? 
-                        row['Purchase Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0) : [],
-                    saleRates: row['Sale Rates'] ? 
-                        row['Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0) : []
+                    rates: purchaseRates,
+                    saleRates: saleRates,
+                    wholesaleRates: wholesaleRates
                 };
                 
                 const savedItem = await FirebaseService.saveItem(itemData);
