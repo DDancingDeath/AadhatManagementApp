@@ -141,11 +141,14 @@ export class StockManager {
     static loadAdjustItemStock() {
         const itemName = document.getElementById("adjustItem")?.value;
         const display = document.getElementById("currentStockDisplay");
+        const avgRateDisplay = document.getElementById("avgRateDisplay");
+        const avgRateValue = document.getElementById("avgRateValue");
         
         if (!display) return;
 
         if (!itemName || itemName === '') {
             display.textContent = "";
+            if (avgRateDisplay) avgRateDisplay.style.display = "none";
             return;
         }
 
@@ -153,19 +156,47 @@ export class StockManager {
         const item = AppState.items.find(i => i.name === itemName);
         if (!item) {
             display.textContent = "0.00";
+            if (avgRateDisplay) avgRateDisplay.style.display = "none";
             return;
         }
 
-        // Check stock using both English and Hindi names
+        // Check stock using itemId (primary), name, and Hindi name (legacy)
         let quantity = 0;
-        if (AppState.stock[item.name]) {
-            quantity += AppState.stock[item.name].quantity || 0;
+        let totalValue = 0;
+        
+        // Check by itemId first (most reliable)
+        if (item.id && AppState.stock[item.id]) {
+            const stockData = AppState.stock[item.id];
+            quantity += stockData.quantity || 0;
+            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
         }
+        
+        // Also check by name (for legacy data)
+        if (AppState.stock[item.name]) {
+            const stockData = AppState.stock[item.name];
+            quantity += stockData.quantity || 0;
+            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
+        }
+        
+        // Also check by Hindi name (for legacy data)
         if (item.hindiName && AppState.stock[item.hindiName]) {
-            quantity += AppState.stock[item.hindiName].quantity || 0;
+            const stockData = AppState.stock[item.hindiName];
+            quantity += stockData.quantity || 0;
+            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
         }
         
         display.textContent = quantity.toFixed(1);
+        
+        // Calculate and display average rate
+        if (avgRateDisplay && avgRateValue) {
+            if (quantity > 0 && totalValue > 0) {
+                const avgRate = totalValue / quantity;
+                avgRateValue.textContent = `₹${avgRate.toFixed(2)}/kg`;
+                avgRateDisplay.style.display = "block";
+            } else {
+                avgRateDisplay.style.display = "none";
+            }
+        }
     }
 
     static updateAdjustmentPlaceholder() {
@@ -191,6 +222,7 @@ export class StockManager {
         const itemName = document.getElementById("adjustItem")?.value;
         const adjustType = document.getElementById("adjustType")?.value;
         const quantity = parseFloat(document.getElementById("adjustQuantity")?.value || 0);
+        const rate = parseFloat(document.getElementById("adjustRate")?.value || 0);
         const reason = document.getElementById("adjustReason")?.value || "";
 
         if (!itemName) {
@@ -203,7 +235,21 @@ export class StockManager {
             return;
         }
 
-        const currentStock = AppState.stock[itemName]?.quantity || 0;
+        // Find item to get itemId
+        const item = AppState.items.find(i => i.name === itemName);
+        
+        // Calculate current stock from all possible keys (itemId, name, hindiName)
+        let currentStock = 0;
+        if (item?.id && AppState.stock[item.id]) {
+            currentStock += AppState.stock[item.id].quantity || 0;
+        }
+        if (AppState.stock[itemName]) {
+            currentStock += AppState.stock[itemName].quantity || 0;
+        }
+        if (item?.hindiName && AppState.stock[item.hindiName]) {
+            currentStock += AppState.stock[item.hindiName].quantity || 0;
+        }
+        
         let newStock = currentStock;
 
         switch (adjustType) {
@@ -217,15 +263,13 @@ export class StockManager {
                 newStock = quantity;
                 break;
         }
-
-        // Find item to get itemId
-        const item = AppState.items.find(i => i.name === itemName);
         
         const adjustment = {
             itemId: item?.id || null,
             itemName,
             adjustType,
             quantity,
+            rate: rate || 0,
             previousStock: currentStock,
             newStock,
             reason,
@@ -244,6 +288,7 @@ export class StockManager {
             AppState.stock[itemName].quantity = newStock;
 
             document.getElementById("adjustQuantity").value = "";
+            document.getElementById("adjustRate").value = "0";
             document.getElementById("adjustReason").value = "";
             
             // Recalculate stock from Firebase data to ensure accuracy
@@ -302,9 +347,14 @@ export class StockManager {
             const item = AppState.items.find(i => i.id === adj.itemId || i.name === adj.itemName);
             const displayName = (AppState.settings.showHindi && item?.hindiName) ? item.hindiName : (item?.name || adj.itemName || 'Unknown Item');
             
-            // Get rate from current stock
+            // Use adjustment rate if available, otherwise fall back to current stock rate
+            const adjustmentRate = adj.rate || 0;
             const stockKey = adj.itemId || adj.itemName;
-            const itemRate = AppState.stock[stockKey]?.rate || 0;
+            const currentStockRate = AppState.stock[stockKey]?.rate || 0;
+            const displayRate = adjustmentRate > 0 ? adjustmentRate : currentStockRate;
+            
+            // Calculate value impact if rate is available
+            const valueImpact = (quantity !== 'Unknown' && displayRate > 0) ? quantity * displayRate : null;
             
             div.innerHTML = `
                 <div class="history-header">
@@ -315,7 +365,7 @@ export class StockManager {
                 </div>
                 <div class="history-date">${adj.date || 'Unknown date'}${adj.createdByName ? ` • By: ${adj.createdByName}` : ''}</div>
                 <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
-                    ${itemRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${itemRate.toFixed(2)}/kg</div>` : ''}
+                    ${displayRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${displayRate.toFixed(2)}/kg${valueImpact ? ` • Value: ₹${Math.round(valueImpact)}` : ''}</div>` : ''}
                     <div style="font-size: 13px; color: #666;">
                         ${(adj.previousStock || 0).toFixed(1)} kg → ${(adj.newStock || 0).toFixed(1)} kg
                     </div>

@@ -236,20 +236,36 @@ const FirebaseService = {
                     stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
                 }
                 
+                const adjQty = parseFloat(adj.quantity) || 0;
+                const adjRate = parseFloat(adj.rate) || 0;
+                
                 // Apply the adjustment based on type
                 switch (adj.adjustType) {
                     case 'add':
-                        stock[key].quantity += parseFloat(adj.quantity) || 0;
+                        stock[key].quantity += adjQty;
+                        // Add the value of added stock to totalValue
+                        if (adjRate > 0) {
+                            stock[key].totalValue += adjQty * adjRate;
+                        }
                         break;
                     case 'remove':
-                        stock[key].quantity -= parseFloat(adj.quantity) || 0;
+                        // When removing stock, reduce quantity but keep totalValue proportional
+                        const removalRatio = stock[key].quantity > 0 ? adjQty / stock[key].quantity : 0;
+                        stock[key].quantity -= adjQty;
+                        stock[key].totalValue -= stock[key].totalValue * removalRatio;
                         break;
                     case 'set':
                         // For 'set' type, we need to set to the newStock value if available
-                        if (adj.newStock !== undefined) {
-                            stock[key].quantity = parseFloat(adj.newStock) || 0;
+                        const newQty = adj.newStock !== undefined ? parseFloat(adj.newStock) : adjQty;
+                        if (adjRate > 0) {
+                            // If rate is provided, recalculate totalValue
+                            stock[key].quantity = newQty;
+                            stock[key].totalValue = newQty * adjRate;
                         } else {
-                            stock[key].quantity = parseFloat(adj.quantity) || 0;
+                            // If no rate, maintain the same average rate
+                            const currentAvgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
+                            stock[key].quantity = newQty;
+                            stock[key].totalValue = newQty * currentAvgRate;
                         }
                         break;
                 }

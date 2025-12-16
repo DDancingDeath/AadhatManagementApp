@@ -115,7 +115,8 @@ async function loadUserDataAndInitialize() {
             FirebaseService.loadSales(),
             FirebaseService.loadPayments(),
             FirebaseService.loadStockAdjustments(),
-            FirebaseService.loadWithdrawals()
+            FirebaseService.loadWithdrawals(),
+            BillingManager.loadItemFrequency()
         ]);
         
         AppState.items = items;

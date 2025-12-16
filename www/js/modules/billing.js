@@ -20,6 +20,7 @@ const BillingManager = {
     
     currentMode: 'purchase', // 'purchase' or 'sale'
     autoSaveEnabled: true,
+    itemFrequency: { purchase: {}, sale: {} }, // Cached frequency from database
     
     switchMode(mode, event) {
         const purchaseSection = document.getElementById('purchaseSection');
@@ -73,15 +74,103 @@ const BillingManager = {
     
     // -------------------- ITEMS & RATES LOADING --------------------
     
+    async loadItemFrequency() {
+        try {
+            const userId = AppState.currentUser?.uid;
+            if (!userId) return;
+            
+            const doc = await db.collection('itemFrequency').doc(userId).get();
+            if (doc.exists) {
+                this.itemFrequency = doc.data();
+                console.log('✅ Loaded item frequency from database');
+            } else {
+                // Initialize empty frequency
+                this.itemFrequency = { purchase: {}, sale: {} };
+            }
+        } catch (error) {
+            console.error('Failed to load item frequency:', error);
+            this.itemFrequency = { purchase: {}, sale: {} };
+        }
+    },
+    
+    async updateItemFrequency(items, mode = 'purchase') {
+        try {
+            const userId = AppState.currentUser?.uid;
+            if (!userId) return;
+            
+            const now = Date.now();
+            const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+            
+            // Update frequency with weighted scoring
+            items.forEach(item => {
+                const itemId = item.itemId || item.name;
+                if (!this.itemFrequency[mode]) this.itemFrequency[mode] = {};
+                
+                // Calculate score based on:
+                // 1. Base score: 100 points per occurrence
+                // 2. Quantity bonus: Add quantity/10 points (e.g., 50kg = +5 points)
+                // 3. Recency: Items used in last 30 days get full weight, older items decay
+                const baseScore = 100;
+                const quantityBonus = (item.qty || 0) / 10;
+                const recencyMultiplier = 1.0; // Recent items get full weight
+                
+                const score = (baseScore + quantityBonus) * recencyMultiplier;
+                
+                // Store both score and last used timestamp
+                if (!this.itemFrequency[mode][itemId]) {
+                    this.itemFrequency[mode][itemId] = { score: 0, lastUsed: 0, count: 0 };
+                }
+                
+                this.itemFrequency[mode][itemId].score += score;
+                this.itemFrequency[mode][itemId].lastUsed = now;
+                this.itemFrequency[mode][itemId].count += 1;
+            });
+            
+            // Apply time decay to all items (items not used recently get lower scores)
+            Object.keys(this.itemFrequency[mode]).forEach(itemId => {
+                const itemData = this.itemFrequency[mode][itemId];
+                const daysSinceLastUse = (now - itemData.lastUsed) / (24 * 60 * 60 * 1000);
+                
+                // Decay factor: 1.0 for today, 0.5 after 30 days, 0.1 after 90 days
+                const decayFactor = Math.max(0.1, 1 - (daysSinceLastUse / 90));
+                itemData.effectiveScore = itemData.score * decayFactor;
+            });
+            
+            // Save to database
+            await db.collection('itemFrequency').doc(userId).set(this.itemFrequency);
+            console.log('✅ Updated item frequency in database');
+        } catch (error) {
+            console.error('Failed to update item frequency:', error);
+        }
+    },
+    
+    getItemFrequency(mode = 'purchase') {
+        return this.itemFrequency[mode] || {};
+    },
+    
     loadItemsDropdown() {
         const select = document.getElementById('billItem');
         if (!select) return;
         
         select.innerHTML = '';
         
-        AppState.items.forEach((item, index) => {
+        // Get frequency for purchase items
+        const freq = this.getItemFrequency('purchase');
+        
+        // Sort items by effective score (considers recency, quantity, and usage)
+        const sortedItems = [...AppState.items].sort((a, b) => {
+            const dataA = freq[a.id] || freq[a.name];
+            const dataB = freq[b.id] || freq[b.name];
+            const scoreA = dataA ? (dataA.effectiveScore || dataA.score || dataA) : 0;
+            const scoreB = dataB ? (dataB.effectiveScore || dataB.score || dataB) : 0;
+            return scoreB - scoreA; // Descending order
+        });
+        
+        sortedItems.forEach((item) => {
             const opt = document.createElement('option');
-            opt.value = index;
+            // Store the original index for reference
+            const originalIndex = AppState.items.findIndex(i => i.id === item.id || i.name === item.name);
+            opt.value = originalIndex;
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
             opt.textContent = displayName;
             select.appendChild(opt);
@@ -106,9 +195,23 @@ const BillingManager = {
         
         console.log('📦 Loading items into sale dropdown, count:', AppState.items.length);
         
-        AppState.items.forEach((item, index) => {
+        // Get frequency for sale items
+        const freq = this.getItemFrequency('sale');
+        
+        // Sort items by effective score (considers recency, quantity, and usage)
+        const sortedItems = [...AppState.items].sort((a, b) => {
+            const dataA = freq[a.id] || freq[a.name];
+            const dataB = freq[b.id] || freq[b.name];
+            const scoreA = dataA ? (dataA.effectiveScore || dataA.score || dataA) : 0;
+            const scoreB = dataB ? (dataB.effectiveScore || dataB.score || dataB) : 0;
+            return scoreB - scoreA; // Descending order
+        });
+        
+        sortedItems.forEach((item) => {
             const opt = document.createElement('option');
-            opt.value = index;
+            // Store the original index for reference
+            const originalIndex = AppState.items.findIndex(i => i.id === item.id || i.name === item.name);
+            opt.value = originalIndex;
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
             opt.textContent = displayName;
             select.appendChild(opt);
@@ -569,6 +672,9 @@ const BillingManager = {
             UIManager.showLoading();
             await FirebaseService.saveBill(bill);
             
+            // Update item frequency in database
+            await this.updateItemFrequency(billItems, 'purchase');
+            
             // Clear bill
             billItems = [];
             weights = [];
@@ -962,6 +1068,9 @@ const BillingManager = {
         try {
             UIManager.showLoading();
             await FirebaseService.saveSale(sale);
+            
+            // Update item frequency in database
+            await this.updateItemFrequency(saleItems, 'sale');
             
             // Stock will be automatically recalculated from sales
             
