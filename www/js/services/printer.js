@@ -21,29 +21,54 @@ class BluetoothPrinterManager {
         if (window.cordova && window.cordova.plugins && window.cordova.plugins.permissions) {
             const permissions = window.cordova.plugins.permissions;
             const permissionsToRequest = [
-                'android.permission.BLUETOOTH_SCAN',
-                'android.permission.BLUETOOTH_CONNECT',
-                'android.permission.ACCESS_FINE_LOCATION'
+                permissions.BLUETOOTH_SCAN || 'android.permission.BLUETOOTH_SCAN',
+                permissions.BLUETOOTH_CONNECT || 'android.permission.BLUETOOTH_CONNECT',
+                permissions.ACCESS_FINE_LOCATION || 'android.permission.ACCESS_FINE_LOCATION'
             ];
             
             try {
-                await new Promise((resolve, reject) => {
-                    permissions.requestPermissions(
-                        permissionsToRequest,
-                        (status) => {
+                // Check each permission individually
+                for (const permission of permissionsToRequest) {
+                    await new Promise((resolve, reject) => {
+                        permissions.checkPermission(permission, (status) => {
                             if (status.hasPermission) {
-                                console.log('[SCAN] Permissions granted');
+                                console.log('[SCAN] Permission already granted:', permission);
                                 resolve();
                             } else {
-                                reject(new Error('Bluetooth permissions denied'));
+                                console.log('[SCAN] Requesting permission:', permission);
+                                permissions.requestPermission(
+                                    permission,
+                                    (result) => {
+                                        if (result.hasPermission) {
+                                            console.log('[SCAN] Permission granted:', permission);
+                                            resolve();
+                                        } else {
+                                            reject(new Error('Permission denied: ' + permission));
+                                        }
+                                    },
+                                    () => reject(new Error('Failed to request permission: ' + permission))
+                                );
                             }
-                        },
-                        () => reject(new Error('Failed to request permissions'))
-                    );
-                });
+                        }, () => {
+                            // Permission check failed, try to request anyway
+                            permissions.requestPermission(
+                                permission,
+                                (result) => {
+                                    if (result.hasPermission) {
+                                        resolve();
+                                    } else {
+                                        reject(new Error('Permission denied: ' + permission));
+                                    }
+                                },
+                                () => reject(new Error('Failed to request permission: ' + permission))
+                            );
+                        });
+                    });
+                }
+                console.log('[SCAN] All permissions granted');
             } catch (permError) {
                 console.error('[SCAN] Permission error:', permError);
-                throw new Error('Bluetooth permissions required. Please grant permissions in app settings.');
+                throw new Error('Bluetooth permissions required. Please grant all permissions when prompted, or enable them manually in app settings.');
             }
         }
         
