@@ -1490,7 +1490,11 @@ function showTabFromNav(tabId, event) {
     if (tabId === 'configure') loadSettings();
     if (tabId === 'stock') renderStock();
     if (tabId === 'sales') {
-        loadSalesPageDropdown();
+        if (window.app?.sales?.loadItemsDropdown) {
+            window.app.sales.loadItemsDropdown();
+        } else {
+            loadSalesPageDropdown();
+        }
         renderSalesBill();
     }
     
@@ -2371,10 +2375,12 @@ function loadSalesPageDropdown() {
     select.innerHTML = '<option value="">Select item</option>';
 
     // Load all items
-    items.forEach(item => {
+    const itemsList = window.AppState?.items || items || [];
+    itemsList.forEach(item => {
         const opt = document.createElement("option");
         opt.value = item.name;
-        const displayName = (settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        const settingsData = window.AppState?.settings || settings || {};
+        const displayName = (settingsData.showHindi && item.hindiName) ? item.hindiName : item.name;
         opt.textContent = displayName;
         select.appendChild(opt);
     });

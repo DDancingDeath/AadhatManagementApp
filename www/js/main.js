@@ -166,6 +166,7 @@ async function loadUserDataAndInitialize() {
         // Render initial views
         ItemsManager.renderItems();
         BillingManager.loadItemsDropdown();
+        SalesManager.loadItemsDropdown();
         BillingManager.updateDraftCount();
         PaymentsManager.updateExpensePersonOptions();
         PaymentsManager.renderPaymentsHistory();
@@ -230,6 +231,9 @@ window.initializeApp = loadUserDataAndInitialize;
 
 // Expose functions needed by Firebase listeners
 window.renderPaymentsHistory = () => PaymentsManager.renderPaymentsHistory();
+
+// Global bridge function for legacy template compatibility
+window.loadSellItemDetails = () => SalesManager.loadItemDetails();
 
 // Expose clean API to window for HTML event handlers
 window.app = {
@@ -411,6 +415,13 @@ window.app = {
     
     // Sales
     sales: {
+        loadItemsDropdown: () => SalesManager.loadItemsDropdown(),
+        loadItemDetails: () => SalesManager.loadItemDetails(),
+        addToWholesaleBill: () => SalesManager.addToWholesaleBill(),
+        removeWholesaleItem: (index) => SalesManager.removeWholesaleItem(index),
+        completeSale: () => SalesManager.completeSale(),
+        printWholesaleSale: () => SalesManager.printWholesaleSale(),
+        shareViaWhatsApp: () => SalesManager.shareViaWhatsApp(),
         filterTab: (view, evt) => SalesManager.filterSalesTab(view, evt),
         renderHistory: () => SalesManager.renderSalesHistory(),
         renderOutstanding: () => SalesManager.renderSalesOutstanding(),
@@ -426,6 +437,7 @@ window.app = {
         reprintBill: (index) => HistoryManager.reprintBill(index),
         closeBillDetails: () => HistoryManager.closeBillDetails(),
         filterHistory: (type, event) => HistoryManager.filterHistory(type, event),
+        searchHistory: (searchTerm) => HistoryManager.searchHistory(searchTerm),
         editBillDetails: (billIndex) => {
             if (billIndex !== undefined) {
                 BillingManager.editBill(billIndex);

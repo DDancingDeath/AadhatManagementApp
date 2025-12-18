@@ -32,17 +32,13 @@ const BillingManager = {
         
         // Update button states
         if (event) {
-            const buttons = document.querySelectorAll('.filter-btn');
-            buttons.forEach(btn => {
-                // Skip Save, Drafts, and Clear buttons
-                const buttonText = btn.textContent.trim();
-                if (buttonText.startsWith('💾') || buttonText.startsWith('📋') || buttonText.startsWith('🗑️')) {
-                    return;
-                }
-                btn.classList.remove('active');
-                btn.style.background = '';
-                btn.style.borderColor = '';
-            });
+            // Only update Purchase/Sale toggle buttons, not draft management buttons
+            purchaseBtn.classList.remove('active');
+            saleBtn.classList.remove('active');
+            purchaseBtn.style.background = '';
+            purchaseBtn.style.borderColor = '';
+            saleBtn.style.background = '';
+            saleBtn.style.borderColor = '';
             event.currentTarget.classList.add('active');
         }
         
@@ -612,6 +608,30 @@ const BillingManager = {
     
     // -------------------- SAVE & PRINT --------------------
     
+    async generateBillNumber() {
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+        
+        // Query Firestore for today's bills to find the next number (for parallel user safety)
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayEnd = new Date(todayStart);
+        todayEnd.setDate(todayEnd.getDate() + 1);
+        
+        try {
+            const snapshot = await db.collection('bills')
+                .where('timestamp', '>=', todayStart.getTime())
+                .where('timestamp', '<', todayEnd.getTime())
+                .get();
+            
+            const nextNum = snapshot.size + 1;
+            return `${dateStr}-${String(nextNum).padStart(3, '0')}`;
+        } catch (error) {
+            console.error('Error generating bill number:', error);
+            // Fallback to timestamp-based number if query fails
+            return `${dateStr}-${Date.now().toString().slice(-3)}`;
+        }
+    },
+
     async saveBillToHistory() {
         // Check if in edit mode
         if (this.editingBillIndex !== undefined) {
@@ -641,8 +661,12 @@ const BillingManager = {
             ? laborCalculationSpan?.textContent || null 
             : null;
         
+        // Generate bill number
+        const billNumber = await this.generateBillNumber();
+        
         const bill = {
             id: generateId(),
+            billNumber,
             items: billItems,
             billTotal,
             laborCharges,
@@ -1514,7 +1538,6 @@ const BillingManager = {
             const countElement = document.getElementById('draftCount');
             if (countElement) {
                 countElement.textContent = snapshot.size;
-                countElement.style.display = snapshot.size > 0 ? 'inline-block' : 'none';
             }
         } catch (error) {
             console.error('Failed to update draft count:', error);

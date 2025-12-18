@@ -1,3 +1,19 @@
+.draft-btn {
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex: 1;
+  min-width: 80px;
+  border: 2px solid;
+}
+
+.draft-btn:active {
+  transform: scale(0.98);
+}
+
 .bill-totals {
   background: var(--white);
   padding: 14px;

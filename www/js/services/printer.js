@@ -238,6 +238,12 @@ class BluetoothPrinterManager {
         y = utils.drawCenter('Receipt', y, config.fonts.title, true);
         // y += 4;
         
+        // Bill number
+        if (billData.billNumber) {
+            y = utils.drawCenter('Bill: ' + billData.billNumber, y, { size: 18, weight: 'bold' });
+            y += 4;
+        }
+        
         // Date/time
         const dateTime = new Date().toLocaleDateString('en-IN') + ' ' + 
                         new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
@@ -1066,6 +1072,36 @@ const PrinterService = {
             UIManager.showToast('Failed to generate preview: ' + error.message);
             return false;
         }
+    },
+
+    async printWholesaleSale(saleData) {
+        // Convert sale data to bill format for printing
+        const billData = {
+            id: saleData.id || Date.now(),
+            customerName: saleData.customerName || 'Walk-in Customer',
+            items: saleData.items.map(item => ({
+                name: item.name,
+                rate: item.rate,
+                qty: item.qty || item.quantity,
+                total: item.total
+            })),
+            totals: {
+                billTotal: saleData.total,
+                labor: 0,
+                payable: saleData.total
+            },
+            payments: {
+                online: 0,
+                cash: 0,
+                due: saleData.total
+            },
+            comments: '',
+            date: saleData.date || new Date().toLocaleString('en-IN'),
+            mode: 'sale'
+        };
+
+        // Use the standard printBill method
+        return await this.printBill(billData);
     }
 };
 

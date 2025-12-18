@@ -2,8 +2,290 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { PrinterService } from '../services/printer.js';
+
+let wholesaleSaleItems = [];
 
 export class SalesManager {
+    static loadItemsDropdown() {
+        const select = document.getElementById('sellItem');
+        if (!select) return;
+        
+        select.innerHTML = '<option value="">Select item</option>';
+
+        // Load only items that have stock
+        AppState.items.forEach(item => {
+            // Check stock by itemId first, then by name
+            const stockData = AppState.stock[item.id] || AppState.stock[item.name];
+            
+            // Only show items with positive stock quantity
+            if (stockData && stockData.quantity > 0) {
+                const opt = document.createElement('option');
+                opt.value = item.name;
+                const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+                opt.textContent = displayName;
+                select.appendChild(opt);
+            }
+        });
+    }
+
+    static loadItemDetails() {
+        const itemName = document.getElementById("sellItem")?.value;
+        const availableStockEl = document.getElementById("availableStock");
+        const avgRateEl = document.getElementById("avgPurchaseRate");
+        const sellRateEl = document.getElementById("sellRate");
+        
+        if (!availableStockEl || !avgRateEl || !sellRateEl) return;
+        
+        if (!itemName) {
+            availableStockEl.textContent = "-";
+            avgRateEl.textContent = "-";
+            sellRateEl.value = "";
+            return;
+        }
+        
+        // Find item to get itemId
+        const item = AppState.items.find(i => i.name === itemName);
+        if (!item) {
+            availableStockEl.textContent = "-";
+            avgRateEl.textContent = "-";
+            sellRateEl.value = "";
+            return;
+        }
+        
+        // Check stock by itemId first, then by name
+        const stockData = AppState.stock[item.id] || AppState.stock[itemName];
+        
+        if (!stockData) {
+            availableStockEl.textContent = "0.00";
+            avgRateEl.textContent = "-";
+            sellRateEl.value = "";
+            return;
+        }
+        
+        availableStockEl.textContent = (stockData.quantity || 0).toFixed(2);
+        avgRateEl.textContent = (stockData.rate || 0).toFixed(2);
+        
+        // Check if item has predefined sale rates
+        if (item.saleRates && item.saleRates.length > 0) {
+            // Use first sale rate as default
+            const firstValidRate = item.saleRates.find(rate => rate && rate > 0);
+            sellRateEl.value = firstValidRate || "";
+        } else {
+            sellRateEl.value = "";
+        }
+    }
+
+    static async addToWholesaleBill() {
+        const itemName = document.getElementById('sellItem')?.value;
+        const rate = parseFloat(document.getElementById('sellRate')?.value);
+        const quantity = parseFloat(document.getElementById('sellQuantity')?.value);
+        
+        if (!itemName) {
+            UIManager.showToast('Please select an item');
+            return;
+        }
+        
+        if (!rate || rate <= 0) {
+            UIManager.showToast('Please enter a valid rate');
+            return;
+        }
+        
+        if (!quantity || quantity <= 0) {
+            UIManager.showToast('Please enter a valid quantity');
+            return;
+        }
+        
+        // Find item
+        const item = AppState.items.find(i => i.name === itemName);
+        if (!item) {
+            UIManager.showToast('Item not found');
+            return;
+        }
+        
+        // Check stock
+        const stockData = AppState.stock[item.id] || AppState.stock[itemName];
+        if (!stockData || stockData.quantity < quantity) {
+            const available = stockData?.quantity || 0;
+            UIManager.showToast(`Insufficient stock! Available: ${available.toFixed(1)}kg`);
+            return;
+        }
+        
+        const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        const total = Math.round(quantity * rate);
+        
+        wholesaleSaleItems.push({
+            itemId: item.id,
+            name: displayName,
+            rate,
+            qty: quantity,
+            total,
+            timestamp: Date.now()
+        });
+        
+        // Clear inputs
+        document.getElementById('sellQuantity').value = '';
+        
+        this.renderWholesaleBill();
+        UIManager.hapticFeedback();
+    }
+
+    static renderWholesaleBill() {
+        const tbody = document.querySelector('#salesTable tbody');
+        const totalEl = document.getElementById('salesTotalAmount');
+        
+        if (!tbody || !totalEl) return;
+        
+        if (wholesaleSaleItems.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
+            totalEl.textContent = '0';
+            return;
+        }
+        
+        tbody.innerHTML = wholesaleSaleItems.map((item, index) => {
+            return `
+                <tr>
+                    <td>${item.name}</td>
+                    <td>₹${item.rate.toFixed(2)}</td>
+                    <td>${item.qty.toFixed(1)} kg</td>
+                    <td>₹${Math.round(item.total)}</td>
+                    <td><button onclick="window.app.sales.removeWholesaleItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
+                </tr>
+            `;
+        }).join('');
+        
+        const grandTotal = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        totalEl.textContent = Math.round(grandTotal);
+    }
+
+    static removeWholesaleItem(index) {
+        wholesaleSaleItems.splice(index, 1);
+        this.renderWholesaleBill();
+        UIManager.hapticFeedback();
+    }
+
+    static async completeSale() {
+        if (wholesaleSaleItems.length === 0) {
+            UIManager.showToast('Please add items to the bill');
+            return;
+        }
+        
+        const customerName = document.getElementById('wholesaleCustomerName')?.value || 'Walk-in Customer';
+        const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        
+        const saleData = {
+            id: Date.now(),
+            customerName,
+            items: wholesaleSaleItems.map(item => ({
+                itemId: item.itemId,
+                name: item.name,
+                rate: item.rate,
+                quantity: item.qty,
+                total: item.total
+            })),
+            total,
+            payment: {
+                online: 0,
+                cash: 0,
+                total: 0,
+                due: total
+            },
+            date: new Date().toLocaleString('en-IN'),
+            timestamp: Date.now(),
+            createdBy: AppState.currentUser?.uid || 'unknown',
+            createdByName: AppState.userName || 'User',
+            source: 'sales-tab'
+        };
+        
+        try {
+            await FirebaseService.saveSale(saleData);
+            
+            // Update customer options
+            this.updateWholesaleCustomerOptions(customerName);
+            
+            // Clear bill
+            wholesaleSaleItems = [];
+            document.getElementById('wholesaleCustomerName').value = '';
+            document.getElementById('sellQuantity').value = '';
+            document.getElementById('sellRate').value = '';
+            
+            this.renderWholesaleBill();
+            this.renderSalesHistory();
+            
+            // Recalculate stock
+            AppState.stock = await FirebaseService.calculateStock();
+            this.loadItemsDropdown(); // Refresh dropdown to show updated stock
+            
+            UIManager.showToast('✓ Sale completed successfully');
+            UIManager.hapticFeedback();
+            
+            // Ask for print/WhatsApp
+            this.showSaleActions(saleData);
+        } catch (error) {
+            console.error('Error completing sale:', error);
+            UIManager.showToast('Error: ' + error.message);
+        }
+    }
+
+    static showSaleActions(saleData) {
+        const actions = confirm('Sale completed! Would you like to print or share?');
+        if (actions) {
+            const action = prompt('Enter:\n1 - Print\n2 - WhatsApp\n3 - Both\n4 - Skip');
+            if (action === '1' || action === '3') {
+                this.printWholesaleSale();
+            }
+            if (action === '2' || action === '3') {
+                this.shareViaWhatsApp();
+            }
+        }
+    }
+
+    static printWholesaleSale() {
+        if (wholesaleSaleItems.length === 0) {
+            UIManager.showToast('No items to print');
+            return;
+        }
+        
+        const customerName = document.getElementById('wholesaleCustomerName')?.value || 'Walk-in Customer';
+        const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        
+        const saleData = {
+            customerName,
+            items: wholesaleSaleItems,
+            total,
+            date: new Date().toLocaleString('en-IN')
+        };
+        
+        PrinterService.printWholesaleSale(saleData);
+    }
+
+    static shareViaWhatsApp() {
+        if (wholesaleSaleItems.length === 0) {
+            UIManager.showToast('No items to share');
+            return;
+        }
+        
+        const customerName = document.getElementById('wholesaleCustomerName')?.value || 'Walk-in Customer';
+        const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        
+        let message = `*Sale Receipt*\n\n`;
+        message += `Customer: ${customerName}\n`;
+        message += `Date: ${new Date().toLocaleString('en-IN')}\n\n`;
+        message += `*Items:*\n`;
+        
+        wholesaleSaleItems.forEach(item => {
+            message += `${item.name}\n`;
+            message += `  ${item.qty.toFixed(1)} kg × ₹${item.rate} = ₹${item.total}\n`;
+        });
+        
+        message += `\n*Total: ₹${saleData.total}*\n`;
+        message += `Due: ₹${saleData.payment.due}`;
+        
+        const encodedMessage = encodeURIComponent(message);
+        const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
+        window.open(whatsappUrl, '_blank');
+    }
+
     static filterSalesTab(view, evt) {
         const buttons = document.querySelectorAll('#sales .filter-btn');
         buttons.forEach(btn => btn.classList.remove('active'));

@@ -125,34 +125,53 @@ export class HistoryManager {
         }
     }
 
-    static renderHistory() {
+    static renderHistory(type = 'purchase', searchTerm = '') {
         const billHistory = AppState.billHistory || [];
         const salesHistory = AppState.salesHistory || [];
         const container = document.getElementById("historyList");
         
-        // Combine bills and sales, marking purchases with type
+        // Combine bills and sales
         const bills = billHistory.map(b => ({ ...b, type: b.type || 'purchase', isPurchase: true }));
         const sales = salesHistory.map(s => ({ ...s, type: s.type || 'sale', isPurchase: false }));
         const allHistory = [...bills, ...sales];
         
-        // Filter to show only purchase bills by default
-        const purchaseBills = allHistory.filter(bill => bill.type === 'purchase');
+        // Filter bills by type
+        let filteredBills = allHistory.filter(bill => bill.type === type);
         
-        // Sort bills by timestamp (newest first)
-        const allTransactions = [...purchaseBills].sort((a, b) => {
+        // Apply search filter if search term exists
+        if (searchTerm && searchTerm.trim()) {
+            const term = searchTerm.toLowerCase().trim();
+            filteredBills = filteredBills.filter(bill => {
+                // Search in bill number
+                const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id.toString());
+                if (billNumber.toLowerCase().includes(term)) return true;
+                
+                // Search in customer name
+                if (bill.customerName && bill.customerName.toLowerCase().includes(term)) return true;
+                
+                // Search in item names
+                if (bill.items && bill.items.some(item => item.name.toLowerCase().includes(term))) return true;
+                
+                return false;
+            });
+        }
+        
+        // Sort by timestamp (newest first)
+        const sortedBills = filteredBills.sort((a, b) => {
             const timeA = a.timestamp || new Date(a.date).getTime();
             const timeB = b.timestamp || new Date(b.date).getTime();
             return timeB - timeA;
         });
         
-        if (allTransactions.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No purchase history yet</p>';
+        if (sortedBills.length === 0) {
+            const message = searchTerm ? `No results found for "${searchTerm}"` : `No ${type} history yet`;
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
             return;
         }
 
         container.innerHTML = "";
 
-        allTransactions.forEach((bill, index) => {
+        sortedBills.forEach(bill => {
             const billIndex = bill.isPurchase 
                 ? billHistory.findIndex(b => b.id === bill.id)
                 : -1;
@@ -187,15 +206,15 @@ export class HistoryManager {
                 </div>
             ` : '';
             
-            // Generate short bill number from ID
-            const billNumber = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
+            // Use billNumber if available, otherwise generate short number from ID
+            const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
             const formattedDate = this.formatDate(bill.date);
             const itemColor = bill.type === 'sale' ? '#28a745' : '#007bff';
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` <strong>${bill.customerName}</strong>` : ''}
                     <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
                 <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
@@ -391,92 +410,23 @@ export class HistoryManager {
         document.getElementById('billDetailsOverlay').classList.remove('active');
     }
 
+    static searchHistory(searchTerm) {
+        const activeFilterBtn = document.querySelector('#history .filter-btn.active');
+        const currentType = activeFilterBtn?.classList.contains('filter-sale') ? 'sale' : 'purchase';
+        
+        this.renderHistory(currentType, searchTerm);
+    }
+
     static filterHistory(type, event) {
         // Update button states
         const buttons = event.target.parentElement.querySelectorAll('.filter-btn');
         buttons.forEach(btn => btn.classList.remove('active'));
         event.target.classList.add('active');
-
-        const billHistory = AppState.billHistory || [];
-        const salesHistory = AppState.salesHistory || [];
-        const container = document.getElementById("historyList");
         
-        // Combine bills and sales
-        const bills = billHistory.map(b => ({ ...b, type: b.type || 'purchase', isPurchase: true }));
-        const sales = salesHistory.map(s => ({ ...s, type: s.type || 'sale', isPurchase: false }));
-        const allHistory = [...bills, ...sales];
+        // Clear search when switching tabs
+        const searchInput = document.getElementById('historySearch');
+        if (searchInput) searchInput.value = '';
         
-        // Filter bills by type
-        const filteredBills = allHistory.filter(bill => bill.type === type);
-        
-        // Sort by timestamp (newest first)
-        const sortedBills = filteredBills.sort((a, b) => {
-            const timeA = a.timestamp || new Date(a.date).getTime();
-            const timeB = b.timestamp || new Date(b.date).getTime();
-            return timeB - timeA;
-        });
-        
-        if (sortedBills.length === 0) {
-            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">No ${type} history yet</p>`;
-            return;
-        }
-
-        container.innerHTML = "";
-
-        sortedBills.forEach(bill => {
-            const billIndex = bill.isPurchase 
-                ? billHistory.findIndex(b => b.id === bill.id)
-                : -1;
-            const div = document.createElement("div");
-            div.className = "history-item";
-            div.setAttribute('data-type', bill.type);
-            
-            // Calculate packets from weights array
-            const totalPackets = bill.items.reduce((sum, item) => {
-                const packets = (item.weights && Array.isArray(item.weights) && item.weights.length > 0) 
-                    ? item.weights.length 
-                    : 1;
-                return sum + packets;
-            }, 0);
-            const totalWeight = bill.items.reduce((sum, item) => sum + (item.qty || 0), 0);
-            
-            const paymentParts = [];
-            // Handle both old and new payment structures with color coding
-            if (bill.payment) {
-                if (bill.payment.online > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.payment.online)}</span>`);
-                if (bill.payment.cash > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.payment.cash)}</span>`);
-                if (bill.payment.due > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.payment.due)}</span>`);
-            } else {
-                // Fallback to old direct fields
-                if (bill.onlinePayment > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.onlinePayment)}</span>`);
-                if (bill.cashPayment > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.cashPayment)}</span>`);
-                if (bill.dueAmount > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.dueAmount)}</span>`);
-            }
-            const paymentHTML = paymentParts.length > 0 ? `
-                <div class="history-payment">
-                    ${paymentParts.join(' ')}
-                </div>
-            ` : '';
-            
-            // Generate short bill number from ID
-            const billNumber = typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id;
-            const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
-            const formattedDate = HistoryManager.formatDate(bill.date);
-            const itemColor = bill.type === 'sale' ? '#28a745' : '#007bff';
-            
-            div.innerHTML = `
-                <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` • <strong>${bill.customerName}</strong>` : ''}
-                    <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
-                </div>
-                <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
-                <div class="history-summary">
-                    ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets • ${totalWeight.toFixed(1)}kg
-                </div>
-                ${paymentHTML}
-            `;
-            
-            container.appendChild(div);
-        });
+        this.renderHistory(type);
     }
 }

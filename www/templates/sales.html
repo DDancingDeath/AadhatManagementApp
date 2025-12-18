@@ -6,57 +6,70 @@
         </div>
 
         <div id="salesEntrySection">
-            <div class="form-row" style="margin-bottom: 16px;">
-                <label style="width: 100px;">Customer:</label>
-                <input type="text" id="wholesaleCustomerName" list="wholesaleCustomerOptions" placeholder="Enter customer name" style="flex: 1;" />
-                <datalist id="wholesaleCustomerOptions"></datalist>
+            <div class="form-section" style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                <div class="form-row" style="margin-bottom: 16px;">
+                    <label style="width: 100px; font-weight: 600;">Customer:</label>
+                    <input type="text" id="wholesaleCustomerName" list="wholesaleCustomerOptions" placeholder="Enter customer name" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 8px;" />
+                    <datalist id="wholesaleCustomerOptions"></datalist>
+                </div>
+
+                <div style="background: #f0fdf4; border: 2px solid #22c55e; border-radius: 12px; padding: 16px; margin-top: 16px;">
+                    <div class="form-row" style="margin-bottom: 12px;">
+                        <label style="width: 80px; font-weight: 600;">Item:</label>
+                        <select id="sellItem" onchange="loadSellItemDetails()" style="flex: 1; padding: 10px; border: 1px solid #22c55e; border-radius: 8px;"></select>
+                    </div>
+
+                    <div style="background: white; padding: 12px; border-radius: 8px; margin: 12px 0;">
+                        <div style="font-size: 14px; color: #333;">
+                            <strong>Available Stock:</strong> <span id="availableStock">-</span> kg<br>
+                            <strong>Avg Purchase Rate:</strong> ₹<span id="avgPurchaseRate">-</span>/kg
+                        </div>
+                    </div>
+
+                    <div class="form-row" style="margin-bottom: 12px;">
+                        <label style="width: 80px; font-weight: 600;">Rate (₹/kg):</label>
+                        <input type="number" inputmode="decimal" id="sellRate" placeholder="Enter selling rate" style="flex: 1; padding: 10px; border: 1px solid #22c55e; border-radius: 8px;" />
+                    </div>
+
+                    <div class="form-row">
+                        <label style="width: 80px; font-weight: 600;">Quantity (kg):</label>
+                        <input type="number" inputmode="decimal" id="sellQuantity" placeholder="Enter quantity" style="flex: 1; padding: 10px; border: 1px solid #22c55e; border-radius: 8px;" onkeypress="if(event.key === 'Enter') { event.preventDefault(); window.app.sales.addToWholesaleBill(); }" />
+                        <button onclick="window.app.sales.addToWholesaleBill()" style="padding: 10px 24px; background: #22c55e; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; min-width: 80px;">Add</button>
+                    </div>
+                </div>
             </div>
 
-            <label>Select Item:</label>
-        <select id="sellItem" onchange="loadSellItemDetails()">
-            <option value="">Select item</option>
-        </select>
-
-        <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin: 12px 0;">
-            <div style="font-size: 14px; color: #333;">
-                <strong>Available Stock:</strong> <span id="availableStock">-</span> kg<br>
-                <strong>Avg Purchase Rate:</strong> ₹<span id="avgPurchaseRate">-</span>/kg
-            </div>
-        </div>
-
-        <label>Selling Rate (₹/kg):</label>
-        <input type="number" inputmode="decimal" id="sellRate" placeholder="Enter selling rate" />
-
-        <div class="weight-input-row">
-            <div style="flex: 1;">
-                <label>Quantity (kg):</label>
-                <input type="number" inputmode="decimal" id="sellQuantity" placeholder="Enter quantity" />
-            </div>
-            <button class="quick-add-btn" onclick="window.app.billing.addToSalesBill()">Add to Bill</button>
-        </div>
-
-        <h3>Sale Items</h3>
-        <table id="salesTable">
+        <h3 style="color: #22c55e; margin-bottom: 12px;">Bill Items</h3>
+        <table id="salesTable" style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
             <thead>
-                <tr>
-                    <th>Item</th>
-                    <th>Rate</th>
-                    <th>Qty</th>
-                    <th>Total</th>
-                    <th></th>
+                <tr style="background: #f0fdf4;">
+                    <th style="padding: 12px; text-align: left;">Item</th>
+                    <th style="padding: 12px; text-align: center;">Rate</th>
+                    <th style="padding: 12px; text-align: center;">Qty</th>
+                    <th style="padding: 12px; text-align: right;">Total</th>
+                    <th style="padding: 12px; text-align: center;"></th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
 
-        <div class="bill-totals">
-            <div class="total-row grand-total">
-                <span>Total Sale Amount:</span>
-                <strong>₹ <span id="salesTotalAmount">0</span></strong>
+        <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-top: 20px;">
+            <div style="background: #d1fae5; padding: 16px; border-radius: 8px; margin: 12px 0;">
+                <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 600;">
+                    <span>Total Sale Amount:</span>
+                    <span style="color: #22c55e;">₹ <span id="salesTotalAmount">0</span></span>
+                </div>
             </div>
         </div>
 
-        <button class="print-btn" onclick="window.app.billing.completeSale()">Complete Sale</button>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
+            <button onclick="window.app.sales.shareViaWhatsApp()" style="padding: 14px; background: #25D366; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <span style="font-size: 20px;">📱</span> WhatsApp
+            </button>
+            <button onclick="window.app.sales.completeSale()" style="padding: 14px; background: #22c55e; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">Save</button>
+        </div>
+        
+        <button onclick="window.app.sales.printWholesaleSale()" style="width: 100%; padding: 14px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-top: 12px;">Print</button>
 
         <h3>Sales History</h3>
         <div id="salesHistoryList">

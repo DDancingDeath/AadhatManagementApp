@@ -1,5 +1,11 @@
 <div id="history" class="tab">
         
+        <div style="margin-bottom: 16px;">
+            <input type="text" id="historySearch" placeholder="Search by bill number, customer, or item..." 
+                   oninput="window.app.history.searchHistory(this.value)"
+                   style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;" />
+        </div>
+
         <div style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
             <button class="filter-btn filter-purchase active" onclick="window.app.history.filterHistory('purchase', event)">Purchase</button>
             <button class="filter-btn filter-sale" onclick="window.app.history.filterHistory('sale', event)">Sale</button>
