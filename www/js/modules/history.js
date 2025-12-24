@@ -187,9 +187,8 @@ export class HistoryManager {
             div.className = "history-item";
             div.setAttribute('data-type', bill.type);
             
-            // Use saved values from database, no recalculation
+            // Use saved values from database
             const totalPackets = bill.totalPackets || 0;
-            const totalWeight = bill.totalWeight || 0;
             
             const paymentParts = [];
             // Handle both old and new payment structures with color coding
@@ -222,7 +221,7 @@ export class HistoryManager {
                 </div>
                 <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
                 <div class="history-summary">
-                    ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets • ${totalWeight.toFixed(1)}kg
+                    ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets
                 </div>
                 ${paymentHTML}
             `;
@@ -331,7 +330,7 @@ export class HistoryManager {
         let weightBreakdownHTML = '';
         bill.items.forEach(item => {
                 if (item.weights && item.weights.length > 0) {
-                const weightsDisplay = item.weights.map(w => `${w}kg`).join(' ');
+                const weightsDisplay = item.weights.map(w => `${w}`).join(' ');
                 weightBreakdownHTML += `
                     <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #007bff;">
                         <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
@@ -346,9 +345,9 @@ export class HistoryManager {
             return `
                 <tr>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">₹${item.rate}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)} kg</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>₹${item.total}</strong></td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${item.total}</strong></td>
                 </tr>
             `;
         }).join('');
@@ -388,9 +387,9 @@ export class HistoryManager {
                     <thead>
                         <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
                             <th style="padding: 10px 8px; text-align: left; font-size: 14px; font-weight: 600; color: #495057;">Item</th>
-                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Rate</th>
-                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Qty</th>
-                            <th style="padding: 10px 8px; text-align: right; font-size: 14px; font-weight: 600; color: #495057;">Total</th>
+                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Rate (₹)</th>
+                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Qty (kg)</th>
+                            <th style="padding: 10px 8px; text-align: right; font-size: 14px; font-weight: 600; color: #495057;">Total (₹)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -455,6 +454,81 @@ export class HistoryManager {
 
     static closeBillDetails() {
         document.getElementById('billDetailsOverlay').classList.remove('active');
+    }
+
+    static async confirmDeleteBill(index) {
+        const confirmed = await UIManager.showModal(
+            'Are you sure you want to delete this bill? This action cannot be undone.',
+            'Delete Bill',
+            true
+        );
+        
+        if (confirmed) {
+            await this.deleteBill(index);
+        }
+    }
+
+    static async deleteBill(index) {
+        const billHistory = AppState.billHistory;
+        const bill = billHistory[index];
+        
+        if (!bill) {
+            UIManager.showToast('Bill not found');
+            return;
+        }
+
+        try {
+            UIManager.showLoading();
+            
+            // Delete from Firebase - need to find the document by matching bill data
+            // The bill.id might be a timestamp, but Firestore doc ID could be different
+            const userId = AppState.currentUser?.uid;
+            if (userId) {
+                // Query to find the bill document
+                const snapshot = await db.collection('bills')
+                    .where('userId', '==', userId)
+                    .where('timestamp', '==', bill.timestamp || bill.id)
+                    .get();
+                
+                // Delete all matching documents
+                const batch = db.batch();
+                snapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+            }
+            
+            // Remove from local state
+            billHistory.splice(index, 1);
+            
+            // Recalculate stock after deletion
+            AppState.stock = await FirebaseService.calculateStock();
+            
+            // Update finance overview if on Finance tab
+            if (typeof window.app.finance?.calculateOverview === 'function') {
+                window.app.finance.calculateOverview();
+            }
+            
+            // Update outstanding payments
+            if (typeof window.app.outstanding?.renderDue === 'function') {
+                window.app.outstanding.renderDue();
+            }
+            
+            // Close the details overlay
+            this.closeBillDetails();
+            
+            // Refresh the history view
+            const activeFilterBtn = document.querySelector('#history .filter-btn.active');
+            const currentType = activeFilterBtn?.classList.contains('filter-sale') ? 'sale' : 'purchase';
+            this.renderHistory(currentType);
+            
+            UIManager.hideLoading();
+            UIManager.showToast('Bill deleted successfully');
+        } catch (error) {
+            console.error('Error deleting bill:', error);
+            UIManager.hideLoading();
+            UIManager.showToast('Failed to delete bill');
+        }
     }
 
     static searchHistory(searchTerm) {

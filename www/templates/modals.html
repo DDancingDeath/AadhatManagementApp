@@ -25,8 +25,9 @@
                 <!-- Bill content will be inserted here -->
             </div>
             <div class="bill-details-footer">
-                <button class="btn-secondary" onclick="window.app.history.closeBillDetails()">Close</button>
-                <button class="btn-primary" id="billEditBtn" onclick="window.app.history.editBillDetails(window.currentBillIndex)">Edit</button>
+                <button class="bill-action-btn btn-delete" id="billDeleteBtn" onclick="window.app.history.confirmDeleteBill(window.currentBillIndex)">Delete</button>
+                <button class="bill-action-btn btn-edit" id="billEditBtn" onclick="window.app.history.editBillDetails(window.currentBillIndex)">Edit</button>
+                <button class="bill-action-btn btn-close" onclick="window.app.history.closeBillDetails()">Close</button>
             </div>
         </div>
     </div>

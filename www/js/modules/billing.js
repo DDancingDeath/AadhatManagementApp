@@ -1078,10 +1078,14 @@ const BillingManager = {
             return;
         }
         
+        // Calculate total packets
+        const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
+        
         const sale = {
             id: generateId(),
             items: saleItems,
             total: salesTotal,
+            totalPackets: totalPackets,
             onlinePayment: saleOnline,
             cashPayment: saleCash,
             dueAmount: saleDue,
@@ -1869,6 +1873,19 @@ const BillingManager = {
                 await FirebaseService.updateBill(updatedBill);
                 AppState.billHistory[billIndex] = updatedBill;
                 
+                // Recalculate stock after edit
+                AppState.stock = await FirebaseService.calculateStock();
+                
+                // Update finance overview
+                if (typeof window.app.finance?.calculateOverview === 'function') {
+                    window.app.finance.calculateOverview();
+                }
+                
+                // Update outstanding payments
+                if (typeof window.app.outstanding?.renderDue === 'function') {
+                    window.app.outstanding.renderDue();
+                }
+                
                 UIManager.showToast('✓ Bill updated successfully!');
             } else {
                 // Update sale
@@ -1903,6 +1920,19 @@ const BillingManager = {
                 const saleIndex = AppState.salesHistory.findIndex(s => s.id === bill.id);
                 if (saleIndex !== -1) {
                     AppState.salesHistory[saleIndex] = updatedSale;
+                }
+                
+                // Recalculate stock after edit
+                AppState.stock = await FirebaseService.calculateStock();
+                
+                // Update finance overview
+                if (typeof window.app.finance?.calculateOverview === 'function') {
+                    window.app.finance.calculateOverview();
+                }
+                
+                // Update outstanding payments
+                if (typeof window.app.outstanding?.renderDue === 'function') {
+                    window.app.outstanding.renderDue();
                 }
                 
                 UIManager.showToast('✓ Sale updated successfully!');
