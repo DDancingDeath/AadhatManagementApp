@@ -438,6 +438,7 @@ window.app = {
         closeBillDetails: () => HistoryManager.closeBillDetails(),
         filterHistory: (type, event) => HistoryManager.filterHistory(type, event),
         searchHistory: (searchTerm) => HistoryManager.searchHistory(searchTerm),
+        toggleView: () => HistoryManager.toggleView(),
         editBillDetails: (billIndex) => {
             if (billIndex !== undefined) {
                 BillingManager.editBill(billIndex);

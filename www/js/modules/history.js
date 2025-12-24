@@ -4,6 +4,8 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 
 export class HistoryManager {
+    static viewMode = 'card'; // 'card' or 'table'
+
     // Helper to format date consistently
     static formatDate(dateString) {
         try {
@@ -163,6 +165,12 @@ export class HistoryManager {
             return timeB - timeA;
         });
         
+        // Check view mode and render accordingly
+        if (this.viewMode === 'table') {
+            this.renderHistoryTable(sortedBills, type);
+            return;
+        }
+
         if (sortedBills.length === 0) {
             const message = searchTerm ? `No results found for "${searchTerm}"` : `No ${type} history yet`;
             container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
@@ -321,87 +329,136 @@ export class HistoryManager {
         // Store bill index for edit functionality
         window.currentBillIndex = index;
         
+        // Calculate total packets
+        const totalPackets = bill.items.reduce((sum, item) => {
+            const packets = (item.weights && Array.isArray(item.weights) && item.weights.length > 0) 
+                ? item.weights.length 
+                : 1;
+            return sum + packets;
+        }, 0);
+        
+        // Build weight breakdown sections for each item
+        let weightBreakdownHTML = '';
+        bill.items.forEach(item => {
+            if (item.weights && item.weights.length > 0) {
+                const weightsDisplay = item.weights.map(w => `${w}kg`).join(' ');
+                weightBreakdownHTML += `
+                    <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #007bff;">
+                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${item.qty}kg)</div>
+                        <div style="color: #6c757d; font-size: 14px;">${weightsDisplay}</div>
+                    </div>
+                `;
+            }
+        });
+        
+        // Build simple bill items table
         const itemsHTML = bill.items.map(item => {
-            const weightsDisplay = item.weights ? item.weights.map(w => `${w}kg`).join(', ') : '';
             return `
                 <tr>
-                    <td>${item.name}</td>
-                    <td style="text-align: center;">${item.weights?.length || 1}</td>
-                    <td>${weightsDisplay}</td>
-                    <td>${item.qty || 0} kg</td>
-                    <td>₹${item.rate}</td>
-                    <td><strong>₹${item.total}</strong></td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">₹${item.rate}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.qty || 0} kg</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>₹${item.total}</strong></td>
                 </tr>
             `;
         }).join('');
         
         const payment = bill.payment || {};
-        const paymentHTML = (payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
-            <div class="bill-payment-section">
-                <h4>Payment Details</h4>
-                ${payment.online > 0 ? `<div class="bill-payment-row"><span>Online:</span><strong>₹${payment.online}</strong></div>` : ''}
-                ${payment.cash > 0 ? `<div class="bill-payment-row"><span>Cash:</span><strong>₹${payment.cash}</strong></div>` : ''}
-                ${payment.due > 0 ? `<div class="bill-payment-row" style="color: #dc3545;"><span>Due:</span><strong>₹${payment.due}</strong></div>` : ''}
-            </div>
-        ` : '';
         
         const content = `
-            <div class="bill-info-section">
+            <div style="padding: 16px; max-width: 100%;">
                 ${bill.customerName ? `
-                    <div class="bill-info-row">
-                        <div class="bill-info-label">Customer:</div>
-                        <div class="bill-info-value"><strong>${bill.customerName}</strong></div>
+                    <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                        <span style="color: #6c757d; font-size: 14px;">Customer:</span>
+                        <strong style="display: block; font-size: 16px; color: #212529; margin-top: 4px;">${bill.customerName}</strong>
                     </div>
                 ` : ''}
-                <div class="bill-info-row">
-                    <div class="bill-info-label">Date:</div>
-                    <div class="bill-info-value">${bill.date}</div>
+                
+                <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                    <span style="color: #6c757d; font-size: 14px;">Date:</span>
+                    <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.date}</div>
                 </div>
+                
                 ${bill.createdByName ? `
-                    <div class="bill-info-row">
-                        <div class="bill-info-label">Created By:</div>
-                        <div class="bill-info-value">${bill.createdByName}</div>
+                    <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                        <span style="color: #6c757d; font-size: 14px;">Created By:</span>
+                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.createdByName}</div>
                     </div>
                 ` : ''}
-            </div>
-            
-            <table class="bill-items-table">
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th style="text-align: center;">Packets</th>
-                        <th>Weights</th>
-                        <th>Qty</th>
-                        <th>Rate</th>
-                        <th>Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${itemsHTML}
-                </tbody>
-            </table>
-            
-            <div class="bill-totals-section">
-                <div class="bill-totals-row">
-                    <span>Bill Total:</span>
-                    <strong>₹${bill.billTotal || bill.grandTotal || bill.amountPayable || 0}</strong>
+                
+                ${weightBreakdownHTML ? `
+                    <div style="margin: 16px 0;">
+                        <h4 style="margin-bottom: 12px; color: #212529; font-size: 15px;">Weight Breakdown</h4>
+                        ${weightBreakdownHTML}
+                    </div>
+                ` : ''}
+                
+                <h4 style="margin: 16px 0 12px 0; color: #212529; font-size: 15px;">Bill Items</h4>
+                <table style="width: 100%; border-collapse: collapse; background: white; margin-bottom: 16px;">
+                    <thead>
+                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding: 10px 8px; text-align: left; font-size: 14px; font-weight: 600; color: #495057;">Item</th>
+                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Rate</th>
+                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Qty</th>
+                            <th style="padding: 10px 8px; text-align: right; font-size: 14px; font-weight: 600; color: #495057;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsHTML}
+                    </tbody>
+                </table>
+                
+                <div style="text-align: right; padding: 8px 0; font-size: 14px; color: #6c757d; margin-bottom: 12px;">
+                    Total Packets: <strong style="color: #212529; font-size: 15px;">${totalPackets}</strong>
                 </div>
-                ${bill.laborCharges > 0 ? `
-                    <div class="bill-totals-row">
-                        <span>Labor Charges:</span>
-                        <strong>₹${bill.laborCharges}</strong>
+                
+                <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6;">
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px;">
+                        <span style="font-weight: 600;">Purchase Total:</span>
+                        <strong style="font-size: 17px; color: #007bff;">₹${bill.billTotal || bill.grandTotal || bill.amountPayable || 0}</strong>
                     </div>
-                    <div class="bill-totals-row total">
-                        <span>Amount Payable:</span>
-                        <strong>₹${Math.round(parseFloat(bill.billTotal || bill.grandTotal || 0) + parseFloat(bill.laborCharges || 0))}</strong>
+                    
+                    ${bill.laborCharges > 0 ? `
+                        <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px; border-top: 1px solid #e9ecef;">
+                            <span style="font-weight: 600;">Labor (₹):</span>
+                            <strong style="font-size: 17px; color: #ffc107;">₹${bill.laborCharges}</strong>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; padding: 12px 0; font-size: 16px; border-top: 2px solid #007bff; margin-top: 8px; background: linear-gradient(135deg, #e3f2fd, #bbdefb); margin: 8px -14px -14px -14px; padding: 12px 14px; border-radius: 0 0 10px 10px;">
+                            <span style="font-weight: 700;">Total Payable:</span>
+                            <strong style="font-size: 18px; color: #1976d2;">₹${Math.round(parseFloat(bill.billTotal || bill.grandTotal || 0) + parseFloat(bill.laborCharges || 0))}</strong>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                ${(payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
+                    <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6; margin-top: 12px;">
+                        <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #212529;">Payment Details</h4>
+                        ${payment.online > 0 ? `
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                                <span>Online:</span>
+                                <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #cfe2ff; color: #084298;">₹${payment.online}</span>
+                            </div>
+                        ` : ''}
+                        ${payment.cash > 0 ? `
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                                <span>Cash:</span>
+                                <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #d1e7dd; color: #0f5132;">₹${payment.cash}</span>
+                            </div>
+                        ` : ''}
+                        ${payment.due > 0 ? `
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                                <span>Due:</span>
+                                <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #fff3cd; color: #997404;">₹${payment.due}</span>
+                            </div>
+                        ` : ''}
                     </div>
                 ` : ''}
             </div>
-            
-            ${paymentHTML}
         `;
         
-        document.getElementById('billDetailsTitle').textContent = `Purchase Bill #${bill.id}`;
+        const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
+        document.getElementById('billDetailsTitle').textContent = `Purchase Bill #${billNumber}`;
         document.getElementById('billDetailsContent').innerHTML = content;
         document.getElementById('billDetailsOverlay').classList.add('active');
     }
@@ -428,5 +485,93 @@ export class HistoryManager {
         if (searchInput) searchInput.value = '';
         
         this.renderHistory(type);
+    }
+
+    static toggleView() {
+        this.viewMode = this.viewMode === 'card' ? 'table' : 'card';
+        const toggleBtn = document.getElementById('historyViewToggle');
+        if (toggleBtn) {
+            toggleBtn.textContent = this.viewMode === 'card' ? 'Table View' : 'Card View';
+        }
+        
+        // Re-render with current filter and search
+        const activeFilterBtn = document.querySelector('#history .filter-btn.active');
+        const currentType = activeFilterBtn?.classList.contains('filter-sale') ? 'sale' : 'purchase';
+        const searchInput = document.getElementById('historySearch');
+        const searchTerm = searchInput ? searchInput.value : '';
+        
+        this.renderHistory(currentType, searchTerm);
+    }
+
+    static renderHistoryTable(bills, type) {
+        const container = document.getElementById("historyList");
+        
+        if (bills.length === 0) {
+            const searchInput = document.getElementById('historySearch');
+            const searchTerm = searchInput ? searchInput.value : '';
+            const message = searchTerm ? `No results found for "${searchTerm}"` : `No ${type} history yet`;
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
+            return;
+        }
+
+        const billHistory = AppState.billHistory || [];
+        const itemColor = type === 'sale' ? '#28a745' : '#007bff';
+        
+        let tableHTML = `
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, ${itemColor}, ${itemColor}dd); color: white;">
+                            <th style="padding: 12px 8px; text-align: left; font-weight: 600; font-size: 14px;">Customer</th>
+                            <th style="padding: 12px 8px; text-align: left; font-weight: 600; font-size: 14px;">Items</th>
+                            <th style="padding: 12px 8px; text-align: right; font-weight: 600; font-size: 14px;">Rate (₹)</th>
+                            <th style="padding: 12px 8px; text-align: right; font-weight: 600; font-size: 14px;">Weight (kg)</th>
+                            <th style="padding: 12px 8px; text-align: right; font-weight: 600; font-size: 14px;">Total (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        bills.forEach(bill => {
+            const billIndex = bill.isPurchase 
+                ? billHistory.findIndex(b => b.id === bill.id)
+                : -1;
+            const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
+            const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
+            
+            bill.items.forEach((item, index) => {
+                const isFirstRow = index === 0;
+                const rowspan = bill.items.length;
+                
+                tableHTML += `
+                    <tr style="border-bottom: 1px solid #e5e7eb; cursor: pointer; transition: background 0.2s;" 
+                        onmouseover="this.style.background='#f9fafb'" 
+                        onmouseout="this.style.background='white'"
+                        onclick="window.app.history.reprintBill(${billIndex})">
+                        ${isFirstRow ? `
+                            <td rowspan="${rowspan}" style="padding: 12px 8px; border-right: 1px solid #e5e7eb; font-weight: 500;">
+                                ${bill.customerName || '-'}
+                            </td>
+                        ` : ''}
+                        <td style="padding: 12px 8px;">${item.name}</td>
+                        <td style="padding: 12px 8px; text-align: right;">₹${item.rate}</td>
+                        <td style="padding: 12px 8px; text-align: right;">${(item.qty || 0).toFixed(1)}</td>
+                        ${isFirstRow ? `
+                            <td rowspan="${rowspan}" style="padding: 12px 8px; text-align: right; border-left: 1px solid #e5e7eb; font-weight: 700; color: ${itemColor}; font-size: 15px;">
+                                ₹${Math.round(billTotal)}
+                            </td>
+                        ` : ''}
+                    </tr>
+                `;
+            });
+        });
+
+        tableHTML += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        container.innerHTML = tableHTML;
     }
 }
