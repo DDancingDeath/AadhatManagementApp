@@ -549,8 +549,8 @@ const BillingManager = {
             laborCharges = 0;
         }
         
-        // Calculate grand total (add labor charges for purchase)
-        const grandTotal = billTotal + laborCharges;
+        // Calculate grand total (subtract labor charges for purchase)
+        const grandTotal = billTotal - laborCharges;
         
         const grandTotalElement = document.getElementById('amountPayable');
         if (grandTotalElement) {
@@ -652,6 +652,12 @@ const BillingManager = {
         const dueAmount = parseFloat(document.getElementById('dueAmount')?.value || 0);
         const customerName = document.getElementById('customerName')?.value || '';
         const comments = document.getElementById('billComments')?.value || '';
+        
+        // Validate payment - at least one payment method must be provided
+        if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {
+            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
+            return;
+        }
         
         // Get labor calculation string only if auto-labor was used (checkbox checked and not manually edited)
         const autoLaborCheckbox = document.getElementById('autoLaborCharge');
@@ -866,21 +872,21 @@ const BillingManager = {
         
         const itemName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         
-        // Check stock - stock is keyed by item ID
-        const stockItem = AppState.stock?.[item.id] || AppState.stock?.[item.name];
-        console.log('Stock check:', { 
-            itemId: item.id,
-            itemName: item.name,
-            stockItem, 
-            availableStock: stockItem?.quantity,
-            requestedQty: qty
-        });
-        
-        if (!stockItem || stockItem.quantity < qty) {
-            const available = stockItem?.quantity || 0;
-            UIManager.showToast(`Insufficient stock! Available: ${available}kg`);
-            return;
-        }
+        // Stock validation temporarily disabled
+        // const stockItem = AppState.stock?.[item.id] || AppState.stock?.[item.name];
+        // console.log('Stock check:', { 
+        //     itemId: item.id,
+        //     itemName: item.name,
+        //     stockItem, 
+        //     availableStock: stockItem?.quantity,
+        //     requestedQty: qty
+        // });
+        // 
+        // if (!stockItem || stockItem.quantity < qty) {
+        //     const available = stockItem?.quantity || 0;
+        //     UIManager.showToast(`Insufficient stock! Available: ${available}kg`);
+        //     return;
+        // }
         
         const total = Math.round(qty * rate);
         
@@ -1065,6 +1071,12 @@ const BillingManager = {
         const saleDue = parseFloat(document.getElementById('saleDueAmount')?.value || 0);
         const saleCustomer = document.getElementById('saleCustomerName')?.value || '';
         const saleComments = document.getElementById('saleComments')?.value || '';
+        
+        // Validate payment - at least one payment method must be provided
+        if (saleOnline === 0 && saleCash === 0 && saleDue === 0) {
+            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
+            return;
+        }
         
         const sale = {
             id: generateId(),
