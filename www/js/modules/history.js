@@ -179,10 +179,10 @@ export class HistoryManager {
 
         container.innerHTML = "";
 
-        sortedBills.forEach(bill => {
+        sortedBills.forEach((bill, sortedIndex) => {
             const billIndex = bill.isPurchase 
                 ? billHistory.findIndex(b => b.id === bill.id)
-                : -1;
+                : salesHistory.findIndex(s => s.id === bill.id);
             const div = document.createElement("div");
             div.className = "history-item";
             div.setAttribute('data-type', bill.type);
@@ -216,7 +216,7 @@ export class HistoryManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.reprintBill(${billIndex})">#${billNumber}</span>${bill.customerName ? ` <strong>${bill.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill(${billIndex}, '${bill.type}')">#${billNumber}</span>${bill.customerName ? ` <strong>${bill.customerName}</strong>` : ''}
                     <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
                 <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
@@ -312,47 +312,76 @@ export class HistoryManager {
     }
     */
 
-    static async reprintBill(index) {
-        const billHistory = AppState.billHistory;
-        const bill = billHistory[index];
+    static async viewBill(index, type = 'purchase') {
+        const history = type === 'sale' ? AppState.salesHistory : AppState.billHistory;
+        const bill = history[index];
+        
         if (!bill) {
             UIManager.showModal('Bill not found');
             return;
         }
         
-        // Store bill index for edit functionality
-        window.currentBillIndex = index;
+        // Store bill index for edit functionality (purchases only)
+        if (type === 'purchase') {
+            window.currentBillIndex = index;
+        }
         
-        // Use saved total packets from database, no recalculation
         const totalPackets = bill.totalPackets || 0;
+        const isPurchase = type === 'purchase';
+        const billColor = isPurchase ? '#007bff' : '#28a745';
         
-        // Build weight breakdown sections for each item
+        // Build weight breakdown (purchases only)
         let weightBreakdownHTML = '';
-        bill.items.forEach(item => {
+        if (isPurchase) {
+            bill.items.forEach(item => {
                 if (item.weights && item.weights.length > 0) {
-                const weightsDisplay = item.weights.map(w => `${w}`).join(' ');
-                weightBreakdownHTML += `
-                    <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #007bff;">
-                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
-                        <div style="color: #6c757d; font-size: 14px;">${weightsDisplay}</div>
-                    </div>
-                `;
-            }
-        });
+                    const weightsDisplay = item.weights.map(w => `${w}`).join(' ');
+                    weightBreakdownHTML += `
+                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid ${billColor};">
+                            <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
+                            <div style="color: #6c757d; font-size: 14px;">${weightsDisplay}</div>
+                        </div>
+                    `;
+                }
+            });
+        }
         
-        // Build simple bill items table
-        const itemsHTML = bill.items.map(item => {
-            return `
-                <tr>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${item.total}</strong></td>
-                </tr>
-            `;
-        }).join('');
+        // Build items table
+        const itemsHTML = bill.items.map(item => `
+            <tr>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)}</td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${item.total}</strong></td>
+            </tr>
+        `).join('');
         
         const payment = bill.payment || {};
+        
+        // Build payment section HTML (reusable)
+        const paymentHTML = (payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
+            <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6; margin-top: 12px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #212529;">Payment Details</h4>
+                ${payment.online > 0 ? `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                        <span>Online:</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #cfe2ff; color: #084298;">₹${payment.online}</span>
+                    </div>
+                ` : ''}
+                ${payment.cash > 0 ? `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                        <span>Cash:</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #d1e7dd; color: #0f5132;">₹${payment.cash}</span>
+                    </div>
+                ` : ''}
+                ${payment.due > 0 ? `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                        <span>Due:</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #fff3cd; color: #997404;">₹${payment.due}</span>
+                    </div>
+                ` : ''}
+            </div>
+        ` : '';
         
         const content = `
             <div style="padding: 16px; max-width: 100%;">
@@ -368,10 +397,10 @@ export class HistoryManager {
                     <div style="font-size: 14px; color: #212529; margin-top: 4px;">${this.formatDate(bill.date)}</div>
                 </div>
                 
-                ${bill.createdByName ? `
+                ${bill.createdByName || bill.userName ? `
                     <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
                         <span style="color: #6c757d; font-size: 14px;">Created By:</span>
-                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.createdByName}</div>
+                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.createdByName || bill.userName}</div>
                     </div>
                 ` : ''}
                 
@@ -382,7 +411,7 @@ export class HistoryManager {
                     </div>
                 ` : ''}
                 
-                <h4 style="margin: 16px 0 12px 0; color: #212529; font-size: 15px;">Bill Items</h4>
+                <h4 style="margin: 16px 0 12px 0; color: #212529; font-size: 15px;">${isPurchase ? 'Bill' : 'Sale'} Items</h4>
                 <table style="width: 100%; border-collapse: collapse; background: white; margin-bottom: 16px;">
                     <thead>
                         <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
@@ -402,54 +431,52 @@ export class HistoryManager {
                 </div>
                 
                 <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6;">
-                    <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px;">
-                        <span style="font-weight: 600;">Purchase Total:</span>
-                        <strong style="font-size: 17px; color: #007bff;">₹${bill.billTotal || bill.grandTotal || bill.amountPayable || 0}</strong>
-                    </div>
-                    
-                    ${bill.laborCharges > 0 ? `
-                        <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px; border-top: 1px solid #e9ecef;">
-                            <span style="font-weight: 600;">Labor (₹):</span>
-                            <strong style="font-size: 17px; color: #ffc107;">₹${bill.laborCharges}</strong>
+                    ${isPurchase ? `
+                        <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px;">
+                            <span style="font-weight: 600;">Purchase Total:</span>
+                            <strong style="font-size: 17px; color: ${billColor};">₹${bill.billTotal || bill.grandTotal || bill.amountPayable || 0}</strong>
                         </div>
                         
-                        <div style="display: flex; justify-content: space-between; padding: 12px 0; font-size: 16px; border-top: 2px solid #007bff; margin-top: 8px; background: linear-gradient(135deg, #e3f2fd, #bbdefb); margin: 8px -14px -14px -14px; padding: 12px 14px; border-radius: 0 0 10px 10px;">
-                            <span style="font-weight: 700;">Total Payable:</span>
-                            <strong style="font-size: 18px; color: #1976d2;">₹${Math.round(bill.total || bill.amountPayable || 0)}</strong>
+                        ${bill.laborCharges > 0 ? `
+                            <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px; border-top: 1px solid #e9ecef;">
+                                <span style="font-weight: 600;">Labor (₹):</span>
+                                <strong style="font-size: 17px; color: #ffc107;">₹${bill.laborCharges}</strong>
+                            </div>
+                            
+                            <div style="display: flex; justify-content: space-between; padding: 12px 0; font-size: 16px; border-top: 2px solid ${billColor}; margin-top: 8px; background: linear-gradient(135deg, #e3f2fd, #bbdefb); margin: 8px -14px -14px -14px; padding: 12px 14px; border-radius: 0 0 10px 10px;">
+                                <span style="font-weight: 700;">Total Payable:</span>
+                                <strong style="font-size: 18px; color: #1976d2;">₹${Math.round(bill.total || bill.amountPayable || 0)}</strong>
+                            </div>
+                        ` : ''}
+                    ` : `
+                        <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px;">
+                            <span style="font-weight: 600;">Sale Total:</span>
+                            <strong style="font-size: 17px; color: ${billColor};">₹${Math.round(bill.total || 0)}</strong>
                         </div>
-                    ` : ''}
+                    `}
                 </div>
                 
-                ${(payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
-                    <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6; margin-top: 12px;">
-                        <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #212529;">Payment Details</h4>
-                        ${payment.online > 0 ? `
-                            <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                                <span>Online:</span>
-                                <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #cfe2ff; color: #084298;">₹${payment.online}</span>
-                            </div>
-                        ` : ''}
-                        ${payment.cash > 0 ? `
-                            <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                                <span>Cash:</span>
-                                <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #d1e7dd; color: #0f5132;">₹${payment.cash}</span>
-                            </div>
-                        ` : ''}
-                        ${payment.due > 0 ? `
-                            <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                                <span>Due:</span>
-                                <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #fff3cd; color: #997404;">₹${payment.due}</span>
-                            </div>
-                        ` : ''}
-                    </div>
-                ` : ''}
+                ${paymentHTML}
             </div>
         `;
         
         const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
-        document.getElementById('billDetailsTitle').textContent = `Purchase Bill #${billNumber}`;
+        const billType = isPurchase ? 'Purchase Bill' : 'Sale';
+        document.getElementById('billDetailsTitle').textContent = `${billType} #${billNumber}`;
         document.getElementById('billDetailsContent').innerHTML = content;
+        
+        // Show all buttons for both purchases and sales
+        const editBtn = document.getElementById('billEditBtn');
+        const deleteBtn = document.getElementById('billDeleteBtn');
+        if (editBtn) editBtn.style.display = '';
+        if (deleteBtn) deleteBtn.style.display = '';
+        
         document.getElementById('billDetailsOverlay').classList.add('active');
+    }
+
+    static async reprintBill(index) {
+        // Backward compatibility - redirect to viewBill
+        return this.viewBill(index, 'purchase');
     }
 
     static closeBillDetails() {

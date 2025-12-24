@@ -434,6 +434,7 @@ window.app = {
     history: {
         saveBillToHistory: () => HistoryManager.saveBillToHistory(),
         render: () => HistoryManager.renderHistory(),
+        viewBill: (index, type) => HistoryManager.viewBill(index, type),
         reprintBill: (index) => HistoryManager.reprintBill(index),
         closeBillDetails: () => HistoryManager.closeBillDetails(),
         confirmDeleteBill: (index) => HistoryManager.confirmDeleteBill(index),
