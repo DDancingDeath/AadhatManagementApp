@@ -281,7 +281,7 @@ class BluetoothPrinterManager {
             ctx.textAlign = 'left';
             ctx.fillText(displayName.substring(0, 11), config.columns.item, y);
             ctx.fillText(item.rate.toString(), config.columns.rate, y);
-            ctx.fillText(item.qty.toString(), config.columns.quantity, y);
+            ctx.fillText((item.qty || 0).toFixed(1), config.columns.quantity, y);
             ctx.fillText(Math.round(item.total).toString(), config.columns.total, y);
             y += config.spacing.line;
         });
@@ -903,9 +903,9 @@ const PrinterService = {
             let weightsDisplay = '';
             if (item.weights) {
                 if (item.weights.length === 1) {
-                    weightsDisplay = `${item.qty}kg`;
+                    weightsDisplay = `${(item.qty || 0).toFixed(1)}kg`;
                 } else {
-                    weightsDisplay = `(${item.weights.join('+')}) = ${item.qty}kg`;
+                    weightsDisplay = `(${item.weights.join('+')}) = ${(item.qty || 0).toFixed(1)}kg`;
                 }
             }
             

@@ -549,8 +549,8 @@ const BillingManager = {
             laborCharges = 0;
         }
         
-        // Calculate grand total (subtract labor charges for purchase)
-        const grandTotal = billTotal - laborCharges;
+        // Calculate grand total (add labor charges for purchase)
+        const grandTotal = billTotal + laborCharges;
         
         const grandTotalElement = document.getElementById('amountPayable');
         if (grandTotalElement) {

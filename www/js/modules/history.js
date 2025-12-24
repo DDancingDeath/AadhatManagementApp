@@ -187,14 +187,9 @@ export class HistoryManager {
             div.className = "history-item";
             div.setAttribute('data-type', bill.type);
             
-            // Calculate packets: use weights array length if available, otherwise default to 1
-            const totalPackets = bill.items.reduce((sum, item) => {
-                const packets = (item.weights && Array.isArray(item.weights) && item.weights.length > 0) 
-                    ? item.weights.length 
-                    : 1;
-                return sum + packets;
-            }, 0);
-            const totalWeight = bill.items.reduce((sum, item) => sum + (item.qty || 0), 0);
+            // Use saved values from database, no recalculation
+            const totalPackets = bill.totalPackets || 0;
+            const totalWeight = bill.totalWeight || 0;
             
             const paymentParts = [];
             // Handle both old and new payment structures with color coding
@@ -329,22 +324,17 @@ export class HistoryManager {
         // Store bill index for edit functionality
         window.currentBillIndex = index;
         
-        // Calculate total packets
-        const totalPackets = bill.items.reduce((sum, item) => {
-            const packets = (item.weights && Array.isArray(item.weights) && item.weights.length > 0) 
-                ? item.weights.length 
-                : 1;
-            return sum + packets;
-        }, 0);
+        // Use saved total packets from database, no recalculation
+        const totalPackets = bill.totalPackets || 0;
         
         // Build weight breakdown sections for each item
         let weightBreakdownHTML = '';
         bill.items.forEach(item => {
-            if (item.weights && item.weights.length > 0) {
+                if (item.weights && item.weights.length > 0) {
                 const weightsDisplay = item.weights.map(w => `${w}kg`).join(' ');
                 weightBreakdownHTML += `
                     <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #007bff;">
-                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${item.qty}kg)</div>
+                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
                         <div style="color: #6c757d; font-size: 14px;">${weightsDisplay}</div>
                     </div>
                 `;
@@ -357,7 +347,7 @@ export class HistoryManager {
                 <tr>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">₹${item.rate}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.qty || 0} kg</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)} kg</td>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>₹${item.total}</strong></td>
                 </tr>
             `;
@@ -376,7 +366,7 @@ export class HistoryManager {
                 
                 <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
                     <span style="color: #6c757d; font-size: 14px;">Date:</span>
-                    <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.date}</div>
+                    <div style="font-size: 14px; color: #212529; margin-top: 4px;">${this.formatDate(bill.date)}</div>
                 </div>
                 
                 ${bill.createdByName ? `
@@ -426,7 +416,7 @@ export class HistoryManager {
                         
                         <div style="display: flex; justify-content: space-between; padding: 12px 0; font-size: 16px; border-top: 2px solid #007bff; margin-top: 8px; background: linear-gradient(135deg, #e3f2fd, #bbdefb); margin: 8px -14px -14px -14px; padding: 12px 14px; border-radius: 0 0 10px 10px;">
                             <span style="font-weight: 700;">Total Payable:</span>
-                            <strong style="font-size: 18px; color: #1976d2;">₹${Math.round(parseFloat(bill.billTotal || bill.grandTotal || 0) + parseFloat(bill.laborCharges || 0))}</strong>
+                            <strong style="font-size: 18px; color: #1976d2;">₹${Math.round(bill.total || bill.amountPayable || 0)}</strong>
                         </div>
                     ` : ''}
                 </div>
