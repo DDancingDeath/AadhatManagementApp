@@ -306,7 +306,6 @@ export class HistoryManager {
             ${paymentHTML}
         `;
         
-        document.getElementById('billDetailsTitle').textContent = `Sale #${sale.id}`;
         document.getElementById('billDetailsContent').innerHTML = content;
         document.getElementById('billDetailsOverlay').classList.add('active');
     }
@@ -461,7 +460,6 @@ export class HistoryManager {
         
         const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
         const billType = isPurchase ? 'Purchase Bill' : 'Sale';
-        document.getElementById('billDetailsTitle').textContent = `${billType} #${billNumber}`;
         document.getElementById('billDetailsContent').innerHTML = content;
         
         // Show all buttons for both purchases and sales

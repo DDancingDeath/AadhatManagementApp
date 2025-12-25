@@ -89,4 +89,18 @@
                 <p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>
             </div>
         </div>
+
+        <!-- Expense Details Modal -->
+        <div class="bill-details-overlay" id="expenseDetailsOverlay">
+            <div class="bill-details-container">
+                <div class="bill-details-content" id="expenseDetailsContent">
+                    <!-- Expense content will be inserted here -->
+                </div>
+                <div class="bill-details-footer">
+                    <button class="bill-action-btn btn-delete" id="expenseDeleteBtn" onclick="window.app.payments.confirmDeleteExpense()">Delete</button>
+                    <button class="bill-action-btn btn-edit" id="expenseEditBtn" onclick="window.app.payments.editExpenseFromModal()">Edit</button>
+                    <button class="bill-action-btn btn-close" onclick="window.app.payments.closeExpenseDetails()">Close</button>
+                </div>
+            </div>
+        </div>
     </div>

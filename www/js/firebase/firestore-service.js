@@ -133,6 +133,26 @@ const FirebaseService = {
         return { id: docRef.id, ...payment };
     },
 
+    // Delete payment from Firestore
+    async deletePayment(paymentId) {
+        // Handle both old numeric IDs and new Firebase document IDs
+        if (typeof paymentId === 'number' || !isNaN(Number(paymentId))) {
+            // Old payment with numeric ID - query by id field
+            const snapshot = await db.collection('payments').where('id', '==', Number(paymentId)).get();
+            const deletePromises = snapshot.docs.map(doc => doc.ref.delete());
+            await Promise.all(deletePromises);
+        } else {
+            // New payment with Firebase document ID
+            await db.collection('payments').doc(paymentId).delete();
+        }
+        
+        // Update local state
+        const index = AppState.paymentsHistory.findIndex(p => p.id == paymentId);
+        if (index !== -1) {
+            AppState.paymentsHistory.splice(index, 1);
+        }
+    },
+
     // Load stock adjustments from Firestore
     async loadStockAdjustments() {
         const snapshot = await db.collection('stockAdjustments').orderBy('date', 'desc').get();

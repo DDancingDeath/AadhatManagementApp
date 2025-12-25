@@ -5103,7 +5103,6 @@ async function reprintBill(index) {
         ${paymentHTML}
     `;
     
-    document.getElementById('billDetailsTitle').textContent = `Purchase Bill #${bill.id}`;
     document.getElementById('billDetailsContent').innerHTML = content;
     document.getElementById('billDetailsOverlay').classList.add('active');
 }
@@ -5197,7 +5196,6 @@ async function reprintSale(index) {
         ${paymentsHistoryHTML}
     `;
     
-    document.getElementById('billDetailsTitle').textContent = `Sale #${sale.id}`;
     document.getElementById('billDetailsContent').innerHTML = content;
     document.getElementById('billDetailsOverlay').classList.add('active');
 }

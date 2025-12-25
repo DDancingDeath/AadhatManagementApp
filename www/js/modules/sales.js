@@ -667,7 +667,6 @@ export class SalesManager {
             ${paymentsHistoryHTML}
         `;
         
-        document.getElementById('billDetailsTitle').textContent = `Sale #${sale.id}`;
         document.getElementById('billDetailsContent').innerHTML = content;
         document.getElementById('billDetailsOverlay').classList.add('active');
     }

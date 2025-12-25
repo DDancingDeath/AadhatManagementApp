@@ -541,22 +541,49 @@ class BluetoothPrinterManager {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = '#000000';
         
-        let y = 20;
+        let y = 30;
         
-        // Header
+        // Receipt Header
         ctx.font = `bold ${config.fonts.header.size}px Arial`;
         ctx.textAlign = 'center';
-        const headerText = expense.category === 'business' ? 'BUSINESS EXPENSE' : 'PERSONAL EXPENSE';
-        ctx.fillText(headerText, config.width / 2, y);
-        y += config.fonts.header.size + config.spacing.section;
+        ctx.fillText('Receipt', config.width / 2, y);
+        y += config.fonts.header.size + 10;
         
-        // Separator line
-        ctx.fillRect(10, y, config.width - 20, 2);
-        y += config.spacing.section;
-        
-        // Details
+        // Date and Time
         ctx.font = `${config.fonts.body.size}px Arial`;
+        let dateTime;
+        let expenseDate;
+        
+        // Try to parse the date from various possible formats
+        if (expense.timestamp) {
+            expenseDate = new Date(expense.timestamp);
+        } else if (expense.date) {
+            // Try parsing the date string
+            expenseDate = new Date(expense.date);
+        } else {
+            expenseDate = new Date();
+        }
+        
+        // Check if date is valid, if not use current date
+        if (isNaN(expenseDate.getTime())) {
+            expenseDate = new Date();
+        }
+        
+        dateTime = expenseDate.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+        
+        ctx.fillText(dateTime, config.width / 2, y);
+        y += config.spacing.line + 10;
+        
+        // Content in Hindi
         ctx.textAlign = 'left';
+        ctx.font = `${config.fonts.body.size}px Arial`;
         
         // Type
         ctx.fillText('Type:', 10, y);
@@ -573,47 +600,12 @@ class BluetoothPrinterManager {
         
         // Person (if available)
         if (expense.personName) {
-            ctx.fillText('Person:', 10, y);
+            ctx.fillText('Name:', 10, y);
             ctx.fillText(expense.personName, 120, y);
             y += config.spacing.line;
         }
         
-        // Remarks (if available)
-        if (expense.remarks) {
-            ctx.fillText('Remarks:', 10, y);
-            y += config.spacing.line;
-            
-            // Word wrap remarks
-            const maxWidth = config.width - 20;
-            const words = expense.remarks.split(' ');
-            let line = '';
-            
-            for (let word of words) {
-                const testLine = line + (line ? ' ' : '') + word;
-                const metrics = ctx.measureText(testLine);
-                
-                if (metrics.width > maxWidth && line) {
-                    ctx.fillText(line, 10, y);
-                    y += config.spacing.line;
-                    line = word;
-                } else {
-                    line = testLine;
-                }
-            }
-            
-            if (line) {
-                ctx.fillText(line, 10, y);
-                y += config.spacing.line;
-            }
-        }
-        
-        // Date
-        y += config.spacing.section;
-        ctx.fillRect(10, y, config.width - 20, 2);
-        y += config.spacing.section;
-        ctx.fillText('Date:', 10, y);
-        ctx.fillText(expense.date, 120, y);
-        y += config.spacing.line + 20;
+        y += 20;
         
         // Adjust canvas height to actual content
         const finalCanvas = document.createElement('canvas');
@@ -871,10 +863,48 @@ const PrinterService = {
                 box-shadow: 0 4px 20px rgba(0,0,0,0.5);
             `;
             
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = `
+                display: flex;
+                gap: 10px;
+                margin-top: 20px;
+                justify-content: center;
+            `;
+            
+            const downloadBtn = document.createElement('button');
+            downloadBtn.textContent = 'Download';
+            downloadBtn.style.cssText = `
+                padding: 12px 24px;
+                background: #22c55e;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+                min-width: 140px;
+            `;
+            downloadBtn.onclick = () => {
+                // Create a new canvas with padding
+                const padding = 20;
+                const paddedCanvas = document.createElement('canvas');
+                paddedCanvas.width = canvas.width + (padding * 2);
+                paddedCanvas.height = canvas.height + (padding * 2);
+                
+                const paddedCtx = paddedCanvas.getContext('2d');
+                paddedCtx.fillStyle = '#FFFFFF';
+                paddedCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
+                paddedCtx.drawImage(canvas, padding, padding);
+                
+                const billType = billData.isPurchase ? 'purchase' : 'sale';
+                const link = document.createElement('a');
+                link.download = `${billType}_bill_${billData.id || Date.now()}.png`;
+                link.href = paddedCanvas.toDataURL('image/png');
+                link.click();
+            };
+            
             const closeBtn = document.createElement('button');
             closeBtn.textContent = 'Close';
             closeBtn.style.cssText = `
-                margin-top: 20px;
                 padding: 12px 24px;
                 background: #007bff;
                 color: white;
@@ -882,11 +912,15 @@ const PrinterService = {
                 border-radius: 8px;
                 font-size: 16px;
                 cursor: pointer;
+                min-width: 140px;
             `;
             closeBtn.onclick = () => document.body.removeChild(modal);
             
+            buttonContainer.appendChild(downloadBtn);
+            buttonContainer.appendChild(closeBtn);
+            
             modal.appendChild(img);
-            modal.appendChild(closeBtn);
+            modal.appendChild(buttonContainer);
             document.body.appendChild(modal);
             
             return true;
@@ -1033,31 +1067,76 @@ const PrinterService = {
                 padding: 20px;
             `;
             
-            modal.innerHTML = `
-                <div style="background: white; padding: 20px; border-radius: 8px; max-width: 500px; max-height: 90vh; overflow: auto;">
-                    <h3 style="margin-top: 0; text-align: center;">Expense Receipt Preview</h3>
-                    <img src="${dataUrl}" style="width: 100%; height: auto; border: 1px solid #ddd;">
-                    <div style="display: flex; gap: 10px; margin-top: 20px;">
-                        <button id="closePreview" style="flex: 1; padding: 12px; background: #ef4444; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer;">Close</button>
-                        <button id="downloadPreview" style="flex: 1; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer;">Download</button>
-                    </div>
-                </div>
+            const img = document.createElement('img');
+            img.src = dataUrl;
+            img.style.cssText = `
+                max-width: 90%;
+                max-height: 80vh;
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
             `;
             
-            document.body.appendChild(modal);
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = `
+                display: flex;
+                gap: 10px;
+                margin-top: 20px;
+                justify-content: center;
+            `;
             
-            // Close button
-            modal.querySelector('#closePreview').onclick = () => {
-                document.body.removeChild(modal);
-            };
-            
-            // Download button
-            modal.querySelector('#downloadPreview').onclick = () => {
+            const downloadBtn = document.createElement('button');
+            downloadBtn.textContent = 'Download';
+            downloadBtn.style.cssText = `
+                padding: 12px 24px;
+                background: #22c55e;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+                min-width: 140px;
+            `;
+            downloadBtn.onclick = () => {
+                // Create a new canvas with padding
+                const padding = 20;
+                const paddedCanvas = document.createElement('canvas');
+                paddedCanvas.width = canvas.width + (padding * 2);
+                paddedCanvas.height = canvas.height + (padding * 2);
+                
+                const paddedCtx = paddedCanvas.getContext('2d');
+                paddedCtx.fillStyle = '#FFFFFF';
+                paddedCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
+                paddedCtx.drawImage(canvas, padding, padding);
+                
                 const link = document.createElement('a');
                 link.download = `expense_${expense.id || Date.now()}.png`;
-                link.href = dataUrl;
+                link.href = paddedCanvas.toDataURL('image/png');
                 link.click();
             };
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = 'Close';
+            closeBtn.style.cssText = `
+                padding: 12px 24px;
+                background: #007bff;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+                min-width: 140px;
+            `;
+            closeBtn.onclick = () => document.body.removeChild(modal);
+            
+            buttonContainer.appendChild(downloadBtn);
+            buttonContainer.appendChild(closeBtn);
+            
+            modal.appendChild(img);
+            modal.appendChild(buttonContainer);
+            
+            document.body.appendChild(modal);
             
             // Close on background click
             modal.onclick = (e) => {

@@ -417,7 +417,8 @@ window.app = {
         disconnect: () => PrinterService.disconnect(),
         test: () => PrinterService.testPrint(),
         updateStatus: () => PrinterService.updateStatus(),
-        print: (billData) => PrinterService.printBill(billData)
+        print: (billData) => PrinterService.printBill(billData),
+        printExpense: (expense) => PrinterService.printExpense(expense)
     },
     
     // Stock
@@ -512,7 +513,13 @@ window.app = {
         renderHistory: () => PaymentsManager.renderPaymentsHistory(),
         updateExpensePersonOptions: () => PaymentsManager.updateExpensePersonOptions(),
         saveAndPrintBusiness: () => PaymentsManager.saveAndPrintBusiness(),
-        saveAndPrintPersonal: () => PaymentsManager.saveAndPrintPersonal()
+        saveAndPrintPersonal: () => PaymentsManager.saveAndPrintPersonal(),
+        viewExpenseDetails: (index, category) => PaymentsManager.viewExpenseDetails(index, category),
+        closeExpenseDetails: () => PaymentsManager.closeExpenseDetails(),
+        editExpenseFromModal: () => PaymentsManager.editExpenseFromModal(),
+        confirmDeleteExpense: () => PaymentsManager.confirmDeleteExpense(),
+        editExpense: (expenseId, category) => PaymentsManager.editExpense(expenseId, category),
+        deleteExpense: (expenseId, category) => PaymentsManager.deleteExpense(expenseId, category)
     },
     
     // Configure (Settings)
