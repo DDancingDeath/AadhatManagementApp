@@ -73,6 +73,11 @@
   background: #e7f3ff;
 }
 
+.rate-group:has(.rate-input.wholesale) {
+  border-color: #ff6b6b;
+  background: #ffe0e0;
+}
+
 .rate-group:has(.rate-input.sale) {
   border-color: #28a745;
   background: #d4edda;

@@ -321,10 +321,9 @@ export class HistoryManager {
             return;
         }
         
-        // Store bill index for edit functionality (purchases only)
-        if (type === 'purchase') {
-            window.currentBillIndex = index;
-        }
+        // Store bill index and type for edit/delete functionality
+        window.currentBillIndex = index;
+        window.currentBillType = type;
         
         const totalPackets = bill.totalPackets || 0;
         const isPurchase = type === 'purchase';
@@ -496,8 +495,11 @@ export class HistoryManager {
     }
 
     static async deleteBill(index) {
-        const billHistory = AppState.billHistory;
-        const bill = billHistory[index];
+        // Determine if it's a purchase or sale based on current view
+        const activeFilterBtn = document.querySelector('#history .filter-btn.active');
+        const isSale = activeFilterBtn?.classList.contains('filter-sale');
+        const history = isSale ? AppState.salesHistory : AppState.billHistory;
+        const bill = history[index];
         
         if (!bill) {
             UIManager.showToast('Bill not found');
@@ -507,12 +509,11 @@ export class HistoryManager {
         try {
             UIManager.showLoading();
             
-            // Delete from Firebase - need to find the document by matching bill data
-            // The bill.id might be a timestamp, but Firestore doc ID could be different
+            // Delete from Firebase
             const userId = AppState.currentUser?.uid;
             if (userId) {
-                // Query to find the bill document
-                const snapshot = await db.collection('bills')
+                const collectionName = isSale ? 'sales' : 'bills';
+                const snapshot = await db.collection(collectionName)
                     .where('userId', '==', userId)
                     .where('timestamp', '==', bill.timestamp || bill.id)
                     .get();
@@ -526,7 +527,7 @@ export class HistoryManager {
             }
             
             // Remove from local state
-            billHistory.splice(index, 1);
+            history.splice(index, 1);
             
             // Recalculate stock after deletion
             AppState.stock = await FirebaseService.calculateStock();
@@ -608,6 +609,17 @@ export class HistoryManager {
         const billHistory = AppState.billHistory || [];
         const itemColor = type === 'sale' ? '#28a745' : '#007bff';
         
+        // Define alternating colors for different days - creative gradient backgrounds
+        const dayColors = [
+            'linear-gradient(to right, #fff5f5, #ffffff)',
+            'linear-gradient(to right, #f0f9ff, #ffffff)',
+            'linear-gradient(to right, #f5f3ff, #ffffff)',
+            'linear-gradient(to right, #ecfdf5, #ffffff)',
+            'linear-gradient(to right, #fffbeb, #ffffff)'
+        ];
+        let currentDayIndex = 0;
+        let lastDate = null;
+        
         let tableHTML = `
             <div style="overflow-x: auto;">
                 <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
@@ -624,21 +636,41 @@ export class HistoryManager {
         `;
 
         bills.forEach(bill => {
-            const billIndex = bill.isPurchase 
-                ? billHistory.findIndex(b => b.id === bill.id)
-                : -1;
+            const isSale = type === 'sale';
+            const history = isSale ? AppState.salesHistory : billHistory;
+            const billIndex = history.findIndex(b => b.id === bill.id);
             const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
+            
+            // Extract date (DD/MM/YYYY) from bill date
+            const billDate = new Date(bill.date);
+            const dateKey = `${billDate.getDate()}-${billDate.getMonth()}-${billDate.getFullYear()}`;
+            
+            // Change color when date changes
+            if (lastDate !== dateKey) {
+                currentDayIndex = (currentDayIndex + 1) % dayColors.length;
+                lastDate = dateKey;
+            }
+            
+            const rowBackground = dayColors[currentDayIndex];
+            const hoverColors = [
+                'linear-gradient(to right, #fee2e2, #fef2f2)',
+                'linear-gradient(to right, #dbeafe, #eff6ff)',
+                'linear-gradient(to right, #e9d5ff, #f3e8ff)',
+                'linear-gradient(to right, #d1fae5, #ecfdf5)',
+                'linear-gradient(to right, #fef3c7, #fffbeb)'
+            ];
+            const hoverBackground = hoverColors[currentDayIndex];
             
             bill.items.forEach((item, index) => {
                 const isFirstRow = index === 0;
                 const rowspan = bill.items.length;
                 
                 tableHTML += `
-                    <tr style="border-bottom: 1px solid #e5e7eb; cursor: pointer; transition: background 0.2s;" 
-                        onmouseover="this.style.background='#f9fafb'" 
-                        onmouseout="this.style.background='white'"
-                        onclick="window.app.history.reprintBill(${billIndex})">
+                    <tr style="border-bottom: 1px solid #e5e7eb; background: ${rowBackground}; cursor: pointer; transition: all 0.3s ease;" 
+                        onmouseover="this.style.background='${hoverBackground}'; this.style.transform='scale(1.01)'" 
+                        onmouseout="this.style.background='${rowBackground}'; this.style.transform='scale(1)'"
+                        onclick="window.app.history.viewBill(${billIndex}, '${type}')">
                         ${isFirstRow ? `
                             <td rowspan="${rowspan}" style="padding: 12px 8px; border-right: 1px solid #e5e7eb; font-weight: 500;">
                                 ${bill.customerName || '-'}

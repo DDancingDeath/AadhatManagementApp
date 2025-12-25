@@ -1,33 +1,8 @@
 <div id="configure" class="tab">
-
-        <!-- Sub-tabs for Configure -->
-        <div class="filter-buttons" style="margin-bottom: 20px;">
-            <button class="filter-btn active" onclick="window.app.configure.showSubTab('items')" data-tab="items">
-                📦 Items
-            </button>
-            <button class="filter-btn" onclick="window.app.configure.showSubTab('others')" data-tab="others">
-                🔧 Others
-            </button>
-        </div>
-
-        <!-- Items Sub-tab (Manage) -->
-        <div id="configureItemsSubTab" class="sub-tab-content" style="display: block;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
-                <h3 style="margin: 0;">Manage Items</h3>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button class="quick-add-btn-inline" onclick="window.app.items.exportExcel()">📊 Export Excel</button>
-                    <button class="quick-add-btn-inline" onclick="document.getElementById('importItemsFile').click()">📥 Import Excel</button>
-                </div>
-            </div>
-            <input type="file" id="importItemsFile" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.app.items.importExcel(event)" />
-            
-            <div id="itemsList"></div>
-
-            <button class="add-item-btn" onclick="window.app.items.add()">+ Add Item</button>
-        </div>
-
-        <!-- Others Sub-tab -->
-        <div id="configureOthersSubTab" class="sub-tab-content" style="display: none;">
+        <h2 style="margin-bottom: 20px;">Settings</h2>
+        
+        <!-- Settings Content -->
+        <div>
             <div class="settings-card">
                 <h3>Labor Charges</h3>
                 

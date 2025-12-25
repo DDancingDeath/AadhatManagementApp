@@ -331,6 +331,10 @@ select:focus, input:focus {
   background: #007bff;
 }
 
+.add-rate-plus.wholesale {
+  background: #ff6b6b;
+}
+
 .add-rate-plus.sale {
   background: #28a745;
 }

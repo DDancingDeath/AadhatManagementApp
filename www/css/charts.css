@@ -343,13 +343,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   backdrop-filter: blur(4px);
   z-index: 10000;
   animation: fadeIn 0.2s ease;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
 }
 
 .bill-details-overlay.active {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
 }
 
 .bill-details-container {

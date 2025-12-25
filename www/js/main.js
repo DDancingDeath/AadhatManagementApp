@@ -256,12 +256,24 @@ window.app = {
     items: {
         render: () => ItemsManager.renderItems(),
         renderTable: () => ItemsManager.renderItemsTable(),
+        search: (query) => ItemsManager.renderItemsTable(query),
+        openAddModal: () => ItemsManager.openAddModal(),
+        openEditModal: (idx) => ItemsManager.openEditModal(idx),
+        closeItemModal: () => ItemsManager.closeItemModal(),
+        addModalRate: (type) => ItemsManager.addModalRate(type),
+        updateModalRate: (type, idx, val) => ItemsManager.updateModalRate(type, idx, val),
+        deleteModalRate: (type, idx) => ItemsManager.deleteModalRate(type, idx),
+        saveItemFromModal: () => ItemsManager.saveItemFromModal(),
+        deleteItemFromModal: () => ItemsManager.deleteItemFromModal(),
         add: () => ItemsManager.addItem(),
         updateName: (idx, val) => ItemsManager.updateItemName(idx, val),
         updateHindiName: (idx, val) => ItemsManager.updateItemHindiName(idx, val),
         addRate: (idx) => ItemsManager.addRate(idx),
         updateRate: (iIdx, rIdx, val) => ItemsManager.updateRate(iIdx, rIdx, val),
         deleteRate: (iIdx, rIdx) => ItemsManager.deleteRate(iIdx, rIdx),
+        addWholesaleRate: (idx) => ItemsManager.addWholesaleRate(idx),
+        updateWholesaleRate: (iIdx, rIdx, val) => ItemsManager.updateWholesaleRate(iIdx, rIdx, val),
+        deleteWholesaleRate: (iIdx, rIdx) => ItemsManager.deleteWholesaleRate(iIdx, rIdx),
         addSaleRate: (idx) => ItemsManager.addSaleRate(idx),
         updateSaleRate: (iIdx, rIdx, val) => ItemsManager.updateSaleRate(iIdx, rIdx, val),
         deleteSaleRate: (iIdx, rIdx) => ItemsManager.deleteSaleRate(iIdx, rIdx),
@@ -444,7 +456,9 @@ window.app = {
         toggleView: () => HistoryManager.toggleView(),
         editBillDetails: (billIndex) => {
             if (billIndex !== undefined) {
-                BillingManager.editBill(billIndex);
+                // Pass the bill type along with index
+                const billType = window.currentBillType || 'purchase';
+                BillingManager.editBill(billIndex, billType);
             } else {
                 UIManager.showToast('Bill index not provided');
             }
@@ -481,9 +495,8 @@ window.app = {
         saveAndPrintPersonal: () => PaymentsManager.saveAndPrintPersonal()
     },
     
-    // Configure
+    // Configure (Settings)
     configure: {
-        showSubTab: (subTab) => ConfigureManager.showSubTab(subTab)
     },
     
     // Settings

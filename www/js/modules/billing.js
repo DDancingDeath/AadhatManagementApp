@@ -1711,9 +1711,11 @@ const BillingManager = {
 
     // -------------------- EDIT BILL --------------------
     
-    async editBill(billIndex) {
+    async editBill(billIndex, billType = 'purchase') {
         try {
-            const bill = AppState.billHistory[billIndex];
+            // Get bill from correct history based on type
+            const history = billType === 'sale' ? AppState.salesHistory : AppState.billHistory;
+            const bill = history[billIndex];
             if (!bill) {
                 UIManager.showToast('Bill not found');
                 return;
@@ -1722,9 +1724,10 @@ const BillingManager = {
             // Store the bill being edited
             this.editingBillIndex = billIndex;
             this.editingBillId = bill.id;
+            this.editingBillType = billType;
 
             // Switch to appropriate mode
-            const mode = bill.type === 'sale' ? 'sale' : 'purchase';
+            const mode = billType === 'sale' ? 'sale' : 'purchase';
             if (this.currentMode !== mode) {
                 const btn = mode === 'sale' ? document.getElementById('saleModeBtn') : document.getElementById('purchaseModeBtn');
                 this.switchMode(mode, { currentTarget: btn });
@@ -1824,7 +1827,11 @@ const BillingManager = {
             }
 
             const billIndex = this.editingBillIndex;
-            const bill = AppState.billHistory[billIndex];
+            const billType = this.editingBillType || 'purchase';
+            
+            // Get bill from correct history based on type
+            const history = billType === 'sale' ? AppState.salesHistory : AppState.billHistory;
+            const bill = history[billIndex];
             
             if (!bill) {
                 UIManager.showToast('Original bill not found');
@@ -1890,6 +1897,7 @@ const BillingManager = {
             } else {
                 // Update sale
                 const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
+                const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
                 const saleOnline = parseFloat(document.getElementById('saleOnlinePayment')?.value || 0);
                 const saleCash = parseFloat(document.getElementById('saleCashPayment')?.value || 0);
                 const saleDue = parseFloat(document.getElementById('saleDueAmount')?.value || 0);
@@ -1901,6 +1909,7 @@ const BillingManager = {
                     items: saleItems,
                     total: salesTotal,
                     saleTotal: salesTotal,
+                    totalPackets: totalPackets,
                     onlinePayment: saleOnline,
                     cashPayment: saleCash,
                     dueAmount: saleDue,
@@ -1941,6 +1950,7 @@ const BillingManager = {
             // Clear editing state
             this.editingBillIndex = undefined;
             this.editingBillId = undefined;
+            this.editingBillType = undefined;
 
             // Clear the form
             this.clearBill();

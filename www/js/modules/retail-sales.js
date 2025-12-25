@@ -6,6 +6,7 @@ import { PrinterService } from '../services/printer.js';
 import { generateId } from '../utils/helpers.js';
 
 let retailSaleItems = [];
+let pendingWeights = []; // Track weights before adding to bill
 
 export class RetailSalesManager {
     static switchToPurchase() {
@@ -98,20 +99,21 @@ export class RetailSalesManager {
             return;
         }
         
-        // Item is added to temporary list, will be added to bill on "Add to Bill" click
-        const item = AppState.items[itemIndex];
-        const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        // Add weight to pending list
+        pendingWeights.push(weight);
         
-        // Just update the totals for display
-        const currentTotal = parseFloat(document.getElementById('retailTotalKg')?.textContent || 0);
-        const currentPackets = parseInt(document.getElementById('retailTotalPackets')?.textContent || 0);
+        // Update the totals for display
+        const totalKg = pendingWeights.reduce((sum, w) => sum + w, 0);
+        const totalPackets = pendingWeights.length;
         
-        document.getElementById('retailTotalKg').textContent = (currentTotal + weight).toFixed(1);
-        document.getElementById('retailTotalPackets').textContent = currentPackets + 1;
+        document.getElementById('retailTotalKg').textContent = totalKg.toFixed(1);
+        document.getElementById('retailTotalPackets').textContent = totalPackets;
         
         // Clear weight input for next entry
         weightInput.value = '';
         weightInput.focus();
+        
+        UIManager.hapticFeedback();
     }
 
     static addToBill() {
@@ -127,13 +129,11 @@ export class RetailSalesManager {
         // Check if there's a pending weight to add
         const pendingWeight = parseFloat(weightInput?.value);
         if (pendingWeight && pendingWeight > 0) {
-            this.addItem();
+            this.addItem(); // This will add the pending weight to pendingWeights array
         }
         
-        const totalKg = parseFloat(document.getElementById('retailTotalKg')?.textContent || 0);
-        const totalPackets = parseInt(document.getElementById('retailTotalPackets')?.textContent || 0);
-        
-        if (totalKg === 0) {
+        // Check if we have any weights
+        if (pendingWeights.length === 0) {
             UIManager.showToast('Please add at least one weight');
             return;
         }
@@ -150,6 +150,10 @@ export class RetailSalesManager {
         
         const item = AppState.items[itemIndex];
         const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        
+        // Calculate totals from pending weights
+        const totalKg = pendingWeights.reduce((sum, w) => sum + w, 0);
+        const totalPackets = pendingWeights.length;
         const total = totalKg * rate;
         
         retailSaleItems.push({
@@ -162,7 +166,8 @@ export class RetailSalesManager {
             timestamp: Date.now()
         });
         
-        // Reset inputs
+        // Clear pending weights and reset displays
+        pendingWeights = [];
         document.getElementById('retailTotalKg').textContent = '0.0';
         document.getElementById('retailTotalPackets').textContent = '0';
         if (weightInput) weightInput.value = '';
@@ -266,6 +271,7 @@ export class RetailSalesManager {
             
             // Clear form
             retailSaleItems = [];
+            pendingWeights = [];
             this.renderBill();
             
             document.getElementById('retailCustomerName').value = '';
