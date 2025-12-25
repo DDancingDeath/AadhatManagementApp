@@ -340,24 +340,34 @@ const ItemsManager = {
                 const itemName = row['Item Name']?.trim();
                 if (!itemName) continue;
                 
+                // Helper function to parse rate strings - handles both "41,42" and "41, 42" formats
+                const parseRates = (value) => {
+                    if (!value) return [];
+                    // Convert to string first (handles numbers like 4142 that should be "41,42")
+                    const str = value.toString().trim();
+                    // Split by comma and parse each rate
+                    return str.split(',').map(r => {
+                        const parsed = parseFloat(r.trim());
+                        return isNaN(parsed) ? 0 : parsed;
+                    }).filter(r => r > 0);
+                };
+                
                 // Parse purchase rates
-                const purchaseRates = row['Purchase Rates'] ? 
-                    row['Purchase Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0) : [];
+                const purchaseRates = parseRates(row['Purchase Rates']);
                 
                 // Parse sale rates - prioritize Retail-Sale Rates, fallback to Sale Rates
                 let saleRates = [];
                 if (row['Retail-Sale Rates']) {
-                    saleRates = row['Retail-Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0);
+                    saleRates = parseRates(row['Retail-Sale Rates']);
                 } else if (row['Retail Sale Rates']) {
-                    saleRates = row['Retail Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0);
+                    saleRates = parseRates(row['Retail Sale Rates']);
                 } else if (row['Sale Rates']) {
                     // Backward compatibility: map old "Sale Rates" to saleRates (retail)
-                    saleRates = row['Sale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0);
+                    saleRates = parseRates(row['Sale Rates']);
                 }
                 
                 // Parse wholesale rates (optional column)
-                const wholesaleRates = row['Wholesale Rates'] ? 
-                    row['Wholesale Rates'].toString().split(',').map(r => parseFloat(r.trim()) || 0).filter(r => r > 0) : [];
+                const wholesaleRates = parseRates(row['Wholesale Rates']);
                 
                 const itemData = {
                     name: itemName,
@@ -473,17 +483,28 @@ const ItemsManager = {
             const itemIndex = AppState.items.findIndex(i => i.id === item.id);
             
             const row = document.createElement('tr');
-            row.style.borderBottom = '1px solid #eee';
+            row.style.borderBottom = '1px solid #e5e7eb';
             row.style.cursor = 'pointer';
+            row.style.transition = 'all 0.2s';
+            row.onmouseenter = () => {
+                row.style.background = '#f9fafb';
+                row.style.transform = 'scale(1.01)';
+                row.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+            };
+            row.onmouseleave = () => {
+                row.style.background = 'white';
+                row.style.transform = 'scale(1)';
+                row.style.boxShadow = 'none';
+            };
             row.onclick = () => this.openEditModal(itemIndex);
             row.innerHTML = `
-                <td style="padding: 12px; font-weight: 500;">
+                <td style="padding: 16px; font-weight: 600; color: #1f2937; font-size: 15px; border-right: 1px solid #f3f4f6;">
                     ${displayName || item.name || '-'}
-                    ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 2px 8px; background: #e3f2fd; color: #1976d2; border-radius: 12px; font-size: 11px; font-weight: 600;">${itemFrequency}</span>` : ''}
+                    ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
                 </td>
-                <td style="padding: 12px; color: #666;">${purchaseRates}</td>
-                <td style="padding: 12px; color: #666;">${wholesaleRates}</td>
-                <td style="padding: 12px; color: #666;">${saleRates}</td>
+                <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${purchaseRates}</td>
+                <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${saleRates}</td>
+                <td style="padding: 16px; color: #9333ea; font-size: 14px; font-weight: 600;">${wholesaleRates}</td>
             `;
             tbody.appendChild(row);
         });
@@ -498,9 +519,9 @@ const ItemsManager = {
         this.currentEditingItemIndex = null;
         this.modalRates = { purchase: [], wholesale: [], sale: [] };
         
-        document.getElementById('itemEditTitle').textContent = 'Add New Item';
         document.getElementById('itemModalName').value = '';
         document.getElementById('itemModalHindiName').value = '';
+        document.getElementById('itemModalContactPerson').value = '';
         document.getElementById('itemModalDeleteBtn').style.display = 'none';
         
         this.renderModalRates();
@@ -512,9 +533,9 @@ const ItemsManager = {
         this.currentEditingItemIndex = index;
         const item = AppState.items[index];
         
-        document.getElementById('itemEditTitle').textContent = 'Edit Item';
         document.getElementById('itemModalName').value = item.name || '';
         document.getElementById('itemModalHindiName').value = item.hindiName || '';
+        document.getElementById('itemModalContactPerson').value = item.contactPerson || '';
         document.getElementById('itemModalDeleteBtn').style.display = 'block';
         
         this.modalRates = {
@@ -596,9 +617,12 @@ const ItemsManager = {
         UIManager.showLoading();
         
         try {
+            const contactPerson = document.getElementById('itemModalContactPerson').value.trim();
+            
             const itemData = {
                 name: name,
                 hindiName: hindiName,
+                contactPerson: contactPerson,
                 rates: this.modalRates.purchase.filter(r => r > 0),
                 wholesaleRates: this.modalRates.wholesale.filter(r => r > 0),
                 saleRates: this.modalRates.sale.filter(r => r > 0)

@@ -1,31 +1,32 @@
 <div id="items" class="tab">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
-            <h2 style="margin: 0;"></h2>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button class="quick-add-btn-inline" onclick="window.app.items.exportExcel()">📊 Export</button>
-                <button class="quick-add-btn-inline" onclick="document.getElementById('importItemsFile').click()">📥 Import</button>
-                <button class="quick-add-btn-inline" onclick="window.app.items.openAddModal()">➕ Add Item</button>
+        <div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
+                <button class="quick-add-btn-inline" onclick="window.app.items.exportExcel()" style="flex: 1; min-width: 110px; padding: 12px 20px; font-size: 15px; font-weight: 600;">📊 Export</button>
+                <button class="quick-add-btn-inline" onclick="document.getElementById('importItemsFile').click()" style="flex: 1; min-width: 110px; padding: 12px 20px; font-size: 15px; font-weight: 600;">📥 Import</button>
+                <button class="quick-add-btn-inline" onclick="window.app.items.openAddModal()" style="flex: 1; min-width: 130px; padding: 12px 20px; font-size: 15px; font-weight: 600; background: #22c55e; border-color: #22c55e;">➕ Add Item</button>
             </div>
         </div>
         
         <input type="file" id="importItemsFile" accept=".xlsx,.xls,.csv" style="display: none;" onchange="window.app.items.importExcel(event)" />
         
-        <div style="margin-bottom: 16px;">
+        <div style="margin-bottom: 20px;">
             <input type="text" 
                    id="itemsSearchInput" 
                    placeholder="🔍 Search items by name..."
-                   style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px;"
-                   oninput="window.app.items.search(this.value)">
+                   style="width: 100%; padding: 14px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 15px; transition: all 0.2s;"
+                   oninput="window.app.items.search(this.value)"
+                   onfocus="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 0 0 3px rgba(59, 130, 246, 0.1)'"
+                   onblur="this.style.borderColor='#e5e7eb'; this.style.boxShadow='none'">
         </div>
         
-        <div style="overflow-x: auto;">
-            <table id="itemsViewTable" style="width: 100%; border-collapse: collapse;">
+        <div style="overflow-x: auto; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+            <table id="itemsViewTable" style="width: 100%; border-collapse: collapse; background: white;">
                 <thead>
-                    <tr style="background: #f5f5f5; border-bottom: 2px solid #ddd;">
-                        <th style="padding: 12px; text-align: left; font-weight: 600;">Item Name</th>
-                        <th style="padding: 12px; text-align: left; font-weight: 600;">Purchase Rates (₹/kg)</th>
-                        <th style="padding: 12px; text-align: left; font-weight: 600;">Wholesale Rates (₹/kg)</th>
-                        <th style="padding: 12px; text-align: left; font-weight: 600;">Retail Sale Rates (₹/kg)</th>
+                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-bottom: 2px solid #5a67d8;">
+                        <th style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; border-right: 1px solid rgba(255,255,255,0.2);">Item Name</th>
+                        <th style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; border-right: 1px solid rgba(255,255,255,0.2);">Purchase Rates</th>
+                        <th style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; border-right: 1px solid rgba(255,255,255,0.2);">Retail Rates</th>
+                        <th style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Wholesale Rates</th>
                     </tr>
                 </thead>
                 <tbody id="itemsViewTableBody">

@@ -48,10 +48,6 @@
     <!-- ITEM EDIT MODAL -->
     <div class="bill-details-overlay" id="itemEditOverlay" style="display: none;">
         <div class="bill-details-container" style="max-width: 700px;">
-            <div class="bill-details-header">
-                <h2 id="itemEditTitle">Add Item</h2>
-                <button class="bill-details-close" onclick="window.app.items.closeItemModal()">✕</button>
-            </div>
             <div class="bill-details-content" style="padding: 24px;">
                 <div style="margin-bottom: 20px;">
                     <label style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px; display: block;">Item Name (English)*</label>
@@ -69,26 +65,39 @@
                 
                 <div style="margin-bottom: 20px;">
                     <label style="font-size: 14px; font-weight: 600; color: #007bff; margin-bottom: 8px; display: block;">Purchase Rates (₹/kg)</label>
-                    <div id="itemModalPurchaseRates" class="rates-container"></div>
-                    <button class="add-rate-plus purchase" onclick="window.app.items.addModalRate('purchase')" style="margin-top: 8px;">+</button>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div id="itemModalPurchaseRates" class="rates-container" style="flex: 1;"></div>
+                        <button class="add-rate-plus purchase" onclick="window.app.items.addModalRate('purchase')">+</button>
+                    </div>
                 </div>
                 
                 <div style="margin-bottom: 20px;">
-                    <label style="font-size: 14px; font-weight: 600; color: #ff6b6b; margin-bottom: 8px; display: block;">Wholesale Rates (₹/kg)</label>
-                    <div id="itemModalWholesaleRates" class="rates-container"></div>
-                    <button class="add-rate-plus wholesale" onclick="window.app.items.addModalRate('wholesale')" style="margin-top: 8px;">+</button>
+                    <label style="font-size: 14px; font-weight: 600; color: #9333ea; margin-bottom: 8px; display: block;">Wholesale Rates (₹/kg)</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div id="itemModalWholesaleRates" class="rates-container" style="flex: 1;"></div>
+                        <button class="add-rate-plus wholesale" onclick="window.app.items.addModalRate('wholesale')">+</button>
+                    </div>
                 </div>
                 
                 <div style="margin-bottom: 20px;">
                     <label style="font-size: 14px; font-weight: 600; color: #28a745; margin-bottom: 8px; display: block;">Retail Sale Rates (₹/kg)</label>
-                    <div id="itemModalSaleRates" class="rates-container"></div>
-                    <button class="add-rate-plus sale" onclick="window.app.items.addModalRate('sale')" style="margin-top: 8px;">+</button>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div id="itemModalSaleRates" class="rates-container" style="flex: 1;"></div>
+                        <button class="add-rate-plus sale" onclick="window.app.items.addModalRate('sale')">+</button>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px; display: block;">Contact Person</label>
+                    <input type="text" id="itemModalContactPerson" 
+                           placeholder="Enter contact person name (Optional)"
+                           style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 8px; font-size: 15px;">
                 </div>
             </div>
             <div class="bill-details-footer">
                 <button class="bill-action-btn btn-delete" id="itemModalDeleteBtn" onclick="window.app.items.deleteItemFromModal()" style="display: none;">Delete</button>
-                <button class="bill-action-btn btn-close" onclick="window.app.items.closeItemModal()">Cancel</button>
                 <button class="bill-action-btn btn-edit" onclick="window.app.items.saveItemFromModal()">Save</button>
+                <button class="bill-action-btn btn-close" onclick="window.app.items.closeItemModal()">Cancel</button>
             </div>
         </div>
     </div>

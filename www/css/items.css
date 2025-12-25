@@ -74,8 +74,8 @@
 }
 
 .rate-group:has(.rate-input.wholesale) {
-  border-color: #ff6b6b;
-  background: #ffe0e0;
+  border-color: #9333ea;
+  background: #f3e8ff;
 }
 
 .rate-group:has(.rate-input.sale) {
