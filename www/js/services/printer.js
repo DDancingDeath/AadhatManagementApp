@@ -234,7 +234,7 @@ class BluetoothPrinterManager {
         return y;
     }
 
-    _drawReceiptHeader(ctx, config, utils, y) {
+    _drawReceiptHeader(ctx, billData, config, utils, y) {
         y = utils.drawCenter('Receipt', y, config.fonts.title, true);
         // y += 4;
         
@@ -389,7 +389,7 @@ class BluetoothPrinterManager {
         y = this._drawWeightsBreakdown(tempCtx, billData, utils, y);
         y += config.spacing.section;
         
-        y = this._drawReceiptHeader(tempCtx, config, utils, y);
+        y = this._drawReceiptHeader(tempCtx, billData, config, utils, y);
         y = this._drawCustomerInfo(billData, utils, y);
         y = this._drawItemsTable(tempCtx, billData, config, utils, y);
         y = this._drawTotalsSection(tempCtx, billData, config, utils, y);

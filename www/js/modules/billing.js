@@ -30,6 +30,11 @@ const BillingManager = {
         
         if (!purchaseSection || !saleSection) return;
         
+        // Auto-save current mode before switching
+        if (this.autoSaveEnabled && this.currentMode !== mode) {
+            this.autoSaveToCloud();
+        }
+        
         // Update button states
         if (event) {
             // Only update Purchase/Sale toggle buttons, not draft management buttons
@@ -54,13 +59,51 @@ const BillingManager = {
                 saleBtn.style.borderColor = '#22c55e';
             }
             
+            // Preserve current selections before reloading dropdown
+            const currentItem = document.getElementById('saleItem')?.value;
+            const currentRate = document.getElementById('saleRate')?.value;
+            const currentWeight = document.getElementById('saleWeight')?.value;
+            
             // Load sale dropdown
             this.loadSaleItemsDropdown();
+            
+            // Restore selections after dropdown reload
+            if (currentItem) {
+                const saleItemSelect = document.getElementById('saleItem');
+                if (saleItemSelect) {
+                    saleItemSelect.value = currentItem;
+                    this.loadSaleRates();
+                }
+            }
+            if (currentRate) {
+                setTimeout(() => {
+                    const saleRateInput = document.getElementById('saleRate');
+                    if (saleRateInput) {
+                        saleRateInput.value = currentRate;
+                    }
+                }, 50);
+            }
+            if (currentWeight) {
+                const saleWeightInput = document.getElementById('saleWeight');
+                if (saleWeightInput) {
+                    saleWeightInput.value = currentWeight;
+                }
+            }
+            
+            // Re-render existing sale data
+            this.renderSalesBill();
+            this.renderSaleWeights();
+            this.updateSaleTotals();
         } else {
             // Switch to purchase mode
             this.currentMode = 'purchase';
             saleSection.style.display = 'none';
             purchaseSection.style.display = 'block';
+            
+            // Re-render existing purchase data
+            this.renderBill();
+            this.renderWeights();
+            this.updateTotals();
             
             // Purchase button uses default blue when active
         }
@@ -175,21 +218,15 @@ const BillingManager = {
         if (AppState.items.length > 0) {
             this.loadRates();
         }
-        this.clearWeights();
+        // Don't clear weights here - it interferes with recovery
+        // this.clearWeights();
     },
     
     loadSaleItemsDropdown() {
-        console.log('📋 loadSaleItemsDropdown called');
         const select = document.getElementById('saleItem');
-        if (!select) {
-            console.error('❌ saleItem select not found!');
-            return;
-        }
-        console.log('✅ saleItem select found, loading items...');
+        if (!select) return;
         
         select.innerHTML = '';
-        
-        console.log('📦 Loading items into sale dropdown, count:', AppState.items.length);
         
         // Get frequency for sale items
         const freq = this.getItemFrequency('sale');
@@ -213,12 +250,11 @@ const BillingManager = {
             select.appendChild(opt);
         });
         
-        console.log('✅ Sale dropdown populated with', select.options.length, 'items');
-        
         if (AppState.items.length > 0) {
             this.loadSaleRates();
         }
-        this.clearSaleWeights();
+        // Don't clear weights here - it interferes with recovery
+        // this.clearSaleWeights();
     },
     
     loadRates() {
@@ -466,12 +502,12 @@ const BillingManager = {
         // Render bill items table (without weight breakdown in rows)
         tbody.innerHTML = billItems.map((item, index) => {
             return `
-                <tr>
+                <tr style="cursor: pointer;" onclick="window.app.billing.editBillItem(${index})">
                     <td>${item.name}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
                     <td>₹${Math.round(item.total)}</td>
-                    <td><button onclick="window.app.billing.deleteBillItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
+                    <td><button onclick="event.stopPropagation(); window.app.billing.deleteBillItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
                 </tr>
             `;
         }).join('');
@@ -504,6 +540,44 @@ const BillingManager = {
         this.renderBill();
         this.triggerAutoSave();
         UIManager.hapticFeedback();
+    },
+    
+    editBillItem(index) {
+        // First, save any pending data in the form
+        const currentItem = document.getElementById('billItem')?.value;
+        const currentRate = parseFloat(document.getElementById('billRate')?.value);
+        
+        // If there's data being filled, add it to bill first
+        if (currentItem && currentRate && weights.length > 0) {
+            this.addToBill(true);
+        }
+        
+        // Get the item to edit
+        const item = billItems[index];
+        if (!item) return;
+        
+        // Remove from bill
+        billItems.splice(index, 1);
+        this.renderBill();
+        
+        // Populate the form with item data
+        const itemIndex = AppState.items.findIndex(i => i.id === item.itemId || i.name === item.name);
+        if (itemIndex !== -1) {
+            document.getElementById('billItem').value = itemIndex;
+            this.loadRates();
+            
+            setTimeout(() => {
+                document.getElementById('billRate').value = item.rate;
+            }, 50);
+        }
+        
+        // Set the weights
+        weights = item.weights || [];
+        this.renderWeights();
+        
+        this.triggerAutoSave();
+        UIManager.hapticFeedback();
+        UIManager.showToast('Item loaded for editing');
     },
     
     updateTotals(heavyPacketsCount = 0) {
@@ -850,18 +924,24 @@ const BillingManager = {
         // Use accumulated weights if available, otherwise fall back to single weight input
         let qty;
         let packets;
+        let allWeights = []; // Declare at function scope
         
-        if (saleWeights.length > 0) {
-            qty = saleWeights.reduce((sum, w) => sum + w, 0);
-            packets = saleWeights.length;
-        } else {
-            const singleWeight = parseFloat(weightInput?.value);
-            if (!singleWeight || singleWeight <= 0) {
-                UIManager.showToast('Please add weights or enter a quantity');
-                return;
+        // Check if there's a typed weight that hasn't been added to saleWeights
+        const typedWeight = parseFloat(weightInput?.value);
+        const hasTypedWeight = typedWeight && typedWeight > 0;
+        
+        if (saleWeights.length > 0 || hasTypedWeight) {
+            // Combine saleWeights array with any typed weight
+            allWeights = [...saleWeights];
+            if (hasTypedWeight) {
+                allWeights.push(typedWeight);
             }
-            qty = singleWeight;
-            packets = 1;
+            
+            qty = allWeights.reduce((sum, w) => sum + w, 0);
+            packets = allWeights.length;
+        } else {
+            UIManager.showToast('Please add weights or enter a quantity');
+            return;
         }
         
         const item = AppState.items[itemIndex];
@@ -896,6 +976,7 @@ const BillingManager = {
             rate,
             qty,
             packets,
+            weights: allWeights, // Store individual weights for display
             total,
             timestamp: Date.now()
         });
@@ -922,6 +1003,7 @@ const BillingManager = {
         const tbody = document.querySelector('#saleTable tbody');
         const totalSalePacketsSpan = document.getElementById('totalSalePacketsInBill');
         const saleTotalSpan = document.getElementById('saleTotal');
+        const saleWeightBreakdownSection = document.getElementById('saleWeightBreakdownSection');
         
         if (!tbody) return;
         
@@ -929,18 +1011,49 @@ const BillingManager = {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
             if (saleTotalSpan) saleTotalSpan.textContent = '0';
             if (totalSalePacketsSpan) totalSalePacketsSpan.textContent = '0';
+            if (saleWeightBreakdownSection) saleWeightBreakdownSection.innerHTML = '';
             this.updateSaleTotals();
             this.updateSaleRunningTotal();
             return;
         }
         
+        // Render weight breakdown for items with 2 or more packets
+        if (saleWeightBreakdownSection) {
+            const itemsWithMultipleWeights = saleItems.filter(item => item.weights && item.weights.length >= 2);
+            
+            if (itemsWithMultipleWeights.length > 0) {
+                saleWeightBreakdownSection.innerHTML = itemsWithMultipleWeights.map(item => {
+                    const weightsPerLine = 6;
+                    const weightLines = [];
+                    for (let i = 0; i < item.weights.length; i += weightsPerLine) {
+                        const lineWeights = item.weights.slice(i, i + weightsPerLine);
+                        weightLines.push(lineWeights.map(w => w.toFixed(1)).join(' '));
+                    }
+                    
+                    return `
+                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #22c55e;">
+                            <div style="font-weight: 600; margin-bottom: 8px; color: #333;">
+                                ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
+                            </div>
+                            <div style="font-family: monospace; font-size: 13px; line-height: 1.6; color: #555;">
+                                ${weightLines.join('<br>')}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                saleWeightBreakdownSection.innerHTML = '';
+            }
+        }
+        
+        // Render bill items table
         tbody.innerHTML = saleItems.map((item, index) => `
-            <tr>
+            <tr style="cursor: pointer;" onclick="window.app.billing.editSaleItem(${index})">
                 <td>${item.name}</td>
                 <td>₹${item.rate.toFixed(2)}</td>
                 <td>${item.qty.toFixed(1)} kg</td>
                 <td>₹${Math.round(item.total)}</td>
-                <td><button onclick="window.app.billing.removeSaleItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
+                <td><button onclick="event.stopPropagation(); window.app.billing.removeSaleItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
             </tr>
         `).join('');
         
@@ -968,6 +1081,55 @@ const BillingManager = {
         this.renderSalesBill();
         this.triggerAutoSave();
         UIManager.hapticFeedback();
+    },
+    
+    editSaleItem(index) {
+        // First, save any pending data in the form
+        const currentItem = document.getElementById('saleItem')?.value;
+        const currentRate = parseFloat(document.getElementById('saleRate')?.value);
+        
+        // If there's data being filled, add it to bill first
+        if (currentItem && currentRate && saleWeights.length > 0) {
+            this.addToSalesBill(true);
+        }
+        
+        // Get the item to edit
+        const item = saleItems[index];
+        if (!item) return;
+        
+        // Remove from bill
+        saleItems.splice(index, 1);
+        this.renderSalesBill();
+        
+        // Populate the form with item data
+        const itemIndex = AppState.items.findIndex(i => i.id === item.itemId || i.name === item.name);
+        if (itemIndex !== -1) {
+            document.getElementById('saleItem').value = itemIndex;
+            this.loadSaleRates();
+            
+            setTimeout(() => {
+                document.getElementById('saleRate').value = item.rate;
+            }, 50);
+        }
+        
+        // Set the weights (reconstruct from qty and packets)
+        if (item.qty && item.packets) {
+            // If we have the original weights array, use it
+            if (item.weights && item.weights.length > 0) {
+                saleWeights = [...item.weights];
+            } else {
+                // Otherwise distribute qty equally across packets
+                const avgWeight = item.qty / item.packets;
+                saleWeights = Array(item.packets).fill(avgWeight);
+            }
+        } else {
+            saleWeights = [item.qty];
+        }
+        this.renderSaleWeights();
+        
+        this.triggerAutoSave();
+        UIManager.hapticFeedback();
+        UIManager.showToast('Item loaded for editing');
     },
     
     updateSaleTotals() {
@@ -1581,11 +1743,10 @@ const BillingManager = {
             if (!AppState.currentUser) return;
             
             const mode = this.currentMode;
-            const hasData = mode === 'purchase' 
-                ? (billItems.length > 0 || weights.length > 0)
-                : (saleItems.length > 0 || saleWeights.length > 0);
+            const hasPurchaseData = billItems.length > 0 || weights.length > 0 || document.getElementById('newWeight')?.value;
+            const hasSaleData = saleItems.length > 0 || saleWeights.length > 0 || document.getElementById('saleWeight')?.value;
             
-            if (!hasData) {
+            if (!hasPurchaseData && !hasSaleData) {
                 // No data to save, delete any existing auto-save
                 await this.deleteAutoSave();
                 return;
@@ -1594,25 +1755,35 @@ const BillingManager = {
             const autoSaveData = {
                 userId: AppState.currentUser.uid,
                 userName: AppState.userName,
-                mode: mode,
+                mode: mode, // Current active mode
                 lastSaved: firebase.firestore.FieldValue.serverTimestamp(),
                 deviceInfo: navigator.userAgent
             };
 
-            if (mode === 'purchase') {
-                autoSaveData.items = billItems;
-                autoSaveData.weights = weights;
-                autoSaveData.customerName = document.getElementById('customerName')?.value || '';
-                autoSaveData.laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
-                autoSaveData.comments = document.getElementById('billComments')?.value || '';
-                autoSaveData.billTotal = parseFloat(document.getElementById('billTotal')?.textContent || 0);
-            } else {
-                autoSaveData.items = saleItems;
-                autoSaveData.weights = saleWeights;
-                autoSaveData.customerName = document.getElementById('saleCustomerName')?.value || '';
-                autoSaveData.comments = document.getElementById('saleComments')?.value || '';
-                autoSaveData.saleTotal = parseFloat(document.getElementById('saleTotal')?.textContent || 0);
-            }
+            // Save purchase data (regardless of current mode)
+            autoSaveData.purchase = {
+                items: billItems,
+                weights: weights,
+                typedWeight: document.getElementById('newWeight')?.value || '',
+                selectedItem: document.getElementById('billItem')?.value || '',
+                rate: document.getElementById('billRate')?.value || '',
+                customerName: document.getElementById('customerName')?.value || '',
+                laborCharges: parseFloat(document.getElementById('manualLaborCharges')?.value || 0),
+                comments: document.getElementById('billComments')?.value || '',
+                billTotal: parseFloat(document.getElementById('billTotal')?.textContent || 0)
+            };
+
+            // Save sale data (regardless of current mode)
+            autoSaveData.sale = {
+                items: saleItems,
+                weights: saleWeights,
+                typedWeight: document.getElementById('saleWeight')?.value || '',
+                selectedItem: document.getElementById('saleItem')?.value || '',
+                rate: document.getElementById('saleRate')?.value || '',
+                customerName: document.getElementById('saleCustomerName')?.value || '',
+                comments: document.getElementById('saleComments')?.value || '',
+                saleTotal: parseFloat(document.getElementById('saleTotal')?.textContent || 0)
+            };
 
             // Save to Firestore with user's UID as document ID
             await db.collection('autoSaves').doc(AppState.currentUser.uid).set(autoSaveData);
@@ -1662,7 +1833,7 @@ const BillingManager = {
 
     async recoverAutoSave(autoSaveData) {
         try {
-            // Switch to correct mode
+            // Switch to the last active mode FIRST
             if (autoSaveData.mode !== this.currentMode) {
                 const modeBtn = autoSaveData.mode === 'purchase' 
                     ? document.getElementById('purchaseModeBtn')
@@ -1671,32 +1842,102 @@ const BillingManager = {
                     this.switchMode(autoSaveData.mode, { currentTarget: modeBtn });
                 }
             }
-
-            // Restore data
-            if (autoSaveData.mode === 'purchase') {
-                billItems = autoSaveData.items || [];
-                weights = autoSaveData.weights || [];
-                if (autoSaveData.customerName) {
-                    document.getElementById('customerName').value = autoSaveData.customerName;
+            
+            // Small delay to ensure DOM is ready after mode switch
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Restore BOTH purchase and sale data (support both old and new format)
+            
+            // Restore purchase data
+            const purchaseData = autoSaveData.purchase || (autoSaveData.mode === 'purchase' ? autoSaveData : {});
+            if (purchaseData.items || purchaseData.weights || purchaseData.selectedItem || purchaseData.rate) {
+                billItems = purchaseData.items || [];
+                weights = purchaseData.weights || [];
+                
+                // Restore item selection first
+                if (purchaseData.selectedItem) {
+                    const itemSelect = document.getElementById('billItem');
+                    if (itemSelect) {
+                        itemSelect.value = purchaseData.selectedItem;
+                        this.loadRates(); // Reload rates for selected item
+                    }
                 }
-                if (autoSaveData.laborCharges) {
-                    document.getElementById('manualLaborCharges').value = autoSaveData.laborCharges;
+                
+                // Then restore rate (after a small delay to ensure dropdown is loaded)
+                setTimeout(() => {
+                    if (purchaseData.rate) {
+                        const rateInput = document.getElementById('billRate');
+                        if (rateInput) {
+                            rateInput.value = purchaseData.rate;
+                        }
+                    }
+                }, 100);
+                
+                // Restore typed weight
+                if (purchaseData.typedWeight) {
+                    const weightInput = document.getElementById('newWeight');
+                    if (weightInput) {
+                        weightInput.value = purchaseData.typedWeight;
+                    }
                 }
-                if (autoSaveData.comments) {
-                    document.getElementById('billComments').value = autoSaveData.comments;
+                
+                if (purchaseData.customerName) {
+                    document.getElementById('customerName').value = purchaseData.customerName;
                 }
+                if (purchaseData.laborCharges) {
+                    document.getElementById('manualLaborCharges').value = purchaseData.laborCharges;
+                }
+                if (purchaseData.comments) {
+                    document.getElementById('billComments').value = purchaseData.comments;
+                }
+                
+                // Render purchase data
                 this.renderBill();
                 this.renderWeights();
-            } else {
-                saleItems = autoSaveData.items || [];
-                saleWeights = autoSaveData.weights || [];
-                if (autoSaveData.customerName) {
-                    document.getElementById('saleCustomerName').value = autoSaveData.customerName;
+            }
+
+            // Restore sale data
+            const saleData = autoSaveData.sale || (autoSaveData.mode === 'sale' ? autoSaveData : {});
+            if (saleData.items || saleData.weights || saleData.selectedItem || saleData.rate) {
+                saleItems = saleData.items || [];
+                saleWeights = saleData.weights || [];
+                
+                // Restore item selection first
+                if (saleData.selectedItem) {
+                    const saleItemSelect = document.getElementById('saleItem');
+                    if (saleItemSelect) {
+                        saleItemSelect.value = saleData.selectedItem;
+                        this.loadSaleRates();
+                    }
                 }
-                if (autoSaveData.comments) {
-                    document.getElementById('saleComments').value = autoSaveData.comments;
+                
+                // Restore rate (after a small delay to ensure dropdown is loaded)
+                setTimeout(() => {
+                    if (saleData.rate) {
+                        const saleRateInput = document.getElementById('saleRate');
+                        if (saleRateInput) {
+                            saleRateInput.value = saleData.rate;
+                        }
+                    }
+                }, 100);
+                
+                // Restore typed weight
+                if (saleData.typedWeight) {
+                    const saleWeightInput = document.getElementById('saleWeight');
+                    if (saleWeightInput) {
+                        saleWeightInput.value = saleData.typedWeight;
+                    }
                 }
-                this.renderSale();
+                
+                if (saleData.customerName) {
+                    document.getElementById('saleCustomerName').value = saleData.customerName;
+                }
+                if (saleData.comments) {
+                    document.getElementById('saleComments').value = saleData.comments;
+                }
+                
+                // Render sale data
+                this.renderSalesBill();
                 this.renderSaleWeights();
             }
 

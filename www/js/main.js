@@ -18,6 +18,7 @@ import { SettingsManager } from './modules/settings.js';
 import { DateFilterManager } from './modules/datefilter.js';
 import { UsersManager } from './modules/users.js';
 import { ConfigureManager } from './modules/configure.js';
+// import { RetailSalesManager } from './modules/retail-sales.js'; // UNUSED - No navigation link to retail-sales tab
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
@@ -390,6 +391,10 @@ window.app = {
         completeSale: () => BillingManager.completeSale(),
         printSale: () => BillingManager.printSale(),
         removeSaleItem: (index) => BillingManager.removeSaleItem(index),
+        editSaleItem: (index) => BillingManager.editSaleItem(index),
+        
+        // Edit bill items
+        editBillItem: (index) => BillingManager.editBillItem(index),
         
         // Draft management
         saveDraft: () => BillingManager.saveDraft(),
@@ -441,6 +446,21 @@ window.app = {
         markSaleAsCleared: (saleId) => SalesManager.markSaleAsCleared(saleId),
         reprintSale: (index) => SalesManager.reprintSale(index)
     },
+    
+    // Retail Sales - UNUSED: No navigation link exists for retail-sales tab
+    // This module duplicates the billing sale functionality
+    // retailSales: {
+    //     switchToPurchase: () => RetailSalesManager.switchToPurchase(),
+    //     pickContact: () => RetailSalesManager.pickContact(),
+    //     loadItemsDropdown: () => RetailSalesManager.loadItemsDropdown(),
+    //     loadItemRates: () => RetailSalesManager.loadItemRates(),
+    //     addItem: () => RetailSalesManager.addItem(),
+    //     addToBill: () => RetailSalesManager.addToBill(),
+    //     removeBillItem: (index) => RetailSalesManager.removeBillItem(index),
+    //     saveSale: () => RetailSalesManager.saveSale(),
+    //     printSale: () => RetailSalesManager.printSale(),
+    //     shareWhatsApp: () => RetailSalesManager.shareWhatsApp()
+    // },
     
     // History
     history: {

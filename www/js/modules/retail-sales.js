@@ -1,3 +1,12 @@
+// ============================================================================
+// RETAIL SALES MODULE - CURRENTLY UNUSED
+// ============================================================================
+// This module is NOT accessible from the UI (no navigation link exists).
+// It duplicates the functionality of the Billing tab's Sale mode.
+// Kept commented for future reference or potential reactivation.
+// ============================================================================
+
+/*
 // Retail Sales Module
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
@@ -74,6 +83,7 @@ export class RetailSalesManager {
     }
 
     static addItem() {
+        console.log('🔵 addItem() called');
         const itemSelect = document.getElementById('retailItem');
         const rateInput = document.getElementById('retailRate');
         const weightInput = document.getElementById('retailWeight');
@@ -83,6 +93,8 @@ export class RetailSalesManager {
         const itemIndex = parseInt(itemSelect.value);
         const rate = parseFloat(rateInput.value);
         const weight = parseFloat(weightInput.value);
+        
+        console.log('📦 Weight entered:', weight, 'Pending weights before:', pendingWeights.length);
         
         if (isNaN(itemIndex) || itemIndex === '') {
             UIManager.showToast('Please select an item');
@@ -101,6 +113,7 @@ export class RetailSalesManager {
         
         // Add weight to pending list
         pendingWeights.push(weight);
+        console.log('✅ Weight added to pending. Pending weights now:', pendingWeights);
         
         // Update the totals for display
         const totalKg = pendingWeights.reduce((sum, w) => sum + w, 0);
@@ -117,6 +130,7 @@ export class RetailSalesManager {
     }
 
     static addToBill() {
+        console.log('🟢 addToBill() called');
         const itemSelect = document.getElementById('retailItem');
         const rateInput = document.getElementById('retailRate');
         const weightInput = document.getElementById('retailWeight');
@@ -126,9 +140,12 @@ export class RetailSalesManager {
         const itemIndex = parseInt(itemSelect.value);
         const rate = parseFloat(rateInput.value);
         
+        console.log('📊 Pending weights:', pendingWeights);
+        
         // Check if there's a pending weight to add
         const pendingWeight = parseFloat(weightInput?.value);
         if (pendingWeight && pendingWeight > 0) {
+            console.log('⚠️ Found pending weight in input:', pendingWeight, '- calling addItem()');
             this.addItem(); // This will add the pending weight to pendingWeights array
         }
         
@@ -350,3 +367,8 @@ export class RetailSalesManager {
         }
     }
 }
+*/
+
+// ============================================================================
+// END OF COMMENTED RETAIL SALES MODULE
+// ============================================================================

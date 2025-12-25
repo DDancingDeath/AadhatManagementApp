@@ -177,7 +177,7 @@
             <div class="form-row">
                 <label>Weight (kg):</label>
                 <div style="display: flex; gap: 8px; flex: 1;">
-                    <input type="number" inputmode="decimal" id="saleWeight" placeholder="Enter weight" style="flex: 1;" onkeypress="if(event.key === 'Enter') { event.preventDefault(); window.app.billing.addSaleWeight(true); }" />
+                    <input type="number" inputmode="decimal" id="saleWeight" placeholder="Enter weight" style="flex: 1;" onkeypress="if(event.key === 'Enter') { event.preventDefault(); window.app.billing.addSaleWeight(); }" />
                     <button class="quick-add-btn-inline" onclick="window.app.billing.addSaleWeight()" style="background: #22c55e; border-color: #22c55e;">Add</button>
                 </div>
             </div>
@@ -197,6 +197,10 @@
         </div>
 
         <h3>Bill Items</h3>
+        
+        <!-- Weight Breakdown Section -->
+        <div id="saleWeightBreakdownSection" style="margin: 20px 0;"></div>
+        
         <table id="saleTable">
             <thead>
                 <tr>
