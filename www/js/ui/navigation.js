@@ -74,6 +74,11 @@ const NavigationManager = {
             setTimeout(() => window.app.reports.renderReports(), 100);
         }
         
+        // Initialize finance when Finance tab is shown
+        if (tabId === 'finance' && window.app?.finance) {
+            setTimeout(() => window.app.finance.init(), 100);
+        }
+        
         // Initialize configure sub-tabs when Configure tab is shown
         if (tabId === 'configure' && window.app?.configure) {
             setTimeout(() => window.app.configure.showSubTab('items'), 100);

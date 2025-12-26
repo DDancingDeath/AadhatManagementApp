@@ -1,9 +1,9 @@
 <div id="finance" class="tab">
 
         <div class="filter-buttons" style="margin-bottom: 20px;">
-            <button class="filter-btn active" onclick="filterFinanceTab('overview', event)">Overview</button>
-            <button class="filter-btn" onclick="filterFinanceTab('transactions', event)">Transactions</button>
-            <button class="filter-btn" onclick="filterFinanceTab('withdrawals', event)">Withdrawals</button>
+            <button class="filter-btn active" onclick="window.app.finance.filterTab('overview', event)">Overview</button>
+            <button class="filter-btn" onclick="window.app.finance.filterTab('transactions', event)">Transactions</button>
+            <button class="filter-btn" onclick="window.app.finance.filterTab('withdrawals', event)">Withdrawals</button>
         </div>
 
         <!-- OVERVIEW SECTION -->
@@ -107,7 +107,7 @@
                     <input type="date" id="withdrawalDate" />
                 </div>
 
-                <button class="save-btn" onclick="recordWithdrawal()">Record Withdrawal</button>
+                <button class="save-btn" onclick="window.app.finance.recordWithdrawal()">Record Withdrawal</button>
             </div>
 
             <div class="settings-card">

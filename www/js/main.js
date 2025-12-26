@@ -18,6 +18,7 @@ import { SettingsManager } from './modules/settings.js';
 import { DateFilterManager } from './modules/datefilter.js';
 import { UsersManager } from './modules/users.js';
 import { ConfigureManager } from './modules/configure.js';
+import { FinanceManager } from './modules/finance.js';
 // import { RetailSalesManager } from './modules/retail-sales.js'; // UNUSED - No navigation link to retail-sales tab
 
 // Import template loader utility
@@ -425,6 +426,7 @@ window.app = {
     stock: {
         filterTab: (view, evt) => StockManager.filterStockTab(view, evt),
         render: () => StockManager.renderStock(),
+        searchStock: () => StockManager.searchStock(),
         loadAdjustItemStock: () => StockManager.loadAdjustItemStock(),
         updateAdjustmentPlaceholder: () => StockManager.updateAdjustmentPlaceholder(),
         applyAdjustment: () => StockManager.applyStockAdjustment(),
@@ -493,6 +495,8 @@ window.app = {
     outstanding: {
         filterDue: (filter, evt) => OutstandingManager.filterDue(filter, evt),
         renderDue: () => OutstandingManager.renderDue(),
+        searchOutstanding: () => OutstandingManager.searchOutstanding(),
+        recordPayment: (txnId, txnType) => OutstandingManager.recordPayment(txnId, txnType),
         markAsCleared: (txnId, txnType) => OutstandingManager.markAsCleared(txnId, txnType),
         showDetails: (txnId, txnType) => OutstandingManager.showDetails(txnId, txnType)
     },
@@ -523,6 +527,16 @@ window.app = {
         confirmDeleteExpense: () => PaymentsManager.confirmDeleteExpense(),
         editExpense: (expenseId, category) => PaymentsManager.editExpense(expenseId, category),
         deleteExpense: (expenseId, category) => PaymentsManager.deleteExpense(expenseId, category)
+    },
+    
+    // Finance
+    finance: {
+        filterTab: (view, evt) => FinanceManager.filterTab(view, evt),
+        calculateOverview: () => FinanceManager.calculateOverview(),
+        renderTransactions: () => FinanceManager.renderTransactions(),
+        recordWithdrawal: () => FinanceManager.recordWithdrawal(),
+        renderWithdrawalHistory: () => FinanceManager.renderWithdrawalHistory(),
+        init: () => FinanceManager.init()
     },
     
     // Configure (Settings)

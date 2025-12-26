@@ -5,11 +5,54 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { formatDate } from '../utils/helpers.js';
 
 export class OutstandingManager {
+    static searchOutstanding() {
+        const searchInput = document.getElementById("outstandingSearchInput");
+        const searchTerm = searchInput?.value.toLowerCase().trim() || '';
+        const container = document.getElementById("dueList");
+        
+        if (!container) return;
+        
+        const items = container.querySelectorAll('.history-item');
+        
+        if (items.length === 0) {
+            this.renderDue();
+            return;
+        }
+        
+        let visibleCount = 0;
+        
+        items.forEach(item => {
+            const itemText = item.textContent.toLowerCase();
+            if (itemText.includes(searchTerm)) {
+                item.style.display = '';
+                visibleCount++;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+        
+        let noResultsMsg = container.querySelector('.no-results-message');
+        if (visibleCount === 0 && searchTerm !== '') {
+            if (!noResultsMsg) {
+                noResultsMsg = document.createElement('p');
+                noResultsMsg.className = 'no-results-message';
+                noResultsMsg.style.cssText = 'text-align: center; color: #888; margin-top: 40px;';
+                noResultsMsg.textContent = 'No matching transactions found';
+                container.appendChild(noResultsMsg);
+            }
+        } else if (noResultsMsg) {
+            noResultsMsg.remove();
+        }
+    }
+
     static filterDue(filter, evt) {
         AppState.currentDueFilter = filter;
         
         document.querySelectorAll('#due .filter-btn').forEach(btn => btn.classList.remove('active'));
         if (evt) evt.target.classList.add('active');
+        
+        const searchInput = document.getElementById("outstandingSearchInput");
+        if (searchInput) searchInput.value = '';
         
         this.renderDue();
     }
@@ -87,7 +130,6 @@ export class OutstandingManager {
         const borderColor = '#17a2b8';
         const totalLabel = isPurchase ? 'Total Payable' : 'Total Receivable';
         const paidLabel = isPurchase ? 'Paid' : 'Received';
-        const billLabel = isPurchase ? 'Bill' : 'Sale';
 
         dueTransactions.forEach(transaction => {
             const div = document.createElement("div");
@@ -98,7 +140,7 @@ export class OutstandingManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">${billLabel} #${transaction.id}</span>${transaction.customerName ? ` <strong>${transaction.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">#${transaction.id}</span>${transaction.customerName ? `  <strong>${transaction.customerName}</strong>` : ''}
                     <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
                 </div>
                 <div class="history-date">${formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>
@@ -115,7 +157,12 @@ export class OutstandingManager {
                         <span style="font-weight: 600;">Outstanding:</span>
                         <strong style="color: ${headerColor}; font-size: 16px;">₹${Math.round(transaction.outstanding)}</strong>
                     </div>
-                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #ddd;">
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; align-items: center; gap: 8px;">
+                        <label style="flex-shrink: 0;">Payment (₹):</label>
+                        <input type="number" id="payment_${transaction.id}" placeholder="Enter amount" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
+                        <button onclick="window.app.outstanding.recordPayment('${transaction.id}', '${transaction.transactionType}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">Record</button>
+                    </div>
+                    <div style="margin-top: 8px;">
                         <label style="display: flex; align-items: center; cursor: pointer;">
                             <input type="checkbox" ${transaction.cleared ? 'checked' : ''} onchange="window.app.outstanding.markAsCleared('${transaction.id}', '${transaction.transactionType}')" style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;" />
                             <span style="font-size: 14px; color: #333; font-weight: 600;">Mark as Cleared</span>
@@ -126,6 +173,78 @@ export class OutstandingManager {
             
             container.appendChild(div);
         });
+    }
+
+    static async recordPayment(transactionId, transactionType) {
+        try {
+            const paymentInput = document.getElementById(`payment_${transactionId}`);
+            const paymentAmount = Number(paymentInput.value) || 0;
+            
+            if (paymentAmount <= 0) {
+                UIManager.showToast('Please enter a valid payment amount');
+                return;
+            }
+            
+            let transaction;
+            if (transactionType === 'purchase') {
+                transaction = AppState.billHistory.find(b => String(b.id) === String(transactionId));
+            } else {
+                transaction = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
+            }
+            
+            if (!transaction) {
+                UIManager.showToast('Error: Transaction not found');
+                return;
+            }
+            
+            const outstanding = transaction.payment?.due || 0;
+            
+            if (paymentAmount > outstanding) {
+                UIManager.showToast('Payment amount exceeds outstanding amount');
+                return;
+            }
+            
+            // Initialize payments array if it doesn't exist
+            if (!transaction.payments) transaction.payments = [];
+            
+            // Record the payment
+            const payment = {
+                amount: paymentAmount,
+                date: new Date().toLocaleString('en-IN'),
+                recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
+            };
+            
+            transaction.payments.push(payment);
+            
+            // Update payment totals
+            if (!transaction.payment) {
+                transaction.payment = { online: 0, cash: 0, due: 0, total: 0 };
+            }
+            
+            transaction.payment.cash = (transaction.payment.cash || 0) + paymentAmount;
+            transaction.payment.total = (transaction.payment.online || 0) + transaction.payment.cash;
+            
+            if (transactionType === 'purchase') {
+                const totalPayable = transaction.grandTotal || transaction.amountPayable || transaction.total || 0;
+                transaction.payment.due = totalPayable - transaction.payment.total;
+                await FirebaseService.updateBill(transaction);
+            } else {
+                const totalReceivable = transaction.total || 0;
+                transaction.payment.due = totalReceivable - transaction.payment.total;
+                await FirebaseService.updateSale(transaction);
+            }
+            
+            paymentInput.value = '';
+            this.renderDue();
+            
+            const paymentLabel = transactionType === 'purchase' ? 'Payment' : 'Payment';
+            UIManager.showToast(`✓ ${paymentLabel} of ₹${paymentAmount} recorded`);
+            UIManager.hapticFeedback('light');
+            
+        } catch (error) {
+            console.error('Error recording payment:', error);
+            UIManager.showToast('Error: ' + error.message);
+        }
     }
 
     static async markAsCleared(transactionId, transactionType) {

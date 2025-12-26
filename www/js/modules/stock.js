@@ -97,6 +97,49 @@ export class StockManager {
         });
     }
 
+    static searchStock() {
+        const searchInput = document.getElementById("stockSearchInput");
+        const searchTerm = searchInput?.value.toLowerCase().trim() || '';
+        const container = document.getElementById("stockList");
+        
+        if (!container) return;
+        
+        // Get all stock items
+        const stockItems = container.querySelectorAll('.stock-item');
+        
+        if (stockItems.length === 0) {
+            // No items rendered yet, render first
+            this.renderStock();
+            return;
+        }
+        
+        let visibleCount = 0;
+        
+        stockItems.forEach(item => {
+            const itemText = item.textContent.toLowerCase();
+            if (itemText.includes(searchTerm)) {
+                item.style.display = '';
+                visibleCount++;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+        
+        // Show "no results" message if nothing matches
+        let noResultsMsg = container.querySelector('.no-results-message');
+        if (visibleCount === 0 && searchTerm !== '') {
+            if (!noResultsMsg) {
+                noResultsMsg = document.createElement('p');
+                noResultsMsg.className = 'no-results-message';
+                noResultsMsg.style.cssText = 'text-align: center; color: #888; margin-top: 40px;';
+                noResultsMsg.textContent = 'No items found';
+                container.appendChild(noResultsMsg);
+            }
+        } else if (noResultsMsg) {
+            noResultsMsg.remove();
+        }
+    }
+
     static filterStockTab(section, event) {
         const sections = {
             current: document.getElementById("currentStockSection"),

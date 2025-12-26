@@ -389,6 +389,28 @@ const FirebaseService = {
         } catch (error) {
             console.error('Error notifying owners:', error);
         }
+    },
+
+    // Load withdrawals from Firestore
+    async loadWithdrawals() {
+        const snapshot = await db.collection('withdrawals').orderBy('timestamp', 'desc').get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    // Save withdrawal to Firestore
+    async saveWithdrawal(withdrawal) {
+        if (!withdrawal.userId && AppState.currentUser) {
+            withdrawal.userId = AppState.currentUser.uid;
+        }
+        if (!withdrawal.withdrawnBy && AppState.currentUser) {
+            withdrawal.withdrawnBy = AppState.currentUser.uid;
+        }
+        if (!withdrawal.withdrawnByName && AppState.userName) {
+            withdrawal.withdrawnByName = AppState.userName;
+        }
+        
+        const docRef = await db.collection('withdrawals').add(withdrawal);
+        return { id: docRef.id, ...withdrawal };
     }
 };
 

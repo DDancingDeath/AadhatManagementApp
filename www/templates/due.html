@@ -5,6 +5,16 @@
             <button class="filter-btn filter-sale" onclick="window.app.outstanding.filterDue('sale', event)">Sales</button>
         </div>
 
+        <div style="margin-bottom: 20px;">
+            <input type="text" 
+                   id="outstandingSearchInput" 
+                   placeholder="🔍 Search by customer name or ID..."
+                   style="width: 100%; padding: 14px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 15px; transition: all 0.2s;"
+                   oninput="window.app.outstanding.searchOutstanding()"
+                   onfocus="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 0 0 3px rgba(59, 130, 246, 0.1)'"
+                   onblur="this.style.borderColor='#e5e7eb'; this.style.boxShadow='none'">
+        </div>
+
         <div id="dueList">
             <p style="text-align: center; color: #888; margin-top: 40px;">No outstanding amounts</p>
         </div>
