@@ -19,6 +19,7 @@ import { DateFilterManager } from './modules/datefilter.js';
 import { UsersManager } from './modules/users.js';
 import { ConfigureManager } from './modules/configure.js';
 import { FinanceManager } from './modules/finance.js';
+import { AnalyticsManager } from './modules/analytics.js';
 // import { RetailSalesManager } from './modules/retail-sales.js'; // UNUSED - No navigation link to retail-sales tab
 
 // Import template loader utility
@@ -537,6 +538,14 @@ window.app = {
         recordWithdrawal: () => FinanceManager.recordWithdrawal(),
         renderWithdrawalHistory: () => FinanceManager.renderWithdrawalHistory(),
         init: () => FinanceManager.init()
+    },
+    
+    // Analytics
+    analytics: {
+        filterTab: (view, evt) => AnalyticsManager.filterTab(view, evt),
+        setPeriod: (period, evt) => AnalyticsManager.setPeriod(period, evt),
+        render: () => AnalyticsManager.renderAnalytics(),
+        init: () => AnalyticsManager.init()
     },
     
     // Configure (Settings)

@@ -1,20 +1,20 @@
 <div id="analytics" class="tab">
 
         <div class="filter-buttons" style="margin-bottom: 20px;">
-            <button class="filter-btn active" onclick="filterAnalyticsTab('overview', event)">Overview</button>
-            <button class="filter-btn" onclick="filterAnalyticsTab('sales', event)">Sales</button>
-            <button class="filter-btn" onclick="filterAnalyticsTab('items', event)">Items</button>
-            <button class="filter-btn" onclick="filterAnalyticsTab('customers', event)">Customers</button>
+            <button class="filter-btn active" onclick="window.app.analytics.filterTab('overview', event)">Overview</button>
+            <button class="filter-btn" onclick="window.app.analytics.filterTab('sales', event)">Sales</button>
+            <button class="filter-btn" onclick="window.app.analytics.filterTab('items', event)">Items</button>
+            <button class="filter-btn" onclick="window.app.analytics.filterTab('customers', event)">Customers</button>
         </div>
 
         <!-- Date Range Filter -->
         <div class="settings-card" style="margin-bottom: 20px;">
             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                 <label style="font-weight: 500;">Period:</label>
-                <button class="filter-btn" onclick="setAnalyticsPeriod('7days', event)">Last 7 Days</button>
-                <button class="filter-btn active" onclick="setAnalyticsPeriod('30days', event)">Last 30 Days</button>
-                <button class="filter-btn" onclick="setAnalyticsPeriod('90days', event)">Last 90 Days</button>
-                <button class="filter-btn" onclick="setAnalyticsPeriod('all', event)">All Time</button>
+                <button class="filter-btn" onclick="window.app.analytics.setPeriod('7days', event)">Last 7 Days</button>
+                <button class="filter-btn active" onclick="window.app.analytics.setPeriod('30days', event)">Last 30 Days</button>
+                <button class="filter-btn" onclick="window.app.analytics.setPeriod('90days', event)">Last 90 Days</button>
+                <button class="filter-btn" onclick="window.app.analytics.setPeriod('all', event)">All Time</button>
             </div>
         </div>
 
