@@ -79,7 +79,7 @@ const FirebaseService = {
         }
         
         if (sale.id) {
-            await db.collection('sales').doc(sale.id).set(sale);
+            await db.collection('sales').doc(String(sale.id)).set(sale);
         } else {
             const docRef = await db.collection('sales').add(sale);
             sale.id = docRef.id;
@@ -92,7 +92,7 @@ const FirebaseService = {
         if (!sale.id) {
             throw new Error('Sale ID is required for update');
         }
-        await db.collection('sales').doc(sale.id).set(sale);
+        await db.collection('sales').doc(String(sale.id)).set(sale);
         return sale;
     },
 
@@ -241,7 +241,10 @@ const FirebaseService = {
                     const key = getItemKey(item);
                     if (stock[key]) {
                         const qty = parseFloat(item.qty || item.quantity) || 0;
+                        // Calculate the value to subtract based on average rate
+                        const avgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
                         stock[key].quantity -= qty;
+                        stock[key].totalValue -= qty * avgRate;
                     }
                 });
             }

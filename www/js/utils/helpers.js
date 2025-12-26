@@ -48,3 +48,24 @@ export function formatCurrency(amount) {
 export function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
+
+// Pick contact from device
+export async function pickContact(inputElementId) {
+    try {
+        if ('contacts' in navigator && 'ContactsManager' in window) {
+            const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+            if (contacts && contacts.length > 0) {
+                const contact = contacts[0];
+                const nameInput = document.getElementById(inputElementId);
+                if (nameInput && contact.name && contact.name.length > 0) {
+                    nameInput.value = contact.name[0];
+                }
+            }
+        } else {
+            const { UIManager } = await import('../ui/ui-manager.js');
+            UIManager.showToast('Contact picker not supported');
+        }
+    } catch (error) {
+        console.error('Pick contact error:', error);
+    }
+}

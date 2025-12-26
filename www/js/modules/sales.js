@@ -3,10 +3,15 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
+import { pickContact } from '../utils/helpers.js';
 
 let wholesaleSaleItems = [];
 
 export class SalesManager {
+    static async pickContact() {
+        await pickContact('wholesaleCustomerName');
+    }
+
     static loadItemsDropdown() {
         const select = document.getElementById('sellItem');
         if (!select) return;
@@ -66,10 +71,10 @@ export class SalesManager {
         availableStockEl.textContent = (stockData.quantity || 0).toFixed(2);
         avgRateEl.textContent = (stockData.rate || 0).toFixed(2);
         
-        // Check if item has predefined sale rates
-        if (item.saleRates && item.saleRates.length > 0) {
-            // Use first sale rate as default
-            const firstValidRate = item.saleRates.find(rate => rate && rate > 0);
+        // Check if item has predefined wholesale rates
+        if (item.wholesaleRates && item.wholesaleRates.length > 0) {
+            // Use first wholesale rate as default
+            const firstValidRate = item.wholesaleRates.find(rate => rate && rate > 0);
             sellRateEl.value = firstValidRate || "";
         } else {
             sellRateEl.value = "";
@@ -133,12 +138,18 @@ export class SalesManager {
     static renderWholesaleBill() {
         const tbody = document.querySelector('#salesTable tbody');
         const totalEl = document.getElementById('salesTotalAmount');
+        const expensesInput = document.getElementById('salesExpensesAmount');
+        const profitEl = document.getElementById('salesProfitAmount');
+        const profitPercentEl = document.getElementById('salesProfitPercent');
         
         if (!tbody || !totalEl) return;
         
         if (wholesaleSaleItems.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
             totalEl.textContent = '0';
+            if (expensesInput) expensesInput.value = '0';
+            if (profitEl) profitEl.textContent = '0';
+            if (profitPercentEl) profitPercentEl.textContent = '0';
             return;
         }
         
@@ -154,8 +165,53 @@ export class SalesManager {
             `;
         }).join('');
         
-        const grandTotal = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
-        totalEl.textContent = Math.round(grandTotal);
+        // Calculate sale total
+        const saleTotal = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        totalEl.textContent = Math.round(saleTotal);
+        
+        // Auto-calculate buy amount (cost) from stock average rates
+        let totalBuyAmount = 0;
+        wholesaleSaleItems.forEach(item => {
+            const stockData = AppState.stock[item.itemId];
+            if (stockData && stockData.avgRate) {
+                totalBuyAmount += stockData.avgRate * item.qty;
+            }
+        });
+        
+        // Update profit calculation with current expenses
+        this.updateProfitCalculation(saleTotal, totalBuyAmount);
+    }
+
+    static updateProfitCalculation(saleTotal = null, buyAmount = null) {
+        const totalEl = document.getElementById('salesTotalAmount');
+        const expensesInput = document.getElementById('salesExpensesAmount');
+        const profitEl = document.getElementById('salesProfitAmount');
+        const profitPercentEl = document.getElementById('salesProfitPercent');
+        
+        // Get sale total if not provided
+        if (saleTotal === null) {
+            saleTotal = parseFloat(totalEl?.textContent) || 0;
+        }
+        
+        // Recalculate buy amount if not provided
+        if (buyAmount === null) {
+            buyAmount = 0;
+            wholesaleSaleItems.forEach(item => {
+                const stockData = AppState.stock[item.itemId];
+                if (stockData && stockData.avgRate) {
+                    buyAmount += stockData.avgRate * item.qty;
+                }
+            });
+        }
+        
+        const expenses = parseFloat(expensesInput?.value) || 0;
+        
+        // Calculate profit: Sale Amount - Buy Amount - Expenses
+        const profit = saleTotal - buyAmount - expenses;
+        const profitPercent = saleTotal > 0 ? (profit / saleTotal) * 100 : 0;
+        
+        if (profitEl) profitEl.textContent = Math.round(profit);
+        if (profitPercentEl) profitPercentEl.textContent = profitPercent.toFixed(1);
     }
 
     static removeWholesaleItem(index) {
@@ -170,8 +226,14 @@ export class SalesManager {
             return;
         }
         
-        const customerName = document.getElementById('wholesaleCustomerName')?.value || 'Walk-in Customer';
+        const customerName = document.getElementById('wholesaleCustomerName')?.value || '';
         const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        const comments = document.getElementById('salesComments')?.value || '';
+        const expenses = parseFloat(document.getElementById('salesExpensesAmount')?.value) || 0;
+        
+        // Get profit from display
+        const profit = parseFloat(document.getElementById('salesProfitAmount')?.textContent) || 0;
+        const profitPercent = parseFloat(document.getElementById('salesProfitPercent')?.textContent) || 0;
         
         const saleData = {
             id: Date.now(),
@@ -184,6 +246,10 @@ export class SalesManager {
                 total: item.total
             })),
             total,
+            expenses,
+            profit,
+            profitPercent,
+            comments,
             payment: {
                 online: 0,
                 cash: 0,
@@ -208,6 +274,12 @@ export class SalesManager {
             document.getElementById('wholesaleCustomerName').value = '';
             document.getElementById('sellQuantity').value = '';
             document.getElementById('sellRate').value = '';
+            document.getElementById('salesComments').value = '';
+            document.getElementById('salesExpensesAmount').value = '0';
+            
+            // Clear stock details
+            document.getElementById('availableStock').textContent = '-';
+            document.getElementById('avgPurchaseRate').textContent = '-';
             
             this.renderWholesaleBill();
             this.renderSalesHistory();
@@ -218,45 +290,52 @@ export class SalesManager {
             
             UIManager.showToast('✓ Sale completed successfully');
             UIManager.hapticFeedback();
-            
-            // Ask for print/WhatsApp
-            this.showSaleActions(saleData);
         } catch (error) {
             console.error('Error completing sale:', error);
             UIManager.showToast('Error: ' + error.message);
         }
     }
 
-    static showSaleActions(saleData) {
-        const actions = confirm('Sale completed! Would you like to print or share?');
-        if (actions) {
-            const action = prompt('Enter:\n1 - Print\n2 - WhatsApp\n3 - Both\n4 - Skip');
-            if (action === '1' || action === '3') {
-                this.printWholesaleSale();
-            }
-            if (action === '2' || action === '3') {
-                this.shareViaWhatsApp();
-            }
-        }
-    }
-
-    static printWholesaleSale() {
+    static async printWholesaleSale() {
         if (wholesaleSaleItems.length === 0) {
             UIManager.showToast('No items to print');
             return;
         }
         
-        const customerName = document.getElementById('wholesaleCustomerName')?.value || 'Walk-in Customer';
+        // Collect sale data before saving (since save will clear the bill)
+        const customerName = document.getElementById('wholesaleCustomerName')?.value || '';
         const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        const expenses = parseFloat(document.getElementById('salesExpensesAmount')?.value) || 0;
+        const profit = parseFloat(document.getElementById('salesProfitAmount')?.textContent) || 0;
+        const comments = document.getElementById('salesComments')?.value || '';
         
         const saleData = {
             customerName,
-            items: wholesaleSaleItems,
+            items: wholesaleSaleItems.map(item => ({
+                name: item.name,
+                rate: item.rate,
+                qty: item.qty,
+                total: item.total
+            })),
             total,
+            expenses,
+            profit,
+            comments,
             date: new Date().toLocaleString('en-IN')
         };
         
-        PrinterService.printWholesaleSale(saleData);
+        try {
+            // Save the sale first
+            await this.completeSale();
+            
+            // Then print with the data we collected
+            await PrinterService.printWholesaleSale(saleData);
+            
+            UIManager.showToast('Sale saved and printed!');
+        } catch (error) {
+            console.error('Print error:', error);
+            UIManager.showToast('Error: ' + error.message);
+        }
     }
 
     static shareViaWhatsApp() {
@@ -265,25 +344,29 @@ export class SalesManager {
             return;
         }
         
-        const customerName = document.getElementById('wholesaleCustomerName')?.value || 'Walk-in Customer';
+        const customerName = document.getElementById('wholesaleCustomerName')?.value || '';
         const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        const expenses = parseFloat(document.getElementById('salesExpensesAmount')?.value) || 0;
+        const profit = parseFloat(document.getElementById('salesProfitAmount')?.textContent) || 0;
+        const comments = document.getElementById('salesComments')?.value || '';
         
-        let message = `*Sale Receipt*\n\n`;
+        let message = `*Sale Bill*\n\n`;
         message += `Customer: ${customerName}\n`;
-        message += `Date: ${new Date().toLocaleString('en-IN')}\n\n`;
-        message += `*Items:*\n`;
+        message += `Date: ${new Date().toLocaleDateString('en-IN')}\n`;
+        if (comments) message += `Note: ${comments}\n`;
+        message += `\n*Items:*\n`;
         
         wholesaleSaleItems.forEach(item => {
             message += `${item.name}\n`;
-            message += `  ${item.qty.toFixed(1)} kg × ₹${item.rate} = ₹${item.total}\n`;
+            message += `  Rate: ₹${item.rate.toFixed(2)} × ${item.qty.toFixed(1)}kg = ₹${Math.round(item.total)}\n`;
         });
         
-        message += `\n*Total: ₹${saleData.total}*\n`;
-        message += `Due: ₹${saleData.payment.due}`;
+        message += `\n*Total: ₹${Math.round(total)}*`;
+        if (expenses > 0) message += `\nExpenses: ₹${Math.round(expenses)}`;
+        if (profit !== 0) message += `\nProfit: ₹${Math.round(profit)}`;
         
-        const encodedMessage = encodeURIComponent(message);
-        const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
-        window.open(whatsappUrl, '_blank');
+        const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+        window.open(url, '_blank');
     }
 
     static filterSalesTab(view, evt) {
@@ -360,10 +443,7 @@ export class SalesManager {
         sale.payment.due = sale.total - sale.payment.total;
         
         try {
-            await window.db.collection('sales').doc(String(saleId)).update({
-                payments: sale.payments,
-                payment: sale.payment
-            });
+            await FirebaseService.updateSale(sale);
             
             paymentInput.value = '';
             this.renderSalesOutstanding();
@@ -388,7 +468,7 @@ export class SalesManager {
         sale.cleared = true;
         
         try {
-            await window.db.collection('sales').doc(String(saleId)).update({ cleared: true });
+            await FirebaseService.updateSale(sale);
             
             this.renderSalesOutstanding();
             window.app.outstanding.renderDue();
@@ -429,110 +509,54 @@ export class SalesManager {
                     totalAmount: totalReceivable,
                     paidAmount: totalReceived
                 };
-            });
+            })
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         
         if (outstandingSales.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No outstanding payments</p>';
             return;
         }
 
-        const customerOutstanding = {};
+        container.innerHTML = '';
+
         outstandingSales.forEach(sale => {
-            const customer = sale.customerName || 'Unknown';
-            if (!customerOutstanding[customer]) {
-                customerOutstanding[customer] = {
-                    name: customer,
-                    totalOutstanding: 0,
-                    billCount: 0,
-                    sales: []
-                };
-            }
-            customerOutstanding[customer].totalOutstanding += sale.outstanding;
-            customerOutstanding[customer].billCount++;
-            customerOutstanding[customer].sales.push(sale);
-        });
-
-        const sortedCustomers = Object.values(customerOutstanding).sort((a, b) => b.totalOutstanding - a.totalOutstanding);
-
-        container.innerHTML = `
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
-                <thead>
-                    <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
-                        <th style="padding: 12px; text-align: left; font-weight: 600;">Customer</th>
-                        <th style="padding: 12px; text-align: center; font-weight: 600;">Bills</th>
-                        <th style="padding: 12px; text-align: right; font-weight: 600;">Outstanding</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${sortedCustomers.map(customer => `
-                        <tr style="border-bottom: 1px solid #dee2e6;">
-                            <td style="padding: 12px;"><strong>${customer.name}</strong></td>
-                            <td style="padding: 12px; text-align: center;">${customer.billCount}</td>
-                            <td style="padding: 12px; text-align: right; color: #28a745; font-weight: 600;">₹${customer.totalOutstanding.toFixed(2)}</td>
-                        </tr>
-                    `).join('')}
-                    <tr style="background: #e9ecef; font-weight: 700;">
-                        <td style="padding: 12px;">Total</td>
-                        <td style="padding: 12px; text-align: center;">${outstandingSales.length}</td>
-                        <td style="padding: 12px; text-align: right; color: #28a745;">₹${sortedCustomers.reduce((sum, c) => sum + c.totalOutstanding, 0).toFixed(2)}</td>
-                    </tr>
-                </tbody>
-            </table>
-        `;
-
-        sortedCustomers.forEach(customer => {
-            const customerSection = document.createElement('div');
-            customerSection.style.marginBottom = '30px';
-            
-            const customerHeader = document.createElement('h5');
-            customerHeader.innerHTML = `${customer.name} <span style="color: #28a745;">(₹${customer.totalOutstanding.toFixed(2)})</span>`;
-            customerHeader.style.marginBottom = '10px';
-            customerHeader.style.padding = '8px 12px';
-            customerHeader.style.background = '#e9ecef';
-            customerHeader.style.borderRadius = '4px';
-            customerSection.appendChild(customerHeader);
-
-            customer.sales.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(sale => {
                 const div = document.createElement("div");
                 div.className = "history-item";
                 
                 div.innerHTML = `
                     <div class="history-header">
-                        <span>Sale #${sale.id}${sale.customerName ? ` • <strong>${sale.customerName}</strong>` : ''}</span>
-                        <span style="color: #28a745; font-weight: 700;">Due: ₹${sale.outstanding.toFixed(2)}</span>
+                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.sales.reprintSaleById('${sale.id}')">#${sale.id}</span>${sale.customerName ? `  <strong>${sale.customerName}</strong>` : ''}</span>
+                        <span style="color: #dc3545; font-weight: 700;">Due: ₹${Math.round(sale.outstanding)}</span>
                     </div>
                     <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
-                    <div style="background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 12px; margin: 12px 0; border-radius: 4px;">
+                    <div style="background: #d1ecf1; border-left: 4px solid #22c55e; padding: 12px; margin: 12px 0; border-radius: 4px;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                             <span>Total Receivable:</span>
-                            <strong>₹${sale.totalAmount.toFixed(2)}</strong>
+                            <strong>₹${Math.round(sale.totalAmount)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                             <span>Received:</span>
-                            <strong>₹${sale.paidAmount.toFixed(2)}</strong>
+                            <strong>₹${Math.round(sale.paidAmount)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between; border-top: 2px solid #17a2b8; padding-top: 6px; margin-top: 6px;">
                             <span style="font-weight: 600;">Outstanding:</span>
-                            <strong style="color: #28a745; font-size: 16px;">₹${sale.outstanding.toFixed(2)}</strong>
+                            <strong style="color: #dc3545; font-size: 16px;">₹${Math.round(sale.outstanding)}</strong>
                         </div>
                         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #17a2b8;">
                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                                 <label style="font-weight: 500;">Payment (₹):</label>
                                 <input type="number" inputmode="decimal" id="payment_${sale.id}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
-                                <button onclick="app.sales.recordPayment('${sale.id}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
+                                <button onclick="window.app.sales.recordPayment('${sale.id}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
                             </div>
                             <div style="display: flex; align-items: center;">
-                                <input type="checkbox" id="clear_${sale.id}" onchange="app.sales.markSaleAsCleared('${sale.id}')" style="margin-right: 8px; transform: scale(1.2);" />
+                                <input type="checkbox" id="clear_${sale.id}" onchange="window.app.sales.markSaleAsCleared('${sale.id}')" style="margin-right: 8px; transform: scale(1.2);" />
                                 <label for="clear_${sale.id}" style="cursor: pointer; font-weight: 500;">Mark as Cleared</label>
                             </div>
                         </div>
                     </div>
                 `;
                 
-                customerSection.appendChild(div);
-            });
-            
-            container.appendChild(customerSection);
+                container.appendChild(div);
         });
     }
 
@@ -540,7 +564,9 @@ export class SalesManager {
         const salesHistory = AppState.salesHistory;
         const container = document.getElementById("salesHistoryList");
         
-        const salesTabHistory = salesHistory.filter(sale => sale.source === 'sales-tab');
+        const salesTabHistory = salesHistory
+            .filter(sale => sale.source === 'sales-tab')
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         
         if (salesTabHistory.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No sales yet</p>';
@@ -557,8 +583,8 @@ export class SalesManager {
             
             const paymentParts = [];
             if (sale.payment) {
-                if (sale.payment.online > 0) paymentParts.push(`Online: ₹${sale.payment.online}`);
-                if (sale.payment.cash > 0) paymentParts.push(`Cash: ₹${sale.payment.cash}`);
+                const totalReceived = (sale.payment.online || 0) + (sale.payment.cash || 0);
+                if (totalReceived > 0) paymentParts.push(`Received: ₹${totalReceived}`);
                 if (sale.payment.due > 0) paymentParts.push(`Due: ₹${sale.payment.due}`);
             }
             const paymentHTML = paymentParts.length > 0 ? `
@@ -569,12 +595,12 @@ export class SalesManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #007bff; text-decoration: underline;" onclick="app.sales.reprintSale(${saleIndex})">Sale #${sale.id}</span>${sale.customerName ? ` • <strong>${sale.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.sales.reprintSale(${saleIndex})">#${sale.id}</span>${sale.customerName ? `<strong>${sale.customerName}</strong>` : ''}
                     <span style="color: #28a745; font-weight: 700;">₹ ${sale.total}</span>
                 </div>
                 <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
                 <div class="history-summary">
-                    ${sale.items.map(item => item.name).join(', ')} • ${totalWeight.toFixed(2)}kg
+                    ${sale.items.map(item => item.name).join(', ')}
                 </div>
                 ${paymentHTML}
             `;
@@ -669,5 +695,15 @@ export class SalesManager {
         
         document.getElementById('billDetailsContent').innerHTML = content;
         document.getElementById('billDetailsOverlay').classList.add('active');
+    }
+
+    static async reprintSaleById(saleId) {
+        const salesHistory = AppState.salesHistory;
+        const index = salesHistory.findIndex(s => String(s.id) === String(saleId));
+        if (index === -1) {
+            UIManager.showModal('Sale not found');
+            return;
+        }
+        await this.reprintSale(index);
     }
 }

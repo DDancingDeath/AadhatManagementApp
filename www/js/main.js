@@ -445,7 +445,10 @@ window.app = {
         renderOutstanding: () => SalesManager.renderSalesOutstanding(),
         recordPayment: (saleId) => SalesManager.recordPayment(saleId),
         markSaleAsCleared: (saleId) => SalesManager.markSaleAsCleared(saleId),
-        reprintSale: (index) => SalesManager.reprintSale(index)
+        reprintSale: (index) => SalesManager.reprintSale(index),
+        reprintSaleById: (saleId) => SalesManager.reprintSaleById(saleId),
+        updateProfitCalculation: () => SalesManager.updateProfitCalculation(),
+        pickContact: () => SalesManager.pickContact()
     },
     
     // Retail Sales - UNUSED: No navigation link exists for retail-sales tab

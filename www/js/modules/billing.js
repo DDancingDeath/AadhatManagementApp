@@ -4,7 +4,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
-import { formatCurrency, debounce, generateId } from '../utils/helpers.js';
+import { formatCurrency, debounce, generateId, pickContact } from '../utils/helpers.js';
 import { DEFAULT_SETTINGS } from '../utils/constants.js';
 
 // Bill state
@@ -1326,41 +1326,11 @@ const BillingManager = {
     
     // Contact picker helpers
     async pickContact() {
-        try {
-            if ('contacts' in navigator && 'ContactsManager' in window) {
-                const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
-                if (contacts && contacts.length > 0) {
-                    const contact = contacts[0];
-                    const nameInput = document.getElementById('customerName');
-                    if (nameInput && contact.name && contact.name.length > 0) {
-                        nameInput.value = contact.name[0];
-                    }
-                }
-            } else {
-                UIManager.showToast('Contact picker not supported');
-            }
-        } catch (error) {
-            console.error('Pick contact error:', error);
-        }
+        await pickContact('customerName');
     },
     
     async pickSaleContact() {
-        try {
-            if ('contacts' in navigator && 'ContactsManager' in window) {
-                const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
-                if (contacts && contacts.length > 0) {
-                    const contact = contacts[0];
-                    const nameInput = document.getElementById('saleCustomerName');
-                    if (nameInput && contact.name && contact.name.length > 0) {
-                        nameInput.value = contact.name[0];
-                    }
-                }
-            } else {
-                UIManager.showToast('Contact picker not supported');
-            }
-        } catch (error) {
-            console.error('Pick contact error:', error);
-        }
+        await pickContact('saleCustomerName');
     },
     
     async shareWhatsApp() {
