@@ -2,6 +2,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { formatDate } from '../utils/helpers.js';
 
 export class OutstandingManager {
     static filterDue(filter, evt) {
@@ -23,18 +24,18 @@ export class OutstandingManager {
         
         if (currentDueFilter === 'purchase') {
             billHistory.forEach(bill => {
-                const totalPayable = bill.grandTotal || bill.amountPayable || bill.total || 0;
-                const onlinePaid = bill.payment ? (bill.payment.online || 0) : (bill.onlinePayment || 0);
-                const cashPaid = bill.payment ? (bill.payment.cash || 0) : (bill.cashPayment || 0);
                 const duePaid = bill.payment ? (bill.payment.due || 0) : (bill.dueAmount || 0);
-                const totalPaid = onlinePaid + cashPaid;
-                const outstanding = duePaid > 0 ? duePaid : (totalPayable - totalPaid);
                 
-                if (outstanding > 0 && !bill.cleared) {
+                if (duePaid > 0 && !bill.cleared) {
+                    const totalPayable = bill.grandTotal || bill.amountPayable || bill.total || 0;
+                    const onlinePaid = bill.payment ? (bill.payment.online || 0) : (bill.onlinePayment || 0);
+                    const cashPaid = bill.payment ? (bill.payment.cash || 0) : (bill.cashPayment || 0);
+                    const totalPaid = onlinePaid + cashPaid;
+                    
                     dueTransactions.push({
                         ...bill,
                         transactionType: 'purchase',
-                        outstanding: outstanding,
+                        outstanding: duePaid,
                         totalAmount: totalPayable,
                         paidAmount: totalPaid,
                         onlinePaid: onlinePaid,
@@ -44,18 +45,18 @@ export class OutstandingManager {
             });
         } else if (currentDueFilter === 'sale') {
             salesHistory.forEach(sale => {
-                const totalReceivable = sale.total || 0;
-                const onlineReceived = sale.payment ? (sale.payment.online || 0) : (sale.onlinePayment || 0);
-                const cashReceived = sale.payment ? (sale.payment.cash || 0) : (sale.cashPayment || 0);
                 const dueReceived = sale.payment ? (sale.payment.due || 0) : (sale.dueAmount || 0);
-                const totalReceived = onlineReceived + cashReceived;
-                const outstanding = dueReceived > 0 ? dueReceived : (totalReceivable - totalReceived);
                 
-                if (outstanding > 0 && !sale.cleared) {
+                if (dueReceived > 0 && !sale.cleared) {
+                    const totalReceivable = sale.total || 0;
+                    const onlineReceived = sale.payment ? (sale.payment.online || 0) : (sale.onlinePayment || 0);
+                    const cashReceived = sale.payment ? (sale.payment.cash || 0) : (sale.cashPayment || 0);
+                    const totalReceived = onlineReceived + cashReceived;
+                    
                     dueTransactions.push({
                         ...sale,
                         transactionType: 'sale',
-                        outstanding: outstanding,
+                        outstanding: dueReceived,
                         totalAmount: totalReceivable,
                         paidAmount: totalReceived,
                         onlineReceived: onlineReceived,
@@ -81,9 +82,9 @@ export class OutstandingManager {
         container.innerHTML = "";
         
         const isPurchase = currentDueFilter === 'purchase';
-        const headerColor = isPurchase ? '#dc3545' : '#28a745';
-        const bgColor = isPurchase ? '#fff3cd' : '#d1ecf1';
-        const borderColor = isPurchase ? '#ffc107' : '#17a2b8';
+        const headerColor = '#dc3545';
+        const bgColor = '#d1ecf1';
+        const borderColor = '#17a2b8';
         const totalLabel = isPurchase ? 'Total Payable' : 'Total Receivable';
         const paidLabel = isPurchase ? 'Paid' : 'Received';
         const billLabel = isPurchase ? 'Bill' : 'Sale';
@@ -97,10 +98,10 @@ export class OutstandingManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">${billLabel} #${transaction.id}</span>${transaction.customerName ? ` • <strong>${transaction.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">${billLabel} #${transaction.id}</span>${transaction.customerName ? ` <strong>${transaction.customerName}</strong>` : ''}
                     <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
                 </div>
-                <div class="history-date">${transaction.date}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>
+                <div class="history-date">${formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>
                 <div style="background: ${bgColor}; border-left: 4px solid ${borderColor}; padding: 12px; margin: 12px 0; border-radius: 4px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                         <span>${totalLabel}:</span>
@@ -116,8 +117,8 @@ export class OutstandingManager {
                     </div>
                     <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #ddd;">
                         <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" ${transaction.cleared ? 'checked' : ''} onchange="app.outstanding.markAsCleared('${transaction.id}', '${transaction.transactionType}')" style="margin-right: 8px;" />
-                            <span style="font-size: 13px; color: #666;">Mark as Cleared</span>
+                            <input type="checkbox" ${transaction.cleared ? 'checked' : ''} onchange="window.app.outstanding.markAsCleared('${transaction.id}', '${transaction.transactionType}')" style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;" />
+                            <span style="font-size: 14px; color: #333; font-weight: 600;">Mark as Cleared</span>
                         </label>
                     </div>
                 </div>
@@ -131,7 +132,7 @@ export class OutstandingManager {
         try {
             const collection = transactionType === 'purchase' ? 'bills' : 'sales';
             
-            await window.db.collection(collection).doc(String(transactionId)).update({
+            await db.collection(collection).doc(String(transactionId)).update({
                 cleared: true,
                 clearedAt: new Date().toLocaleString('en-IN'),
                 clearedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
