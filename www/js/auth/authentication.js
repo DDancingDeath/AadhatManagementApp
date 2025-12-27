@@ -78,8 +78,16 @@ const AuthManager = {
         console.log('=== LOGIN STARTED ===');
         console.log('Device:', navigator.userAgent);
         console.log('Online:', navigator.onLine);
-        console.log('Firebase auth initialized:', !!auth);
-        console.log('Firebase db initialized:', !!db);
+        
+        // Check Firebase initialization
+        if (typeof firebase === 'undefined') {
+            UIManager.showToast('Firebase not loaded. Please refresh the page.');
+            console.error('Firebase is undefined!');
+            return;
+        }
+        
+        console.log('Firebase auth initialized:', !!firebase.auth);
+        console.log('Firebase db initialized:', !!firebase.firestore);
         
         const emailInput = document.getElementById('loginEmail');
         const passwordInput = document.getElementById('loginPassword');
@@ -89,6 +97,7 @@ const AuthManager = {
         
         if (!emailInput || !passwordInput) {
             UIManager.showToast('Form elements not found');
+            console.error('Form inputs not found!');
             return;
         }
         
@@ -163,6 +172,7 @@ const AuthManager = {
             console.error('Login error:', error);
             console.error('Error code:', error.code);
             console.error('Error message:', error.message);
+            console.error('Error stack:', error.stack);
             
             UIManager.hideLoading();
             
@@ -179,6 +189,9 @@ const AuthManager = {
                     break;
                 case 'auth/wrong-password':
                     errorMessage += 'Incorrect password.';
+                    break;
+                case 'auth/invalid-credential':
+                    errorMessage += 'Invalid email or password.';
                     break;
                 case 'auth/network-request-failed':
                     errorMessage += 'Network error. Check your internet connection.';
@@ -277,6 +290,92 @@ const AuthManager = {
             UIManager.hideLoading();
             UIManager.showToast('Failed to send reset email: ' + error.message, 4000);
         }
+    },
+
+    // Handle forgot password
+    async handleForgotPassword() {
+        console.log('=== PASSWORD RESET STARTED ===');
+        
+        const emailInput = document.getElementById('loginEmail');
+        let email = emailInput?.value?.trim();
+        
+        console.log('Email from input field:', email);
+        
+        if (!email) {
+            email = prompt('Enter your email address to reset password:');
+            if (!email) {
+                console.log('User cancelled prompt');
+                return;
+            }
+            email = email.trim();
+            console.log('Email from prompt:', email);
+        }
+        
+        if (!email) {
+            UIManager.showToast('Please enter an email address');
+            console.log('No email provided');
+            return;
+        }
+        
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            UIManager.showToast('Please enter a valid email address');
+            console.log('Invalid email format:', email);
+            return;
+        }
+        
+        try {
+            console.log('Attempting to send password reset email to:', email);
+            UIManager.showLoading();
+            
+            // Configure action code settings for password reset
+            const actionCodeSettings = {
+                url: 'https://aadhat-management.web.app',
+                handleCodeInApp: false
+            };
+            
+            await firebase.auth().sendPasswordResetEmail(email, actionCodeSettings);
+            
+            console.log('Password reset email sent successfully!');
+            UIManager.hideLoading();
+            UIManager.showToast('✅ Password reset email sent to ' + email + '! Check your inbox and spam folder.', 5000);
+        } catch (error) {
+            console.error('Password reset error:', error);
+            console.error('Error code:', error.code);
+            console.error('Error message:', error.message);
+            
+            UIManager.hideLoading();
+            
+            let errorMessage = 'Failed to send reset email. ';
+            switch (error.code) {
+                case 'auth/invalid-email':
+                    errorMessage += 'Invalid email address format.';
+                    break;
+                case 'auth/user-not-found':
+                    errorMessage += 'No account found with this email. Please check the email or register.';
+                    break;
+                case 'auth/network-request-failed':
+                    errorMessage += 'Network error. Check your internet connection.';
+                    break;
+                case 'auth/too-many-requests':
+                    errorMessage += 'Too many reset attempts. Please try again later.';
+                    break;
+                case 'auth/missing-android-pkg-name':
+                case 'auth/missing-continue-uri':
+                case 'auth/missing-ios-bundle-id':
+                case 'auth/invalid-continue-uri':
+                case 'auth/unauthorized-continue-uri':
+                    errorMessage += 'Configuration error. Contact support.';
+                    break;
+                default:
+                    errorMessage += error.message;
+            }
+            
+            UIManager.showToast(errorMessage, 5000);
+        }
+        
+        console.log('=== PASSWORD RESET ENDED ===');
     },
 
     // Handle logout
