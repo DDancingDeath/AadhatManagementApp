@@ -1,5 +1,5 @@
 <div id="items" class="tab">
-        <div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+        <div id="itemsActionButtons" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
             <div style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
                 <button class="quick-add-btn-inline" onclick="window.app.items.exportExcel()" style="flex: 1; min-width: 110px; padding: 12px 20px; font-size: 15px; font-weight: 600;">📊 Export</button>
                 <button class="quick-add-btn-inline" onclick="document.getElementById('importItemsFile').click()" style="flex: 1; min-width: 110px; padding: 12px 20px; font-size: 15px; font-weight: 600;">📥 Import</button>
@@ -26,7 +26,7 @@
                         <th style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; border-right: 1px solid rgba(255,255,255,0.2);">Item Name</th>
                         <th style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; border-right: 1px solid rgba(255,255,255,0.2);">Purchase Rates</th>
                         <th style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; border-right: 1px solid rgba(255,255,255,0.2);">Retail Rates</th>
-                        <th style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Wholesale Rates</th>
+                        <th class="wholesale-column" style="padding: 16px; text-align: left; font-weight: 600; color: white; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Wholesale Rates</th>
                     </tr>
                 </thead>
                 <tbody id="itemsViewTableBody">
