@@ -330,43 +330,17 @@ window.app = {
                 return;
             }
             
-            // Collect bill data before saving
-            const onlinePayment = parseFloat(document.getElementById('onlinePayment')?.value || 0);
-            const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
-            const duePayment = parseFloat(document.getElementById('dueAmount')?.value || 0);
-            
-            // Get labor calculation string only if auto-labor was used (checkbox checked and not manually edited)
-            const autoLaborCheckbox = document.getElementById('autoLaborCharge');
-            const laborChargesInput = document.getElementById('manualLaborCharges');
-            const laborCalculationSpan = document.getElementById('laborCalculation');
-            const laborCalc = (autoLaborCheckbox?.checked && !laborChargesInput?.dataset.manuallySet) 
-                ? laborCalculationSpan?.textContent || null 
-                : null;
-            
-            const billData = {
-                items: billItems,
-                billTotal: parseFloat(document.getElementById('billTotal')?.textContent || 0),
-                laborCharges: parseFloat(document.getElementById('manualLaborCharges')?.value || 0),
-                laborCalc: laborCalc,
-                totalPackets: parseInt(document.getElementById('totalPacketsInBill')?.textContent || 0),
-                amountPayable: parseFloat(document.getElementById('amountPayable')?.textContent || 0),
-                customerName: document.getElementById('customerName')?.value || '',
-                isPurchase: true,
-                date: new Date().toISOString(),
-                payment: {
-                    online: onlinePayment,
-                    cash: cashPayment,
-                    due: duePayment,
-                    total: onlinePayment + cashPayment + duePayment
-                }
-            };
-            
             try {
-                // Save the bill
-                await BillingManager.saveBillToHistory();
+                // Save the bill first and wait for it to complete
+                const savedBill = await BillingManager.saveBillToHistory();
                 
-                // Print the bill data we collected
-                await PrinterService.printBill(billData);
+                if (!savedBill) {
+                    // Save failed or was cancelled
+                    return;
+                }
+                
+                // Only print after successful save
+                await PrinterService.printBill(savedBill);
                 
                 UIManager.showToast('Bill saved and printed!');
             } catch (error) {

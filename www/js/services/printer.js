@@ -207,7 +207,7 @@ class BluetoothPrinterManager {
                 
                 y = utils.drawLeft(`${displayName} (${item.weights.length} पैकेट, ${item.qty.toFixed(1)} kg)`, y, { size: 18, weight: 'bold' });
                 
-                const weightsText = item.weights.map(w => w.toFixed(1)).join(' ');
+                const weightsText = item.weights.map(w => parseFloat(w).toFixed(1)).join('  ');
                 const maxWidth = 380;
                 ctx.font = '17px Arial';
                 const words = weightsText.split(' ');
@@ -238,16 +238,24 @@ class BluetoothPrinterManager {
         y = utils.drawCenter('Receipt', y, config.fonts.title, true);
         // y += 4;
         
-        // Bill number
-        if (billData.billNumber) {
-            y = utils.drawCenter('Bill: ' + billData.billNumber, y, { size: 18, weight: 'bold' });
-            y += 4;
-        }
-        
-        // Date/time
+        // Bill number on left, Date/time on right (same line)
         const dateTime = new Date().toLocaleDateString('en-IN') + ' ' + 
                         new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-        y = utils.drawCenter(dateTime, y, config.fonts.subtext);
+        
+        if (billData.billNumber) {
+            // Draw bill number on left
+            ctx.font = '17px Arial';
+            ctx.fillText('Bill: ' + billData.billNumber, config.padding.side, y);
+            
+            // Draw date/time on right
+            const dateWidth = ctx.measureText(dateTime).width;
+            ctx.fillText(dateTime, config.width - dateWidth - config.padding.side, y);
+            
+            y += config.spacing.line;
+        } else {
+            // If no bill number, center the date/time
+            y = utils.drawCenter(dateTime, y, config.fonts.subtext);
+        }
         y += config.spacing.section;
         
         return y;

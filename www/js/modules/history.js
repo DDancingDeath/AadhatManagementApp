@@ -328,21 +328,20 @@ export class HistoryManager {
         const isPurchase = type === 'purchase';
         const billColor = isPurchase ? '#007bff' : '#28a745';
         
-        // Build weight breakdown (purchases only)
+        // Build weight breakdown (purchases and sales)
         let weightBreakdownHTML = '';
-        if (isPurchase) {
-            bill.items.forEach(item => {
-                if (item.weights && item.weights.length > 0) {
-                    const weightsDisplay = item.weights.map(w => `${w}`).join(' ');
-                    weightBreakdownHTML += `
-                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid ${billColor};">
-                            <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
-                            <div style="color: #6c757d; font-size: 14px;">${weightsDisplay}</div>
-                        </div>
-                    `;
-                }
-            });
-        }
+        bill.items.forEach(item => {
+            // Only show weight breakdown if there are 2 or more packets
+            if (item.weights && item.weights.length >= 2) {
+                const weightsDisplay = item.weights.map(w => parseFloat(w).toFixed(1)).join('&nbsp;&nbsp;');
+                weightBreakdownHTML += `
+                    <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid ${billColor};">
+                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
+                        <div style="color: #6c757d; font-size: 14px; white-space: pre;">${weightsDisplay}</div>
+                    </div>
+                `;
+            }
+        });
         
         // Build items table
         const itemsHTML = bill.items.map(item => `

@@ -480,15 +480,15 @@ const BillingManager = {
                     const weightLines = [];
                     for (let i = 0; i < item.weights.length; i += weightsPerLine) {
                         const lineWeights = item.weights.slice(i, i + weightsPerLine);
-                        weightLines.push(lineWeights.map(w => w.toFixed(1)).join(' '));
+                        weightLines.push(lineWeights.map(w => parseFloat(w).toFixed(1)).join('&nbsp;&nbsp;'));
                     }
                     
                     return `
-                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #007bff;">
-                            <div style="font-weight: 600; margin-bottom: 8px; color: #333;">
+                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #007bff;">
+                            <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
                                 ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
                             </div>
-                            <div style="font-family: monospace; font-size: 13px; line-height: 1.6; color: #555;">
+                            <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
                                 ${weightLines.join('<br>')}
                             </div>
                         </div>
@@ -526,9 +526,9 @@ const BillingManager = {
         if (billTotalSpan) billTotalSpan.textContent = Math.round(billTotal);
         if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = totalPackets;
         
-        // Clear manually set flag when items change
+        // Don't clear manually set flag or labor value when in edit mode
         const laborChargesInput = document.getElementById('manualLaborCharges');
-        if (laborChargesInput) {
+        if (laborChargesInput && this.editingBillIndex === undefined) {
             delete laborChargesInput.dataset.manuallySet;
         }
         
@@ -593,8 +593,8 @@ const BillingManager = {
             const laborRate = AppState.settings?.laborRate || 6;
             const autoCalculatedLabor = laborRate * heavyPacketsCount;
             
-            // Only auto-calculate if the user hasn't manually edited the field
-            if (laborChargesInput && !laborChargesInput.dataset.manuallySet) {
+            // Only auto-calculate if the user hasn't manually edited the field AND not in edit mode
+            if (laborChargesInput && !laborChargesInput.dataset.manuallySet && this.editingBillIndex === undefined) {
                 laborChargesInput.value = autoCalculatedLabor.toFixed(0);
             }
             
@@ -824,10 +824,13 @@ const BillingManager = {
             UIManager.showToast('Bill saved successfully!');
             UIManager.hapticFeedback('success');
             
+            return bill; // Return saved bill for printing
+            
         } catch (error) {
             UIManager.hideLoading();
             UIManager.showToast('Failed to save bill: ' + error.message);
             console.error('Save bill error:', error);
+            throw error; // Re-throw to prevent printing on error
         }
     },
     
@@ -1027,15 +1030,15 @@ const BillingManager = {
                     const weightLines = [];
                     for (let i = 0; i < item.weights.length; i += weightsPerLine) {
                         const lineWeights = item.weights.slice(i, i + weightsPerLine);
-                        weightLines.push(lineWeights.map(w => w.toFixed(1)).join(' '));
+                        weightLines.push(lineWeights.map(w => parseFloat(w).toFixed(1)).join('&nbsp;&nbsp;'));
                     }
                     
                     return `
-                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #22c55e;">
-                            <div style="font-weight: 600; margin-bottom: 8px; color: #333;">
+                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #22c55e;">
+                            <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
                                 ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
                             </div>
-                            <div style="font-family: monospace; font-size: 13px; line-height: 1.6; color: #555;">
+                            <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
                                 ${weightLines.join('<br>')}
                             </div>
                         </div>
@@ -1317,10 +1320,13 @@ const BillingManager = {
             UIManager.showToast('Sale completed successfully!');
             UIManager.hapticFeedback('success');
             
+            return sale; // Return saved sale for printing
+            
         } catch (error) {
             UIManager.hideLoading();
             UIManager.showToast('Failed to complete sale: ' + error.message);
             console.error('Complete sale error:', error);
+            throw error; // Re-throw to prevent printing on error
         }
     },
     
@@ -1395,37 +1401,21 @@ const BillingManager = {
             return;
         }
         
-        // Collect sale data before saving
-        const saleTotal = parseFloat(document.getElementById('saleTotal')?.textContent || 0);
-        const totalPackets = parseInt(document.getElementById('totalSalePacketsInBill')?.textContent || 0);
-        
-        const saleData = {
-            items: saleItems.map(item => ({
-                name: item.name,
-                rate: item.rate,
-                qty: item.qty,
-                total: item.total,
-                weights: item.weights || [item.qty]
-            })),
-            billTotal: saleTotal,
-            amountPayable: saleTotal,
-            totalPackets: totalPackets,
-            customerName: document.getElementById('saleCustomerName')?.value || '',
-            isPurchase: false,
-            laborCharges: 0,
-            date: new Date().toISOString()
-        };
-        
         try {
-            // Save the sale
-            await this.completeSale();
+            // Save the sale first and wait for it to complete
+            const savedSale = await this.completeSale();
             
-            // Print the sale data we collected
-            await PrinterService.printBill(saleData);
+            if (!savedSale) {
+                // Save failed or was cancelled
+                return;
+            }
+            
+            // Only print after successful save
+            await PrinterService.printBill(savedSale);
             
             UIManager.showToast('Sale saved and printed!');
         } catch (error) {
-            console.error('Print error:', error);
+            console.error('Print sale error:', error);
             UIManager.showToast('Error: ' + error.message);
         }
     },
@@ -2105,6 +2095,15 @@ const BillingManager = {
                 }
                 
                 UIManager.showToast('✓ Bill updated successfully!');
+                
+                // Clear editing state and form before returning
+                this.editingBillIndex = undefined;
+                this.editingBillId = undefined;
+                this.editingBillType = undefined;
+                this.clearBill();
+                
+                // Return updated bill for printing
+                return updatedBill;
             } else {
                 // Update sale
                 const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
@@ -2156,23 +2155,25 @@ const BillingManager = {
                 }
                 
                 UIManager.showToast('✓ Sale updated successfully!');
+                
+                // Clear editing state and form before returning
+                this.editingBillIndex = undefined;
+                this.editingBillId = undefined;
+                this.editingBillType = undefined;
+                this.clearBill();
+                
+                // Return updated sale for printing
+                return updatedSale;
             }
 
-            // Clear editing state
-            this.editingBillIndex = undefined;
-            this.editingBillId = undefined;
-            this.editingBillType = undefined;
-
-            // Clear the form
-            this.clearBill();
-
-            // Navigate to history
+            // Navigate to history (this will only be reached if not printing)
             window.app.nav.showTab('history');
             window.app.history.render();
             
         } catch (error) {
             console.error('Failed to update bill:', error);
             UIManager.showToast('Failed to update bill: ' + error.message);
+            throw error; // Re-throw to prevent printing on error
         }
     }
 };

@@ -421,6 +421,7 @@ const AuthManager = {
     applyRoleBasedRestrictions() {
         const isOwnerOrManager = AppState.userRole === 'owner' || AppState.userRole === 'manager';
         const isOwner = AppState.userRole === 'owner';
+        const isStaff = AppState.userRole === 'staff';
         
         // Update username display in navigation
         const userNameDisplay = document.getElementById('currentUserName');
@@ -433,7 +434,9 @@ const AuthManager = {
         const restrictedTabs = {
             'financeTab': isOwnerOrManager,
             'analyticsTab': isOwnerOrManager,
-            'usersTab': isOwner
+            'usersTab': isOwner,
+            'stockTab': !isStaff,
+            'salesTab': !isStaff
         };
         
         Object.entries(restrictedTabs).forEach(([tabId, allowed]) => {
@@ -464,6 +467,18 @@ const AuthManager = {
                 if (tabId === 'users' && !isOwner) {
                     item.style.display = 'none';
                 } else if (tabId === 'users' && isOwner) {
+                    item.style.display = 'block';
+                }
+                
+                if (tabId === 'stock' && isStaff) {
+                    item.style.display = 'none';
+                } else if (tabId === 'stock' && !isStaff) {
+                    item.style.display = 'block';
+                }
+                
+                if (tabId === 'sales' && isStaff) {
+                    item.style.display = 'none';
+                } else if (tabId === 'sales' && !isStaff) {
                     item.style.display = 'block';
                 }
             }
