@@ -84,6 +84,11 @@ const NavigationManager = {
             setTimeout(() => window.app.analytics.init(), 100);
         }
         
+        // Initialize cash management when Cash Management tab is shown
+        if (tabId === 'cash-management' && window.app?.cashManagement) {
+            setTimeout(() => window.app.cashManagement.init(), 100);
+        }
+        
         // Initialize configure sub-tabs when Configure tab is shown
         if (tabId === 'configure' && window.app?.configure) {
             setTimeout(() => window.app.configure.showSubTab('items'), 100);

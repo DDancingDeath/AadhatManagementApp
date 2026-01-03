@@ -32,6 +32,7 @@ export class TemplateLoader {
             'settings',
             'finance',
             'analytics',
+            'cash-management',
             'users',
             'chat'
         ];
@@ -84,6 +85,7 @@ export class TemplateLoader {
         appContent.insertAdjacentHTML('beforeend', templates.settings);
         appContent.insertAdjacentHTML('beforeend', templates.finance);
         appContent.insertAdjacentHTML('beforeend', templates.analytics);
+        appContent.insertAdjacentHTML('beforeend', templates['cash-management']);
         appContent.insertAdjacentHTML('beforeend', templates.users);
         appContent.insertAdjacentHTML('beforeend', templates.chat);
         

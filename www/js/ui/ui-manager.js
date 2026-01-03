@@ -41,7 +41,8 @@ const UIManager = {
             }
             
             modalTitle.textContent = title;
-            modalMessage.textContent = message;
+            // Use innerHTML to allow HTML content in modals
+            modalMessage.innerHTML = message;
             cancelBtn.style.display = showCancel ? 'inline-block' : 'none';
             overlay.classList.add('active');
             

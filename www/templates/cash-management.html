@@ -1,0 +1,189 @@
+<div id="cash-management" class="tab">
+    <div style="padding: 20px;">
+        
+        <!-- Cash Status Card -->
+        <div id="cashStatusCard" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+            <h3 style="margin: 0 0 15px 0; font-size: 18px;">Today's Cash Status</h3>
+            <div id="statusCardsContainer" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 14px;">
+                <!-- For ongoing session: Opening Balance, Cash In, Cash Out, Available Cash -->
+                <div id="statusOpeningCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Opening Balance</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusOpeningBalance">₹0</div>
+                </div>
+                <div id="statusCashInCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Cash In</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusCashIn">₹0</div>
+                </div>
+                <div id="statusCashOutCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Cash Out</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusCashOut">₹0</div>
+                </div>
+                <div id="statusAvailableCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Available Cash</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusAvailable">₹0</div>
+                </div>
+                
+                <!-- For signed-out session: Show all 8 cards -->
+                <div id="statusCashAddedCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; display: none;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Cash Added</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusCashAdded">₹0</div>
+                </div>
+                <div id="statusBuyCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; display: none;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Purchases (Buy)</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusBuy">₹0</div>
+                </div>
+                <div id="statusSaleCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; display: none;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Sales</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusSale">₹0</div>
+                </div>
+                <div id="statusOthersCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; display: none;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Expenses & Others</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusOthers">₹0</div>
+                </div>
+                <div id="statusExpectedCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; display: none;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Expected Balance</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusExpected">₹0</div>
+                </div>
+                <div id="statusActualCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; display: none;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Actual Balance</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusActual">-</div>
+                </div>
+                <div id="statusDiffCard" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; display: none;">
+                    <div style="opacity: 0.9; margin-bottom: 4px;">Difference</div>
+                    <div style="font-size: 20px; font-weight: bold;" id="statusDiff">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sign In/Out Section -->
+        <div id="cashSignInSection" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 15px 0; color: #333;">Cash Sign In</h3>
+            <div class="form-row">
+                <label>Opening Cash Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="cashSignInAmount" placeholder="Enter cash amount you have" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+            </div>
+            <button class="save-btn" onclick="window.app.cashManagement.signIn()" style="width: 100%; padding: 14px; margin-top: 10px; background: #22c55e; font-size: 16px; font-weight: 600;">
+                ✓ Sign In for Today
+            </button>
+        </div>
+
+        <div id="cashSignOutSection" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: none;">
+            <h3 style="margin: 0 0 15px 0; color: #333;">Cash Sign Out</h3>
+            
+            <!-- Transaction Summary -->
+            <div style="margin-bottom: 15px;">
+                <h4 style="margin: 0 0 10px 0; font-size: 15px; color: #495057;">Today's Transactions</h4>
+                <div style="display: grid; gap: 8px; font-size: 14px;">
+                    
+                    <!-- Cash In Group -->
+                    <div style="background: #d1fae5; padding: 10px; border-radius: 6px; margin-bottom: 4px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span>Opening Balance:</span>
+                            <strong style="color: #6366f1;" id="openingBalanceTotal">₹0</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span>Cash Added:</span>
+                            <strong style="color: #10b981;" id="cashDepositsTotal">₹0</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span>Cash Sales:</span>
+                            <strong style="color: #22c55e;" id="cashSalesTotal">₹0</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Due Received:</span>
+                            <strong style="color: #3b82f6;" id="dueReceivedTotal">₹0</strong>
+                        </div>
+                        <div style="border-top: 2px solid #059669; margin-top: 8px; padding-top: 8px; display: flex; justify-content: space-between; font-weight: 600;">
+                            <span>Total Cash In:</span>
+                            <strong style="color: #059669;" id="totalCashIn">₹0</strong>
+                        </div>
+                    </div>
+                    
+                    <!-- Cash Out Group -->
+                    <div style="background: #fee2e2; padding: 10px; border-radius: 6px; margin-bottom: 4px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span>Cash Purchases:</span>
+                            <strong style="color: #ef4444;" id="cashPurchasesTotal">₹0</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span>Due Paid:</span>
+                            <strong style="color: #dc2626;" id="duePaidTotal">₹0</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span>Business Expenses:</span>
+                            <strong style="color: #f97316;" id="cashBusinessExpensesTotal">₹0</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Personal Expenses:</span>
+                            <strong style="color: #f59e0b;" id="cashPersonalExpensesTotal">₹0</strong>
+                        </div>
+                        <div style="border-top: 2px solid #dc2626; margin-top: 8px; padding-top: 8px; display: flex; justify-content: space-between; font-weight: 600;">
+                            <span>Total Cash Out:</span>
+                            <strong style="color: #dc2626;" id="totalCashOut">₹0</strong>
+                        </div>
+                    </div>
+                    
+                    <!-- Expected Cash -->
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 12px; border-radius: 8px; margin-top: 4px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 16px;">
+                            <span style="color: white; font-weight: 600;">Expected Cash:</span>
+                            <strong style="color: white;" id="expectedCashAmount">₹0</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-row" style="display: flex; align-items: center; gap: 10px;">
+                <label style="white-space: nowrap; margin: 0;">Cash in Hand (₹):</label>
+                <input type="number" inputmode="decimal" id="cashSignOutAmount" placeholder="Enter actual cash" style="flex: 1; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+            </div>
+            
+            <div id="cashDifferenceAlert" style="display: none; padding: 12px; border-radius: 8px; margin: 10px 0; font-weight: 600;"></div>
+            
+            <button class="save-btn" onclick="window.app.cashManagement.signOut()" style="width: 100%; padding: 14px; margin-top: 10px; background: #ef4444; font-size: 16px; font-weight: 600;">
+                ✓ Sign Out & Close Day
+            </button>
+        </div>
+
+        <!-- Cash Transactions -->
+        <div id="cashDepositSection" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: none;">
+            <h3 style="margin: 0 0 15px 0; color: #333;">Record Cash Transaction</h3>
+            
+            <div class="form-row">
+                <label>Transaction Type:</label>
+                <select id="cashTransactionType" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;">
+                    <option value="deposit">Cash Added</option>
+                    <option value="received">(+) Due Received</option>
+                    <option value="paid">(-) Due Paid</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <label id="amountLabel">Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="transactionAmount" placeholder="Enter amount" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+            </div>
+
+            <div class="form-row" id="customerNameRow">
+                <label>Customer Name (Optional):</label>
+                <input type="text" id="partyName" list="customerOptionsForDue" placeholder="Enter customer name" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+                <datalist id="customerOptionsForDue"></datalist>
+            </div>
+
+            <div class="form-row">
+                <label id="notesLabel">Reason/Notes (Optional):</label>
+                <input type="text" id="transactionNotes" placeholder="e.g., Cash low, Bill reference, etc." style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+            </div>
+
+            <button class="save-btn" onclick="window.app.cashManagement.recordTransaction()" style="width: 100%; padding: 14px; margin-top: 10px; background: #10b981; font-size: 16px; font-weight: 600;">
+                ✓ Record Transaction
+            </button>
+        </div>
+
+        <!-- Today's Cash History -->
+        <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 15px 0; color: #333;">Cash Management History</h3>
+            <div id="cashHistoryList" style="max-height: 400px; overflow-y: auto;"></div>
+        </div>
+
+    </div>
+</div>

@@ -411,6 +411,32 @@ const FirebaseService = {
         
         const docRef = await db.collection('withdrawals').add(withdrawal);
         return { id: docRef.id, ...withdrawal };
+    },
+
+    // Load cash sessions from Firestore
+    async loadCashSessions() {
+        const snapshot = await db.collection('cashManagement').orderBy('date', 'desc').get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    // Save cash session to Firestore
+    async saveCashSession(session) {
+        if (session.id) {
+            await db.collection('cashManagement').doc(session.id).set(session);
+        } else {
+            const docRef = await db.collection('cashManagement').add(session);
+            session.id = docRef.id;
+        }
+        return session;
+    },
+
+    // Update cash session in Firestore
+    async updateCashSession(session) {
+        if (!session.id) {
+            throw new Error('Session ID is required for update');
+        }
+        await db.collection('cashManagement').doc(session.id).set(session);
+        return session;
     }
 };
 
