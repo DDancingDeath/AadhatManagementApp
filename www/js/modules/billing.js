@@ -5,7 +5,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { formatCurrency, debounce, generateId, pickContact } from '../utils/helpers.js';
-import { DEFAULT_SETTINGS } from '../utils/constants.js';
+import { DEFAULT_SETTINGS, TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 
 // Bill state
 let billItems = [];
@@ -13,7 +13,6 @@ let saleItems = [];
 let weights = [];
 let saleWeights = [];
 let autoSaveTimer = null;
-const AUTO_SAVE_DELAY = 2000; // Auto-save 2 seconds after last change
 
 const BillingManager = {
     // -------------------- MODE TOGGLE --------------------
@@ -138,7 +137,6 @@ const BillingManager = {
             if (!userId) return;
             
             const now = Date.now();
-            const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
             
             // Update frequency with weighted scoring
             items.forEach(item => {
@@ -168,7 +166,7 @@ const BillingManager = {
             // Apply time decay to all items (items not used recently get lower scores)
             Object.keys(this.itemFrequency[mode]).forEach(itemId => {
                 const itemData = this.itemFrequency[mode][itemId];
-                const daysSinceLastUse = (now - itemData.lastUsed) / (24 * 60 * 60 * 1000);
+                const daysSinceLastUse = (now - itemData.lastUsed) / TIME_MS.DAY;
                 
                 // Decay factor: 1.0 for today, 0.5 after 30 days, 0.1 after 90 days
                 const decayFactor = Math.max(0.1, 1 - (daysSinceLastUse / 90));

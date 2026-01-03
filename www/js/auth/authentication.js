@@ -272,28 +272,6 @@ const AuthManager = {
 
     // Handle forgot password
     async handleForgotPassword() {
-        const email = document.getElementById('loginEmail').value.trim();
-        
-        if (!email) {
-            UIManager.showToast('Please enter your email address');
-            return;
-        }
-        
-        UIManager.showLoading();
-        
-        try {
-            await firebase.auth().sendPasswordResetEmail(email);
-            UIManager.hideLoading();
-            UIManager.showToast('Password reset email sent! Check your inbox.');
-        } catch (error) {
-            console.error('Password reset error:', error);
-            UIManager.hideLoading();
-            UIManager.showToast('Failed to send reset email: ' + error.message, 4000);
-        }
-    },
-
-    // Handle forgot password
-    async handleForgotPassword() {
         console.log('=== PASSWORD RESET STARTED ===');
         
         const emailInput = document.getElementById('loginEmail');

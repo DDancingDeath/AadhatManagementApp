@@ -1,6 +1,11 @@
 // Firebase Configuration and Initialization
 // This file will be loaded after Firebase SDK scripts in index.html
 
+// IMPORTANT: For production deployments, consider:
+// 1. Restricting API key in Firebase Console (Application restrictions)
+// 2. Setting up HTTP referrer restrictions
+// 3. Using Firebase App Check for additional security
+
 const firebaseConfig = {
   apiKey: "AIzaSyD0ib9JkKbqaNE2i_TZlXYJqEtXI_i2Fj8",
   authDomain: "aadhat-management.firebaseapp.com",
@@ -12,7 +17,19 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = firebase.initializeApp(firebaseConfig);
+let app;
+try {
+  app = firebase.initializeApp(firebaseConfig);
+  console.log('Firebase initialized successfully');
+} catch (error) {
+  if (error.code === 'app/duplicate-app') {
+    app = firebase.app();
+    console.log('Firebase app already initialized');
+  } else {
+    console.error('Firebase initialization error:', error);
+    throw error;
+  }
+}
 
 // Initialize Firebase Authentication
 const auth = firebase.auth();
@@ -22,6 +39,9 @@ const db = firebase.firestore();
 
 // Enable offline persistence (Note: Using compat API for simplicity)
 db.enablePersistence({ synchronizeTabs: true })
+  .then(() => {
+    console.log('Firestore offline persistence enabled');
+  })
   .catch((err) => {
     if (err.code === 'failed-precondition') {
       console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
@@ -30,5 +50,6 @@ db.enablePersistence({ synchronizeTabs: true })
     }
   });
 
-// Firebase initialized and ready
-console.log('Firebase initialized successfully');
+// Expose db globally for modules that need it
+window.db = db;
+window.auth = auth;

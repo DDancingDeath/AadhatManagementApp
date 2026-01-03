@@ -17,8 +17,8 @@
   },
   "name": "aadhatmanagementapp",
   "version": "1.0.0",
-  "description": "",
-  "main": "script.js",
+  "description": "Aadhat Billing Management App",
+  "main": "www/js/main.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/DDancingDeath/AadhatManagementApp.git"

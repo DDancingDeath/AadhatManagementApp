@@ -21,7 +21,6 @@ import { ConfigureManager } from './modules/configure.js';
 import { FinanceManager } from './modules/finance.js';
 import { AnalyticsManager } from './modules/analytics.js';
 import { CashManagementManager } from './modules/cash-management.js';
-// import { RetailSalesManager } from './modules/retail-sales.js'; // UNUSED - No navigation link to retail-sales tab
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
@@ -33,18 +32,16 @@ async function injectTemplates() {
     TemplateLoader.injectTemplates(templates);
 }
 
-// Global error handlers for debugging
+// Global error handlers
 window.addEventListener('error', function(event) {
     const errorMsg = event.error?.message || event.message || 'Unknown error';
     console.error('Global error:', event.error);
-    alert('[DEBUG] Global error: ' + errorMsg);
     UIManager.showToast('An error occurred: ' + errorMsg);
 });
 
 window.addEventListener('unhandledrejection', function(event) {
     const errorMsg = event.reason?.message || event.reason || 'Unknown rejection';
     console.error('Unhandled promise rejection:', event.reason);
-    alert('[DEBUG] Unhandled rejection: ' + errorMsg);
 });
 
 // Setup event listeners
@@ -220,6 +217,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                 loadUserDataAndInitialize();
             } else {
                 console.log('No user signed in');
+                // Clean up Firebase listeners when user signs out
+                FirebaseService.cleanup();
                 AppState.currentUser = null;
                 document.getElementById('authScreen').style.display = 'flex';
             }
@@ -228,6 +227,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // STEP 4: Set up event listeners
     setupEventListeners();
+    
+    // STEP 5: Clean up listeners when page unloads
+    window.addEventListener('beforeunload', () => {
+        FirebaseService.cleanup();
+    });
 });
 
 // Expose loadUserDataAndInitialize for manual login trigger
@@ -429,21 +433,6 @@ window.app = {
         pickContact: () => SalesManager.pickContact()
     },
     
-    // Retail Sales - UNUSED: No navigation link exists for retail-sales tab
-    // This module duplicates the billing sale functionality
-    // retailSales: {
-    //     switchToPurchase: () => RetailSalesManager.switchToPurchase(),
-    //     pickContact: () => RetailSalesManager.pickContact(),
-    //     loadItemsDropdown: () => RetailSalesManager.loadItemsDropdown(),
-    //     loadItemRates: () => RetailSalesManager.loadItemRates(),
-    //     addItem: () => RetailSalesManager.addItem(),
-    //     addToBill: () => RetailSalesManager.addToBill(),
-    //     removeBillItem: (index) => RetailSalesManager.removeBillItem(index),
-    //     saveSale: () => RetailSalesManager.saveSale(),
-    //     printSale: () => RetailSalesManager.printSale(),
-    //     shareWhatsApp: () => RetailSalesManager.shareWhatsApp()
-    // },
-    
     // History
     history: {
         saveBillToHistory: () => HistoryManager.saveBillToHistory(),
@@ -574,7 +563,7 @@ window.app = {
     }
 };
 
-// Expose printer manager globally for script.js compatibility
+// Expose printer manager globally for legacy template compatibility
 window.printerManager = printerManager;
 window.connectedPrinter = printerManager;
 

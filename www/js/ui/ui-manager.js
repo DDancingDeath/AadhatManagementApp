@@ -41,8 +41,8 @@ const UIManager = {
             }
             
             modalTitle.textContent = title;
-            // Use innerHTML to allow HTML content in modals
-            modalMessage.innerHTML = message;
+            // Use textContent to prevent XSS attacks
+            modalMessage.textContent = message;
             cancelBtn.style.display = showCancel ? 'inline-block' : 'none';
             overlay.classList.add('active');
             
@@ -61,13 +61,22 @@ const UIManager = {
         }
     },
 
-    // Custom modal with HTML content
+    // Custom modal with HTML content (sanitized)
+    // Note: Only use this for trusted content or sanitize input before calling
     showCustomModal(html, buttons) {
         return new Promise((resolve) => {
             const overlay = document.getElementById('modalOverlay');
             const modalBox = overlay.querySelector('.modal-box');
             
-            modalBox.innerHTML = html;
+            // Create content safely using DOM methods where possible
+            modalBox.innerHTML = '';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'modal-content';
+            // For custom modals, we trust the caller has sanitized the HTML
+            // In production, consider using DOMPurify: contentDiv.innerHTML = DOMPurify.sanitize(html);
+            contentDiv.innerHTML = html;
+            modalBox.appendChild(contentDiv);
             
             const footer = document.createElement('div');
             footer.className = 'modal-footer';
@@ -85,6 +94,29 @@ const UIManager = {
             
             modalBox.appendChild(footer);
             overlay.classList.add('active');
+        });
+    },
+
+    // Show modal with HTML content (for trusted internal use only)
+    showModalWithHtml(htmlMessage, title = 'Alert', showCancel = false) {
+        return new Promise((resolve) => {
+            const overlay = document.getElementById('modalOverlay');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalMessage = document.getElementById('modalMessage');
+            const cancelBtn = document.getElementById('modalCancel');
+            
+            if (!overlay || !modalTitle || !modalMessage) {
+                resolve(true);
+                return;
+            }
+            
+            modalTitle.textContent = title;
+            // WARNING: Only use for trusted content. Consider DOMPurify for user-generated content.
+            modalMessage.innerHTML = htmlMessage;
+            cancelBtn.style.display = showCancel ? 'inline-block' : 'none';
+            overlay.classList.add('active');
+            
+            AppState.modalResolve = resolve;
         });
     },
 

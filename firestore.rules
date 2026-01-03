@@ -6,6 +6,21 @@ service cloud.firestore {
       return request.auth != null;
     }
     
+    // Helper function to check user role from their user document
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    // Helper function to check if user has admin/owner role
+    function isAdmin() {
+      return isSignedIn() && getUserRole() == 'owner';
+    }
+    
+    // ============================================
+    // SHARED BUSINESS DATA - All authenticated users can read/write
+    // This is a shared business app where staff need full access
+    // ============================================
+    
     // Bills collection - all authenticated users can read/write
     match /bills/{billId} {
       allow read, write: if isSignedIn();
@@ -21,13 +36,13 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     
-    // Settings collection - all authenticated users can read/write
-    match /settings/{settingId} {
+    // Payments/Expenses collection - all authenticated users can read/write
+    match /payments/{paymentId} {
       allow read, write: if isSignedIn();
     }
     
-    // Expenses collection - all authenticated users can read/write
-    match /expenses/{expenseId} {
+    // Stock adjustments - all authenticated users can read/write
+    match /stockAdjustments/{adjustmentId} {
       allow read, write: if isSignedIn();
     }
     
@@ -36,23 +51,44 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     
-    // Users collection - all authenticated users can read/write
+    // Cash management - all authenticated users can read/write
+    match /cashManagement/{sessionId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // Settings collection - all authenticated users can read/write
+    match /settings/{settingId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // ============================================
+    // USER-SPECIFIC DATA - Users access their own data
+    // ============================================
+    
+    // Users collection - all can read (for user lists), but only admins can modify others
     match /users/{userId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update, delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
     
-    // Retail sales collection - all authenticated users can read/write
-    match /retailSales/{saleId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Item frequency collection - all authenticated users can read/write
+    // Item frequency collection - all authenticated users can read/write (shared data)
     match /itemFrequency/{docId} {
       allow read, write: if isSignedIn();
     }
     
-    // Allow all other collections for authenticated users (catch-all for any new collections)
-    match /{document=**} {
+    // Notifications collection - all authenticated users can read/write
+    match /notifications/{notificationId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // Auto-save drafts - users can only access their own
+    match /autoSave/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // Bill drafts - users can only access their own  
+    match /billDrafts/{docId} {
       allow read, write: if isSignedIn();
     }
   }

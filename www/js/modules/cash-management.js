@@ -18,14 +18,12 @@ export class CashManagementManager {
     };
 
     static async init() {
-        console.log('🔧 Cash Management init() called');
         // Load today's cash session
         await this.loadTodaySession();
         // Recalculate transactions to get latest data
         await this.calculateTodayTransactions();
         this.updateUI();
         this.loadCustomerOptions();
-        console.log('📋 Calling renderHistory...');
         this.renderHistory();
         
         // Listen for cash amount input changes for validation
@@ -643,25 +641,20 @@ export class CashManagementManager {
 
     static async renderHistory() {
         const container = document.getElementById('cashHistoryList');
-        if (!container) {
-            console.warn('Cash history container not found');
-            return;
-        }
+        if (!container) return;
 
         try {
-            console.log('Loading cash sessions...');
             const sessions = await FirebaseService.loadCashSessions();
-            console.log('Cash sessions loaded:', sessions.length);
             
             // Sort by date descending
             sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
             if (sessions.length === 0) {
                 container.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">No cash management history</p>';
-                return;
-            }
+            return;
+        }
 
-            container.innerHTML = sessions.map(session => {
+        container.innerHTML = sessions.map(session => {
             const date = new Date(session.date).toLocaleDateString('en-IN', { 
                 weekday: 'short', 
                 day: 'numeric', 

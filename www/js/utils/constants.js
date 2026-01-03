@@ -41,3 +41,35 @@ export const ANALYTICS_PERIODS = {
     NINETY_DAYS: '90days',
     ALL_TIME: 'all'
 };
+
+// Time Constants (in milliseconds)
+export const TIME_MS = {
+    SECOND: 1000,
+    MINUTE: 60 * 1000,
+    HOUR: 60 * 60 * 1000,
+    DAY: 24 * 60 * 60 * 1000,
+    WEEK: 7 * 24 * 60 * 60 * 1000,
+    THIRTY_DAYS: 30 * 24 * 60 * 60 * 1000
+};
+
+// Auto-save delay (milliseconds)
+export const AUTO_SAVE_DELAY = 2000;
+
+// App Configuration
+export const APP_CONFIG = {
+    // Set to true in development, false in production
+    DEBUG_MODE: false,
+    // Firebase collections
+    COLLECTIONS: {
+        ITEMS: 'items',
+        BILLS: 'bills',
+        SALES: 'sales',
+        PAYMENTS: 'payments',
+        STOCK_ADJUSTMENTS: 'stockAdjustments',
+        WITHDRAWALS: 'withdrawals',
+        USERS: 'users',
+        ITEM_FREQUENCY: 'itemFrequency',
+        CASH_MANAGEMENT: 'cashManagement',
+        NOTIFICATIONS: 'notifications'
+    }
+};
