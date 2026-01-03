@@ -83,12 +83,12 @@ service cloud.firestore {
     }
     
     // Auto-save drafts - users can only access their own
-    match /autoSave/{docId} {
+    match /autoSaves/{docId} {
       allow read, write: if isSignedIn();
     }
     
     // Bill drafts - users can only access their own  
-    match /billDrafts/{docId} {
+    match /drafts/{docId} {
       allow read, write: if isSignedIn();
     }
   }

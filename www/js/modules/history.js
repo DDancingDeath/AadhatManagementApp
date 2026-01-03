@@ -271,12 +271,12 @@ export class HistoryManager {
                 ` : ''}
                 <div class="bill-info-row">
                     <div class="bill-info-label">Date:</div>
-                    <div class="bill-info-value">${sale.date}</div>
+                    <div class="bill-info-value" style="display: inline;">${sale.date}</div>
                 </div>
                 ${sale.userName ? `
                     <div class="bill-info-row">
                         <div class="bill-info-label">Created By:</div>
-                        <div class="bill-info-value">${sale.userName}</div>
+                        <div class="bill-info-value" style="display: inline;">${sale.userName}</div>
                     </div>
                 ` : ''}
             </div>
@@ -314,6 +314,8 @@ export class HistoryManager {
     static async viewBill(index, type = 'purchase') {
         const history = type === 'sale' ? AppState.salesHistory : AppState.billHistory;
         const bill = history[index];
+        
+        console.log('📋 ViewBill debug:', { index, type, bill, comments: bill?.comments });
         
         if (!bill) {
             UIManager.showModal('Bill not found');
@@ -362,19 +364,19 @@ export class HistoryManager {
                 ${payment.online > 0 ? `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
                         <span>Online:</span>
-                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #cfe2ff; color: #084298;">₹${payment.online}</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #cfe2ff; color: #084298;">₹${Math.round(payment.online)}</span>
                     </div>
                 ` : ''}
                 ${payment.cash > 0 ? `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
                         <span>Cash:</span>
-                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #d1e7dd; color: #0f5132;">₹${payment.cash}</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #d1e7dd; color: #0f5132;">₹${Math.round(payment.cash)}</span>
                     </div>
                 ` : ''}
                 ${payment.due > 0 ? `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
                         <span>Due:</span>
-                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #fff3cd; color: #997404;">₹${payment.due}</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #fff3cd; color: #997404;">₹${Math.round(payment.due)}</span>
                     </div>
                 ` : ''}
             </div>
@@ -389,15 +391,15 @@ export class HistoryManager {
                     </div>
                 ` : ''}
                 
-                <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px; display: flex; align-items: center; gap: 8px;">
                     <span style="color: #6c757d; font-size: 14px;">Date:</span>
-                    <div style="font-size: 14px; color: #212529; margin-top: 4px;">${this.formatDate(bill.date)}</div>
+                    <span style="font-size: 14px; color: #212529;">${this.formatDate(bill.date)}</span>
                 </div>
                 
                 ${bill.createdByName || bill.userName ? `
-                    <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                    <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px; display: flex; align-items: center; gap: 8px;">
                         <span style="color: #6c757d; font-size: 14px;">Created By:</span>
-                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.createdByName || bill.userName}</div>
+                        <span style="font-size: 14px; color: #212529;">${bill.createdByName || bill.userName}</span>
                     </div>
                 ` : ''}
                 
@@ -438,13 +440,13 @@ export class HistoryManager {
                     ${isPurchase ? `
                         <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px;">
                             <span style="font-weight: 600;">Purchase Total:</span>
-                            <strong style="font-size: 17px; color: ${billColor};">₹${bill.billTotal || bill.grandTotal || bill.amountPayable || 0}</strong>
+                            <strong style="font-size: 17px; color: ${billColor};">₹${Math.round(bill.billTotal || bill.grandTotal || bill.amountPayable || 0)}</strong>
                         </div>
                         
                         ${bill.laborCharges > 0 ? `
                             <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px; border-top: 1px solid #e9ecef;">
                                 <span style="font-weight: 600;">Labor (₹):</span>
-                                <strong style="font-size: 17px; color: #ffc107;">₹${bill.laborCharges}</strong>
+                                <strong style="font-size: 17px; color: #ffc107;">₹${Math.round(bill.laborCharges)}</strong>
                             </div>
                             
                             <div style="display: flex; justify-content: space-between; padding: 12px 0; font-size: 16px; border-top: 2px solid ${billColor}; margin-top: 8px; background: linear-gradient(135deg, #e3f2fd, #bbdefb); margin: 8px -14px -14px -14px; padding: 12px 14px; border-radius: 0 0 10px 10px;">

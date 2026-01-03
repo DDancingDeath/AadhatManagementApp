@@ -3,6 +3,21 @@
 import { UIManager } from './ui-manager.js';
 
 const NavigationManager = {
+    // Reset filter buttons to default state for a given tab
+    resetFilterButtons(tabId) {
+        const tabElement = document.getElementById(tabId);
+        if (!tabElement) return;
+        
+        const buttons = tabElement.querySelectorAll('.filter-btn');
+        buttons.forEach((btn, index) => {
+            if (index === 0) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    },
+    
     // Toggle side navigation menu
     toggleMenu() {
         const sideNav = document.querySelector('.side-nav');
@@ -44,6 +59,12 @@ const NavigationManager = {
             setTimeout(() => window.app.users.load(), 100);
         }
         
+        // Reset billing mode when Billing tab is shown
+        if (tabId === 'billing' && window.app?.billing) {
+            this.resetFilterButtons('billing');
+            setTimeout(() => window.app.billing.switchMode('purchase', { currentTarget: document.getElementById('purchaseModeBtn') }), 100);
+        }
+        
         // Render items table when Items tab is shown
         if (tabId === 'items' && window.app?.items) {
             setTimeout(() => window.app.items.renderTable(), 100);
@@ -51,46 +72,55 @@ const NavigationManager = {
         
         // Render history when History tab is shown
         if (tabId === 'history' && window.app?.history) {
-            setTimeout(() => window.app.history.render(), 100);
+            this.resetFilterButtons('history');
+            setTimeout(() => window.app.history.filterHistory('purchase', { target: document.querySelector('#history .filter-btn') }), 100);
         }
         
         // Render outstanding when Due tab is shown
         if (tabId === 'due' && window.app?.outstanding) {
-            setTimeout(() => window.app.outstanding.renderDue(), 100);
+            this.resetFilterButtons('due');
+            setTimeout(() => window.app.outstanding.filterDue('purchase', { target: document.querySelector('#due .filter-btn') }), 100);
         }
         
         // Render sales history when Sales tab is shown
         if (tabId === 'sales' && window.app?.sales) {
-            setTimeout(() => window.app.sales.renderHistory(), 100);
+            this.resetFilterButtons('sales');
+            setTimeout(() => window.app.sales.filterTab('sales', { target: document.querySelector('#sales .filter-btn') }), 100);
         }
         
         // Render stock when Stock tab is shown
         if (tabId === 'stock' && window.app?.stock) {
+            this.resetFilterButtons('stock');
             setTimeout(() => window.app.stock.filterTab('current'), 100);
         }
         
         // Render reports when Reports tab is shown
         if (tabId === 'reports' && window.app?.reports) {
+            this.resetFilterButtons('reports');
             setTimeout(() => window.app.reports.renderReports(), 100);
         }
         
         // Initialize finance when Finance tab is shown
         if (tabId === 'finance' && window.app?.finance) {
+            this.resetFilterButtons('finance');
             setTimeout(() => window.app.finance.init(), 100);
         }
         
         // Initialize analytics when Analytics tab is shown
         if (tabId === 'analytics' && window.app?.analytics) {
+            this.resetFilterButtons('analytics');
             setTimeout(() => window.app.analytics.init(), 100);
         }
         
         // Initialize cash management when Cash Management tab is shown
         if (tabId === 'cash-management' && window.app?.cashManagement) {
+            this.resetFilterButtons('cash-management');
             setTimeout(() => window.app.cashManagement.init(), 100);
         }
         
         // Initialize configure sub-tabs when Configure tab is shown
         if (tabId === 'configure' && window.app?.configure) {
+            this.resetFilterButtons('configure');
             setTimeout(() => window.app.configure.showSubTab('items'), 100);
         }
     },

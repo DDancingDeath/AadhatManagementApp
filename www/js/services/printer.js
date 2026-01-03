@@ -305,14 +305,17 @@ class BluetoothPrinterManager {
         ctx.fillStyle = '#000000';
         ctx.textAlign = 'left';
         
+        // Get the subtotal (purchases use billTotal, sales use total or saleTotal)
+        const subtotal = billData.billTotal || billData.saleTotal || billData.total || 0;
+        
         // Subtotal
         ctx.fillText('कुल:', config.padding.left, y);
-        const totalText = '₹' + billData.billTotal;
+        const totalText = '₹' + Math.round(subtotal);
         const totalWidth = ctx.measureText(totalText).width;
         ctx.fillText(totalText, config.width - totalWidth - config.padding.left, y);
         y += config.spacing.line;
         
-        // Labor charges
+        // Labor charges (only for purchases)
         if (billData.isPurchase && billData.laborCharges > 0) {
             if (billData.laborCalc) {
                 // Show calculation in middle and amount on right
@@ -336,12 +339,13 @@ class BluetoothPrinterManager {
         // Add spacing before grand total
         y += 8;
         
-        // Grand total
+        // Grand total - for purchases it's after labor deduction, for sales it's the total
         ctx.font = `bold ${config.fonts.total.size}px Arial`;
-        ctx.fillText('कुल भुगतान:', config.padding.left, y);
-        const amountPayable = billData.amountPayable || billData.grandTotal || 
-                             (billData.billTotal - (billData.laborCharges || 0));
-        const payableText = '₹' + amountPayable.toFixed(2);
+        const grandTotalLabel = billData.isPurchase ? 'कुल भुगतान:' : 'कुल प्राप्त:';
+        ctx.fillText(grandTotalLabel, config.padding.left, y);
+        const amountPayable = billData.amountPayable || billData.grandTotal || billData.saleTotal || billData.total ||
+                             (subtotal - (billData.laborCharges || 0));
+        const payableText = '₹' + Math.round(amountPayable);
         const payableWidth = ctx.measureText(payableText).width;
         ctx.fillText(payableText, config.width - payableWidth - config.padding.left, y);
         y += config.spacing.line;
@@ -352,7 +356,7 @@ class BluetoothPrinterManager {
             y += 4; // Small gap
             ctx.font = `${config.fonts.body.size}px Arial`;
             ctx.fillText('बकाया:', config.padding.left, y);
-            const dueText = '₹' + dueAmount.toFixed(2);
+            const dueText = '₹' + Math.round(dueAmount);
             const dueWidth = ctx.measureText(dueText).width;
             ctx.fillText(dueText, config.width - dueWidth - config.padding.left, y);
             y += config.spacing.line;
@@ -939,95 +943,6 @@ const PrinterService = {
         }
     },
 
-    async printViaWeb(billData) {
-        // Build bill items HTML
-        let billItemsHTML = billData.items.map(item => {
-            let weightsDisplay = '';
-            if (item.weights) {
-                if (item.weights.length === 1) {
-                    weightsDisplay = `${(item.qty || 0).toFixed(1)}kg`;
-                } else {
-                    weightsDisplay = `(${item.weights.join('+')}) = ${(item.qty || 0).toFixed(1)}kg`;
-                }
-            }
-            
-            return `
-                <tr>
-                    <td>${item.name}</td>
-                    <td>₹${item.rate}</td>
-                    <td>${weightsDisplay}</td>
-                    <td>₹${Math.round(item.total)}</td>
-                </tr>
-            `;
-        }).join("");
-
-        // Labor display
-        let laborDisplay = '';
-        if (billData.isPurchase && billData.laborCharges > 0) {
-            if (billData.isAutoLabor && billData.laborCalc) {
-                laborDisplay = `<div><span>मजदूरी:</span><span style="flex: 1; text-align: center;">${billData.laborCalc}</span><span>₹${billData.laborCharges}</span></div>`;
-            } else {
-                laborDisplay = `<div><span>मजदूरी:</span><span>₹${billData.laborCharges}</span></div>`;
-            }
-        }
-
-        const printContent = `
-            <html>
-            <head>
-                <title>Bill</title>
-                <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                    th, td { border-bottom: 1px solid #ccc; padding: 8px; text-align: center; }
-                    h2 { text-align: center; text-decoration: underline; }
-                    .totals { margin-top: 30px; font-size: 16px; }
-                    .totals div { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
-                    .grand-total { font-size: 20px; font-weight: bold; border-top: 2px solid #333; margin-top: 10px; padding-top: 10px; }
-                </style>
-            </head>
-            <body>
-                <h2>${billData.duePayment > 0 ? 'RECEIPT' : (billData.isPurchase ? 'PURCHASE RECEIPT' : 'SALE RECEIPT')}</h2>
-                ${billData.customerName ? `<p style="text-align: center; margin: 10px 0; font-size: 16px;"><strong>Customer:</strong> ${billData.customerName}</p>` : ''}
-                <table>
-                    <tr><th>वस्तु</th><th>दर</th><th>मात्रा</th><th>कुल</th></tr>
-                    ${billItemsHTML}
-                </table>
-
-                <div class="totals">
-                    <div><span>कुल:</span><span>₹${billData.billTotal}</span></div>
-                    ${laborDisplay}
-                    <div><span>पैकेट:</span><span>${billData.totalPackets}</span></div>
-                    <div class="grand-total"><span>${billData.isPurchase ? 'कुल भुगतान:' : 'कुल प्राप्त:'}</span><span>₹${billData.amountPayable}</span></div>
-                </div>
-            </body>
-            </html>
-        `;
-
-        // Create a hidden iframe for printing
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-        
-        const doc = iframe.contentWindow.document;
-        doc.open();
-        doc.write(printContent);
-        doc.close();
-        
-        // Wait for content to load, then print
-        await new Promise(resolve => {
-            iframe.contentWindow.focus();
-            setTimeout(() => {
-                iframe.contentWindow.print();
-                setTimeout(() => {
-                    document.body.removeChild(iframe);
-                    resolve();
-                }, 100);
-            }, 250);
-        });
-
-        return true;
-    },
-    
     async printExpense(expense) {
         // Try Bluetooth first if available and connected
         if (this.manager.device && window.bluetoothSerial) {

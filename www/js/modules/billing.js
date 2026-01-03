@@ -680,27 +680,30 @@ const BillingManager = {
     
     // -------------------- SAVE & PRINT --------------------
     
-    async generateBillNumber() {
+    async generateBillNumber(type = 'purchase') {
+        const prefix = type === 'sale' ? 'S' : 'P';
         const today = new Date();
         const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
         
-        // Query Firestore for today's bills to find the next number (for parallel user safety)
+        // Query Firestore for today's bills/sales to find the next number (for parallel user safety)
         const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
         const todayEnd = new Date(todayStart);
         todayEnd.setDate(todayEnd.getDate() + 1);
         
         try {
-            const snapshot = await db.collection('bills')
+            // Query the appropriate collection based on type
+            const collection = type === 'sale' ? 'sales' : 'bills';
+            const snapshot = await db.collection(collection)
                 .where('timestamp', '>=', todayStart.getTime())
                 .where('timestamp', '<', todayEnd.getTime())
                 .get();
             
             const nextNum = snapshot.size + 1;
-            return `${dateStr}-${String(nextNum).padStart(3, '0')}`;
+            return `${prefix}${dateStr}-${String(nextNum).padStart(3, '0')}`;
         } catch (error) {
             console.error('Error generating bill number:', error);
             // Fallback to timestamp-based number if query fails
-            return `${dateStr}-${Date.now().toString().slice(-3)}`;
+            return `${prefix}${dateStr}-${Date.now().toString().slice(-3)}`;
         }
     },
 
@@ -723,7 +726,9 @@ const BillingManager = {
         const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
         const dueAmount = parseFloat(document.getElementById('dueAmount')?.value || 0);
         const customerName = document.getElementById('customerName')?.value || '';
-        const comments = document.getElementById('billComments')?.value || '';
+        const commentsElement = document.getElementById('billComments');
+        const comments = commentsElement?.value || '';
+        console.log('💬 Comments debug:', { element: !!commentsElement, value: comments, rawValue: commentsElement?.value });
         
         // Validate payment - at least one payment method must be provided
         if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {
@@ -740,7 +745,7 @@ const BillingManager = {
             : null;
         
         // Generate bill number
-        const billNumber = await this.generateBillNumber();
+        const billNumber = await this.generateBillNumber('purchase');
         
         const bill = {
             id: generateId(),
@@ -1244,8 +1249,12 @@ const BillingManager = {
         // Calculate total packets
         const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
         
+        // Generate sale bill number
+        const billNumber = await this.generateBillNumber('sale');
+        
         const sale = {
             id: generateId(),
+            billNumber,
             items: saleItems,
             total: salesTotal,
             totalPackets: totalPackets,

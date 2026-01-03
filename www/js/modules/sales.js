@@ -8,6 +8,28 @@ import { pickContact } from '../utils/helpers.js';
 let wholesaleSaleItems = [];
 
 export class SalesManager {
+    static async generateBillNumber() {
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+        
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayEnd = new Date(todayStart);
+        todayEnd.setDate(todayEnd.getDate() + 1);
+        
+        try {
+            const snapshot = await db.collection('sales')
+                .where('timestamp', '>=', todayStart.getTime())
+                .where('timestamp', '<', todayEnd.getTime())
+                .get();
+            
+            const nextNum = snapshot.size + 1;
+            return `S${dateStr}-${String(nextNum).padStart(3, '0')}`;
+        } catch (error) {
+            console.error('Error generating sale number:', error);
+            return `S${dateStr}-${Date.now().toString().slice(-3)}`;
+        }
+    }
+
     static async pickContact() {
         await pickContact('wholesaleCustomerName');
     }
@@ -235,8 +257,12 @@ export class SalesManager {
         const profit = parseFloat(document.getElementById('salesProfitAmount')?.textContent) || 0;
         const profitPercent = parseFloat(document.getElementById('salesProfitPercent')?.textContent) || 0;
         
+        // Generate bill number
+        const billNumber = await this.generateBillNumber();
+        
         const saleData = {
             id: Date.now(),
+            billNumber,
             customerName,
             items: wholesaleSaleItems.map(item => ({
                 itemId: item.itemId,
@@ -584,8 +610,8 @@ export class SalesManager {
             const paymentParts = [];
             if (sale.payment) {
                 const totalReceived = (sale.payment.online || 0) + (sale.payment.cash || 0);
-                if (totalReceived > 0) paymentParts.push(`Received: ₹${totalReceived}`);
-                if (sale.payment.due > 0) paymentParts.push(`Due: ₹${sale.payment.due}`);
+                if (totalReceived > 0) paymentParts.push(`Received: ₹${Math.round(totalReceived)}`);
+                if (sale.payment.due > 0) paymentParts.push(`Due: ₹${Math.round(sale.payment.due)}`);
             }
             const paymentHTML = paymentParts.length > 0 ? `
                 <div class="history-payment">
@@ -596,7 +622,7 @@ export class SalesManager {
             div.innerHTML = `
                 <div class="history-header">
                     <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.sales.reprintSale(${saleIndex})">#${sale.id}</span>${sale.customerName ? `<strong>${sale.customerName}</strong>` : ''}
-                    <span style="color: #28a745; font-weight: 700;">₹ ${sale.total}</span>
+                    <span style="color: #28a745; font-weight: 700;">₹ ${Math.round(sale.total)}</span>
                 </div>
                 <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
                 <div class="history-summary">
@@ -624,7 +650,7 @@ export class SalesManager {
                     <td>${item.name}</td>
                     <td>${qty} kg</td>
                     <td>₹${item.rate}</td>
-                    <td><strong>₹${item.total}</strong></td>
+                    <td><strong>₹${Math.round(item.total)}</strong></td>
                 </tr>
             `;
         }).join('');
@@ -633,9 +659,9 @@ export class SalesManager {
         const paymentHTML = (payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
             <div class="bill-payment-section">
                 <h4>Payment Details</h4>
-                ${payment.online > 0 ? `<div class="bill-payment-row"><span>Online:</span><strong>₹${payment.online}</strong></div>` : ''}
-                ${payment.cash > 0 ? `<div class="bill-payment-row"><span>Cash:</span><strong>₹${payment.cash}</strong></div>` : ''}
-                ${payment.due > 0 ? `<div class="bill-payment-row" style="color: #dc3545;"><span>Due:</span><strong>₹${payment.due}</strong></div>` : ''}
+                ${payment.online > 0 ? `<div class="bill-payment-row"><span>Online:</span><strong>₹${Math.round(payment.online)}</strong></div>` : ''}
+                ${payment.cash > 0 ? `<div class="bill-payment-row"><span>Cash:</span><strong>₹${Math.round(payment.cash)}</strong></div>` : ''}
+                ${payment.due > 0 ? `<div class="bill-payment-row" style="color: #dc3545;"><span>Due:</span><strong>₹${Math.round(payment.due)}</strong></div>` : ''}
             </div>
         ` : '';
         
@@ -643,7 +669,7 @@ export class SalesManager {
             <div class="bill-payment-section" style="background: #e7f5e9;">
                 <h4 style="color: #155724;">Payment History</h4>
                 ${sale.payments.map(p => `
-                    <div class="bill-payment-row"><span>• ${p.date}${p.recordedBy ? ` by ${p.recordedBy}` : ''}</span><strong>₹${p.amount}</strong></div>
+                    <div class="bill-payment-row"><span>• ${p.date}${p.recordedBy ? ` by ${p.recordedBy}` : ''}</span><strong>₹${Math.round(p.amount)}</strong></div>
                 `).join('')}
             </div>
         ` : '';
@@ -691,7 +717,7 @@ export class SalesManager {
             <div class="bill-totals-section">
                 <div class="bill-totals-row total">
                     <span>Total:</span>
-                    <strong>₹${sale.total}</strong>
+                    <strong>₹${Math.round(sale.total)}</strong>
                 </div>
             </div>
             
