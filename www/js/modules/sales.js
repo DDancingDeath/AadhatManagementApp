@@ -666,6 +666,12 @@ export class SalesManager {
                         <div class="bill-info-value">${sale.createdByName}</div>
                     </div>
                 ` : ''}
+                ${sale.comments ? `
+                    <div class="bill-info-row" style="background: #fff3cd; padding: 8px; border-radius: 6px; border-left: 4px solid #ffc107;">
+                        <div class="bill-info-label">Comments:</div>
+                        <div class="bill-info-value">${sale.comments}</div>
+                    </div>
+                ` : ''}
             </div>
             
             <table class="bill-items-table">

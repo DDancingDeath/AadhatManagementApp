@@ -401,6 +401,13 @@ export class HistoryManager {
                     </div>
                 ` : ''}
                 
+                ${bill.comments ? `
+                    <div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+                        <span style="color: #6c757d; font-size: 14px;">Comments:</span>
+                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.comments}</div>
+                    </div>
+                ` : ''}
+                
                 ${weightBreakdownHTML ? `
                     <div style="margin: 16px 0;">
                         <h4 style="margin-bottom: 12px; color: #212529; font-size: 15px;">Weight Breakdown</h4>
