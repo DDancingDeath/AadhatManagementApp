@@ -20,6 +20,7 @@ import { UsersManager } from './modules/users.js';
 import { ConfigureManager } from './modules/configure.js';
 import { FinanceManager } from './modules/finance.js';
 import { AnalyticsManager } from './modules/analytics.js';
+import { CashManagementManager } from './modules/cash-management.js';
 // import { RetailSalesManager } from './modules/retail-sales.js'; // UNUSED - No navigation link to retail-sales tab
 
 // Import template loader utility
@@ -520,6 +521,15 @@ window.app = {
         setPeriod: (period, evt) => AnalyticsManager.setPeriod(period, evt),
         render: () => AnalyticsManager.renderAnalytics(),
         init: () => AnalyticsManager.init()
+    },
+    
+    // Cash Management
+    cashManagement: {
+        init: () => CashManagementManager.init(),
+        signIn: () => CashManagementManager.signIn(),
+        signOut: () => CashManagementManager.signOut(),
+        recordTransaction: () => CashManagementManager.recordTransaction(),
+        showDetails: (sessionDate) => CashManagementManager.showSessionDetails(sessionDate)
     },
     
     // Configure (Settings)
