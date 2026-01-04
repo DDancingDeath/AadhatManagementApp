@@ -12,7 +12,7 @@ A comprehensive business management application for wholesale/retail operations 
 - **Bluetooth Printing**: ESC/POS thermal printer support
 - **Audit Logging**: 90-day retention for critical actions
 - **Outstanding Tracking**: Customer/supplier payment management
-- **Offline-Ready**: Works with intermittent connectivity
+- **Offline Support**: Service worker for offline functionality
 
 ## Tech Stack
 
@@ -21,23 +21,28 @@ A comprehensive business management application for wholesale/retail operations 
 - **Authentication**: Firebase Auth
 - **Mobile**: Capacitor 7.x (Android)
 - **Hosting**: Firebase Hosting
+- **Testing**: Jest + Babel
 
 ## Project Structure
 
 ```
 ├── www/                    # Web application
 │   ├── js/
+│   │   ├── __tests__/     # Unit tests
 │   │   ├── auth/          # Authentication module
 │   │   ├── firebase/      # Firestore service
 │   │   ├── modules/       # Business logic modules
 │   │   ├── services/      # Printer, audit services
 │   │   ├── ui/            # UI management, navigation
-│   │   ├── utils/         # Constants, state, helpers
+│   │   ├── utils/         # Constants, state, helpers, validator
 │   │   └── main.js        # App initialization
 │   ├── css/               # Modular stylesheets
 │   ├── templates/         # HTML templates
+│   ├── service-worker.js  # Offline support
 │   └── index.html         # Main entry point
 ├── android/               # Capacitor Android project
+├── jest.config.js         # Jest test configuration
+├── babel.config.js        # Babel ES6 transform config
 └── firebase.json          # Firebase configuration
 ```
 
@@ -48,12 +53,17 @@ A comprehensive business management application for wholesale/retail operations 
 - Firebase CLI (`npm install -g firebase-tools`)
 - Android Studio (for mobile builds)
 
-### Development
+### Installation
 ```bash
 # Install dependencies
 npm install
+```
 
+### Development
+```bash
 # Run local server
+npm start
+# OR
 npx http-server www -p 8080
 
 # Deploy to Firebase
@@ -69,6 +79,79 @@ npx cap sync android
 npx cap open android
 ```
 
+## Testing
+
+The project uses Jest for unit testing with Babel for ES6 module transformation.
+
+### Running Tests
+
+```bash
+# Run all tests once
+npm test
+
+# Run tests in watch mode (re-runs on file changes)
+npm run test:watch
+
+# Run tests with coverage report
+npm run test:coverage
+```
+
+### Test Structure
+
+```
+www/js/__tests__/
+├── helpers.test.js     # Tests for utility helper functions
+└── validator.test.js   # Tests for form validation utilities
+```
+
+### Writing Tests
+
+Tests are written using Jest syntax. Example:
+
+```javascript
+import { Validator } from '../utils/validator.js';
+
+describe('Validator', () => {
+    test('should validate required fields', () => {
+        const result = Validator.required('value', 'Field Name');
+        expect(result.valid).toBe(true);
+    });
+});
+```
+
+### Test Configuration
+
+- **Jest Config**: `jest.config.js` - Test environment, patterns, coverage settings
+- **Babel Config**: `babel.config.js` - ES6 module transformation for Node.js
+
+## Validation
+
+The app includes a comprehensive validation utility (`www/js/utils/validator.js`) for client-side form validation:
+
+```javascript
+import { Validator } from './utils/validator.js';
+
+// Validate a bill before saving
+const result = Validator.validateBill({
+    sellerName: 'Supplier Name',
+    items: [{ name: 'Rice', rate: 50, weight: 10 }]
+});
+
+if (!result.valid) {
+    console.log(result.errors); // Array of error messages
+}
+```
+
+## Service Worker (Offline Support)
+
+The app includes a service worker (`www/service-worker.js`) that:
+- Caches static assets (CSS, JS, HTML, templates)
+- Uses cache-first strategy for static files
+- Uses network-first strategy for Firebase API calls
+- Enables basic offline functionality
+
 ## Documentation
 
-See [www/js/README.md](www/js/README.md) for detailed module documentation.
+- **Module Documentation**: [www/js/README.md](www/js/README.md)
+- **Architecture Diagram**: [www/js/ARCHITECTURE_DIAGRAM.md](www/js/ARCHITECTURE_DIAGRAM.md)
+- **Quick Start Guide**: [www/js/QUICK_START.md](www/js/QUICK_START.md)
