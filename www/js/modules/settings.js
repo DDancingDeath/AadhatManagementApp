@@ -11,6 +11,12 @@ export class SettingsManager {
         document.getElementById('settingAutoLabor').checked = settings.autoLaborEnabled;
         document.getElementById('settingShowHindi').checked = settings.showHindi || false;
         
+        // Show data management section only for owners
+        const dataManagementSection = document.getElementById('dataManagementSection');
+        if (dataManagementSection) {
+            dataManagementSection.style.display = AppState.userRole === 'owner' ? 'block' : 'none';
+        }
+        
         const darkModeCheckbox = document.getElementById('settingDarkMode');
         if (darkModeCheckbox) {
             const darkModeEnabled = localStorage.getItem('darkMode') === 'true';
@@ -63,13 +69,75 @@ export class SettingsManager {
     }
 
     static async clearAllData() {
-        const confirmed = await UIManager.showModal(
-            'Are you sure you want to delete ALL data? This cannot be undone!',
-            'Clear All Data',
+        // Show collection selection modal
+        const collections = [
+            { id: 'bills', name: 'Purchases' },
+            { id: 'sales', name: 'Sales' },
+            { id: 'payments', name: 'Payments' },
+            { id: 'stockAdjustments', name: 'Stock Adj.' },
+            { id: 'withdrawals', name: 'Withdrawals' },
+            { id: 'cashManagement', name: 'Cash Mgmt' },
+            { id: 'autoSaves', name: 'Auto Saves' },
+            { id: 'drafts', name: 'Drafts' },
+            { id: 'itemFrequency', name: 'Item Freq.' },
+            { id: 'items', name: 'Items ⚠️' },
+            { id: 'users', name: 'Users ⚠️' }
+        ];
+        
+        const modalHTML = `
+            <div style="text-align: left;">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: bold; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #ddd;">
+                    <input type="checkbox" id="selectAllCollections" style="width: 16px; height: 16px;">
+                    <span style="font-size: 14px;">Select All</span>
+                </label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px;">
+                    ${collections.map((col, i) => `
+                        <label style="display: flex; align-items: center; gap: 6px; padding: 3px 0; cursor: pointer;">
+                            <input type="checkbox" class="collection-checkbox" data-collection="${col.id}" ${i < 9 ? 'checked' : ''} style="width: 14px; height: 14px;">
+                            <span style="font-size: 13px; ${i >= 9 ? 'color: #e74c3c;' : ''}">${col.name}</span>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+            <p style="color: #e74c3c; margin-top: 10px; font-size: 12px; text-align: center;">⚠️ Cannot be undone!</p>
+        `;
+        
+        // Setup select all handler after modal is shown
+        setTimeout(() => {
+            const selectAll = document.getElementById('selectAllCollections');
+            if (selectAll) {
+                selectAll.addEventListener('change', (e) => {
+                    const checkboxes = document.querySelectorAll('.collection-checkbox');
+                    checkboxes.forEach(cb => cb.checked = e.target.checked);
+                });
+            }
+        }, 100);
+        
+        const confirmed = await UIManager.showModalWithHtml(
+            modalHTML,
+            'Clear Data',
             true
         );
         
         if (!confirmed) return;
+        
+        // Get selected collections
+        const checkboxes = document.querySelectorAll('.collection-checkbox:checked');
+        const selectedCollections = Array.from(checkboxes).map(cb => cb.dataset.collection);
+        
+        if (selectedCollections.length === 0) {
+            UIManager.showToast('No collections selected');
+            return;
+        }
+        
+        // Second confirmation
+        const finalConfirm = await UIManager.showModal(
+            `Are you sure you want to delete ${selectedCollections.length} collection(s)? This CANNOT be undone!`,
+            'Final Confirmation',
+            true
+        );
+        
+        if (!finalConfirm) return;
         
         UIManager.showLoading();
         
@@ -83,41 +151,23 @@ export class SettingsManager {
                 return;
             }
             
-            // Delete all items
-            const itemsSnapshot = await db.collection('items').get();
-            const itemsDeletePromises = itemsSnapshot.docs.map(doc => doc.ref.delete());
-            await Promise.all(itemsDeletePromises);
+            // Delete selected collections
+            let deletedCount = 0;
             
-            // Delete all bills
-            const billsSnapshot = await db.collection('bills').get();
-            const billsDeletePromises = billsSnapshot.docs.map(doc => doc.ref.delete());
-            await Promise.all(billsDeletePromises);
-            
-            // Delete all sales
-            const salesSnapshot = await db.collection('sales').get();
-            const salesDeletePromises = salesSnapshot.docs.map(doc => doc.ref.delete());
-            await Promise.all(salesDeletePromises);
-            
-            // Delete all payments
-            const paymentsSnapshot = await db.collection('payments').get();
-            const paymentsDeletePromises = paymentsSnapshot.docs.map(doc => doc.ref.delete());
-            await Promise.all(paymentsDeletePromises);
-            
-            // Delete all stock adjustments
-            const adjustmentsSnapshot = await db.collection('stockAdjustments').get();
-            const adjustmentsDeletePromises = adjustmentsSnapshot.docs.map(doc => doc.ref.delete());
-            await Promise.all(adjustmentsDeletePromises);
-            
-            // Delete all withdrawals
-            const withdrawalsSnapshot = await db.collection('withdrawals').get();
-            const withdrawalsDeletePromises = withdrawalsSnapshot.docs.map(doc => doc.ref.delete());
-            await Promise.all(withdrawalsDeletePromises);
+            for (const collectionId of selectedCollections) {
+                const snapshot = await db.collection(collectionId).get();
+                if (snapshot.size > 0) {
+                    const deletePromises = snapshot.docs.map(doc => doc.ref.delete());
+                    await Promise.all(deletePromises);
+                    deletedCount += snapshot.size;
+                }
+            }
             
             // Clear local storage
             localStorage.clear();
             
             UIManager.hideLoading();
-            UIManager.showToast('All data cleared successfully');
+            UIManager.showToast(`Cleared ${deletedCount} records from ${selectedCollections.length} collections`);
             
             // Reload the page
             setTimeout(() => location.reload(), 1000);

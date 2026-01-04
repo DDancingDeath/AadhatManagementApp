@@ -118,10 +118,9 @@ const NavigationManager = {
             setTimeout(() => window.app.cashManagement.init(), 100);
         }
         
-        // Initialize configure sub-tabs when Configure tab is shown
-        if (tabId === 'configure' && window.app?.configure) {
+        // Configure tab - no sub-tabs to initialize
+        if (tabId === 'configure') {
             this.resetFilterButtons('configure');
-            setTimeout(() => window.app.configure.showSubTab('items'), 100);
         }
     },
 
