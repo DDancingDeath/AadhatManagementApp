@@ -7,7 +7,7 @@ import { AuthManager } from './auth/authentication.js';
 import { FirebaseService } from './firebase/firestore-service.js';
 import { ItemsManager } from './modules/items.js';
 import { PrinterService, printerManager } from './services/printer.js';
-import { BillingManager } from './modules/billing.js';
+import { BillingManager, PurchaseManager, RetailSaleManager } from './modules/billing.js';
 import { StockManager } from './modules/stock.js';
 import { WholesaleSalesManager } from './modules/wholesale-sales.js';
 import { HistoryManager } from './modules/history.js';
@@ -128,6 +128,9 @@ async function loadUserDataAndInitialize() {
         
         // Calculate stock
         AppState.stock = await FirebaseService.calculateStock();
+        
+        // Initialize billing manager (connects purchase and retail-sale modules)
+        BillingManager.init();
         
         // Set up real-time listeners
         FirebaseService.setupRealtimeListeners();
@@ -363,6 +366,49 @@ window.app = {
         // Auto-save management
         triggerAutoSave: () => BillingManager.triggerAutoSave(),
         checkAutoSave: () => BillingManager.checkAutoSave()
+    },
+    
+    // Purchase (direct access to PurchaseManager)
+    purchase: {
+        addWeight: (autoAdd) => PurchaseManager.addWeight(autoAdd),
+        renderWeights: () => PurchaseManager.renderWeights(),
+        removeWeight: (idx) => PurchaseManager.removeWeight(idx),
+        clearWeights: () => PurchaseManager.clearWeights(),
+        addToBill: (autoAdd) => PurchaseManager.addToBill(autoAdd),
+        renderBill: () => PurchaseManager.renderBill(),
+        deleteBillItem: (idx) => PurchaseManager.deleteBillItem(idx),
+        editBillItem: (idx) => PurchaseManager.editBillItem(idx),
+        updateTotals: (heavy) => PurchaseManager.updateTotals(heavy),
+        updatePaymentTotal: () => PurchaseManager.updatePaymentTotal(),
+        fillPayableAmount: (type) => PurchaseManager.fillPayableAmount(type),
+        saveBillToHistory: () => PurchaseManager.saveBillToHistory(),
+        shareWhatsApp: () => PurchaseManager.shareWhatsApp(),
+        getBillItems: () => PurchaseManager.getBillItems(),
+        getWeights: () => PurchaseManager.getWeights(),
+        clearBill: () => PurchaseManager.clearBill()
+    },
+    
+    // Retail Sale (direct access to RetailSaleManager)
+    retailSale: {
+        addSaleWeight: (autoAdd) => RetailSaleManager.addSaleWeight(autoAdd),
+        renderSaleWeights: () => RetailSaleManager.renderSaleWeights(),
+        removeSaleWeight: (idx) => RetailSaleManager.removeSaleWeight(idx),
+        clearSaleWeights: () => RetailSaleManager.clearSaleWeights(),
+        addToSalesBill: (autoAdd) => RetailSaleManager.addToSalesBill(autoAdd),
+        renderSalesBill: () => RetailSaleManager.renderSalesBill(),
+        removeSaleItem: (idx) => RetailSaleManager.removeSaleItem(idx),
+        editSaleItem: (idx) => RetailSaleManager.editSaleItem(idx),
+        updateSaleTotals: () => RetailSaleManager.updateSaleTotals(),
+        updateSaleRunningTotal: () => RetailSaleManager.updateSaleRunningTotal(),
+        updateSalePaymentTotal: () => RetailSaleManager.updateSalePaymentTotal(),
+        fillReceivableAmount: (type) => RetailSaleManager.fillReceivableAmount(type),
+        completeSale: () => RetailSaleManager.completeSale(),
+        shareSaleWhatsApp: () => RetailSaleManager.shareSaleWhatsApp(),
+        printSale: () => RetailSaleManager.printSale(),
+        pickSaleContact: () => RetailSaleManager.pickSaleContact(),
+        getSaleItems: () => RetailSaleManager.getSaleItems(),
+        getSaleWeights: () => RetailSaleManager.getSaleWeights(),
+        clearSale: () => RetailSaleManager.clearSale()
     },
     
     // Printer

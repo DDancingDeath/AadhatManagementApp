@@ -21,7 +21,10 @@ www/js/
 │   └── firestore-service.js  # Firestore CRUD operations
 ├── modules/
 │   ├── analytics.js          # Usage analytics and charts
-│   ├── billing.js            # Purchase bill creation (weights, labour)
+│   ├── billing.js            # Core billing coordinator (mode switching, drafts, auto-save)
+│   ├── purchase.js           # Purchase bill creation (weights, rates, labor)
+│   ├── retail-sale.js        # Retail sale creation (weights, rates, payment)
+│   ├── wholesale-sales.js    # Wholesale sales (sales tab)
 │   ├── cash-management.js    # Session-based cash tracking
 │   ├── datefilter.js         # Date range filtering
 │   ├── finance.js            # Financial overview and profit/loss
@@ -30,7 +33,6 @@ www/js/
 │   ├── miscellaneous.js      # Expenses and withdrawals
 │   ├── outstanding.js        # Outstanding payments tracking
 │   ├── reports.js            # Reports generation
-│   ├── sales.js              # Wholesale sales management
 │   ├── settings.js           # App settings, audit logs, storage stats
 │   ├── stock.js              # Stock tracking and adjustments
 │   └── users.js              # User management and roles
@@ -69,9 +71,10 @@ www/js/
 
 | Module | Description |
 |--------|-------------|
-| `billing.js` | Retail sales (billing tab) with weights, multiple rates, labour charges |
-| `sales.js` | Wholesale sales (sales tab) with stock deduction |
-| `retail-sales.js` | Retail point-of-sale |
+| `billing.js` | Core billing coordinator - mode switching, item dropdowns, drafts, auto-save, edit bill |
+| `purchase.js` | Purchase operations - weights, bill items, totals, payment, save to Firebase `purchases` collection |
+| `retail-sale.js` | Retail sale operations - weights, sale items, totals, payment, save to Firebase `retailSales` collection |
+| `wholesale-sales.js` | Wholesale sales (sales tab) with stock deduction, saves to Firebase `wholesaleSales` collection |
 | `items.js` | Item CRUD, purchase/sale/wholesale rates |
 | `stock.js` | Stock levels, adjustments, history |
 | `history.js` | Bill history, view/edit/delete bills |

@@ -1,6 +1,6 @@
 /**
- * @fileoverview Billing module for managing purchase and sale transactions
- * Handles bill creation, item management, weight tracking, and mode switching
+ * @fileoverview Billing Core module for coordinating purchase and sale transactions
+ * Handles mode switching, item dropdowns, drafts, auto-save, and editing
  * @module modules/billing
  */
 
@@ -11,30 +11,8 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
-
-/**
- * @type {Array<Object>} Current bill items for purchase mode
- * @private
- */
-let billItems = [];
-
-/**
- * @type {Array<Object>} Current items for sale mode
- * @private
- */
-let saleItems = [];
-
-/**
- * @type {Array<number>} Weight entries for purchase mode
- * @private
- */
-let weights = [];
-
-/**
- * @type {Array<number>} Weight entries for sale mode
- * @private
- */
-let saleWeights = [];
+import { PurchaseManager } from './purchase.js';
+import { RetailSaleManager } from './retail-sale.js';
 
 /**
  * @type {number|null} Timer ID for auto-save functionality
@@ -43,7 +21,7 @@ let saleWeights = [];
 let autoSaveTimer = null;
 
 /**
- * Billing Manager - Handles all billing operations
+ * Billing Manager - Coordinates purchase and sale operations
  * @namespace BillingManager
  */
 const BillingManager = {
@@ -64,10 +42,38 @@ const BillingManager = {
      * @type {{purchase: Object, sale: Object}}
      */
     itemFrequency: { purchase: {}, sale: {} },
-    
+
+    /**
+     * Current bill being edited (undefined if not editing)
+     * @type {number|undefined}
+     */
+    editingBillIndex: undefined,
+
+    /**
+     * ID of bill being edited
+     * @type {string|undefined}
+     */
+    editingBillId: undefined,
+
+    /**
+     * Type of bill being edited
+     * @type {'purchase'|'sale'|undefined}
+     */
+    editingBillType: undefined,
+
+    /**
+     * Initialize the billing manager
+     */
+    init() {
+        // Initialize child managers with reference to this
+        PurchaseManager.init(this);
+        RetailSaleManager.init(this);
+    },
+
+    // -------------------- MODE SWITCHING --------------------
+
     /**
      * Switch between purchase and sale modes
-     * Auto-saves current mode before switching
      * @param {'purchase'|'sale'} mode - The mode to switch to
      * @param {Event} [event] - Optional click event for button styling
      */
@@ -86,7 +92,6 @@ const BillingManager = {
         
         // Update button states
         if (event) {
-            // Only update Purchase/Sale toggle buttons, not draft management buttons
             purchaseBtn.classList.remove('active');
             saleBtn.classList.remove('active');
             purchaseBtn.style.background = '';
@@ -97,26 +102,22 @@ const BillingManager = {
         }
         
         if (mode === 'sale') {
-            // Switch to sale mode
             this.currentMode = 'sale';
             purchaseSection.style.display = 'none';
             saleSection.style.display = 'block';
             
-            // Style sale button green when active
             if (saleBtn.classList.contains('active')) {
                 saleBtn.style.background = '#22c55e';
                 saleBtn.style.borderColor = '#22c55e';
             }
             
-            // Preserve current selections before reloading dropdown
+            // Preserve current selections
             const currentItem = document.getElementById('saleItem')?.value;
             const currentRate = document.getElementById('saleRate')?.value;
             const currentWeight = document.getElementById('saleWeight')?.value;
             
-            // Load sale dropdown
             this.loadSaleItemsDropdown();
             
-            // Restore selections after dropdown reload
             if (currentItem) {
                 const saleItemSelect = document.getElementById('saleItem');
                 if (saleItemSelect) {
@@ -127,44 +128,35 @@ const BillingManager = {
             if (currentRate) {
                 setTimeout(() => {
                     const saleRateInput = document.getElementById('saleRate');
-                    if (saleRateInput) {
-                        saleRateInput.value = currentRate;
-                    }
+                    if (saleRateInput) saleRateInput.value = currentRate;
                 }, 50);
             }
             if (currentWeight) {
                 const saleWeightInput = document.getElementById('saleWeight');
-                if (saleWeightInput) {
-                    saleWeightInput.value = currentWeight;
-                }
+                if (saleWeightInput) saleWeightInput.value = currentWeight;
             }
             
-            // Re-render existing sale data
-            this.renderSalesBill();
-            this.renderSaleWeights();
-            this.updateSaleTotals();
+            RetailSaleManager.renderSalesBill();
+            RetailSaleManager.renderSaleWeights();
+            RetailSaleManager.updateSaleTotals();
         } else {
-            // Switch to purchase mode
             this.currentMode = 'purchase';
             saleSection.style.display = 'none';
             purchaseSection.style.display = 'block';
             
-            // Re-render existing purchase data
-            this.renderBill();
-            this.renderWeights();
-            this.updateTotals();
-            
-            // Purchase button uses default blue when active
+            PurchaseManager.renderBill();
+            PurchaseManager.renderWeights();
+            PurchaseManager.updateTotals();
         }
         
         UIManager.hapticFeedback();
     },
-    
+
+    // -------------------- ITEM FREQUENCY --------------------
+
     /**
      * Load item frequency data from Firebase
-     * Tracks which items are used most often for smart ordering
      * @async
-     * @returns {Promise<void>}
      */
     async loadItemFrequency() {
         try {
@@ -175,7 +167,6 @@ const BillingManager = {
             if (doc.exists) {
                 this.itemFrequency = doc.data();
             } else {
-                // Initialize empty frequency
                 this.itemFrequency = { purchase: {}, sale: {} };
             }
         } catch (error) {
@@ -183,14 +174,12 @@ const BillingManager = {
             this.itemFrequency = { purchase: {}, sale: {} };
         }
     },
-    
+
     /**
      * Update item frequency after a transaction
-     * Applies weighted scoring based on recency, quantity, and usage count
      * @async
      * @param {Array<Object>} items - Items used in the transaction
      * @param {'purchase'|'sale'} [mode='purchase'] - The transaction mode
-     * @returns {Promise<void>}
      */
     async updateItemFrequency(items, mode = 'purchase') {
         try {
@@ -199,22 +188,16 @@ const BillingManager = {
             
             const now = Date.now();
             
-            // Update frequency with weighted scoring
             items.forEach(item => {
                 const itemId = item.itemId || item.name;
                 if (!this.itemFrequency[mode]) this.itemFrequency[mode] = {};
                 
-                // Calculate score based on:
-                // 1. Base score: 100 points per occurrence
-                // 2. Quantity bonus: Add quantity/10 points (e.g., 50kg = +5 points)
-                // 3. Recency: Items used in last 30 days get full weight, older items decay
                 const baseScore = 100;
                 const quantityBonus = (item.qty || 0) / 10;
-                const recencyMultiplier = 1.0; // Recent items get full weight
+                const recencyMultiplier = 1.0;
                 
                 const score = (baseScore + quantityBonus) * recencyMultiplier;
                 
-                // Store both score and last used timestamp
                 if (!this.itemFrequency[mode][itemId]) {
                     this.itemFrequency[mode][itemId] = { score: 0, lastUsed: 0, count: 0 };
                 }
@@ -224,48 +207,52 @@ const BillingManager = {
                 this.itemFrequency[mode][itemId].count += 1;
             });
             
-            // Apply time decay to all items (items not used recently get lower scores)
+            // Apply time decay
             Object.keys(this.itemFrequency[mode]).forEach(itemId => {
                 const itemData = this.itemFrequency[mode][itemId];
                 const daysSinceLastUse = (now - itemData.lastUsed) / TIME_MS.DAY;
-                
-                // Decay factor: 1.0 for today, 0.5 after 30 days, 0.1 after 90 days
                 const decayFactor = Math.max(0.1, 1 - (daysSinceLastUse / 90));
                 itemData.effectiveScore = itemData.score * decayFactor;
             });
             
-            // Save to database
             await db.collection('itemFrequency').doc(userId).set(this.itemFrequency);
         } catch (error) {
             console.error('Failed to update item frequency:', error);
         }
     },
-    
+
+    /**
+     * Get item frequency for a mode
+     * @param {'purchase'|'sale'} mode - The mode
+     * @returns {Object} Frequency data
+     */
     getItemFrequency(mode = 'purchase') {
         return this.itemFrequency[mode] || {};
     },
-    
+
+    // -------------------- DROPDOWNS --------------------
+
+    /**
+     * Load items dropdown for purchase mode
+     */
     loadItemsDropdown() {
         const select = document.getElementById('billItem');
         if (!select) return;
         
         select.innerHTML = '';
         
-        // Get frequency for purchase items
         const freq = this.getItemFrequency('purchase');
         
-        // Sort items by effective score (considers recency, quantity, and usage)
         const sortedItems = [...AppState.items].sort((a, b) => {
             const dataA = freq[a.id] || freq[a.name];
             const dataB = freq[b.id] || freq[b.name];
             const scoreA = dataA ? (dataA.effectiveScore || dataA.score || dataA) : 0;
             const scoreB = dataB ? (dataB.effectiveScore || dataB.score || dataB) : 0;
-            return scoreB - scoreA; // Descending order
+            return scoreB - scoreA;
         });
         
         sortedItems.forEach((item) => {
             const opt = document.createElement('option');
-            // Store the original index for reference
             const originalIndex = AppState.items.findIndex(i => i.id === item.id || i.name === item.name);
             opt.value = originalIndex;
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
@@ -276,31 +263,29 @@ const BillingManager = {
         if (AppState.items.length > 0) {
             this.loadRates();
         }
-        // Don't clear weights here - it interferes with recovery
-        // this.clearWeights();
     },
-    
+
+    /**
+     * Load items dropdown for sale mode
+     */
     loadSaleItemsDropdown() {
         const select = document.getElementById('saleItem');
         if (!select) return;
         
         select.innerHTML = '';
         
-        // Get frequency for sale items
         const freq = this.getItemFrequency('sale');
         
-        // Sort items by effective score (considers recency, quantity, and usage)
         const sortedItems = [...AppState.items].sort((a, b) => {
             const dataA = freq[a.id] || freq[a.name];
             const dataB = freq[b.id] || freq[b.name];
             const scoreA = dataA ? (dataA.effectiveScore || dataA.score || dataA) : 0;
             const scoreB = dataB ? (dataB.effectiveScore || dataB.score || dataB) : 0;
-            return scoreB - scoreA; // Descending order
+            return scoreB - scoreA;
         });
         
         sortedItems.forEach((item) => {
             const opt = document.createElement('option');
-            // Store the original index for reference
             const originalIndex = AppState.items.findIndex(i => i.id === item.id || i.name === item.name);
             opt.value = originalIndex;
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
@@ -311,10 +296,11 @@ const BillingManager = {
         if (AppState.items.length > 0) {
             this.loadSaleRates();
         }
-        // Don't clear weights here - it interferes with recovery
-        // this.clearSaleWeights();
     },
-    
+
+    /**
+     * Load rates for selected purchase item
+     */
     loadRates() {
         const itemIndex = document.getElementById('billItem')?.value;
         const rateInput = document.getElementById('billRate');
@@ -334,20 +320,24 @@ const BillingManager = {
                     option.value = rate;
                     rateDatalist.appendChild(option);
                 });
-                
-                // Leave rate empty for user to select or type
             }
         }
     },
-    
+
+    /**
+     * Load rates for selected sale item
+     */
     loadSaleRates() {
         const itemIndex = document.getElementById('saleItem')?.value;
         const rateInput = document.getElementById('saleRate');
         const rateDatalist = document.getElementById('saleRateOptions');
+        
         if (!rateInput || !rateDatalist) return;
+        
         rateDatalist.innerHTML = '';
         rateInput.value = '';
         rateInput.placeholder = 'Select or enter rate';
+        
         if (itemIndex !== undefined && itemIndex !== '') {
             const item = AppState.items[parseInt(itemIndex)];
             if (item && item.saleRates && item.saleRates.length > 0) {
@@ -356,1171 +346,19 @@ const BillingManager = {
                     option.value = rate;
                     rateDatalist.appendChild(option);
                 });
-                // Optionally set first sale rate as default (commented out to allow custom entry)
-                // rateInput.value = item.saleRates[0];
-            } else {
-                // No sale rates available, leave datalist empty and input blank
             }
         }
-    },
-    
-    // -------------------- WEIGHT MANAGEMENT --------------------
-    
-    async addWeight(autoAddToBill = false) {
-        const weightInput = document.getElementById('newWeight');
-        const weight = parseFloat(weightInput?.value);
-        
-        if (!weight || weight <= 0) {
-            UIManager.showToast('Please enter a valid weight');
-            return;
-        }
-        
-        weights.push(weight);
-        weightInput.value = '';
-        weightInput.focus();
-        
-        this.renderWeights();
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-        
-        // If auto-add flag is set and this is the first/only weight, add to bill directly
-        if (autoAddToBill && weights.length === 1) {
-            await this.addToBill(true);
-        }
-    },
-    
-    renderWeights() {
-        const container = document.getElementById('weightsDisplay');
-        if (!container) return;
-        
-        const totalWeightsSpan = document.getElementById('totalWeights');
-        const totalPacketsSpan = document.getElementById('totalPackets');
-        
-        if (weights.length === 0) {
-            container.innerHTML = '';
-            if (totalWeightsSpan) totalWeightsSpan.textContent = '0';
-            if (totalPacketsSpan) totalPacketsSpan.textContent = '0';
-            return;
-        }
-        
-        const total = weights.reduce((sum, w) => sum + w, 0);
-        
-        if (totalWeightsSpan) totalWeightsSpan.textContent = total.toFixed(1);
-        if (totalPacketsSpan) totalPacketsSpan.textContent = weights.length;
-        
-        container.innerHTML = `
-            <div class="weights-compact-list">
-                ${weights.map((w, i) => `
-                    <div class="weight-chip">
-                        <span>${w.toFixed(1)}</span>
-                        <button class="weight-chip-remove" onclick="window.app.billing.removeWeight(${i})">×</button>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    },
-    
-    removeWeight(index) {
-        weights.splice(index, 1);
-        this.renderWeights();
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-    },
-    
-    clearWeights() {
-        weights = [];
-        this.renderWeights();
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-    },
-    
-    // -------------------- PURCHASE BILL MANAGEMENT --------------------
-    
-    async addToBill(autoAdd = false) {
-        const itemSelect = document.getElementById('billItem');
-        const rateInput = document.getElementById('billRate');
-        const weightInput = document.getElementById('newWeight');
-        
-        if (!itemSelect || !rateInput) return;
-        
-        const itemIndex = parseInt(itemSelect.value);
-        const rate = parseFloat(rateInput.value);
-        
-        if (itemIndex === undefined || itemIndex === '' || isNaN(itemIndex)) {
-            UIManager.showToast('Please select an item');
-            return;
-        }
-        
-        if (!rate || rate <= 0) {
-            UIManager.showToast('Please enter a valid rate');
-            return;
-        }
-        
-        // If there's a weight typed in the input but not added, add it first
-        const pendingWeight = parseFloat(weightInput?.value);
-        if (pendingWeight && pendingWeight > 0) {
-            weights.push(pendingWeight);
-            weightInput.value = '';
-            this.renderWeights();
-        }
-        
-        if (weights.length === 0) {
-            UIManager.showToast('Please add at least one weight');
-            return;
-        }
-        
-        const item = AppState.items[itemIndex];
-        if (!item) {
-            UIManager.showToast('Item not found');
-            return;
-        }
-        
-        const qty = weights.reduce((sum, w) => sum + w, 0);
-        const total = Math.round(qty * rate);
-        
-        const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
-        
-        billItems.push({
-            itemId: item.id,
-            name: displayName,
-            rate,
-            qty,
-            total,
-            weights: [...weights],
-            timestamp: Date.now()
-        });
-        
-        // Clear inputs
-        weights = [];
-        this.renderWeights();
-        this.renderBill();
-        this.triggerAutoSave();
-        
-        // Reset form
-        const newWeightInput = document.getElementById('newWeight');
-        if (newWeightInput) {
-            newWeightInput.value = '';
-            newWeightInput.focus();
-        }
-        
-        UIManager.hapticFeedback();
-        UIManager.showToast(`Added ${displayName} to bill`);
-    },
-    
-    renderBill() {
-        const tbody = document.querySelector('#billTable tbody');
-        const weightBreakdownSection = document.getElementById('weightBreakdownSection');
-        if (!tbody) return;
-        
-        const totalPacketsInBillSpan = document.getElementById('totalPacketsInBill');
-        const billTotalSpan = document.getElementById('billTotal');
-        
-        if (billItems.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
-            if (billTotalSpan) billTotalSpan.textContent = '0';
-            if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = '0';
-            if (weightBreakdownSection) weightBreakdownSection.innerHTML = '';
-            this.updateTotals();
-            return;
-        }
-        
-        // Render weight breakdown for items with 2 or more packets
-        if (weightBreakdownSection) {
-            const itemsWithMultipleWeights = billItems.filter(item => item.weights.length >= 2);
-            
-            if (itemsWithMultipleWeights.length > 0) {
-                weightBreakdownSection.innerHTML = itemsWithMultipleWeights.map(item => {
-                    const weightsPerLine = 6;
-                    const weightLines = [];
-                    for (let i = 0; i < item.weights.length; i += weightsPerLine) {
-                        const lineWeights = item.weights.slice(i, i + weightsPerLine);
-                        weightLines.push(lineWeights.map(w => parseFloat(w).toFixed(1)).join('&nbsp;&nbsp;'));
-                    }
-                    
-                    return `
-                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #007bff;">
-                            <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
-                                ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
-                            </div>
-                            <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
-                                ${weightLines.join('<br>')}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                weightBreakdownSection.innerHTML = '';
-            }
-        }
-        
-        // Render bill items table (without weight breakdown in rows)
-        tbody.innerHTML = billItems.map((item, index) => {
-            return `
-                <tr style="cursor: pointer;" onclick="window.app.billing.editBillItem(${index})">
-                    <td>${item.name}</td>
-                    <td>₹${item.rate.toFixed(2)}</td>
-                    <td>${item.qty.toFixed(1)} kg</td>
-                    <td>₹${Math.round(item.total)}</td>
-                    <td><button onclick="event.stopPropagation(); window.app.billing.deleteBillItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
-                </tr>
-            `;
-        }).join('');
-        
-        // Update totals
-        const billTotal = billItems.reduce((sum, item) => sum + item.total, 0);
-        const totalPackets = billItems.reduce((sum, item) => sum + item.weights.length, 0);
-        
-        // Calculate heavy packets (weight > 30kg threshold)
-        const heavyWeightThreshold = AppState.settings?.heavyWeightThreshold || 30;
-        const totalHeavyPackets = billItems.reduce((sum, item) => {
-            const heavyCount = item.weights.filter(w => w > heavyWeightThreshold).length;
-            return sum + heavyCount;
-        }, 0);
-        
-        if (billTotalSpan) billTotalSpan.textContent = Math.round(billTotal);
-        if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = totalPackets;
-        
-        // Don't clear manually set flag or labor value when in edit mode
-        const laborChargesInput = document.getElementById('manualLaborCharges');
-        if (laborChargesInput && this.editingBillIndex === undefined) {
-            delete laborChargesInput.dataset.manuallySet;
-        }
-        
-        this.updateTotals(totalHeavyPackets);
-    },
-    
-    deleteBillItem(index) {
-        billItems.splice(index, 1);
-        this.renderBill();
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-    },
-    
-    editBillItem(index) {
-        // First, save any pending data in the form
-        const currentItem = Helpers.getInputText('billItem');
-        const currentRate = Helpers.getInputNumber('billRate');
-        
-        // If there's data being filled, add it to bill first
-        if (currentItem && currentRate && weights.length > 0) {
-            this.addToBill(true);
-        }
-        
-        // Get the item to edit
-        const item = billItems[index];
-        if (!item) return;
-        
-        // Remove from bill
-        billItems.splice(index, 1);
-        this.renderBill();
-        
-        // Populate the form with item data
-        const itemIndex = AppState.items.findIndex(i => i.id === item.itemId || i.name === item.name);
-        if (itemIndex !== -1) {
-            document.getElementById('billItem').value = itemIndex;
-            this.loadRates();
-            
-            setTimeout(() => {
-                document.getElementById('billRate').value = item.rate;
-            }, 50);
-        }
-        
-        // Set the weights
-        weights = item.weights || [];
-        this.renderWeights();
-        
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-        UIManager.showToast('Item loaded for editing');
-    },
-    
-    updateTotals(heavyPacketsCount = 0) {
-        const billTotal = Helpers.getElementInt('billTotal');
-        const totalPackets = Helpers.getElementInt('totalPacketsInBill');
-        const autoLaborCheckbox = document.getElementById('autoLaborCharge');
-        const laborCalculationSpan = document.getElementById('laborCalculation');
-        const laborChargesInput = document.getElementById('manualLaborCharges');
-        
-        // Calculate labor charges if checkbox is checked
-        let laborCharges = 0;
-        if (autoLaborCheckbox?.checked) {
-            const laborRate = AppState.settings?.laborRate || 6;
-            const autoCalculatedLabor = laborRate * heavyPacketsCount;
-            
-            // Only auto-calculate if the user hasn't manually edited the field AND not in edit mode
-            if (laborChargesInput && !laborChargesInput.dataset.manuallySet && this.editingBillIndex === undefined) {
-                laborChargesInput.value = autoCalculatedLabor.toFixed(0);
-            }
-            
-            if (laborChargesInput) {
-                laborChargesInput.disabled = false;
-                laborChargesInput.style.opacity = '1';
-                laborChargesInput.style.cursor = 'text';
-            }
-            if (laborCalculationSpan) {
-                laborCalculationSpan.textContent = `${laborRate} × ${heavyPacketsCount}`;
-            }
-            
-            // Use the current value in the field
-            laborCharges = parseFloat(laborChargesInput?.value || 0);
-        } else {
-            // Checkbox unchecked - no labor charges
-            if (laborChargesInput) {
-                laborChargesInput.value = '0';
-                laborChargesInput.disabled = true;
-                laborChargesInput.style.opacity = '0.5';
-                laborChargesInput.style.cursor = 'not-allowed';
-            }
-            if (laborCalculationSpan) {
-                laborCalculationSpan.textContent = '';
-            }
-            laborCharges = 0;
-        }
-        
-        // Calculate grand total (subtract labor charges for purchase)
-        const grandTotal = billTotal - laborCharges;
-        
-        const grandTotalElement = document.getElementById('amountPayable');
-        if (grandTotalElement) {
-            grandTotalElement.textContent = Math.round(grandTotal);
-        }
-        
-        this.updatePaymentTotal();
-    },
-    
-    updatePaymentTotal() {
-        const grandTotal = Helpers.getElementInt('amountPayable');
-        const onlinePayment = Helpers.getInputInt('onlinePayment');
-        const cashPayment = Helpers.getInputInt('cashPayment');
-        
-        // Total paid should only include online and cash, not due
-        const totalPaid = onlinePayment + cashPayment;
-        
-        const totalPaymentElement = document.getElementById('totalPayment');
-        if (totalPaymentElement) {
-            totalPaymentElement.textContent = Math.round(totalPaid);
-        }
-    },
-    
-    fillPayableAmount(type) {
-        const grandTotal = Helpers.getElementInt('amountPayable');
-        const onlineInput = document.getElementById('onlinePayment');
-        const cashInput = document.getElementById('cashPayment');
-        const dueInput = document.getElementById('dueAmount');
-        const onlineCheckbox = document.getElementById('onlineCheckbox');
-        const cashCheckbox = document.getElementById('cashCheckbox');
-        const dueCheckbox = document.getElementById('dueCheckbox');
-        
-        if (type === 'online' && onlineCheckbox?.checked) {
-            if (onlineInput) onlineInput.value = Math.round(grandTotal);
-            if (cashInput) cashInput.value = '0';
-            if (dueInput) dueInput.value = '0';
-            if (cashCheckbox) cashCheckbox.checked = false;
-            if (dueCheckbox) dueCheckbox.checked = false;
-        } else if (type === 'cash' && cashCheckbox?.checked) {
-            if (cashInput) cashInput.value = Math.round(grandTotal);
-            if (onlineInput) onlineInput.value = '0';
-            if (dueInput) dueInput.value = '0';
-            if (onlineCheckbox) onlineCheckbox.checked = false;
-            if (dueCheckbox) dueCheckbox.checked = false;
-        } else if (type === 'due' && dueCheckbox?.checked) {
-            if (dueInput) dueInput.value = Math.round(grandTotal);
-            if (onlineInput) onlineInput.value = '0';
-            if (cashInput) cashInput.value = '0';
-            if (onlineCheckbox) onlineCheckbox.checked = false;
-            if (cashCheckbox) cashCheckbox.checked = false;
-        }
-        
-        this.updatePaymentTotal();
-    },
-    
-    // -------------------- SAVE & PRINT --------------------
-    
-    async generateBillNumber(type = 'purchase') {
-        const prefix = type === 'sale' ? 'S' : 'P';
-        const today = new Date();
-        const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-        
-        // Query Firestore for today's bills/sales to find the next number (for parallel user safety)
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const todayEnd = new Date(todayStart);
-        todayEnd.setDate(todayEnd.getDate() + 1);
-        
-        try {
-            // Query the appropriate collection based on type
-            const collection = type === 'sale' ? 'retailSales' : 'purchases';
-            const snapshot = await db.collection(collection)
-                .where('timestamp', '>=', todayStart.getTime())
-                .where('timestamp', '<', todayEnd.getTime())
-                .get();
-            
-            const nextNum = snapshot.size + 1;
-            return `${prefix}${dateStr}-${String(nextNum).padStart(3, '0')}`;
-        } catch (error) {
-            console.error('Error generating bill number:', error);
-            // Fallback to timestamp-based number if query fails
-            return `${prefix}${dateStr}-${Date.now().toString().slice(-3)}`;
-        }
-    },
-
-    async saveBillToHistory() {
-        // Check if in edit mode
-        if (this.editingBillIndex !== undefined) {
-            return this.saveEditedBill();
-        }
-        
-        if (billItems.length === 0) {
-            UIManager.showToast('No items in bill');
-            return;
-        }
-        
-        const billTotal = Helpers.getElementInt('billTotal');
-        const laborCharges = Helpers.getInputInt('manualLaborCharges');
-        const totalPackets = Helpers.getElementInt('totalPacketsInBill');
-        const grandTotal = Helpers.getElementInt('amountPayable');
-        const onlinePayment = Helpers.getInputInt('onlinePayment');
-        const cashPayment = Helpers.getInputInt('cashPayment');
-        const dueAmount = Helpers.getInputInt('dueAmount');
-        const customerName = Helpers.getInputText('customerName');
-        const comments = Helpers.getInputText('billComments');
-        
-        // Validate payment - at least one payment method must be provided
-        if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {
-            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
-            return;
-        }
-        
-        // Get labor calculation string only if auto-labor was used (checkbox checked and not manually edited)
-        const autoLaborCheckbox = document.getElementById('autoLaborCharge');
-        const laborChargesInput = document.getElementById('manualLaborCharges');
-        const laborCalculationSpan = document.getElementById('laborCalculation');
-        const laborCalc = (autoLaborCheckbox?.checked && !laborChargesInput?.dataset.manuallySet) 
-            ? laborCalculationSpan?.textContent || null 
-            : null;
-        
-        // Generate bill number
-        const billNumber = await this.generateBillNumber('purchase');
-        
-        const bill = {
-            id: Helpers.generateId(),
-            billNumber,
-            items: billItems,
-            billTotal,
-            laborCharges,
-            laborCalc,
-            totalPackets,
-            grandTotal,
-            amountPayable: grandTotal,
-            onlinePayment,
-            cashPayment,
-            dueAmount,
-            customerName,
-            comments,
-            type: 'purchase',
-            isPurchase: true,
-            date: new Date().toISOString(),
-            userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
-            timestamp: Date.now(),
-            payment: {
-                online: onlinePayment,
-                cash: cashPayment,
-                due: dueAmount,
-                total: onlinePayment + cashPayment + dueAmount
-            }
-        };
-        
-        try {
-            UIManager.showLoading();
-            await FirebaseService.savePurchase(bill);
-            
-            // Audit log
-            await AuditService.log(AuditService.ACTIONS.CREATE_BILL, {
-                billNumber: bill.billNumber,
-                total: bill.billTotal,
-                customerName: bill.customerName || 'N/A',
-                itemCount: bill.items.length
-            });
-            
-            // Update item frequency in database
-            await this.updateItemFrequency(billItems, 'purchase');
-            
-            // Clear bill
-            billItems = [];
-            weights = [];
-            this.renderBill();
-            this.renderWeights();
-            
-            // Reset form completely
-            if (document.getElementById('customerName')) {
-                document.getElementById('customerName').value = '';
-            }
-            if (document.getElementById('onlinePayment')) {
-                document.getElementById('onlinePayment').value = '';
-            }
-            if (document.getElementById('cashPayment')) {
-                document.getElementById('cashPayment').value = '';
-            }
-            if (document.getElementById('dueAmount')) {
-                document.getElementById('dueAmount').value = '';
-            }
-            if (document.getElementById('manualLaborCharges')) {
-                document.getElementById('manualLaborCharges').value = '0';
-            }
-            if (document.getElementById('billComments')) {
-                document.getElementById('billComments').value = '';
-            }
-            if (document.getElementById('onlineCheckbox')) {
-                document.getElementById('onlineCheckbox').checked = false;
-            }
-            if (document.getElementById('cashCheckbox')) {
-                document.getElementById('cashCheckbox').checked = false;
-            }
-            if (document.getElementById('dueCheckbox')) {
-                document.getElementById('dueCheckbox').checked = false;
-            }
-            
-            // Reset totals
-            this.updateTotals();
-            
-            // Delete auto-save since bill is completed
-            await this.deleteAutoSave();
-            
-            UIManager.hideLoading();
-            UIManager.showToast('Bill saved successfully!');
-            UIManager.hapticFeedback('success');
-            
-            return bill; // Return saved bill for printing
-            
-        } catch (error) {
-            UIManager.hideLoading();
-            UIManager.showToast('Failed to save bill: ' + error.message);
-            console.error('Save bill error:', error);
-            throw error; // Re-throw to prevent printing on error
-        }
-    },
-    
-    // -------------------- SALES BILL MANAGEMENT --------------------
-    
-    async addSaleWeight(autoAddToBill = false) {
-        const weightInput = document.getElementById('saleWeight');
-        const weight = parseFloat(weightInput?.value);
-        
-        if (!weight || weight <= 0) {
-            UIManager.showToast('Please enter a valid weight');
-            return;
-        }
-        
-        saleWeights.push(weight);
-        weightInput.value = '';
-        weightInput.focus();
-        
-        this.renderSaleWeights();
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-        
-        // If auto-add flag is set and this is the first/only weight, add to bill directly
-        if (autoAddToBill && saleWeights.length === 1) {
-            await this.addToSalesBill(true);
-        }
-    },
-    
-    renderSaleWeights() {
-        const container = document.getElementById('saleWeightsDisplay');
-        if (!container) return;
-        
-        const totalWeightsSpan = document.getElementById('saleRunningTotal');
-        const totalPacketsSpan = document.getElementById('salePacketCount');
-        
-        if (saleWeights.length === 0) {
-            container.innerHTML = '';
-            if (totalWeightsSpan) totalWeightsSpan.textContent = '0';
-            if (totalPacketsSpan) totalPacketsSpan.textContent = '0';
-            return;
-        }
-        
-        const total = saleWeights.reduce((sum, w) => sum + w, 0);
-        
-        if (totalWeightsSpan) totalWeightsSpan.textContent = total.toFixed(1);
-        if (totalPacketsSpan) totalPacketsSpan.textContent = saleWeights.length;
-        
-        container.innerHTML = `
-            <div class="weights-compact-list">
-                ${saleWeights.map((w, i) => `
-                    <div class="weight-chip">
-                        <span>${w.toFixed(1)}</span>
-                        <button class="weight-chip-remove" onclick="window.app.billing.removeSaleWeight(${i})">×</button>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    },
-    
-    removeSaleWeight(index) {
-        saleWeights.splice(index, 1);
-        this.renderSaleWeights();
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-    },
-    
-    clearSaleWeights() {
-        saleWeights = [];
-        this.renderSaleWeights();
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-    },
-    
-    async addToSalesBill(autoAdd = false) {
-        const itemSelect = document.getElementById('saleItem');
-        const rateInput = document.getElementById('saleRate');
-        const weightInput = document.getElementById('saleWeight');
-        
-        if (!itemSelect || !rateInput) return;
-        
-        const itemIndex = parseInt(itemSelect.value);
-        const rate = parseFloat(rateInput.value);
-        
-        if (itemIndex === undefined || itemIndex === '' || isNaN(itemIndex)) {
-            UIManager.showToast('Please select an item');
-            return;
-        }
-        
-        if (!rate || rate <= 0) {
-            UIManager.showToast('Please enter a valid rate');
-            return;
-        }
-        
-        // Use accumulated weights if available, otherwise fall back to single weight input
-        let qty;
-        let packets;
-        let allWeights = []; // Declare at function scope
-        
-        // Check if there's a typed weight that hasn't been added to saleWeights
-        const typedWeight = parseFloat(weightInput?.value);
-        const hasTypedWeight = typedWeight && typedWeight > 0;
-        
-        if (saleWeights.length > 0 || hasTypedWeight) {
-            // Combine saleWeights array with any typed weight
-            allWeights = [...saleWeights];
-            if (hasTypedWeight) {
-                allWeights.push(typedWeight);
-            }
-            
-            qty = allWeights.reduce((sum, w) => sum + w, 0);
-            packets = allWeights.length;
-        } else {
-            UIManager.showToast('Please add weights or enter a quantity');
-            return;
-        }
-        
-        const item = AppState.items[itemIndex];
-        if (!item) {
-            UIManager.showToast('Item not found');
-            return;
-        }
-        
-        const itemName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
-        
-        // Stock validation temporarily disabled
-        // const stockItem = AppState.stock?.[item.id] || AppState.stock?.[item.name];
-        // console.log('Stock check:', { 
-        //     itemId: item.id,
-        //     itemName: item.name,
-        //     stockItem, 
-        //     availableStock: stockItem?.quantity,
-        //     requestedQty: qty
-        // });
-        // 
-        // if (!stockItem || stockItem.quantity < qty) {
-        //     const available = stockItem?.quantity || 0;
-        //     UIManager.showToast(`Insufficient stock! Available: ${available}kg`);
-        //     return;
-        // }
-        
-        const total = Math.round(qty * rate);
-        
-        saleItems.push({
-            itemId: item.id,
-            name: itemName,
-            rate,
-            qty,
-            packets,
-            weights: allWeights, // Store individual weights for display
-            total,
-            timestamp: Date.now()
-        });
-        
-        this.renderSalesBill();
-        this.triggerAutoSave();
-        
-        // Clear weights and reset inputs
-        saleWeights = [];
-        this.renderSaleWeights();
-        
-        itemSelect.selectedIndex = 0;
-        rateInput.value = '';
-        if (weightInput) weightInput.value = '';
-        
-        // Focus back to item selection
-        itemSelect.focus();
-        
-        UIManager.hapticFeedback();
-        UIManager.showToast(`Added ${itemName} to sale`);
-    },
-    
-    renderSalesBill() {
-        const tbody = document.querySelector('#saleTable tbody');
-        const totalSalePacketsSpan = document.getElementById('totalSalePacketsInBill');
-        const saleTotalSpan = document.getElementById('saleTotal');
-        const saleWeightBreakdownSection = document.getElementById('saleWeightBreakdownSection');
-        
-        if (!tbody) return;
-        
-        if (saleItems.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
-            if (saleTotalSpan) saleTotalSpan.textContent = '0';
-            if (totalSalePacketsSpan) totalSalePacketsSpan.textContent = '0';
-            if (saleWeightBreakdownSection) saleWeightBreakdownSection.innerHTML = '';
-            this.updateSaleTotals();
-            this.updateSaleRunningTotal();
-            return;
-        }
-        
-        // Render weight breakdown for items with 2 or more packets
-        if (saleWeightBreakdownSection) {
-            const itemsWithMultipleWeights = saleItems.filter(item => item.weights && item.weights.length >= 2);
-            
-            if (itemsWithMultipleWeights.length > 0) {
-                saleWeightBreakdownSection.innerHTML = itemsWithMultipleWeights.map(item => {
-                    const weightsPerLine = 6;
-                    const weightLines = [];
-                    for (let i = 0; i < item.weights.length; i += weightsPerLine) {
-                        const lineWeights = item.weights.slice(i, i + weightsPerLine);
-                        weightLines.push(lineWeights.map(w => parseFloat(w).toFixed(1)).join('&nbsp;&nbsp;'));
-                    }
-                    
-                    return `
-                        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #22c55e;">
-                            <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
-                                ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
-                            </div>
-                            <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
-                                ${weightLines.join('<br>')}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                saleWeightBreakdownSection.innerHTML = '';
-            }
-        }
-        
-        // Render bill items table
-        tbody.innerHTML = saleItems.map((item, index) => `
-            <tr style="cursor: pointer;" onclick="window.app.billing.editSaleItem(${index})">
-                <td>${item.name}</td>
-                <td>₹${item.rate.toFixed(2)}</td>
-                <td>${item.qty.toFixed(1)} kg</td>
-                <td>₹${Math.round(item.total)}</td>
-                <td><button onclick="event.stopPropagation(); window.app.billing.removeSaleItem(${index})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button></td>
-            </tr>
-        `).join('');
-        
-        // Update totals
-        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 1), 0);
-        
-        if (saleTotalSpan) saleTotalSpan.textContent = Math.round(salesTotal);
-        if (totalSalePacketsSpan) totalSalePacketsSpan.textContent = totalPackets;
-        
-        this.updateSaleTotals();
-        this.updateSaleRunningTotal();
-        this.updateSalePaymentTotal();
-    },
-    
-    removeSalesItem(index) {
-        saleItems.splice(index, 1);
-        this.renderSalesBill();
-        this.updateSaleTotals();
-        this.triggerAutoSave();
-    },
-    
-    removeSaleItem(index) {
-        saleItems.splice(index, 1);
-        this.renderSalesBill();
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-    },
-    
-    editSaleItem(index) {
-        // First, save any pending data in the form
-        const currentItem = Helpers.getInputText('saleItem');
-        const currentRate = Helpers.getInputNumber('saleRate');
-        
-        // If there's data being filled, add it to bill first
-        if (currentItem && currentRate && saleWeights.length > 0) {
-            this.addToSalesBill(true);
-        }
-        
-        // Get the item to edit
-        const item = saleItems[index];
-        if (!item) return;
-        
-        // Remove from bill
-        saleItems.splice(index, 1);
-        this.renderSalesBill();
-        
-        // Populate the form with item data
-        const itemIndex = AppState.items.findIndex(i => i.id === item.itemId || i.name === item.name);
-        if (itemIndex !== -1) {
-            document.getElementById('saleItem').value = itemIndex;
-            this.loadSaleRates();
-            
-            setTimeout(() => {
-                document.getElementById('saleRate').value = item.rate;
-            }, 50);
-        }
-        
-        // Set the weights (reconstruct from qty and packets)
-        if (item.qty && item.packets) {
-            // If we have the original weights array, use it
-            if (item.weights && item.weights.length > 0) {
-                saleWeights = [...item.weights];
-            } else {
-                // Otherwise distribute qty equally across packets
-                const avgWeight = item.qty / item.packets;
-                saleWeights = Array(item.packets).fill(avgWeight);
-            }
-        } else {
-            saleWeights = [item.qty];
-        }
-        this.renderSaleWeights();
-        
-        this.triggerAutoSave();
-        UIManager.hapticFeedback();
-        UIManager.showToast('Item loaded for editing');
-    },
-    
-    updateSaleTotals() {
-        const total = saleItems.reduce((sum, item) => sum + item.total, 0);
-        
-        const saleTotalEl = document.getElementById('saleTotal');
-        const amountReceivableEl = document.getElementById('amountReceivable');
-        
-        if (saleTotalEl) saleTotalEl.textContent = Math.round(total);
-        if (amountReceivableEl) amountReceivableEl.textContent = Math.round(total);
-        
-        this.updateSalePaymentTotal();
-    },
-
-    updateSaleRunningTotal() {
-        const totalQty = saleItems.reduce((sum, item) => sum + item.qty, 0);
-        const packetCount = saleItems.length;
-        
-        const runningTotalEl = document.getElementById('saleRunningTotal');
-        const packetCountEl = document.getElementById('salePacketCount');
-        
-        if (runningTotalEl) runningTotalEl.textContent = totalQty.toFixed(1);
-        if (packetCountEl) packetCountEl.textContent = packetCount;
-    },
-    
-    updateSalePaymentTotal() {
-        const total = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const saleOnline = Helpers.getInputInt('saleOnlinePayment');
-        const saleCash = Helpers.getInputInt('saleCashPayment');
-        
-        const totalReceived = saleOnline + saleCash;
-        
-        const totalReceivedEl = document.getElementById('totalReceived');
-        
-        if (totalReceivedEl) totalReceivedEl.textContent = Math.round(totalReceived);
-        // Don't auto-populate due amount - user enters manually (parity with purchase)
-    },
-    
-    fillReceivableAmount(type) {
-        const total = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const onlineInput = document.getElementById('saleOnlinePayment');
-        const cashInput = document.getElementById('saleCashPayment');
-        const dueInput = document.getElementById('saleDueAmount');
-        const onlineCheckbox = document.getElementById('saleOnlineCheckbox');
-        const cashCheckbox = document.getElementById('saleCashCheckbox');
-        const dueCheckbox = document.getElementById('saleDueCheckbox');
-        
-        if (type === 'online' && onlineCheckbox?.checked) {
-            if (onlineInput) onlineInput.value = Math.round(total);
-            if (cashInput) cashInput.value = '0';
-            if (dueInput) dueInput.value = '0';
-            if (cashCheckbox) cashCheckbox.checked = false;
-            if (dueCheckbox) dueCheckbox.checked = false;
-        } else if (type === 'cash' && cashCheckbox?.checked) {
-            if (cashInput) cashInput.value = Math.round(total);
-            if (onlineInput) onlineInput.value = '0';
-            if (dueInput) dueInput.value = '0';
-            if (onlineCheckbox) onlineCheckbox.checked = false;
-            if (dueCheckbox) dueCheckbox.checked = false;
-        } else if (type === 'due' && dueCheckbox?.checked) {
-            if (dueInput) dueInput.value = Math.round(total);
-            if (onlineInput) onlineInput.value = '0';
-            if (cashInput) cashInput.value = '0';
-            if (onlineCheckbox) onlineCheckbox.checked = false;
-            if (cashCheckbox) cashCheckbox.checked = false;
-        }
-        
-        this.updateSalePaymentTotal();
-    },
-    
-    fillSalePayableAmount(type) {
-        const salesTotal = Helpers.getElementInt('salesBillTotal');
-        const onlineInput = document.getElementById('saleOnlinePayment');
-        const cashInput = document.getElementById('saleCashPayment');
-        
-        if (type === 'online' && onlineInput) {
-            onlineInput.value = Math.round(salesTotal);
-            if (cashInput) cashInput.value = '0';
-        } else if (type === 'cash' && cashInput) {
-            cashInput.value = Math.round(salesTotal);
-            if (onlineInput) onlineInput.value = '0';
-        }
-        
-        this.updateSalePaymentTotal();
-    },
-    
-    async completeSale() {
-        // Check if in edit mode
-        if (this.editingBillIndex !== undefined) {
-            return this.saveEditedBill();
-        }
-        
-        if (saleItems.length === 0) {
-            UIManager.showToast('No items in sale');
-            return;
-        }
-        
-        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const saleOnline = Helpers.getInputInt('saleOnlinePayment');
-        const saleCash = Helpers.getInputInt('saleCashPayment');
-        const saleDue = Helpers.getInputInt('saleDueAmount');
-        const saleCustomer = Helpers.getInputText('saleCustomerName');
-        const saleComments = Helpers.getInputText('saleComments');
-        
-        // Validate payment - at least one payment method must be provided
-        if (saleOnline === 0 && saleCash === 0 && saleDue === 0) {
-            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
-            return;
-        }
-        
-        // Calculate total packets
-        const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
-        
-        // Generate sale bill number
-        const billNumber = await this.generateBillNumber('sale');
-        
-        const sale = {
-            id: Helpers.generateId(),
-            billNumber,
-            items: saleItems,
-            total: salesTotal,
-            totalPackets: totalPackets,
-            onlinePayment: saleOnline,
-            cashPayment: saleCash,
-            dueAmount: saleDue,
-            customerName: saleCustomer,
-            comments: saleComments,
-            type: 'sale',
-            isPurchase: false,
-            date: new Date().toISOString(),
-            userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
-            userName: AppState.userName || 'User',
-            timestamp: Date.now(),
-            payment: {
-                online: saleOnline,
-                cash: saleCash,
-                due: saleDue,
-                total: saleOnline + saleCash + saleDue
-            }
-        };
-        
-        try {
-            UIManager.showLoading();
-            await FirebaseService.saveRetailSale(sale);
-            
-            // Audit log
-            await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
-                billNumber: sale.billNumber,
-                total: sale.total,
-                customerName: sale.customerName || 'N/A',
-                itemCount: sale.items.length,
-                source: 'billing-tab'
-            });
-            
-            // Update item frequency in database
-            await this.updateItemFrequency(saleItems, 'sale');
-            
-            // Stock will be automatically recalculated from sales
-            
-            // Clear sale
-            saleItems = [];
-            this.renderSalesBill();
-            
-            // Reset form
-            if (document.getElementById('saleCustomerName')) {
-                document.getElementById('saleCustomerName').value = '';
-            }
-            if (document.getElementById('saleOnlinePayment')) {
-                document.getElementById('saleOnlinePayment').value = '0';
-            }
-            if (document.getElementById('saleCashPayment')) {
-                document.getElementById('saleCashPayment').value = '0';
-            }
-            if (document.getElementById('saleDueAmount')) {
-                document.getElementById('saleDueAmount').value = '0';
-            }
-            if (document.getElementById('saleComments')) {
-                document.getElementById('saleComments').value = '';
-            }
-            if (document.getElementById('saleOnlineCheckbox')) {
-                document.getElementById('saleOnlineCheckbox').checked = false;
-            }
-            if (document.getElementById('saleCashCheckbox')) {
-                document.getElementById('saleCashCheckbox').checked = false;
-            }
-            if (document.getElementById('saleDueCheckbox')) {
-                document.getElementById('saleDueCheckbox').checked = false;
-            }
-            // Reset total received display
-            if (document.getElementById('totalReceived')) {
-                document.getElementById('totalReceived').textContent = '0';
-            }
-            
-            // Delete auto-save since sale is completed
-            await this.deleteAutoSave();
-            
-            UIManager.hideLoading();
-            UIManager.showToast('Sale completed successfully!');
-            UIManager.hapticFeedback('success');
-            
-            return sale; // Return saved sale for printing
-            
-        } catch (error) {
-            UIManager.hideLoading();
-            UIManager.showToast('Failed to complete sale: ' + error.message);
-            console.error('Complete sale error:', error);
-            throw error; // Re-throw to prevent printing on error
-        }
-    },
-    
-    // Contact picker helpers
-    async pickContact() {
-        await Helpers.pickContact('customerName');
-    },
-    
-    async pickSaleContact() {
-        await Helpers.pickContact('saleCustomerName');
-    },
-    
-    async shareWhatsApp() {
-        if (billItems.length === 0) {
-            UIManager.showToast('No items in bill');
-            return;
-        }
-        
-        const total = billItems.reduce((sum, item) => sum + item.total, 0);
-        const laborCharges = Helpers.getInputInt('manualLaborCharges');
-        const grandTotal = total + laborCharges;
-        const customer = Helpers.getInputText('customerName', 'Customer');
-        
-        let message = `*Purchase Bill*\n\n`;
-        message += `Customer: ${customer}\n`;
-        message += `Date: ${new Date().toLocaleDateString('en-IN')}\n\n`;
-        message += `*Items:*\n`;
-        
-        billItems.forEach(item => {
-            message += `${item.name}\n`;
-            message += `  Rate: ₹${item.rate.toFixed(2)} × ${item.qty.toFixed(2)}kg = ₹${item.total.toFixed(2)}\n`;
-        });
-        
-        message += `\n*Purchase Total: ₹${Math.round(total)}*\n`;
-        if (laborCharges > 0) {
-            message += `Labor Charges: ₹${Math.round(laborCharges)}\n`;
-            message += `*Total Payable: ₹${Math.round(grandTotal)}*`;
-        }
-        
-        const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    },
-    
-    async shareSaleWhatsApp() {
-        if (saleItems.length === 0) {
-            UIManager.showToast('No items in sale');
-            return;
-        }
-        
-        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const customer = document.getElementById('saleCustomerName')?.value || 'Customer';
-        
-        let message = `*Sale Bill*\n\n`;
-        message += `Customer: ${customer}\n`;
-        message += `Date: ${new Date().toLocaleDateString('en-IN')}\n\n`;
-        message += `*Items:*\n`;
-        
-        saleItems.forEach(item => {
-            message += `${item.name}\n`;
-            message += `  Rate: ₹${item.rate.toFixed(2)} × ${item.qty.toFixed(2)}kg = ₹${item.total.toFixed(2)}\n`;
-        });
-        
-        message += `\n*Total: ₹${Math.round(salesTotal)}*`;
-        
-        const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    },
-    
-    async printSale() {
-        if (saleItems.length === 0) {
-            UIManager.showToast('No items in sale');
-            return;
-        }
-        
-        try {
-            // Save the sale first and wait for it to complete
-            const savedSale = await this.completeSale();
-            
-            if (!savedSale) {
-                // Save failed or was cancelled
-                return;
-            }
-            
-            // Only print after successful save
-            await PrinterService.printBill(savedSale);
-            
-            UIManager.showToast('Sale saved and printed!');
-        } catch (error) {
-            console.error('Print sale error:', error);
-            UIManager.showToast('Error: ' + error.message);
-        }
-    },
-    
-    // Expose state for access
-    getBillItems() {
-        return billItems;
-    },
-    
-    getSaleItems() {
-        return saleItems;
-    },
-    
-    getWeights() {
-        return weights;
-    },
-    
-    getSaleWeights() {
-        return saleWeights;
     },
 
     // -------------------- DRAFT MANAGEMENT --------------------
-    
+
+    /**
+     * Save current bill as draft
+     * @async
+     */
     async saveDraft() {
         const mode = this.currentMode;
         
-        // Get current user from Firebase Auth
         const currentUser = firebase.auth().currentUser;
         if (!currentUser) {
             UIManager.showToast('Please login to save drafts');
@@ -1537,15 +375,19 @@ const BillingManager = {
         };
 
         if (mode === 'purchase') {
-            // Check for unsaved weight in input field
             const weightInput = document.getElementById('newWeight');
             const pendingWeight = parseFloat(weightInput?.value);
             if (pendingWeight && pendingWeight > 0) {
+                const weights = PurchaseManager.getWeights();
                 weights.push(pendingWeight);
+                PurchaseManager.setWeights(weights);
                 weightInput.value = '';
-                this.renderWeights();
+                PurchaseManager.renderWeights();
             }
 
+            const billItems = PurchaseManager.getBillItems();
+            const weights = PurchaseManager.getWeights();
+            
             if (billItems.length === 0 && weights.length === 0) {
                 UIManager.showToast('No items or weights to save as draft');
                 return;
@@ -1557,15 +399,19 @@ const BillingManager = {
             draft.comments = Helpers.getInputText('billComments');
             draft.billTotal = Helpers.getElementInt('billTotal');
         } else {
-            // Check for unsaved weight in input field
             const saleWeightInput = document.getElementById('saleWeight');
             const pendingSaleWeight = parseFloat(saleWeightInput?.value);
             if (pendingSaleWeight && pendingSaleWeight > 0) {
+                const saleWeights = RetailSaleManager.getSaleWeights();
                 saleWeights.push(pendingSaleWeight);
+                RetailSaleManager.setSaleWeights(saleWeights);
                 saleWeightInput.value = '';
-                this.renderSaleWeights();
+                RetailSaleManager.renderSaleWeights();
             }
 
+            const saleItems = RetailSaleManager.getSaleItems();
+            const saleWeights = RetailSaleManager.getSaleWeights();
+            
             if (saleItems.length === 0 && saleWeights.length === 0) {
                 UIManager.showToast('No items or weights to save as draft');
                 return;
@@ -1578,14 +424,12 @@ const BillingManager = {
         }
 
         try {
-            // Save to Firestore
             await db.collection('drafts').doc(draft.id).set(draft);
             
             UIManager.showToast('✓ Draft saved to cloud!');
             UIManager.hapticFeedback('light');
             await this.updateDraftCount();
 
-            // Clear current bill
             this.clearBill();
         } catch (error) {
             console.error('Failed to save draft:', error);
@@ -1593,39 +437,22 @@ const BillingManager = {
         }
     },
 
+    /**
+     * Clear current bill
+     */
     clearBill() {
         if (this.currentMode === 'purchase') {
-            billItems = [];
-            weights = [];
-            this.renderBill();
-            this.renderWeights();
-            document.getElementById('customerName').value = '';
-            document.getElementById('manualLaborCharges').value = '0';
-            document.getElementById('billComments').value = '';
-            document.getElementById('onlinePayment').value = '';
-            document.getElementById('cashPayment').value = '';
-            document.getElementById('dueAmount').value = '';
-            document.getElementById('onlineCheckbox').checked = false;
-            document.getElementById('cashCheckbox').checked = false;
-            document.getElementById('dueCheckbox').checked = false;
+            PurchaseManager.clearBill();
         } else {
-            saleItems = [];
-            saleWeights = [];
-            this.renderSalesBill();
-            this.renderSaleWeights();
-            document.getElementById('saleCustomerName').value = '';
-            document.getElementById('saleComments').value = '';
-            document.getElementById('saleOnlinePayment').value = '';
-            document.getElementById('saleCashPayment').value = '';
-            document.getElementById('saleDueAmount').value = '';
-            document.getElementById('saleOnlineCheckbox').checked = false;
-            document.getElementById('saleCashCheckbox').checked = false;
-            document.getElementById('saleDueCheckbox').checked = false;
+            RetailSaleManager.clearSale();
         }
-        this.updateTotals();
-        this.deleteAutoSave(); // Delete auto-save when clearing bill
+        this.deleteAutoSave();
     },
 
+    /**
+     * Show drafts overlay
+     * @async
+     */
     async showDrafts() {
         const overlay = document.getElementById('draftsOverlay');
         const content = document.getElementById('draftsContent');
@@ -1638,12 +465,10 @@ const BillingManager = {
                 return;
             }
 
-            // Load drafts from Firestore
             const snapshot = await db.collection('drafts')
                 .where('userId', '==', currentUser.uid)
                 .get();
             
-            // Sort in memory instead of using orderBy to avoid index requirement
             const drafts = snapshot.docs
                 .map(doc => ({ id: doc.id, ...doc.data() }))
                 .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -1679,13 +504,20 @@ const BillingManager = {
         }
     },
 
+    /**
+     * Close drafts overlay
+     */
     closeDrafts() {
         document.getElementById('draftsOverlay').classList.remove('active');
     },
 
+    /**
+     * Load a draft
+     * @async
+     * @param {string} draftId - Draft ID to load
+     */
     async loadDraft(draftId) {
         try {
-            // Load draft from Firestore
             const draftDoc = await db.collection('drafts').doc(draftId).get();
             
             if (!draftDoc.exists) {
@@ -1695,30 +527,28 @@ const BillingManager = {
 
             const draft = draftDoc.data();
 
-            // Switch to correct mode
             this.switchMode(draft.mode);
 
             if (draft.mode === 'purchase') {
-                billItems = draft.items || [];
-                weights = draft.weights || [];
-                this.renderBill();
-                this.renderWeights();
+                PurchaseManager.setBillItems(draft.items || []);
+                PurchaseManager.setWeights(draft.weights || []);
+                PurchaseManager.renderBill();
+                PurchaseManager.renderWeights();
                 if (draft.customerName) document.getElementById('customerName').value = draft.customerName;
                 if (draft.laborCharges) document.getElementById('manualLaborCharges').value = draft.laborCharges;
                 if (draft.comments) document.getElementById('billComments').value = draft.comments;
             } else {
-                saleItems = draft.items || [];
-                saleWeights = draft.weights || [];
-                this.renderSalesBill();
-                this.renderSaleWeights();
+                RetailSaleManager.setSaleItems(draft.items || []);
+                RetailSaleManager.setSaleWeights(draft.weights || []);
+                RetailSaleManager.renderSalesBill();
+                RetailSaleManager.renderSaleWeights();
                 if (draft.customerName) document.getElementById('saleCustomerName').value = draft.customerName;
                 if (draft.comments) document.getElementById('saleComments').value = draft.comments;
             }
 
-            this.updateTotals();
+            PurchaseManager.updateTotals();
             this.closeDrafts();
 
-            // Delete the draft after loading
             await db.collection('drafts').doc(draftId).delete();
             await this.updateDraftCount();
 
@@ -1730,11 +560,16 @@ const BillingManager = {
         }
     },
 
+    /**
+     * Delete a draft
+     * @async
+     * @param {string} draftId - Draft ID to delete
+     */
     async deleteDraft(draftId) {
         try {
             await db.collection('drafts').doc(draftId).delete();
             await this.updateDraftCount();
-            await this.showDrafts(); // Refresh the list
+            await this.showDrafts();
             UIManager.showToast('Draft deleted');
         } catch (error) {
             console.error('Failed to delete draft:', error);
@@ -1742,6 +577,10 @@ const BillingManager = {
         }
     },
 
+    /**
+     * Update draft count display
+     * @async
+     */
     async updateDraftCount() {
         try {
             const currentUser = firebase.auth().currentUser;
@@ -1760,32 +599,41 @@ const BillingManager = {
         }
     },
 
-    // -------------------- AUTO-SAVE TO CLOUD --------------------
+    // -------------------- AUTO-SAVE --------------------
 
+    /**
+     * Trigger auto-save timer
+     */
     triggerAutoSave() {
         if (!this.autoSaveEnabled) return;
         
-        // Clear existing timer
         if (autoSaveTimer) {
             clearTimeout(autoSaveTimer);
         }
         
-        // Set new timer
         autoSaveTimer = setTimeout(() => {
             this.autoSaveToCloud();
         }, AUTO_SAVE_DELAY);
     },
 
+    /**
+     * Auto-save to cloud
+     * @async
+     */
     async autoSaveToCloud() {
         try {
             if (!AppState.currentUser) return;
             
             const mode = this.currentMode;
+            const billItems = PurchaseManager.getBillItems();
+            const weights = PurchaseManager.getWeights();
+            const saleItems = RetailSaleManager.getSaleItems();
+            const saleWeights = RetailSaleManager.getSaleWeights();
+            
             const hasPurchaseData = billItems.length > 0 || weights.length > 0 || document.getElementById('newWeight')?.value;
             const hasSaleData = saleItems.length > 0 || saleWeights.length > 0 || document.getElementById('saleWeight')?.value;
             
             if (!hasPurchaseData && !hasSaleData) {
-                // No data to save, delete any existing auto-save
                 await this.deleteAutoSave();
                 return;
             }
@@ -1793,12 +641,11 @@ const BillingManager = {
             const autoSaveData = {
                 userId: AppState.currentUser.uid,
                 userName: AppState.userName,
-                mode: mode, // Current active mode
+                mode: mode,
                 lastSaved: firebase.firestore.FieldValue.serverTimestamp(),
                 deviceInfo: navigator.userAgent
             };
 
-            // Save purchase data (regardless of current mode)
             autoSaveData.purchase = {
                 items: billItems,
                 weights: weights,
@@ -1811,7 +658,6 @@ const BillingManager = {
                 billTotal: Helpers.getElementInt('billTotal')
             };
 
-            // Save sale data (regardless of current mode)
             autoSaveData.sale = {
                 items: saleItems,
                 weights: saleWeights,
@@ -1823,7 +669,6 @@ const BillingManager = {
                 saleTotal: Helpers.getElementInt('saleTotal')
             };
 
-            // Save to Firestore with user's UID as document ID
             await db.collection('autoSaves').doc(AppState.currentUser.uid).set(autoSaveData);
             
         } catch (error) {
@@ -1831,18 +676,25 @@ const BillingManager = {
         }
     },
 
+    /**
+     * Delete auto-save
+     * @async
+     */
     async deleteAutoSave() {
         try {
             if (!AppState.currentUser) return;
             await db.collection('autoSaves').doc(AppState.currentUser.uid).delete();
         } catch (error) {
-            // Ignore error if document doesn't exist
             if (error.code !== 'not-found') {
                 console.error('Failed to delete auto-save:', error);
             }
         }
     },
 
+    /**
+     * Check for auto-save on load
+     * @async
+     */
     async checkAutoSave() {
         try {
             if (!AppState.currentUser) return;
@@ -1853,7 +705,6 @@ const BillingManager = {
             
             const autoSaveData = autoSaveDoc.data();
             
-            // Show recovery prompt
             const shouldRecover = confirm(
                 `Found an unsaved ${autoSaveData.mode === 'purchase' ? 'purchase' : 'sale'} bill from ${autoSaveData.lastSaved ? new Date(autoSaveData.lastSaved.toDate()).toLocaleString('en-IN') : 'earlier'}.\n\nDo you want to recover it?`
             );
@@ -1861,7 +712,6 @@ const BillingManager = {
             if (shouldRecover) {
                 await this.recoverAutoSave(autoSaveData);
             } else {
-                // User declined, delete the auto-save
                 await this.deleteAutoSave();
             }
         } catch (error) {
@@ -1869,9 +719,13 @@ const BillingManager = {
         }
     },
 
+    /**
+     * Recover auto-saved data
+     * @async
+     * @param {Object} autoSaveData - Auto-save data to recover
+     */
     async recoverAutoSave(autoSaveData) {
         try {
-            // Switch to the last active mode FIRST
             if (autoSaveData.mode !== this.currentMode) {
                 const modeBtn = autoSaveData.mode === 'purchase' 
                     ? document.getElementById('purchaseModeBtn')
@@ -1881,66 +735,48 @@ const BillingManager = {
                 }
             }
             
-            // Small delay to ensure DOM is ready after mode switch
             await new Promise(resolve => setTimeout(resolve, 50));
-            
-            // Restore BOTH purchase and sale data (support both old and new format)
             
             // Restore purchase data
             const purchaseData = autoSaveData.purchase || (autoSaveData.mode === 'purchase' ? autoSaveData : {});
             if (purchaseData.items || purchaseData.weights || purchaseData.selectedItem || purchaseData.rate) {
-                billItems = purchaseData.items || [];
-                weights = purchaseData.weights || [];
+                PurchaseManager.setBillItems(purchaseData.items || []);
+                PurchaseManager.setWeights(purchaseData.weights || []);
                 
-                // Restore item selection first
                 if (purchaseData.selectedItem) {
                     const itemSelect = document.getElementById('billItem');
                     if (itemSelect) {
                         itemSelect.value = purchaseData.selectedItem;
-                        this.loadRates(); // Reload rates for selected item
+                        this.loadRates();
                     }
                 }
                 
-                // Then restore rate (after a small delay to ensure dropdown is loaded)
                 setTimeout(() => {
                     if (purchaseData.rate) {
                         const rateInput = document.getElementById('billRate');
-                        if (rateInput) {
-                            rateInput.value = purchaseData.rate;
-                        }
+                        if (rateInput) rateInput.value = purchaseData.rate;
                     }
                 }, 100);
                 
-                // Restore typed weight
                 if (purchaseData.typedWeight) {
                     const weightInput = document.getElementById('newWeight');
-                    if (weightInput) {
-                        weightInput.value = purchaseData.typedWeight;
-                    }
+                    if (weightInput) weightInput.value = purchaseData.typedWeight;
                 }
                 
-                if (purchaseData.customerName) {
-                    document.getElementById('customerName').value = purchaseData.customerName;
-                }
-                if (purchaseData.laborCharges) {
-                    document.getElementById('manualLaborCharges').value = purchaseData.laborCharges;
-                }
-                if (purchaseData.comments) {
-                    document.getElementById('billComments').value = purchaseData.comments;
-                }
+                if (purchaseData.customerName) document.getElementById('customerName').value = purchaseData.customerName;
+                if (purchaseData.laborCharges) document.getElementById('manualLaborCharges').value = purchaseData.laborCharges;
+                if (purchaseData.comments) document.getElementById('billComments').value = purchaseData.comments;
                 
-                // Render purchase data
-                this.renderBill();
-                this.renderWeights();
+                PurchaseManager.renderBill();
+                PurchaseManager.renderWeights();
             }
 
             // Restore sale data
             const saleData = autoSaveData.sale || (autoSaveData.mode === 'sale' ? autoSaveData : {});
             if (saleData.items || saleData.weights || saleData.selectedItem || saleData.rate) {
-                saleItems = saleData.items || [];
-                saleWeights = saleData.weights || [];
+                RetailSaleManager.setSaleItems(saleData.items || []);
+                RetailSaleManager.setSaleWeights(saleData.weights || []);
                 
-                // Restore item selection first
                 if (saleData.selectedItem) {
                     const saleItemSelect = document.getElementById('saleItem');
                     if (saleItemSelect) {
@@ -1949,34 +785,23 @@ const BillingManager = {
                     }
                 }
                 
-                // Restore rate (after a small delay to ensure dropdown is loaded)
                 setTimeout(() => {
                     if (saleData.rate) {
                         const saleRateInput = document.getElementById('saleRate');
-                        if (saleRateInput) {
-                            saleRateInput.value = saleData.rate;
-                        }
+                        if (saleRateInput) saleRateInput.value = saleData.rate;
                     }
                 }, 100);
                 
-                // Restore typed weight
                 if (saleData.typedWeight) {
                     const saleWeightInput = document.getElementById('saleWeight');
-                    if (saleWeightInput) {
-                        saleWeightInput.value = saleData.typedWeight;
-                    }
+                    if (saleWeightInput) saleWeightInput.value = saleData.typedWeight;
                 }
                 
-                if (saleData.customerName) {
-                    document.getElementById('saleCustomerName').value = saleData.customerName;
-                }
-                if (saleData.comments) {
-                    document.getElementById('saleComments').value = saleData.comments;
-                }
+                if (saleData.customerName) document.getElementById('saleCustomerName').value = saleData.customerName;
+                if (saleData.comments) document.getElementById('saleComments').value = saleData.comments;
                 
-                // Render sale data
-                this.renderSalesBill();
-                this.renderSaleWeights();
+                RetailSaleManager.renderSalesBill();
+                RetailSaleManager.renderSaleWeights();
             }
 
             UIManager.showToast('✓ Bill recovered successfully!');
@@ -1989,10 +814,15 @@ const BillingManager = {
     },
 
     // -------------------- EDIT BILL --------------------
-    
+
+    /**
+     * Edit an existing bill
+     * @async
+     * @param {number} billIndex - Index of bill in history
+     * @param {'purchase'|'sale'} billType - Type of bill
+     */
     async editBill(billIndex, billType = 'purchase') {
         try {
-            // Get bill from correct history based on type
             const history = billType === 'sale' ? AppState.retailSalesHistory : AppState.purchaseHistory;
             const bill = history[billIndex];
             if (!bill) {
@@ -2000,41 +830,27 @@ const BillingManager = {
                 return;
             }
 
-            // Store the bill being edited
             this.editingBillIndex = billIndex;
             this.editingBillId = bill.id;
             this.editingBillType = billType;
 
-            // Switch to appropriate mode
             const mode = billType === 'sale' ? 'sale' : 'purchase';
             if (this.currentMode !== mode) {
                 const btn = mode === 'sale' ? document.getElementById('saleModeBtn') : document.getElementById('purchaseModeBtn');
                 this.switchMode(mode, { currentTarget: btn });
             }
 
-            // Close the bill details modal
             const overlay = document.getElementById('billDetailsOverlay');
             if (overlay) overlay.classList.remove('active');
 
-            // Load bill data into form
             if (mode === 'purchase') {
-                billItems = bill.items.map(item => ({ ...item }));
-                weights = [];
+                PurchaseManager.setBillItems(bill.items.map(item => ({ ...item })));
+                PurchaseManager.setWeights([]);
                 
-                // Load customer details
-                if (bill.customerName) {
-                    document.getElementById('customerName').value = bill.customerName;
-                }
-                if (bill.comments) {
-                    document.getElementById('billComments').value = bill.comments;
-                }
+                if (bill.customerName) document.getElementById('customerName').value = bill.customerName;
+                if (bill.comments) document.getElementById('billComments').value = bill.comments;
+                if (bill.laborCharges) document.getElementById('manualLaborCharges').value = bill.laborCharges;
                 
-                // Load labor charges
-                if (bill.laborCharges) {
-                    document.getElementById('manualLaborCharges').value = bill.laborCharges;
-                }
-                
-                // Load payment details
                 if (bill.payment) {
                     if (bill.payment.online > 0) {
                         document.getElementById('onlinePayment').value = bill.payment.online;
@@ -2050,24 +866,17 @@ const BillingManager = {
                     }
                 }
                 
-                this.renderBill();
-                this.updateTotals();
+                PurchaseManager.renderBill();
+                PurchaseManager.updateTotals();
                 
-                // Navigate to billing tab
                 window.app.nav.showTab('billing');
-                
                 UIManager.showToast('✏️ Editing bill - modify and save');
             } else {
-                // Sale mode
-                saleItems = bill.items.map(item => ({ ...item }));
-                saleWeights = [];
+                RetailSaleManager.setSaleItems(bill.items.map(item => ({ ...item })));
+                RetailSaleManager.setSaleWeights([]);
                 
-                if (bill.customerName) {
-                    document.getElementById('saleCustomerName').value = bill.customerName;
-                }
-                if (bill.comments) {
-                    document.getElementById('saleComments').value = bill.comments;
-                }
+                if (bill.customerName) document.getElementById('saleCustomerName').value = bill.customerName;
+                if (bill.comments) document.getElementById('saleComments').value = bill.comments;
                 
                 if (bill.payment) {
                     if (bill.payment.online > 0) {
@@ -2084,11 +893,10 @@ const BillingManager = {
                     }
                 }
                 
-                this.renderSalesBill();
-                this.updateSaleTotals();
+                RetailSaleManager.renderSalesBill();
+                RetailSaleManager.updateSaleTotals();
                 
                 window.app.nav.showTab('billing');
-                
                 UIManager.showToast('✏️ Editing sale - modify and save');
             }
             
@@ -2098,17 +906,20 @@ const BillingManager = {
         }
     },
 
+    /**
+     * Save edited bill
+     * @async
+     * @returns {Promise<Object>} Updated bill
+     */
     async saveEditedBill() {
         try {
             if (this.editingBillIndex === undefined) {
-                // Not in edit mode, proceed with normal save
-                return this.currentMode === 'purchase' ? this.saveBillToHistory() : this.completeSale();
+                return this.currentMode === 'purchase' ? PurchaseManager.saveBillToHistory() : RetailSaleManager.completeSale();
             }
 
             const billIndex = this.editingBillIndex;
             const billType = this.editingBillType || 'purchase';
             
-            // Get bill from correct history based on type
             const history = billType === 'sale' ? AppState.retailSalesHistory : AppState.purchaseHistory;
             const bill = history[billIndex];
             
@@ -2118,7 +929,7 @@ const BillingManager = {
             }
 
             if (this.currentMode === 'purchase') {
-                // Update purchase bill
+                const billItems = PurchaseManager.getBillItems();
                 const billTotal = Helpers.getElementInt('billTotal');
                 const laborCharges = Helpers.getInputInt('manualLaborCharges');
                 const totalPackets = Helpers.getElementInt('totalPacketsInBill');
@@ -2159,38 +970,32 @@ const BillingManager = {
                 await FirebaseService.updatePurchase(updatedBill);
                 AppState.purchaseHistory[billIndex] = updatedBill;
                 
-                // Log audit entry for edit
                 await AuditService.log(AuditService.ACTIONS.EDIT_BILL, {
                     billNumber: updatedBill.billNumber || 'N/A',
                     amount: billTotal,
-                    supplier: supplierName
+                    supplier: customerName
                 });
                 
-                // Recalculate stock after edit
                 AppState.stock = await FirebaseService.calculateStock();
                 
-                // Update finance overview
                 if (typeof window.app.finance?.calculateOverview === 'function') {
                     window.app.finance.calculateOverview();
                 }
                 
-                // Update outstanding payments
                 if (typeof window.app.outstanding?.renderDue === 'function') {
                     window.app.outstanding.renderDue();
                 }
                 
                 UIManager.showToast('✓ Bill updated successfully!');
                 
-                // Clear editing state and form before returning
                 this.editingBillIndex = undefined;
                 this.editingBillId = undefined;
                 this.editingBillType = undefined;
-                this.clearBill();
+                PurchaseManager.clearBill();
                 
-                // Return updated bill for printing
                 return updatedBill;
             } else {
-                // Update sale
+                const saleItems = RetailSaleManager.getSaleItems();
                 const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
                 const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
                 const saleOnline = Helpers.getInputInt('saleOnlinePayment');
@@ -2220,54 +1025,89 @@ const BillingManager = {
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
                 };
 
-                await FirebaseService.updateSale(updatedSale);
-                const saleIndex = AppState.salesHistory.findIndex(s => s.id === bill.id);
+                await FirebaseService.updateRetailSale(updatedSale);
+                const saleIndex = AppState.retailSalesHistory.findIndex(s => s.id === bill.id);
                 if (saleIndex !== -1) {
-                    AppState.salesHistory[saleIndex] = updatedSale;
+                    AppState.retailSalesHistory[saleIndex] = updatedSale;
                 }
                 
-                // Log audit entry for edit
                 await AuditService.log(AuditService.ACTIONS.EDIT_SALE, {
                     billNumber: updatedSale.billNumber || 'N/A',
                     amount: salesTotal,
                     customer: saleCustomer
                 });
                 
-                // Recalculate stock after edit
                 AppState.stock = await FirebaseService.calculateStock();
                 
-                // Update finance overview
                 if (typeof window.app.finance?.calculateOverview === 'function') {
                     window.app.finance.calculateOverview();
                 }
                 
-                // Update outstanding payments
                 if (typeof window.app.outstanding?.renderDue === 'function') {
                     window.app.outstanding.renderDue();
                 }
                 
                 UIManager.showToast('✓ Sale updated successfully!');
                 
-                // Clear editing state and form before returning
                 this.editingBillIndex = undefined;
                 this.editingBillId = undefined;
                 this.editingBillType = undefined;
-                this.clearBill();
+                RetailSaleManager.clearSale();
                 
-                // Return updated sale for printing
                 return updatedSale;
             }
-
-            // Navigate to history (this will only be reached if not printing)
-            window.app.nav.showTab('history');
-            window.app.history.render();
             
         } catch (error) {
             console.error('Failed to update bill:', error);
             UIManager.showToast('Failed to update bill: ' + error.message);
-            throw error; // Re-throw to prevent printing on error
+            throw error;
         }
-    }
+    },
+
+    // -------------------- DELEGATE METHODS --------------------
+    // These methods delegate to the appropriate manager for backward compatibility
+
+    // Purchase delegates
+    addWeight: (autoAdd) => PurchaseManager.addWeight(autoAdd),
+    renderWeights: () => PurchaseManager.renderWeights(),
+    removeWeight: (index) => PurchaseManager.removeWeight(index),
+    clearWeights: () => PurchaseManager.clearWeights(),
+    addToBill: (autoAdd) => PurchaseManager.addToBill(autoAdd),
+    renderBill: () => PurchaseManager.renderBill(),
+    deleteBillItem: (index) => PurchaseManager.deleteBillItem(index),
+    editBillItem: (index) => PurchaseManager.editBillItem(index),
+    updateTotals: (heavy) => PurchaseManager.updateTotals(heavy),
+    updatePaymentTotal: () => PurchaseManager.updatePaymentTotal(),
+    fillPayableAmount: (type) => PurchaseManager.fillPayableAmount(type),
+    saveBillToHistory: () => PurchaseManager.saveBillToHistory(),
+    shareWhatsApp: () => PurchaseManager.shareWhatsApp(),
+    pickContact: () => Helpers.pickContact('customerName'),
+    getBillItems: () => PurchaseManager.getBillItems(),
+    getWeights: () => PurchaseManager.getWeights(),
+
+    // Retail sale delegates  
+    addSaleWeight: (autoAdd) => RetailSaleManager.addSaleWeight(autoAdd),
+    renderSaleWeights: () => RetailSaleManager.renderSaleWeights(),
+    removeSaleWeight: (index) => RetailSaleManager.removeSaleWeight(index),
+    clearSaleWeights: () => RetailSaleManager.clearSaleWeights(),
+    addToSalesBill: (autoAdd) => RetailSaleManager.addToSalesBill(autoAdd),
+    renderSalesBill: () => RetailSaleManager.renderSalesBill(),
+    removeSalesItem: (index) => RetailSaleManager.removeSaleItem(index),
+    removeSaleItem: (index) => RetailSaleManager.removeSaleItem(index),
+    editSaleItem: (index) => RetailSaleManager.editSaleItem(index),
+    updateSaleTotals: () => RetailSaleManager.updateSaleTotals(),
+    updateSaleRunningTotal: () => RetailSaleManager.updateSaleRunningTotal(),
+    updateSalePaymentTotal: () => RetailSaleManager.updateSalePaymentTotal(),
+    fillReceivableAmount: (type) => RetailSaleManager.fillReceivableAmount(type),
+    fillSalePayableAmount: (type) => RetailSaleManager.fillReceivableAmount(type),
+    completeSale: () => RetailSaleManager.completeSale(),
+    shareSaleWhatsApp: () => RetailSaleManager.shareSaleWhatsApp(),
+    printSale: () => RetailSaleManager.printSale(),
+    pickSaleContact: () => RetailSaleManager.pickSaleContact(),
+    getSaleItems: () => RetailSaleManager.getSaleItems(),
+    getSaleWeights: () => RetailSaleManager.getSaleWeights()
 };
 
-export { BillingManager };
+// Note: BillingManager.init() is called from main.js after all modules are loaded
+
+export { BillingManager, PurchaseManager, RetailSaleManager };
