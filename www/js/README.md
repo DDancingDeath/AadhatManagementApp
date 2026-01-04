@@ -1,249 +1,104 @@
 # Modular Code Structure
 
 ## Overview
-The application has been refactored into a modular structure for better maintainability, scalability, and code organization.
+The application uses ES6 modules with a clean separation of concerns for maintainability and scalability.
 
 ## Directory Structure
 
 ```
-www/
-├── js/
-│   ├── utils/
-│   │   ├── constants.js      # Application constants
-│   │   ├── state.js          # Global application state
-│   │   └── helpers.js        # Utility helper functions
-│   ├── ui/
-│   │   ├── ui-manager.js     # UI utilities (loading, toast, modal, haptic)
-│   │   └── navigation.js     # Navigation and tab management
-│   ├── auth/
-│   │   └── authentication.js # Login, register, logout, role management
-│   ├── firebase/
-│   │   └── firestore-service.js # Firestore CRUD operations
-│   ├── modules/
-│   │   ├── items.js          # Items and rates management
-│   │   ├── billing.js        # Purchase billing (TO BE CREATED)
-│   │   ├── sales.js          # Sales management (TO BE CREATED)
-│   │   ├── stock.js          # Stock tracking (TO BE CREATED)
-│   │   ├── payments.js       # Payments and expenses (TO BE CREATED)
-│   │   ├── reports.js        # Reports and analytics (TO BE CREATED)
-│   │   ├── finance.js        # Finance and accounting (TO BE CREATED)
-│   │   └── users.js          # User management (TO BE CREATED)
-│   ├── services/
-│   │   └── printer.js        # Bluetooth printer service
-│   └── main.js               # Application initialization
-├── script.js                 # LEGACY FILE (to be phased out)
-├── index.html                # Main HTML file
-└── styles.css                # Styles
-
+www/js/
+├── utils/
+│   ├── constants.js          # App constants (time delays, ESC/POS commands)
+│   ├── state.js              # Global application state (AppState)
+│   ├── helpers.js            # Utility functions (escapeHtml, debounce, formatDate, etc.)
+│   └── template-loader.js    # Dynamic HTML template loading
+├── ui/
+│   ├── ui-manager.js         # UI utilities (loading, toast, modal, haptic)
+│   └── navigation.js         # Tab navigation and menu management
+├── auth/
+│   └── authentication.js     # Login, register, logout, role management
+├── firebase/
+│   └── firestore-service.js  # Firestore CRUD operations
+├── modules/
+│   ├── analytics.js          # Usage analytics and charts
+│   ├── billing.js            # Purchase bill creation (weights, labour)
+│   ├── cash-management.js    # Session-based cash tracking
+│   ├── configure.js          # App configuration
+│   ├── datefilter.js         # Date range filtering
+│   ├── finance.js            # Financial overview and profit/loss
+│   ├── history.js            # Bill history and editing
+│   ├── items.js              # Items and rates management
+│   ├── miscellaneous.js      # Expenses and withdrawals
+│   ├── outstanding.js        # Outstanding payments tracking
+│   ├── reports.js            # Reports generation
+│   ├── retail-sales.js       # Retail sales functionality
+│   ├── sales.js              # Wholesale sales management
+│   ├── settings.js           # App settings, audit logs, storage stats
+│   ├── stock.js              # Stock tracking and adjustments
+│   └── users.js              # User management and roles
+├── services/
+│   ├── audit.js              # Audit logging (90-day retention)
+│   └── printer.js            # Bluetooth thermal printer (ESC/POS)
+└── main.js                   # Application initialization
 ```
 
 ## Module Descriptions
 
-### Core Modules
+### Utils
 
-#### **utils/constants.js**
-- Defines application-wide constants
-- ESC/POS commands for printer
-- Default settings, transaction modes, filter types, user roles
+| Module | Description |
+|--------|-------------|
+| `constants.js` | Time constants, ESC/POS printer commands |
+| `state.js` | Central AppState object for all global data |
+| `helpers.js` | `escapeHtml()`, `debounce()`, `formatDate()`, `formatCurrency()`, `generateId()`, `pickContact()` |
+| `template-loader.js` | Dynamically loads HTML templates |
 
-#### **utils/state.js**
-- Central application state management
-- Contains all global variables (items, bills, sales, etc.)
-- Accessible via `window.AppState`
+### UI
 
-#### **utils/helpers.js**
-- Utility functions used across the app
-- `escapeHtml()`, `debounce()`, `formatDate()`, `formatCurrency()`, `generateId()`
-
-### UI Modules
-
-#### **ui/ui-manager.js**
-- All UI-related utilities
-- Loading overlay, toast notifications, modal dialogs
-- Haptic feedback for mobile
-- Accessible via `window.UIManager`
-
-#### **ui/navigation.js**
-- Side navigation menu management
-- Tab switching and navigation
-- Accessible via `window.NavigationManager`
-
-### Authentication
-
-#### **auth/authentication.js**
-- User login, registration, and logout
-- Role-based access control
-- User display and restrictions
-- Accessible via `window.AuthManager`
-
-### Firebase
-
-#### **firestore-service.js**
-- All Firestore database operations
-- CRUD operations for items, bills, sales, payments, etc.
-- Real-time listeners setup
-- Accessible via `window.FirebaseService`
-
-### Business Logic Modules
-
-#### **modules/items.js**
-- Item and rate management
-- Add, edit, delete items
-- Purchase and sale rates
-- Excel import/export
-- Accessible via `window.ItemsManager`
-
-#### **modules/billing.js** (TO BE CREATED)
-- Purchase bill creation
-- Weight management
-- Labour charges calculation
-- Bill saving and printing
-
-#### **modules/sales.js** (TO BE CREATED)
-- Sales bill creation
-- Stock deduction
-- Customer management
-- Sales history
-
-#### **modules/stock.js** (TO BE CREATED)
-- Stock tracking and display
-- Stock adjustments
-- Low stock alerts
-- Stock calculations
-
-#### **modules/payments.js** (TO BE CREATED)
-- Payment recording
-- Business and personal expenses
-- Payment history
-- Withdrawal management
-
-#### **modules/reports.js** (TO BE CREATED)
-- Report generation
-- Date filtering
-- Item-wise reports
-- Purchase/sales analytics
-
-#### **modules/finance.js** (TO BE CREATED)
-- Financial overview
-- Profit/loss calculations
-- Monthly charts
-- Account breakdown
-
-#### **modules/users.js** (TO BE CREATED)
-- User approval/rejection
-- Role management
-- User listing
+| Module | Description |
+|--------|-------------|
+| `ui-manager.js` | `showLoading()`, `showToast()`, `showModal()`, haptic feedback |
+| `navigation.js` | Tab switching, side menu, navigation state |
 
 ### Services
 
-#### **services/printer.js**
-- Bluetooth printer connection
-- ESC/POS command generation
-- Print bill functionality
-- Accessible via `window.PrinterService`
+| Module | Description |
+|--------|-------------|
+| `audit.js` | `AuditService.log()`, `cleanupOldLogs()`, `getRecentLogs()` - 90-day retention |
+| `printer.js` | Bluetooth printer connection, ESC/POS bill formatting |
 
-### Main Entry Point
+### Business Modules
 
-#### **main.js**
-- Application initialization
-- Firebase auth listener
-- Data loading coordination
-- Event listener setup
+| Module | Description |
+|--------|-------------|
+| `billing.js` | Purchase bills with weights, multiple rates, labour charges |
+| `sales.js` | Wholesale sales with stock deduction |
+| `retail-sales.js` | Retail point-of-sale |
+| `items.js` | Item CRUD, purchase/sale/wholesale rates |
+| `stock.js` | Stock levels, adjustments, history |
+| `history.js` | Bill history, view/edit/delete bills |
+| `cash-management.js` | Cash session sign-in/out, balance tracking |
+| `outstanding.js` | Customer/supplier outstanding amounts |
+| `finance.js` | Profit/loss, financial overview |
+| `reports.js` | Analytics, date-filtered reports |
+| `miscellaneous.js` | Expenses, withdrawals |
+| `settings.js` | App settings, audit log viewer, storage stats |
+| `users.js` | User approval, role management (owner only) |
 
-## Loading Order in HTML
+## Global Exports
 
-The scripts must be loaded in this specific order:
+All modules export to `window.app` namespace for HTML onclick handlers:
 
-```html
-<!-- 1. External Libraries -->
-<script src="firebaseConfig.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-<!-- 2. Utilities (no dependencies) -->
-<script src="js/utils/constants.js"></script>
-<script src="js/utils/state.js"></script>
-<script src="js/utils/helpers.js"></script>
-
-<!-- 3. UI Layer (depends on state) -->
-<script src="js/ui/ui-manager.js"></script>
-<script src="js/ui/navigation.js"></script>
-
-<!-- 4. Services (depends on utilities) -->
-<script src="js/firebase/firestore-service.js"></script>
-<script src="js/services/printer.js"></script>
-
-<!-- 5. Authentication (depends on firebase and UI) -->
-<script src="js/auth/authentication.js"></script>
-
-<!-- 6. Business Logic Modules (depends on all above) -->
-<script src="js/modules/items.js"></script>
-<script src="js/modules/billing.js"></script>
-<script src="js/modules/sales.js"></script>
-<script src="js/modules/stock.js"></script>
-<script src="js/modules/payments.js"></script>
-<script src="js/modules/reports.js"></script>
-<script src="js/modules/finance.js"></script>
-<script src="js/modules/users.js"></script>
-
-<!-- 7. Main initialization (last) -->
-<script src="js/main.js"></script>
-```
-
-## Migration Status
-
-### ✅ Completed
-- Directory structure created
-- Constants and state management
-- UI utilities (loading, toast, modal, haptic)
-- Navigation and tab management
-- Authentication module
-- Firebase service
-- Items management
-- Printer service
-- Main initialization
-
-### 🔄 Remaining (Still in script.js)
-- Billing module (purchase bills, weights, labour)
-- Sales module (sales bills, customer management)
-- Stock module (stock tracking, adjustments)
-- Payments module (payments, expenses, withdrawals)
-- Reports module (analytics, charts, filters)
-- Finance module (profit/loss, account breakdown)
-- Users module (user approval, role changes)
-- Chat/Chatbot functionality
-- WhatsApp integration
-- Contact picker
-- Various render functions
-
-## Backward Compatibility
-
-All modules export their functions to `window` for backward compatibility with the existing HTML. This allows the transition to be gradual.
-
-Example:
 ```javascript
-// Module function
-ItemsManager.renderItems()
-
-// Also available as global function
-window.renderItems()
+window.app = {
+    items: ItemsManager,
+    billing: BillingManager,
+    sales: SalesManager,
+    stock: StockManager,
+    // ... etc
+};
 ```
 
-## Next Steps
+## Loading
 
-1. Create remaining module files (billing, sales, stock, etc.)
-2. Update index.html to include all module scripts
-3. Test thoroughly to ensure all functionality works
-4. Gradually remove backward compatibility exports
-5. Update HTML to use module references directly
-6. Eventually deprecate the old script.js file
-
-## Benefits
-
-✅ **Better Organization**: Related code grouped together
-✅ **Easier Maintenance**: Find and update code quickly  
-✅ **Reusability**: Modules can be reused across projects
-✅ **Testability**: Individual modules can be tested separately
-✅ **Scalability**: Easy to add new features
-✅ **Team Collaboration**: Multiple developers can work on different modules
-✅ **Performance**: Load only required modules (future optimization)
+Modules are loaded via ES6 imports in `main.js`. The app initializes on `DOMContentLoaded`.
