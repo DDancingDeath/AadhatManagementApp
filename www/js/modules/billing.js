@@ -5,8 +5,8 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
-import { formatCurrency, debounce, generateId, pickContact } from '../utils/helpers.js';
-import { DEFAULT_SETTINGS, TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
+import { generateId, pickContact } from '../utils/helpers.js';
+import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 
 // Bill state
 let billItems = [];
