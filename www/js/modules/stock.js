@@ -2,6 +2,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { getCurrentDateTime } from '../utils/helpers.js';
 
 export class StockManager {
     static updateStock(itemName, quantity, rate) {
@@ -321,7 +322,7 @@ export class StockManager {
             previousStock: currentStock,
             newStock,
             reason,
-            date: new Date().toLocaleString('en-IN'),
+            date: getCurrentDateTime(),
             timestamp: Date.now(),
             createdBy: AppState.currentUser?.uid || 'unknown',
             createdByName: AppState.userName || 'User'

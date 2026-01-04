@@ -4,7 +4,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
-import { pickContact } from '../utils/helpers.js';
+import { pickContact, getCurrentDateTime } from '../utils/helpers.js';
 
 let wholesaleSaleItems = [];
 
@@ -283,7 +283,7 @@ export class SalesManager {
                 total: 0,
                 due: total
             },
-            date: new Date().toLocaleString('en-IN'),
+            date: getCurrentDateTime(),
             timestamp: Date.now(),
             createdBy: AppState.currentUser?.uid || 'unknown',
             createdByName: AppState.userName || 'User',
@@ -357,7 +357,7 @@ export class SalesManager {
             expenses,
             profit,
             comments,
-            date: new Date().toLocaleString('en-IN')
+            date: getCurrentDateTime()
         };
         
         try {

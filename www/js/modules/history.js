@@ -3,27 +3,10 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
+import { formatDateTime } from '../utils/helpers.js';
 
 export class HistoryManager {
     static viewMode = 'card'; // 'card' or 'table'
-
-    // Helper to format date consistently
-    static formatDate(dateString) {
-        try {
-            const date = new Date(dateString);
-            // Format: DD/MM/YYYY, HH:MM AM/PM
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const year = date.getFullYear();
-            const hours = date.getHours();
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            const ampm = hours >= 12 ? 'PM' : 'AM';
-            const displayHours = hours % 12 || 12;
-            return `${day}/${month}/${year}, ${displayHours}:${minutes} ${ampm}`;
-        } catch (e) {
-            return dateString; // Fallback to original if parsing fails
-        }
-    }
 
     static async saveBillToHistory() {
         const billItems = AppState.billItems;
@@ -212,7 +195,7 @@ export class HistoryManager {
             // Use billNumber if available, otherwise generate short number from ID
             const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
-            const formattedDate = this.formatDate(bill.date);
+            const formattedDate = formatDateTime(bill.date);
             const itemColor = bill.type === 'sale' ? '#28a745' : '#007bff';
             
             div.innerHTML = `
@@ -392,7 +375,7 @@ export class HistoryManager {
                 
                 <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px; display: flex; align-items: center; gap: 8px;">
                     <span style="color: #6c757d; font-size: 14px;">Date:</span>
-                    <span style="font-size: 14px; color: #212529;">${this.formatDate(bill.date)}</span>
+                    <span style="font-size: 14px; color: #212529;">${formatDateTime(bill.date)}</span>
                 </div>
                 
                 ${bill.createdByName || bill.userName ? `

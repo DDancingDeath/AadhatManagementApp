@@ -2,7 +2,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
-import { formatDate } from '../utils/helpers.js';
+import { formatDate, getCurrentDateTime } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 
 export class OutstandingManager {
@@ -211,7 +211,7 @@ export class OutstandingManager {
             // Record the payment
             const payment = {
                 amount: paymentAmount,
-                date: new Date().toLocaleString('en-IN'),
+                date: getCurrentDateTime(),
                 recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             };
             
@@ -262,7 +262,7 @@ export class OutstandingManager {
             
             await db.collection(collection).doc(String(transactionId)).update({
                 cleared: true,
-                clearedAt: new Date().toLocaleString('en-IN'),
+                clearedAt: getCurrentDateTime(),
                 clearedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
                 clearedByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             });

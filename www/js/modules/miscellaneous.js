@@ -2,6 +2,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { getCurrentDateTime } from '../utils/helpers.js';
 
 export class PaymentsManager {
     static updateExpensePersonOptions() {
@@ -61,7 +62,7 @@ export class PaymentsManager {
             amount,
             remarks,
             category: 'business',
-            date: new Date().toLocaleString('en-IN'),
+            date: getCurrentDateTime(),
             createdBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
@@ -103,7 +104,7 @@ export class PaymentsManager {
             amount,
             remarks,
             category: 'personal',
-            date: new Date().toLocaleString('en-IN'),
+            date: getCurrentDateTime(),
             createdBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
@@ -217,7 +218,7 @@ export class PaymentsManager {
             amount,
             remarks,
             category: 'business',
-            date: new Date().toLocaleString('en-IN'),
+            date: getCurrentDateTime(),
             createdBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
@@ -460,7 +461,7 @@ export class PaymentsManager {
             amount,
             remarks,
             category: 'personal',
-            date: new Date().toLocaleString('en-IN'),
+            date: getCurrentDateTime(),
             createdBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };

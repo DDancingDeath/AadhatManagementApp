@@ -25,7 +25,7 @@ export function debounce(func, wait) {
     };
 }
 
-// Format date
+// Format date (DD MMM YYYY)
 export function formatDate(date) {
     if (!date) return '';
     const d = new Date(date);
@@ -34,6 +34,29 @@ export function formatDate(date) {
         month: 'short',
         year: 'numeric'
     });
+}
+
+// Format date with time (DD/MM/YYYY, HH:MM AM/PM)
+export function formatDateTime(dateString) {
+    if (!dateString) return '';
+    try {
+        const date = new Date(dateString);
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = date.getHours();
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        return `${day}/${month}/${year}, ${displayHours}:${minutes} ${ampm}`;
+    } catch (e) {
+        return dateString;
+    }
+}
+
+// Get current date/time string in en-IN locale
+export function getCurrentDateTime() {
+    return new Date().toLocaleString('en-IN');
 }
 
 // Format currency

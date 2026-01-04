@@ -5,7 +5,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
-import { generateId, pickContact } from '../utils/helpers.js';
+import { generateId, pickContact, getCurrentDateTime } from '../utils/helpers.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 
 // Bill state
@@ -1473,7 +1473,7 @@ const BillingManager = {
             userName: AppState.userName || currentUser.email || 'User',
             mode: mode,
             timestamp: Date.now(),
-            date: new Date().toLocaleString('en-IN')
+            date: getCurrentDateTime()
         };
 
         if (mode === 'purchase') {

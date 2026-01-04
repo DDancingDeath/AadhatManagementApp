@@ -1,6 +1,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { getCurrentDateTime } from '../utils/helpers.js';
 
 export class FinanceManager {
     static filterTab(view, evt) {
@@ -340,7 +341,7 @@ export class FinanceManager {
                 withdrawnBy: AppState.currentUser?.uid || 'unknown',
                 withdrawnByName: AppState.userName || 'Unknown',
                 timestamp: Date.now(),
-                createdAt: new Date().toLocaleString('en-IN')
+                createdAt: getCurrentDateTime()
             };
             
             await FirebaseService.saveWithdrawal(withdrawal);
