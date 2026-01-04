@@ -2,7 +2,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
-import { getCurrentDateTime } from '../utils/helpers.js';
+import { Helpers } from '../utils/helpers.js';
 
 export class StockManager {
     static updateStock(itemName, quantity, rate) {
@@ -268,11 +268,11 @@ export class StockManager {
     }
 
     static async applyStockAdjustment() {
-        const itemName = document.getElementById("adjustItem")?.value;
-        const adjustType = document.getElementById("adjustType")?.value;
-        const quantity = parseFloat(document.getElementById("adjustQuantity")?.value || 0);
-        const rate = parseFloat(document.getElementById("adjustRate")?.value || 0);
-        const reason = document.getElementById("adjustReason")?.value || "";
+        const itemName = Helpers.getInputText('adjustItem');
+        const adjustType = Helpers.getInputText('adjustType');
+        const quantity = Helpers.getInputNumber('adjustQuantity');
+        const rate = Helpers.getInputNumber('adjustRate');
+        const reason = Helpers.getInputText('adjustReason');
 
         if (!itemName) {
             UIManager.showToast("Please select an item");
@@ -322,7 +322,7 @@ export class StockManager {
             previousStock: currentStock,
             newStock,
             reason,
-            date: getCurrentDateTime(),
+            date: Helpers.getCurrentDateTime(),
             timestamp: Date.now(),
             createdBy: AppState.currentUser?.uid || 'unknown',
             createdByName: AppState.userName || 'User'

@@ -1,7 +1,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
-import { getCurrentDateTime } from '../utils/helpers.js';
+import { Helpers } from '../utils/helpers.js';
 
 export class FinanceManager {
     static filterTab(view, evt) {
@@ -307,10 +307,10 @@ export class FinanceManager {
     }
 
     static async recordWithdrawal() {
-        const amount = parseFloat(document.getElementById('withdrawalAmount')?.value);
-        const person = document.getElementById('withdrawalPerson')?.value.trim();
-        const purpose = document.getElementById('withdrawalPurpose')?.value.trim();
-        const date = document.getElementById('withdrawalDate')?.value;
+        const amount = Helpers.getInputInt('withdrawalAmount');
+        const person = Helpers.getInputText('withdrawalPerson');
+        const purpose = Helpers.getInputText('withdrawalPurpose');
+        const date = Helpers.getInputText('withdrawalDate');
         
         if (!amount || amount <= 0) {
             UIManager.showToast('Please enter a valid withdrawal amount');
@@ -341,7 +341,7 @@ export class FinanceManager {
                 withdrawnBy: AppState.currentUser?.uid || 'unknown',
                 withdrawnByName: AppState.userName || 'Unknown',
                 timestamp: Date.now(),
-                createdAt: getCurrentDateTime()
+                createdAt: Helpers.getCurrentDateTime()
             };
             
             await FirebaseService.saveWithdrawal(withdrawal);

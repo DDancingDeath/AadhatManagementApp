@@ -4,7 +4,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
-import { pickContact, getCurrentDateTime } from '../utils/helpers.js';
+import { Helpers } from '../utils/helpers.js';
 
 let wholesaleSaleItems = [];
 
@@ -32,7 +32,7 @@ export class SalesManager {
     }
 
     static async pickContact() {
-        await pickContact('wholesaleCustomerName');
+        await Helpers.pickContact('wholesaleCustomerName');
     }
 
     static loadItemsDropdown() {
@@ -105,9 +105,9 @@ export class SalesManager {
     }
 
     static async addToWholesaleBill() {
-        const itemName = document.getElementById('sellItem')?.value;
-        const rate = parseFloat(document.getElementById('sellRate')?.value);
-        const quantity = parseFloat(document.getElementById('sellQuantity')?.value);
+        const itemName = Helpers.getInputText('sellItem');
+        const rate = Helpers.getInputNumber('sellRate');
+        const quantity = Helpers.getInputNumber('sellQuantity');
         
         if (!itemName) {
             UIManager.showToast('Please select an item');
@@ -249,14 +249,14 @@ export class SalesManager {
             return;
         }
         
-        const customerName = document.getElementById('wholesaleCustomerName')?.value || '';
+        const customerName = Helpers.getInputText('wholesaleCustomerName');
         const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
-        const comments = document.getElementById('salesComments')?.value || '';
-        const expenses = parseFloat(document.getElementById('salesExpensesAmount')?.value) || 0;
+        const comments = Helpers.getInputText('salesComments');
+        const expenses = Helpers.getInputInt('salesExpensesAmount');
         
         // Get profit from display
-        const profit = parseFloat(document.getElementById('salesProfitAmount')?.textContent) || 0;
-        const profitPercent = parseFloat(document.getElementById('salesProfitPercent')?.textContent) || 0;
+        const profit = Helpers.getElementInt('salesProfitAmount');
+        const profitPercent = Helpers.getElementNumber('salesProfitPercent');
         
         // Generate bill number
         const billNumber = await this.generateBillNumber();
@@ -283,7 +283,7 @@ export class SalesManager {
                 total: 0,
                 due: total
             },
-            date: getCurrentDateTime(),
+            date: Helpers.getCurrentDateTime(),
             timestamp: Date.now(),
             createdBy: AppState.currentUser?.uid || 'unknown',
             createdByName: AppState.userName || 'User',
@@ -339,11 +339,11 @@ export class SalesManager {
         }
         
         // Collect sale data before saving (since save will clear the bill)
-        const customerName = document.getElementById('wholesaleCustomerName')?.value || '';
+        const customerName = Helpers.getInputText('wholesaleCustomerName');
         const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
-        const expenses = parseFloat(document.getElementById('salesExpensesAmount')?.value) || 0;
-        const profit = parseFloat(document.getElementById('salesProfitAmount')?.textContent) || 0;
-        const comments = document.getElementById('salesComments')?.value || '';
+        const expenses = Helpers.getInputInt('salesExpensesAmount');
+        const profit = Helpers.getElementInt('salesProfitAmount');
+        const comments = Helpers.getInputText('salesComments');
         
         const saleData = {
             customerName,
@@ -357,7 +357,7 @@ export class SalesManager {
             expenses,
             profit,
             comments,
-            date: getCurrentDateTime()
+            date: Helpers.getCurrentDateTime()
         };
         
         try {
@@ -380,11 +380,11 @@ export class SalesManager {
             return;
         }
         
-        const customerName = document.getElementById('wholesaleCustomerName')?.value || '';
+        const customerName = Helpers.getInputText('wholesaleCustomerName');
         const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
-        const expenses = parseFloat(document.getElementById('salesExpensesAmount')?.value) || 0;
-        const profit = parseFloat(document.getElementById('salesProfitAmount')?.textContent) || 0;
-        const comments = document.getElementById('salesComments')?.value || '';
+        const expenses = Helpers.getInputInt('salesExpensesAmount');
+        const profit = Helpers.getElementInt('salesProfitAmount');
+        const comments = Helpers.getInputText('salesComments');
         
         let message = `*Sale Bill*\n\n`;
         message += `Customer: ${customerName}\n`;

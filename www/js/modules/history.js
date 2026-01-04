@@ -3,7 +3,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
-import { formatDateTime } from '../utils/helpers.js';
+import { Helpers } from '../utils/helpers.js';
 
 export class HistoryManager {
     static viewMode = 'card'; // 'card' or 'table'
@@ -195,7 +195,7 @@ export class HistoryManager {
             // Use billNumber if available, otherwise generate short number from ID
             const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
-            const formattedDate = formatDateTime(bill.date);
+            const formattedDate = Helpers.formatDateTime(bill.date);
             const itemColor = bill.type === 'sale' ? '#28a745' : '#007bff';
             
             div.innerHTML = `
@@ -375,7 +375,7 @@ export class HistoryManager {
                 
                 <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px; display: flex; align-items: center; gap: 8px;">
                     <span style="color: #6c757d; font-size: 14px;">Date:</span>
-                    <span style="font-size: 14px; color: #212529;">${formatDateTime(bill.date)}</span>
+                    <span style="font-size: 14px; color: #212529;">${Helpers.formatDateTime(bill.date)}</span>
                 </div>
                 
                 ${bill.createdByName || bill.userName ? `

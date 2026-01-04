@@ -5,7 +5,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
-import { generateId, pickContact, getCurrentDateTime } from '../utils/helpers.js';
+import { Helpers } from '../utils/helpers.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 
 // Bill state
@@ -537,8 +537,8 @@ const BillingManager = {
     
     editBillItem(index) {
         // First, save any pending data in the form
-        const currentItem = document.getElementById('billItem')?.value;
-        const currentRate = parseFloat(document.getElementById('billRate')?.value);
+        const currentItem = Helpers.getInputText('billItem');
+        const currentRate = Helpers.getInputNumber('billRate');
         
         // If there's data being filled, add it to bill first
         if (currentItem && currentRate && weights.length > 0) {
@@ -574,8 +574,8 @@ const BillingManager = {
     },
     
     updateTotals(heavyPacketsCount = 0) {
-        const billTotal = parseFloat(document.getElementById('billTotal')?.textContent || 0);
-        const totalPackets = parseInt(document.getElementById('totalPacketsInBill')?.textContent || 0);
+        const billTotal = Helpers.getElementInt('billTotal');
+        const totalPackets = Helpers.getElementInt('totalPacketsInBill');
         const autoLaborCheckbox = document.getElementById('autoLaborCharge');
         const laborCalculationSpan = document.getElementById('laborCalculation');
         const laborChargesInput = document.getElementById('manualLaborCharges');
@@ -628,9 +628,9 @@ const BillingManager = {
     },
     
     updatePaymentTotal() {
-        const grandTotal = parseFloat(document.getElementById('amountPayable')?.textContent || 0);
-        const onlinePayment = parseFloat(document.getElementById('onlinePayment')?.value || 0);
-        const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
+        const grandTotal = Helpers.getElementInt('amountPayable');
+        const onlinePayment = Helpers.getInputInt('onlinePayment');
+        const cashPayment = Helpers.getInputInt('cashPayment');
         
         // Total paid should only include online and cash, not due
         const totalPaid = onlinePayment + cashPayment;
@@ -642,7 +642,7 @@ const BillingManager = {
     },
     
     fillPayableAmount(type) {
-        const grandTotal = parseFloat(document.getElementById('amountPayable')?.textContent || 0);
+        const grandTotal = Helpers.getElementInt('amountPayable');
         const onlineInput = document.getElementById('onlinePayment');
         const cashInput = document.getElementById('cashPayment');
         const dueInput = document.getElementById('dueAmount');
@@ -713,16 +713,15 @@ const BillingManager = {
             return;
         }
         
-        const billTotal = parseFloat(document.getElementById('billTotal').textContent);
-        const laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
-        const totalPackets = parseInt(document.getElementById('totalPacketsInBill').textContent);
-        const grandTotal = parseFloat(document.getElementById('amountPayable').textContent);
-        const onlinePayment = parseFloat(document.getElementById('onlinePayment')?.value || 0);
-        const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
-        const dueAmount = parseFloat(document.getElementById('dueAmount')?.value || 0);
-        const customerName = document.getElementById('customerName')?.value || '';
-        const commentsElement = document.getElementById('billComments');
-        const comments = commentsElement?.value || '';
+        const billTotal = Helpers.getElementInt('billTotal');
+        const laborCharges = Helpers.getInputInt('manualLaborCharges');
+        const totalPackets = Helpers.getElementInt('totalPacketsInBill');
+        const grandTotal = Helpers.getElementInt('amountPayable');
+        const onlinePayment = Helpers.getInputInt('onlinePayment');
+        const cashPayment = Helpers.getInputInt('cashPayment');
+        const dueAmount = Helpers.getInputInt('dueAmount');
+        const customerName = Helpers.getInputText('customerName');
+        const comments = Helpers.getInputText('billComments');
         
         // Validate payment - at least one payment method must be provided
         if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {
@@ -742,7 +741,7 @@ const BillingManager = {
         const billNumber = await this.generateBillNumber('purchase');
         
         const bill = {
-            id: generateId(),
+            id: Helpers.generateId(),
             billNumber,
             items: billItems,
             billTotal,
@@ -1093,8 +1092,8 @@ const BillingManager = {
     
     editSaleItem(index) {
         // First, save any pending data in the form
-        const currentItem = document.getElementById('saleItem')?.value;
-        const currentRate = parseFloat(document.getElementById('saleRate')?.value);
+        const currentItem = Helpers.getInputText('saleItem');
+        const currentRate = Helpers.getInputNumber('saleRate');
         
         // If there's data being filled, add it to bill first
         if (currentItem && currentRate && saleWeights.length > 0) {
@@ -1165,8 +1164,8 @@ const BillingManager = {
     
     updateSalePaymentTotal() {
         const total = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const saleOnline = parseFloat(document.getElementById('saleOnlinePayment')?.value || 0);
-        const saleCash = parseFloat(document.getElementById('saleCashPayment')?.value || 0);
+        const saleOnline = Helpers.getInputInt('saleOnlinePayment');
+        const saleCash = Helpers.getInputInt('saleCashPayment');
         
         const totalReceived = saleOnline + saleCash;
         
@@ -1209,7 +1208,7 @@ const BillingManager = {
     },
     
     fillSalePayableAmount(type) {
-        const salesTotal = parseFloat(document.getElementById('salesBillTotal')?.textContent || 0);
+        const salesTotal = Helpers.getElementInt('salesBillTotal');
         const onlineInput = document.getElementById('saleOnlinePayment');
         const cashInput = document.getElementById('saleCashPayment');
         
@@ -1236,11 +1235,11 @@ const BillingManager = {
         }
         
         const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const saleOnline = parseFloat(document.getElementById('saleOnlinePayment')?.value || 0);
-        const saleCash = parseFloat(document.getElementById('saleCashPayment')?.value || 0);
-        const saleDue = parseFloat(document.getElementById('saleDueAmount')?.value || 0);
-        const saleCustomer = document.getElementById('saleCustomerName')?.value || '';
-        const saleComments = document.getElementById('saleComments')?.value || '';
+        const saleOnline = Helpers.getInputInt('saleOnlinePayment');
+        const saleCash = Helpers.getInputInt('saleCashPayment');
+        const saleDue = Helpers.getInputInt('saleDueAmount');
+        const saleCustomer = Helpers.getInputText('saleCustomerName');
+        const saleComments = Helpers.getInputText('saleComments');
         
         // Validate payment - at least one payment method must be provided
         if (saleOnline === 0 && saleCash === 0 && saleDue === 0) {
@@ -1255,7 +1254,7 @@ const BillingManager = {
         const billNumber = await this.generateBillNumber('sale');
         
         const sale = {
-            id: generateId(),
+            id: Helpers.generateId(),
             billNumber,
             items: saleItems,
             total: salesTotal,
@@ -1350,11 +1349,11 @@ const BillingManager = {
     
     // Contact picker helpers
     async pickContact() {
-        await pickContact('customerName');
+        await Helpers.pickContact('customerName');
     },
     
     async pickSaleContact() {
-        await pickContact('saleCustomerName');
+        await Helpers.pickContact('saleCustomerName');
     },
     
     async shareWhatsApp() {
@@ -1364,9 +1363,9 @@ const BillingManager = {
         }
         
         const total = billItems.reduce((sum, item) => sum + item.total, 0);
-        const laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
+        const laborCharges = Helpers.getInputInt('manualLaborCharges');
         const grandTotal = total + laborCharges;
-        const customer = document.getElementById('customerName')?.value || 'Customer';
+        const customer = Helpers.getInputText('customerName', 'Customer');
         
         let message = `*Purchase Bill*\n\n`;
         message += `Customer: ${customer}\n`;
@@ -1468,12 +1467,12 @@ const BillingManager = {
         }
 
         const draft = {
-            id: generateId(),
+            id: Helpers.generateId(),
             userId: currentUser.uid,
             userName: AppState.userName || currentUser.email || 'User',
             mode: mode,
             timestamp: Date.now(),
-            date: getCurrentDateTime()
+            date: Helpers.getCurrentDateTime()
         };
 
         if (mode === 'purchase') {
@@ -1492,10 +1491,10 @@ const BillingManager = {
             }
             draft.items = [...billItems];
             draft.weights = [...weights];
-            draft.customerName = document.getElementById('customerName')?.value || '';
-            draft.laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
-            draft.comments = document.getElementById('billComments')?.value || '';
-            draft.billTotal = parseFloat(document.getElementById('billTotal')?.textContent || 0);
+            draft.customerName = Helpers.getInputText('customerName');
+            draft.laborCharges = Helpers.getInputInt('manualLaborCharges');
+            draft.comments = Helpers.getInputText('billComments');
+            draft.billTotal = Helpers.getElementInt('billTotal');
         } else {
             // Check for unsaved weight in input field
             const saleWeightInput = document.getElementById('saleWeight');
@@ -1512,9 +1511,9 @@ const BillingManager = {
             }
             draft.items = [...saleItems];
             draft.weights = [...saleWeights];
-            draft.customerName = document.getElementById('saleCustomerName')?.value || '';
-            draft.comments = document.getElementById('saleComments')?.value || '';
-            draft.saleTotal = parseFloat(document.getElementById('saleTotal')?.textContent || 0);
+            draft.customerName = Helpers.getInputText('saleCustomerName');
+            draft.comments = Helpers.getInputText('saleComments');
+            draft.saleTotal = Helpers.getElementInt('saleTotal');
         }
 
         try {
@@ -1743,24 +1742,24 @@ const BillingManager = {
                 items: billItems,
                 weights: weights,
                 typedWeight: document.getElementById('newWeight')?.value || '',
-                selectedItem: document.getElementById('billItem')?.value || '',
-                rate: document.getElementById('billRate')?.value || '',
-                customerName: document.getElementById('customerName')?.value || '',
-                laborCharges: parseFloat(document.getElementById('manualLaborCharges')?.value || 0),
-                comments: document.getElementById('billComments')?.value || '',
-                billTotal: parseFloat(document.getElementById('billTotal')?.textContent || 0)
+                selectedItem: Helpers.getInputText('billItem'),
+                rate: Helpers.getInputText('billRate'),
+                customerName: Helpers.getInputText('customerName'),
+                laborCharges: Helpers.getInputInt('manualLaborCharges'),
+                comments: Helpers.getInputText('billComments'),
+                billTotal: Helpers.getElementInt('billTotal')
             };
 
             // Save sale data (regardless of current mode)
             autoSaveData.sale = {
                 items: saleItems,
                 weights: saleWeights,
-                typedWeight: document.getElementById('saleWeight')?.value || '',
-                selectedItem: document.getElementById('saleItem')?.value || '',
-                rate: document.getElementById('saleRate')?.value || '',
-                customerName: document.getElementById('saleCustomerName')?.value || '',
-                comments: document.getElementById('saleComments')?.value || '',
-                saleTotal: parseFloat(document.getElementById('saleTotal')?.textContent || 0)
+                typedWeight: Helpers.getInputText('saleWeight'),
+                selectedItem: Helpers.getInputText('saleItem'),
+                rate: Helpers.getInputText('saleRate'),
+                customerName: Helpers.getInputText('saleCustomerName'),
+                comments: Helpers.getInputText('saleComments'),
+                saleTotal: Helpers.getElementInt('saleTotal')
             };
 
             // Save to Firestore with user's UID as document ID
@@ -2059,15 +2058,15 @@ const BillingManager = {
 
             if (this.currentMode === 'purchase') {
                 // Update purchase bill
-                const billTotal = parseFloat(document.getElementById('billTotal').textContent);
-                const laborCharges = parseFloat(document.getElementById('manualLaborCharges')?.value || 0);
-                const totalPackets = parseInt(document.getElementById('totalPacketsInBill').textContent);
-                const grandTotal = parseFloat(document.getElementById('amountPayable').textContent);
-                const onlinePayment = parseFloat(document.getElementById('onlinePayment')?.value || 0);
-                const cashPayment = parseFloat(document.getElementById('cashPayment')?.value || 0);
-                const dueAmount = parseFloat(document.getElementById('dueAmount')?.value || 0);
-                const customerName = document.getElementById('customerName')?.value || '';
-                const comments = document.getElementById('billComments')?.value || '';
+                const billTotal = Helpers.getElementInt('billTotal');
+                const laborCharges = Helpers.getInputInt('manualLaborCharges');
+                const totalPackets = Helpers.getElementInt('totalPacketsInBill');
+                const grandTotal = Helpers.getElementInt('amountPayable');
+                const onlinePayment = Helpers.getInputInt('onlinePayment');
+                const cashPayment = Helpers.getInputInt('cashPayment');
+                const dueAmount = Helpers.getInputInt('dueAmount');
+                const customerName = Helpers.getInputText('customerName');
+                const comments = Helpers.getInputText('billComments');
                 
                 const laborCalculationSpan = document.getElementById('laborCalculation');
                 const laborCalc = laborCalculationSpan?.textContent || null;
@@ -2133,11 +2132,11 @@ const BillingManager = {
                 // Update sale
                 const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
                 const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
-                const saleOnline = parseFloat(document.getElementById('saleOnlinePayment')?.value || 0);
-                const saleCash = parseFloat(document.getElementById('saleCashPayment')?.value || 0);
-                const saleDue = parseFloat(document.getElementById('saleDueAmount')?.value || 0);
-                const saleCustomer = document.getElementById('saleCustomerName')?.value || '';
-                const saleComments = document.getElementById('saleComments')?.value || '';
+                const saleOnline = Helpers.getInputInt('saleOnlinePayment');
+                const saleCash = Helpers.getInputInt('saleCashPayment');
+                const saleDue = Helpers.getInputInt('saleDueAmount');
+                const saleCustomer = Helpers.getInputText('saleCustomerName');
+                const saleComments = Helpers.getInputText('saleComments');
 
                 const updatedSale = {
                     ...bill,

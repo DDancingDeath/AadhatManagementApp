@@ -3,7 +3,7 @@
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
-import { generateId } from '../utils/helpers.js';
+import { Helpers } from '../utils/helpers.js';
 
 export class CashManagementManager {
     static todaySession = null;
@@ -388,7 +388,7 @@ export class CashManagementManager {
     }
 
     static validateSignOut() {
-        const actualAmount = parseFloat(document.getElementById('cashSignOutAmount')?.value || 0);
+        const actualAmount = Helpers.getInputInt('cashSignOutAmount');
         const expected = this.calculateExpectedCash();
         const difference = actualAmount - expected;
         
@@ -416,7 +416,7 @@ export class CashManagementManager {
     }
 
     static async signIn() {
-        const amount = parseFloat(document.getElementById('cashSignInAmount')?.value);
+        const amount = Helpers.getInputInt('cashSignInAmount');
 
         if (!amount || amount < 0) {
             UIManager.showToast('Please enter a valid opening amount');
@@ -445,7 +445,7 @@ export class CashManagementManager {
             }
 
             const session = {
-                id: generateId(),
+                id: Helpers.generateId(),
                 date: new Date().toISOString().split('T')[0],
                 openingBalance: amount,
                 signInTime: new Date().toISOString(),
@@ -472,7 +472,7 @@ export class CashManagementManager {
     }
 
     static async signOut() {
-        const actualAmount = parseFloat(document.getElementById('cashSignOutAmount')?.value);
+        const actualAmount = Helpers.getInputInt('cashSignOutAmount');
 
         if (!actualAmount || actualAmount < 0) {
             UIManager.showToast('Please enter the actual cash amount');
@@ -527,9 +527,9 @@ export class CashManagementManager {
     }
 
     static async recordTransaction() {
-        const type = document.getElementById('cashTransactionType')?.value;
-        const amount = parseFloat(document.getElementById('transactionAmount')?.value);
-        const notes = document.getElementById('transactionNotes')?.value || '';
+        const type = Helpers.getInputText('cashTransactionType');
+        const amount = Helpers.getInputInt('transactionAmount');
+        const notes = Helpers.getInputText('transactionNotes');
 
         if (!amount || amount <= 0) {
             UIManager.showToast('Please enter a valid amount');
@@ -544,7 +544,7 @@ export class CashManagementManager {
         if (type === 'deposit') {
             // Cash deposit
             const deposit = {
-                id: generateId(),
+                id: Helpers.generateId(),
                 amount: amount,
                 reason: notes,
                 timestamp: new Date().toISOString(),
@@ -577,7 +577,7 @@ export class CashManagementManager {
             const partyName = document.getElementById('partyName')?.value || 'N/A';
 
             const payment = {
-                id: generateId(),
+                id: Helpers.generateId(),
                 type: type, // 'received' or 'paid'
                 customer: partyName,
                 amount: amount,

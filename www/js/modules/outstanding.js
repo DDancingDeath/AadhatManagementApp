@@ -2,7 +2,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
-import { formatDate, getCurrentDateTime } from '../utils/helpers.js';
+import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 
 export class OutstandingManager {
@@ -144,7 +144,7 @@ export class OutstandingManager {
                     <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">#${transaction.id}</span>${transaction.customerName ? `  <strong>${transaction.customerName}</strong>` : ''}
                     <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
                 </div>
-                <div class="history-date">${formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>
+                <div class="history-date">${Helpers.formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>
                 <div style="background: ${bgColor}; border-left: 4px solid ${borderColor}; padding: 12px; margin: 12px 0; border-radius: 4px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                         <span>${totalLabel}:</span>
@@ -211,7 +211,7 @@ export class OutstandingManager {
             // Record the payment
             const payment = {
                 amount: paymentAmount,
-                date: getCurrentDateTime(),
+                date: Helpers.getCurrentDateTime(),
                 recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             };
             
@@ -262,7 +262,7 @@ export class OutstandingManager {
             
             await db.collection(collection).doc(String(transactionId)).update({
                 cleared: true,
-                clearedAt: getCurrentDateTime(),
+                clearedAt: Helpers.getCurrentDateTime(),
                 clearedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
                 clearedByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             });
