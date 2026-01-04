@@ -227,7 +227,6 @@ class BluetoothPrinterManager {
 
     _drawReceiptHeader(ctx, billData, config, utils, y) {
         y = utils.drawCenter('Receipt', y, config.fonts.title, true);
-        // y += 4;
         
         // Bill number on left, Date/time on right (same line)
         const dateTime = new Date().toLocaleDateString('en-IN') + ' ' + 
