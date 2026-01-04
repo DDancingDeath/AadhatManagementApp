@@ -73,11 +73,11 @@ export class HistoryManager {
 
         // Use withLoading for the Firebase operation
         await UIManager.withLoading(async () => {
-            await FirebaseService.saveBill(bill);
+            await FirebaseService.savePurchase(bill);
         });
         
         const state = AppState;
-        state.billHistory.unshift(bill);
+        state.purchaseHistory.unshift(bill);
         // Stock recalculation handled by script.js
         
         // Update finance overview if on Finance tab
@@ -125,9 +125,9 @@ export class HistoryManager {
      * @param {string} newCustomer - New customer name to add
      */
     static updateCustomerOptions(newCustomer) {
-        const billHistory = AppState.billHistory;
+        const purchaseHistory = AppState.purchaseHistory;
         const uniqueCustomers = [...new Set(
-            billHistory
+            purchaseHistory
                 .filter(b => b.customerName)
                 .map(b => b.customerName)
         )];
@@ -149,17 +149,23 @@ export class HistoryManager {
      * @param {string} [searchTerm=''] - Optional search term to filter by
      */
     static renderHistory(type = 'purchase', searchTerm = '') {
-        const billHistory = AppState.billHistory || [];
+        const purchaseHistory = AppState.purchaseHistory || [];
         const salesHistory = AppState.salesHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
         const container = document.getElementById("historyList");
         
-        // Combine bills and sales
-        const bills = billHistory.map(b => ({ ...b, type: b.type || 'purchase', isPurchase: true }));
-        const sales = salesHistory.map(s => ({ ...s, type: s.type || 'sale', isPurchase: false }));
-        const allHistory = [...bills, ...sales];
+        // Combine purchases and sales
+        const purchases = purchaseHistory.map(b => ({ ...b, type: b.type || 'purchase', isPurchase: true }));
+        const wholesaleSales = salesHistory.map(s => ({ ...s, type: 'wholesale', isPurchase: false }));
+        const retailSales = retailSalesHistory.map(s => ({ ...s, type: 'retail', isPurchase: false }));
+        const allHistory = [...purchases, ...wholesaleSales, ...retailSales];
         
-        // Filter bills by type
-        let filteredBills = allHistory.filter(bill => bill.type === type);
+        // Filter by type
+        let filteredBills = allHistory.filter(bill => {
+            if (type === 'purchase') return bill.isPurchase;
+            if (type === 'sale') return !bill.isPurchase; // Show both wholesale and retail
+            return bill.type === type;
+        });
         
         // Apply search filter if search term exists
         if (searchTerm && searchTerm.trim()) {
@@ -202,7 +208,7 @@ export class HistoryManager {
 
         sortedBills.forEach((bill, sortedIndex) => {
             const billIndex = bill.isPurchase 
-                ? billHistory.findIndex(b => b.id === bill.id)
+                ? purchaseHistory.findIndex(b => b.id === bill.id)
                 : salesHistory.findIndex(s => s.id === bill.id);
             const div = document.createElement("div");
             div.className = "history-item";
@@ -333,7 +339,7 @@ export class HistoryManager {
     */
 
     static async viewBill(index, type = 'purchase') {
-        const history = type === 'sale' ? AppState.salesHistory : AppState.billHistory;
+        const history = type === 'sale' ? AppState.salesHistory : AppState.purchaseHistory;
         const bill = history[index];
         
         if (!bill) {
@@ -518,7 +524,7 @@ export class HistoryManager {
         // Determine if it's a purchase or sale based on current view
         const activeFilterBtn = document.querySelector('#history .filter-btn.active');
         const isSale = activeFilterBtn?.classList.contains('filter-sale');
-        const history = isSale ? AppState.salesHistory : AppState.billHistory;
+        const history = isSale ? AppState.salesHistory : AppState.purchaseHistory;
         const bill = history[index];
         
         if (!bill) {
@@ -532,7 +538,7 @@ export class HistoryManager {
             // Delete from Firebase
             const userId = AppState.currentUser?.uid;
             if (userId) {
-                const collectionName = isSale ? 'sales' : 'bills';
+                const collectionName = isSale ? 'wholesaleSales' : 'purchases';
                 const snapshot = await db.collection(collectionName)
                     .where('userId', '==', userId)
                     .where('timestamp', '==', bill.timestamp || bill.id)
@@ -634,7 +640,7 @@ export class HistoryManager {
             return;
         }
 
-        const billHistory = AppState.billHistory || [];
+        const purchaseHistory = AppState.purchaseHistory || [];
         const itemColor = type === 'sale' ? '#28a745' : '#007bff';
         
         // Define alternating colors for different days - creative gradient backgrounds
@@ -665,7 +671,7 @@ export class HistoryManager {
 
         bills.forEach(bill => {
             const isSale = type === 'sale';
-            const history = isSale ? AppState.salesHistory : billHistory;
+            const history = isSale ? AppState.salesHistory : purchaseHistory;
             const billIndex = history.findIndex(b => b.id === bill.id);
             const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;

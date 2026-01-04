@@ -83,24 +83,24 @@ export class OutstandingManager {
      */
     static renderDue() {
         const currentDueFilter = AppState.currentDueFilter;
-        const billHistory = AppState.billHistory;
+        const purchaseHistory = AppState.purchaseHistory;
         const salesHistory = AppState.salesHistory;
         const container = document.getElementById("dueList");
         
         const dueTransactions = [];
         
         if (currentDueFilter === 'purchase') {
-            billHistory.forEach(bill => {
-                const duePaid = bill.payment ? (bill.payment.due || 0) : (bill.dueAmount || 0);
+            purchaseHistory.forEach(purchase => {
+                const duePaid = purchase.payment ? (purchase.payment.due || 0) : (purchase.dueAmount || 0);
                 
-                if (duePaid > 0 && !bill.cleared) {
-                    const totalPayable = bill.grandTotal || bill.amountPayable || bill.total || 0;
-                    const onlinePaid = bill.payment ? (bill.payment.online || 0) : (bill.onlinePayment || 0);
-                    const cashPaid = bill.payment ? (bill.payment.cash || 0) : (bill.cashPayment || 0);
+                if (duePaid > 0 && !purchase.cleared) {
+                    const totalPayable = purchase.grandTotal || purchase.amountPayable || purchase.total || 0;
+                    const onlinePaid = purchase.payment ? (purchase.payment.online || 0) : (purchase.onlinePayment || 0);
+                    const cashPaid = purchase.payment ? (purchase.payment.cash || 0) : (purchase.cashPayment || 0);
                     const totalPaid = onlinePaid + cashPaid;
                     
                     dueTransactions.push({
-                        ...bill,
+                        ...purchase,
                         transactionType: 'purchase',
                         outstanding: duePaid,
                         totalAmount: totalPayable,
@@ -211,7 +211,7 @@ export class OutstandingManager {
             
             let transaction;
             if (transactionType === 'purchase') {
-                transaction = AppState.billHistory.find(b => String(b.id) === String(transactionId));
+                transaction = AppState.purchaseHistory.find(b => String(b.id) === String(transactionId));
             } else {
                 transaction = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
             }
@@ -281,7 +281,7 @@ export class OutstandingManager {
 
     static async markAsCleared(transactionId, transactionType) {
         try {
-            const collection = transactionType === 'purchase' ? 'bills' : 'sales';
+            const collection = transactionType === 'purchase' ? 'purchases' : 'wholesaleSales';
             
             await db.collection(collection).doc(String(transactionId)).update({
                 cleared: true,
@@ -291,8 +291,8 @@ export class OutstandingManager {
             });
             
             if (transactionType === 'purchase') {
-                const bill = AppState.billHistory.find(b => String(b.id) === String(transactionId));
-                if (bill) bill.cleared = true;
+                const purchase = AppState.purchaseHistory.find(b => String(b.id) === String(transactionId));
+                if (purchase) purchase.cleared = true;
             } else {
                 const sale = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
                 if (sale) sale.cleared = true;
@@ -308,15 +308,15 @@ export class OutstandingManager {
     }
 
     static async showDetails(transactionId, transactionType) {
-        const billHistory = AppState.billHistory;
+        const purchaseHistory = AppState.purchaseHistory;
         const salesHistory = AppState.salesHistory;
         
         if (transactionType === 'purchase') {
-            const billIndex = billHistory.findIndex(b => String(b.id) === String(transactionId));
-            if (billIndex >= 0) {
-                await window.app.history.viewBill(billIndex, 'purchase');
+            const purchaseIndex = purchaseHistory.findIndex(b => String(b.id) === String(transactionId));
+            if (purchaseIndex >= 0) {
+                await window.app.history.viewBill(purchaseIndex, 'purchase');
             } else {
-                UIManager.showModal('Bill not found');
+                UIManager.showModal('Purchase not found');
             }
         } else {
             const saleIndex = salesHistory.findIndex(s => String(s.id) === String(transactionId));

@@ -4,7 +4,8 @@ A comprehensive business management application for wholesale/retail operations 
 
 ## Features
 
-- **Purchase & Sales Management**: Create bills with weight-based entries, multiple rates, labour charges
+- **Purchase & Sales Management**: Separate collections for purchases, retail sales, and wholesale sales
+- **Real-time Sync**: Automatic UI updates via Firestore onSnapshot listeners
 - **Stock Tracking**: Real-time stock levels with adjustment history
 - **Cash Management**: Session-based cash tracking with sign-in/sign-out
 - **User Management**: Role-based access (owner, manager, staff)
@@ -45,6 +46,33 @@ A comprehensive business management application for wholesale/retail operations 
 ├── babel.config.js        # Babel ES6 transform config
 └── firebase.json          # Firebase configuration
 ```
+
+## Firebase Collections
+
+| Collection | Purpose | State Property |
+|------------|---------|----------------|
+| `items` | Product catalog with rates | `AppState.items` |
+| `purchases` | Purchase transactions (stock IN) | `AppState.purchaseHistory` |
+| `retailSales` | Retail sales from billing tab | `AppState.retailSalesHistory` |
+| `wholesaleSales` | Wholesale sales from sales tab | `AppState.salesHistory` |
+| `expenses` | Business expenses | `AppState.expensesHistory` |
+| `stockAdjustments` | Manual stock corrections | `AppState.stockAdjustments` |
+| `withdrawals` | Cash withdrawals | `AppState.withdrawalsHistory` |
+| `cashSessions` | Cash management sessions | (loaded on demand) |
+| `users` | User accounts and roles | (loaded on demand) |
+
+### Real-time Auto-Update
+
+The app uses Firestore `onSnapshot` listeners for automatic UI synchronization:
+
+- **Items**: Updates item dropdowns across all tabs
+- **Purchases/Sales**: Recalculates stock, updates history, finance, analytics
+- **Expenses**: Updates expense history and reports
+- **Stock Adjustments**: Recalculates stock levels
+- **Withdrawals**: Updates withdrawal history
+- **Cash Sessions**: Updates cash management view
+
+All listeners are set up via `FirebaseService.setupRealtimeListeners()` and cleaned up on logout via `FirebaseService.cleanup()`.
 
 ## Getting Started
 

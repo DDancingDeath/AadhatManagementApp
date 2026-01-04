@@ -39,8 +39,10 @@ export const AppState = {
     billItems: [],
     /** @type {Array<Object>} Labour charges for current bill */
     labourCharges: [],
-    /** @type {Array<Object>} Purchase bill history */
-    billHistory: [],
+    /** @type {Array<Object>} Purchase history */
+    purchaseHistory: [],
+    /** @type {Array<Object>} Retail sales history */
+    retailSalesHistory: [],
     /** @type {Array<number>} Current weights being entered */
     currentWeights: [],
     /** @type {Object<string, {quantity: number, rate: number}>} Stock by item ID */

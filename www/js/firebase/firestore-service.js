@@ -100,68 +100,68 @@ const FirebaseService = {
     },
 
     /**
-     * Loads all bills from Firestore, ordered by date descending.
+     * Loads all purchases from Firestore, ordered by date descending.
      * @async
-     * @returns {Promise<Array<Object>>} Array of bill objects
+     * @returns {Promise<Array<Object>>} Array of purchase objects
      */
-    async loadBills() {
-        const snapshot = await getDb().collection('bills').orderBy('date', 'desc').get();
+    async loadPurchases() {
+        const snapshot = await getDb().collection('purchases').orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
     /**
-     * Saves a bill to Firestore. Creates new if no ID, updates if ID exists.
+     * Saves a purchase to Firestore. Creates new if no ID, updates if ID exists.
      * Automatically adds userId and userName from AppState.
      * @async
-     * @param {Object} bill - The bill to save
-     * @param {string} [bill.id] - Bill ID (if updating existing)
-     * @param {string} bill.partyName - Party/customer name
-     * @param {string} bill.date - Bill date
-     * @param {Array} bill.items - Array of bill items
-     * @param {number} bill.total - Total bill amount
-     * @returns {Promise<Object>} The saved bill with ID
+     * @param {Object} purchase - The purchase to save
+     * @param {string} [purchase.id] - Purchase ID (if updating existing)
+     * @param {string} purchase.partyName - Party/customer name
+     * @param {string} purchase.date - Purchase date
+     * @param {Array} purchase.items - Array of purchase items
+     * @param {number} purchase.total - Total purchase amount
+     * @returns {Promise<Object>} The saved purchase with ID
      */
-    async saveBill(bill) {
-        if (!bill.userId && AppState.currentUser) {
-            bill.userId = AppState.currentUser.uid;
+    async savePurchase(purchase) {
+        if (!purchase.userId && AppState.currentUser) {
+            purchase.userId = AppState.currentUser.uid;
         }
-        if (!bill.userName && AppState.userName) {
-            bill.userName = AppState.userName;
+        if (!purchase.userName && AppState.userName) {
+            purchase.userName = AppState.userName;
         }
         
-        if (bill.id) {
-            await getDb().collection('bills').doc(bill.id).set(bill);
+        if (purchase.id) {
+            await getDb().collection('purchases').doc(purchase.id).set(purchase);
         } else {
-            const docRef = await getDb().collection('bills').add(bill);
-            bill.id = docRef.id;
+            const docRef = await getDb().collection('purchases').add(purchase);
+            purchase.id = docRef.id;
         }
-        return bill;
+        return purchase;
     },
 
     /**
-     * Updates an existing bill in Firestore.
+     * Updates an existing purchase in Firestore.
      * @async
-     * @param {Object} bill - The bill to update
-     * @param {string} bill.id - Bill ID (required)
-     * @returns {Promise<Object>} The updated bill
-     * @throws {Error} If bill.id is not provided
+     * @param {Object} purchase - The purchase to update
+     * @param {string} purchase.id - Purchase ID (required)
+     * @returns {Promise<Object>} The updated purchase
+     * @throws {Error} If purchase.id is not provided
      */
-    async updateBill(bill) {
-        if (!bill.id) {
-            throw new Error('Bill ID is required for update');
+    async updatePurchase(purchase) {
+        if (!purchase.id) {
+            throw new Error('Purchase ID is required for update');
         }
-        await getDb().collection('bills').doc(bill.id).set(bill);
-        return bill;
+        await getDb().collection('purchases').doc(purchase.id).set(purchase);
+        return purchase;
     },
 
     /**
-     * Deletes a bill from Firestore.
+     * Deletes a purchase from Firestore.
      * @async
-     * @param {string} billId - The ID of the bill to delete
+     * @param {string} purchaseId - The ID of the purchase to delete
      * @returns {Promise<void>}
      */
-    async deleteBill(billId) {
-        await getDb().collection('bills').doc(billId).delete();
+    async deletePurchase(purchaseId) {
+        await getDb().collection('purchases').doc(purchaseId).delete();
     },
 
     /**
@@ -185,7 +185,7 @@ const FirebaseService = {
      * @param {number} sale.total - Total sale amount
      * @returns {Promise<Object>} The saved sale with ID
      */
-    async saveSale(sale) {
+    async saveWholesaleSale(sale) {
         if (!sale.userId && AppState.currentUser) {
             sale.userId = AppState.currentUser.uid;
         }
@@ -203,14 +203,14 @@ const FirebaseService = {
     },
 
     /**
-     * Updates an existing sale in Firestore.
+     * Updates an existing wholesale sale in Firestore.
      * @async
      * @param {Object} sale - The sale to update
      * @param {string} sale.id - Sale ID (required)
      * @returns {Promise<Object>} The updated sale
      * @throws {Error} If sale.id is not provided
      */
-    async updateSale(sale) {
+    async updateWholesaleSale(sale) {
         if (!sale.id) {
             throw new Error('Sale ID is required for update');
         }
@@ -219,7 +219,7 @@ const FirebaseService = {
     },
 
     /**
-     * Saves a retail sale to Firestore. Uses wholesaleSales collection.
+     * Saves a retail sale to Firestore. Uses separate retailSales collection.
      * @async
      * @param {Object} sale - The retail sale to save
      * @param {string} [sale.id] - Sale ID (if updating existing)
@@ -238,12 +238,58 @@ const FirebaseService = {
         }
         
         if (sale.id) {
-            await getDb().collection('wholesaleSales').doc(sale.id).set(sale);
+            await getDb().collection('retailSales').doc(String(sale.id)).set(sale);
         } else {
-            const docRef = await getDb().collection('wholesaleSales').add(sale);
+            const docRef = await getDb().collection('retailSales').add(sale);
             sale.id = docRef.id;
         }
         return sale;
+    },
+
+    /**
+     * Loads all retail sales from Firestore, ordered by date descending.
+     * @async
+     * @returns {Promise<Array<Object>>} Array of retail sale objects
+     */
+    async loadRetailSales() {
+        const snapshot = await getDb().collection('retailSales').orderBy('date', 'desc').get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    /**
+     * Updates an existing retail sale in Firestore.
+     * @async
+     * @param {Object} sale - The sale to update
+     * @param {string} sale.id - Sale ID (required)
+     * @returns {Promise<Object>} The updated sale
+     * @throws {Error} If sale.id is not provided
+     */
+    async updateRetailSale(sale) {
+        if (!sale.id) {
+            throw new Error('Sale ID is required for update');
+        }
+        await getDb().collection('retailSales').doc(String(sale.id)).set(sale);
+        return sale;
+    },
+
+    /**
+     * Deletes a retail sale from Firestore.
+     * @async
+     * @param {string} saleId - The ID of the sale to delete
+     * @returns {Promise<void>}
+     */
+    async deleteRetailSale(saleId) {
+        await getDb().collection('retailSales').doc(String(saleId)).delete();
+    },
+
+    /**
+     * Deletes a wholesale sale from Firestore.
+     * @async
+     * @param {string} saleId - The ID of the sale to delete
+     * @returns {Promise<void>}
+     */
+    async deleteWholesaleSale(saleId) {
+        await getDb().collection('wholesaleSales').doc(String(saleId)).delete();
     },
 
     /**
@@ -409,9 +455,9 @@ const FirebaseService = {
         };
         
         // Add from purchases
-        AppState.billHistory.forEach(bill => {
-            if (bill.items && Array.isArray(bill.items)) {
-                bill.items.forEach(item => {
+        AppState.purchaseHistory.forEach(purchase => {
+            if (purchase.items && Array.isArray(purchase.items)) {
+                purchase.items.forEach(item => {
                     const key = getItemKey(item);
                     if (!stock[key]) {
                         stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
@@ -424,7 +470,7 @@ const FirebaseService = {
             }
         });
         
-        // Subtract from sales
+        // Subtract from wholesale sales
         AppState.salesHistory.forEach(sale => {
             if (sale.items && Array.isArray(sale.items)) {
                 sale.items.forEach(item => {
@@ -432,6 +478,21 @@ const FirebaseService = {
                     if (stock[key]) {
                         const qty = parseFloat(item.qty || item.quantity) || 0;
                         // Calculate the value to subtract based on average rate
+                        const avgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
+                        stock[key].quantity -= qty;
+                        stock[key].totalValue -= qty * avgRate;
+                    }
+                });
+            }
+        });
+        
+        // Subtract from retail sales
+        AppState.retailSalesHistory.forEach(sale => {
+            if (sale.items && Array.isArray(sale.items)) {
+                sale.items.forEach(item => {
+                    const key = getItemKey(item);
+                    if (stock[key]) {
+                        const qty = parseFloat(item.qty || item.quantity) || 0;
                         const avgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
                         stock[key].quantity -= qty;
                         stock[key].totalValue -= qty * avgRate;
@@ -502,8 +563,9 @@ const FirebaseService = {
 
     /**
      * Sets up real-time Firestore listeners for live data synchronization.
-     * Listens to items, bills, sales, expenses, and stock adjustments collections.
+     * Listens to items, bills, sales, expenses, stock adjustments, and withdrawals.
      * Updates AppState and triggers render functions when data changes.
+     * Uses window.app methods for proper module integration.
      * @returns {void}
      */
     setupRealtimeListeners() {
@@ -513,56 +575,353 @@ const FirebaseService = {
         // Listen to items collection
         const unsubItems = getDb().collection('items').onSnapshot(snapshot => {
             AppState.items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (typeof window.renderItems === 'function') {
-                window.renderItems();
+            // Update item-related UI components
+            if (window.app?.items?.render) {
+                window.app.items.render();
             }
-            if (typeof window.loadItemsDropdown === 'function') {
-                window.loadItemsDropdown();
+            if (window.app?.billing?.loadItemsDropdown) {
+                window.app.billing.loadItemsDropdown();
             }
+            if (window.app?.sales?.loadItemsDropdown) {
+                window.app.sales.loadItemsDropdown();
+            }
+        }, error => {
+            console.error('Items listener error:', error);
         });
         unsubscribeFunctions.push(unsubItems);
         
-        // Listen to bills collection
-        const unsubBills = getDb().collection('bills').orderBy('date', 'desc').onSnapshot(snapshot => {
-            AppState.billHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (typeof window.renderHistory === 'function') {
-                window.renderHistory();
+        // Listen to purchases collection (renamed from bills)
+        const unsubPurchases = getDb().collection('purchases').orderBy('date', 'desc').onSnapshot(async snapshot => {
+            AppState.purchaseHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // Recalculate stock when purchases change
+            try {
+                AppState.stock = await this.calculateStock();
+            } catch (e) {
+                console.error('Stock recalculation error:', e);
             }
-            if (typeof window.renderDue === 'function') {
-                window.renderDue();
+            
+            // Update billing dropdown (stock availability may have changed)
+            if (window.app?.billing?.loadItemsDropdown) {
+                window.app.billing.loadItemsDropdown();
             }
+            if (window.app?.sales?.loadItemsDropdown) {
+                window.app.sales.loadItemsDropdown();
+            }
+            
+            // Update history view if visible
+            if (window.app?.history?.render) {
+                const historyTab = document.getElementById('history');
+                if (historyTab && historyTab.style.display !== 'none') {
+                    window.app.history.render();
+                }
+            }
+            
+            // Update outstanding dues
+            if (window.app?.outstanding?.render) {
+                const dueTab = document.getElementById('due');
+                if (dueTab && dueTab.style.display !== 'none') {
+                    window.app.outstanding.render();
+                }
+            }
+            
+            // Update stock view if visible
+            if (window.app?.stock?.render) {
+                const stockTab = document.getElementById('stock');
+                if (stockTab && stockTab.style.display !== 'none') {
+                    window.app.stock.render();
+                }
+            }
+            
+            // Update finance overview if visible
+            if (window.app?.finance?.calculateOverview) {
+                const financeTab = document.getElementById('finance');
+                if (financeTab && financeTab.style.display !== 'none') {
+                    window.app.finance.calculateOverview();
+                }
+            }
+            
+            // Update analytics if visible
+            if (window.app?.analytics?.render) {
+                const analyticsTab = document.getElementById('analytics');
+                if (analyticsTab && analyticsTab.style.display !== 'none') {
+                    window.app.analytics.render();
+                }
+            }
+            
+            // Update reports if visible
+            if (window.app?.reports?.renderReports) {
+                const reportsTab = document.getElementById('reports');
+                if (reportsTab && reportsTab.style.display !== 'none') {
+                    window.app.reports.renderReports();
+                }
+            }
+        }, error => {
+            console.error('Purchases listener error:', error);
         });
-        unsubscribeFunctions.push(unsubBills);
+        unsubscribeFunctions.push(unsubPurchases);
+        
+        // Listen to retail sales collection
+        const unsubRetailSales = getDb().collection('retailSales').orderBy('date', 'desc').onSnapshot(async snapshot => {
+            AppState.retailSalesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // Recalculate stock when retail sales change
+            try {
+                AppState.stock = await this.calculateStock();
+            } catch (e) {
+                console.error('Stock recalculation error:', e);
+            }
+            
+            // Update billing/sales dropdowns (stock availability changed)
+            if (window.app?.billing?.loadItemsDropdown) {
+                window.app.billing.loadItemsDropdown();
+            }
+            
+            // Update history view if visible
+            if (window.app?.history?.render) {
+                const historyTab = document.getElementById('history');
+                if (historyTab && historyTab.style.display !== 'none') {
+                    window.app.history.render();
+                }
+            }
+            
+            // Update outstanding dues
+            if (window.app?.outstanding?.render) {
+                const dueTab = document.getElementById('due');
+                if (dueTab && dueTab.style.display !== 'none') {
+                    window.app.outstanding.render();
+                }
+            }
+            
+            // Update stock view if visible
+            if (window.app?.stock?.render) {
+                const stockTab = document.getElementById('stock');
+                if (stockTab && stockTab.style.display !== 'none') {
+                    window.app.stock.render();
+                }
+            }
+            
+            // Update finance overview if visible
+            if (window.app?.finance?.calculateOverview) {
+                const financeTab = document.getElementById('finance');
+                if (financeTab && financeTab.style.display !== 'none') {
+                    window.app.finance.calculateOverview();
+                }
+            }
+            
+            // Update analytics if visible
+            if (window.app?.analytics?.render) {
+                const analyticsTab = document.getElementById('analytics');
+                if (analyticsTab && analyticsTab.style.display !== 'none') {
+                    window.app.analytics.render();
+                }
+            }
+            
+            // Update reports if visible
+            if (window.app?.reports?.renderReports) {
+                const reportsTab = document.getElementById('reports');
+                if (reportsTab && reportsTab.style.display !== 'none') {
+                    window.app.reports.renderReports();
+                }
+            }
+        }, error => {
+            console.error('Retail sales listener error:', error);
+        });
+        unsubscribeFunctions.push(unsubRetailSales);
         
         // Listen to wholesale sales collection
-        const unsubSales = getDb().collection('wholesaleSales').orderBy('date', 'desc').onSnapshot(snapshot => {
+        const unsubSales = getDb().collection('wholesaleSales').orderBy('date', 'desc').onSnapshot(async snapshot => {
             AppState.salesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (typeof window.renderSalesHistory === 'function') {
-                window.renderSalesHistory();
+            
+            // Recalculate stock when sales change
+            try {
+                AppState.stock = await this.calculateStock();
+            } catch (e) {
+                console.error('Stock recalculation error:', e);
             }
-            if (typeof window.renderSalesOutstanding === 'function') {
-                window.renderSalesOutstanding();
+            
+            // Update billing/sales dropdowns (stock availability changed)
+            if (window.app?.billing?.loadItemsDropdown) {
+                window.app.billing.loadItemsDropdown();
             }
+            if (window.app?.sales?.loadItemsDropdown) {
+                window.app.sales.loadItemsDropdown();
+            }
+            
+            // Update wholesale sales tab if visible
+            if (window.app?.wholesaleSales?.renderHistory) {
+                const wholesaleTab = document.getElementById('wholesale-sales');
+                if (wholesaleTab && wholesaleTab.style.display !== 'none') {
+                    window.app.wholesaleSales.renderHistory();
+                }
+            }
+            
+            // Update history view if visible (sales tab)
+            if (window.app?.history?.render) {
+                const historyTab = document.getElementById('history');
+                if (historyTab && historyTab.style.display !== 'none') {
+                    window.app.history.render();
+                }
+            }
+            
+            // Update outstanding dues
+            if (window.app?.outstanding?.render) {
+                const dueTab = document.getElementById('due');
+                if (dueTab && dueTab.style.display !== 'none') {
+                    window.app.outstanding.render();
+                }
+            }
+            
+            // Update stock view if visible
+            if (window.app?.stock?.render) {
+                const stockTab = document.getElementById('stock');
+                if (stockTab && stockTab.style.display !== 'none') {
+                    window.app.stock.render();
+                }
+            }
+            
+            // Update finance overview if visible
+            if (window.app?.finance?.calculateOverview) {
+                const financeTab = document.getElementById('finance');
+                if (financeTab && financeTab.style.display !== 'none') {
+                    window.app.finance.calculateOverview();
+                }
+            }
+            
+            // Update analytics if visible
+            if (window.app?.analytics?.render) {
+                const analyticsTab = document.getElementById('analytics');
+                if (analyticsTab && analyticsTab.style.display !== 'none') {
+                    window.app.analytics.render();
+                }
+            }
+            
+            // Update reports if visible
+            if (window.app?.reports?.renderReports) {
+                const reportsTab = document.getElementById('reports');
+                if (reportsTab && reportsTab.style.display !== 'none') {
+                    window.app.reports.renderReports();
+                }
+            }
+        }, error => {
+            console.error('Sales listener error:', error);
         });
         unsubscribeFunctions.push(unsubSales);
         
         // Listen to expenses collection
         const unsubExpenses = getDb().collection('expenses').orderBy('date', 'desc').onSnapshot(snapshot => {
             AppState.expensesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (typeof window.renderExpensesHistory === 'function') {
-                window.renderExpensesHistory();
+            
+            // Update expenses view if visible
+            if (window.app?.expenses?.renderHistory) {
+                const expensesTab = document.getElementById('expenses');
+                if (expensesTab && expensesTab.style.display !== 'none') {
+                    window.app.expenses.renderHistory();
+                }
             }
+            
+            // Update finance overview if visible
+            if (window.app?.finance?.calculateOverview) {
+                const financeTab = document.getElementById('finance');
+                if (financeTab && financeTab.style.display !== 'none') {
+                    window.app.finance.calculateOverview();
+                }
+            }
+            
+            // Update analytics if visible (expenses affect profit calculations)
+            if (window.app?.analytics?.render) {
+                const analyticsTab = document.getElementById('analytics');
+                if (analyticsTab && analyticsTab.style.display !== 'none') {
+                    window.app.analytics.render();
+                }
+            }
+            
+            // Update reports if visible
+            if (window.app?.reports?.renderReports) {
+                const reportsTab = document.getElementById('reports');
+                if (reportsTab && reportsTab.style.display !== 'none') {
+                    window.app.reports.renderReports();
+                }
+            }
+        }, error => {
+            console.error('Expenses listener error:', error);
         });
         unsubscribeFunctions.push(unsubExpenses);
         
         // Listen to stock adjustments collection
-        const unsubStockAdj = getDb().collection('stockAdjustments').orderBy('date', 'desc').onSnapshot(snapshot => {
+        const unsubStockAdj = getDb().collection('stockAdjustments').orderBy('date', 'desc').onSnapshot(async snapshot => {
             AppState.stockAdjustments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (typeof window.renderAdjustmentHistory === 'function') {
-                window.renderAdjustmentHistory();
+            
+            // Recalculate stock when adjustments change
+            try {
+                AppState.stock = await this.calculateStock();
+            } catch (e) {
+                console.error('Stock recalculation error:', e);
             }
+            
+            // Update stock adjustment history if visible
+            if (window.app?.stock?.renderAdjustmentHistory) {
+                const stockTab = document.getElementById('stock');
+                if (stockTab && stockTab.style.display !== 'none') {
+                    window.app.stock.renderAdjustmentHistory();
+                    window.app.stock.render();
+                }
+            }
+        }, error => {
+            console.error('Stock adjustments listener error:', error);
         });
         unsubscribeFunctions.push(unsubStockAdj);
+        
+        // Listen to withdrawals collection
+        const unsubWithdrawals = getDb().collection('withdrawals').orderBy('date', 'desc').onSnapshot(snapshot => {
+            AppState.withdrawalsHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // Update finance view if visible
+            if (window.app?.finance?.calculateOverview) {
+                const financeTab = document.getElementById('finance');
+                if (financeTab && financeTab.style.display !== 'none') {
+                    window.app.finance.calculateOverview();
+                }
+            }
+            if (window.app?.finance?.renderWithdrawalHistory) {
+                const financeTab = document.getElementById('finance');
+                if (financeTab && financeTab.style.display !== 'none') {
+                    window.app.finance.renderWithdrawalHistory();
+                }
+            }
+        }, error => {
+            console.error('Withdrawals listener error:', error);
+        });
+        unsubscribeFunctions.push(unsubWithdrawals);
+        
+        // Listen to cash sessions collection
+        const unsubCashSessions = getDb().collection('cashSessions').orderBy('date', 'desc').onSnapshot(snapshot => {
+            // Update cash management if visible
+            if (window.app?.cashManagement?.init) {
+                const cashTab = document.getElementById('cashManagement');
+                if (cashTab && cashTab.style.display !== 'none') {
+                    window.app.cashManagement.loadTodaySession();
+                    window.app.cashManagement.renderHistory();
+                }
+            }
+        }, error => {
+            console.error('Cash sessions listener error:', error);
+        });
+        unsubscribeFunctions.push(unsubCashSessions);
+        
+        // Listen to users collection (for owner to see new registrations)
+        const unsubUsers = getDb().collection('users').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+            // Update users management view if visible (owner only)
+            if (AppState.userRole === 'owner' && window.app?.users?.loadUsers) {
+                const usersTab = document.getElementById('users');
+                if (usersTab && usersTab.style.display !== 'none') {
+                    window.app.users.loadUsers();
+                }
+            }
+        }, error => {
+            console.error('Users listener error:', error);
+        });
+        unsubscribeFunctions.push(unsubUsers);
     },
 
     /**

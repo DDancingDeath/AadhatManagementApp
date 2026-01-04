@@ -107,10 +107,11 @@ async function loadUserDataAndInitialize() {
         }
         
         // Load all data from Firestore
-        const [items, bills, sales, payments, stockAdjustments, withdrawals] = await Promise.all([
+        const [items, purchases, wholesaleSales, retailSales, payments, stockAdjustments, withdrawals] = await Promise.all([
             FirebaseService.loadItems(),
-            FirebaseService.loadBills(),
+            FirebaseService.loadPurchases(),
             FirebaseService.loadSales(),
+            FirebaseService.loadRetailSales(),
             FirebaseService.loadExpenses(),
             FirebaseService.loadStockAdjustments(),
             FirebaseService.loadWithdrawals(),
@@ -118,8 +119,9 @@ async function loadUserDataAndInitialize() {
         ]);
         
         AppState.items = items;
-        AppState.billHistory = bills;
-        AppState.salesHistory = sales;
+        AppState.purchaseHistory = purchases;
+        AppState.salesHistory = wholesaleSales;
+        AppState.retailSalesHistory = retailSales;
         AppState.expensesHistory = payments;
         AppState.stockAdjustments = stockAdjustments;
         AppState.withdrawalsHistory = withdrawals;
@@ -214,9 +216,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 // Expose loadUserDataAndInitialize for manual login trigger
 window.initializeApp = loadUserDataAndInitialize;
-
-// Expose functions needed by Firebase listeners
-window.renderexpensesHistory = () => ExpensesManager.renderexpensesHistory();
 
 // Expose clean API to window for HTML event handlers
 window.app = {
@@ -434,6 +433,7 @@ window.app = {
     // Outstanding
     outstanding: {
         filterDue: (filter, evt) => OutstandingManager.filterDue(filter, evt),
+        render: () => OutstandingManager.renderDue(),
         renderDue: () => OutstandingManager.renderDue(),
         searchOutstanding: () => OutstandingManager.searchOutstanding(),
         recordPayment: (txnId, txnType) => OutstandingManager.recordPayment(txnId, txnType),
@@ -490,7 +490,18 @@ window.app = {
         signIn: () => CashManagementManager.signIn(),
         signOut: () => CashManagementManager.signOut(),
         recordTransaction: () => CashManagementManager.recordTransaction(),
-        showDetails: (sessionDate) => CashManagementManager.showSessionDetails(sessionDate)
+        showDetails: (sessionDate) => CashManagementManager.showSessionDetails(sessionDate),
+        loadTodaySession: () => CashManagementManager.loadTodaySession(),
+        renderHistory: () => CashManagementManager.renderHistory(),
+        calculateTodayTransactions: () => CashManagementManager.calculateTodayTransactions(),
+        updateUI: () => CashManagementManager.updateUI()
+    },
+    
+    // Sales (alias for wholesaleSales for easier access)
+    sales: {
+        loadItemsDropdown: () => WholesaleSalesManager.loadItemsDropdown(),
+        loadItemDetails: () => WholesaleSalesManager.loadItemDetails(),
+        renderHistory: () => WholesaleSalesManager.renderSalesHistory()
     },
     
     // Settings

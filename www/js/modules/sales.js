@@ -331,7 +331,7 @@ export class SalesManager {
         };
         
         try {
-            await FirebaseService.saveSale(saleData);
+            await FirebaseService.saveWholesaleSale(saleData);
             
             // Audit log
             await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {

@@ -134,8 +134,9 @@ export class AnalyticsManager {
         };
         
         return {
-            bills: AppState.billHistory.filter(filterByDate),
-            sales: AppState.salesHistory.filter(filterByDate),
+            purchases: AppState.purchaseHistory.filter(filterByDate),
+            wholesaleSales: AppState.salesHistory.filter(filterByDate),
+            retailSales: AppState.retailSalesHistory.filter(filterByDate),
             expenses: {
                 business: (AppState.businessExpenses || []).filter(filterByDate),
                 personal: (AppState.personalExpenses || []).filter(filterByDate)
@@ -271,18 +272,19 @@ export class AnalyticsManager {
         const container = document.getElementById('healthScorecard');
         if (!container) return;
         
-        const { bills, sales } = data;
+        const { purchases, wholesaleSales, retailSales } = data;
+        const allSales = [...wholesaleSales, ...retailSales];
         
         // Calculate metrics
-        const totalOutstanding = [...bills, ...sales].reduce((sum, txn) => {
+        const totalOutstanding = [...purchases, ...allSales].reduce((sum, txn) => {
             return sum + (txn.payment?.due || 0);
         }, 0);
         
-        const clearedCount = [...bills, ...sales].filter(txn => txn.cleared).length;
-        const totalCount = bills.length + sales.length;
+        const clearedCount = [...purchases, ...allSales].filter(txn => txn.cleared).length;
+        const totalCount = purchases.length + allSales.length;
         const clearanceRate = totalCount > 0 ? (clearedCount / totalCount) * 100 : 0;
         
-        const avgDaysToPayment = this.calculateAvgDaysToPayment([...bills, ...sales]);
+        const avgDaysToPayment = this.calculateAvgDaysToPayment([...purchases, ...allSales]);
         
         const stockValue = Object.keys(AppState.stock).reduce((sum, itemKey) => {
             const stockItem = AppState.stock[itemKey];
@@ -507,11 +509,12 @@ export class AnalyticsManager {
 
     static renderItemsAnalytics() {
         const data = this.getFilteredData();
+        const allSales = [...data.wholesaleSales, ...data.retailSales];
         
-        this.renderTopSellingItemsByRevenue(data.sales);
-        this.renderTopSellingItemsByQuantity(data.sales);
-        this.renderTopPurchasedItems(data.bills);
-        this.renderItemProfitability(data.sales);
+        this.renderTopSellingItemsByRevenue(allSales);
+        this.renderTopSellingItemsByQuantity(allSales);
+        this.renderTopPurchasedItems(data.purchases);
+        this.renderItemProfitability(allSales);
     }
 
     static renderTopSellingItemsByRevenue(sales) {
@@ -756,11 +759,12 @@ export class AnalyticsManager {
 
     static renderCustomersAnalytics() {
         const data = this.getFilteredData();
+        const allSales = [...data.wholesaleSales, ...data.retailSales];
         
-        this.renderTopCustomersByRevenue(data.sales);
-        this.renderTopSuppliersByVolume(data.bills);
-        this.renderCustomerPaymentBehavior(data.sales, data.bills);
-        this.renderCustomerActivity(data.sales, data.bills);
+        this.renderTopCustomersByRevenue(allSales);
+        this.renderTopSuppliersByVolume(data.purchases);
+        this.renderCustomerPaymentBehavior(allSales, data.purchases);
+        this.renderCustomerActivity(allSales, data.purchases);
     }
 
     static renderTopCustomersByRevenue(sales) {

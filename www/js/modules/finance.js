@@ -47,23 +47,26 @@ export class FinanceManager {
      */
     static calculateOverview() {
         const salesHistory = AppState.salesHistory || [];
-        const billHistory = AppState.billHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const purchaseHistory = AppState.purchaseHistory || [];
         const expensesHistory = AppState.expensesHistory || [];
         const withdrawalsHistory = AppState.withdrawalsHistory || [];
 
-        // Calculate total revenue from sales and sales expenses
+        // Calculate total revenue from wholesale and retail sales
         let totalRevenue = 0;
         let salesExpenses = 0;
         salesHistory.forEach(sale => {
             totalRevenue += parseFloat(sale.total) || 0;
-            // Sales may have their own expenses (like transport, packaging, etc.)
             salesExpenses += parseFloat(sale.expenses) || 0;
+        });
+        retailSalesHistory.forEach(sale => {
+            totalRevenue += parseFloat(sale.total) || 0;
         });
         
         // Calculate total purchases
         let totalPurchases = 0;
-        billHistory.forEach(bill => {
-            totalPurchases += parseFloat(bill.total) || 0;
+        purchaseHistory.forEach(purchase => {
+            totalPurchases += parseFloat(purchase.total) || 0;
         });
         
         // Calculate business and personal expenses (from Miscellaneous tab)
@@ -167,13 +170,14 @@ export class FinanceManager {
      */
     static renderMonthlyProfitChart() {
         const salesHistory = AppState.salesHistory || [];
-        const billHistory = AppState.billHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const purchaseHistory = AppState.purchaseHistory || [];
         const expensesHistory = AppState.expensesHistory || [];
         
         // Group transactions by month
         const monthlyData = {};
         
-        // Process sales (revenue and their expenses)
+        // Process wholesale sales (revenue and their expenses)
         salesHistory.forEach(sale => {
             const date = new Date(sale.date);
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -181,17 +185,27 @@ export class FinanceManager {
                 monthlyData[monthKey] = { revenue: 0, costs: 0 };
             }
             monthlyData[monthKey].revenue += parseFloat(sale.total) || 0;
-            monthlyData[monthKey].costs += parseFloat(sale.expenses) || 0; // Add sales expenses
+            monthlyData[monthKey].costs += parseFloat(sale.expenses) || 0;
         });
         
-        // Process purchases
-        billHistory.forEach(bill => {
-            const date = new Date(bill.date);
+        // Process retail sales
+        retailSalesHistory.forEach(sale => {
+            const date = new Date(sale.date);
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[monthKey]) {
                 monthlyData[monthKey] = { revenue: 0, costs: 0 };
             }
-            monthlyData[monthKey].costs += parseFloat(bill.total) || 0;
+            monthlyData[monthKey].revenue += parseFloat(sale.total) || 0;
+        });
+        
+        // Process purchases
+        purchaseHistory.forEach(purchase => {
+            const date = new Date(purchase.date);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = { revenue: 0, costs: 0 };
+            }
+            monthlyData[monthKey].costs += parseFloat(purchase.total) || 0;
         });
         
         // Process expenses (business and personal from Miscellaneous tab)
@@ -241,7 +255,8 @@ export class FinanceManager {
 
     static renderTransactions() {
         const salesHistory = AppState.salesHistory || [];
-        const billHistory = AppState.billHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const purchaseHistory = AppState.purchaseHistory || [];
         const expensesHistory = AppState.expensesHistory || [];
         const withdrawalsHistory = AppState.withdrawalsHistory || [];
         
@@ -251,17 +266,17 @@ export class FinanceManager {
         // Combine all transactions
         const allTransactions = [];
         
+        // Wholesale sales
         salesHistory.forEach(sale => {
             allTransactions.push({
                 date: new Date(sale.date),
-                type: 'Sale',
-                description: sale.customerName ? `Sale to ${sale.customerName}` : 'Sale',
+                type: 'Wholesale Sale',
+                description: sale.customerName ? `Sale to ${sale.customerName}` : 'Wholesale Sale',
                 amount: parseFloat(sale.total),
                 isIncome: true,
                 id: sale.id
             });
             
-            // Add sales expenses as separate transaction if present
             const expenses = parseFloat(sale.expenses);
             if (expenses > 0) {
                 allTransactions.push({
@@ -275,14 +290,26 @@ export class FinanceManager {
             }
         });
         
-        billHistory.forEach(bill => {
+        // Retail sales
+        retailSalesHistory.forEach(sale => {
             allTransactions.push({
-                date: new Date(bill.date),
+                date: new Date(sale.date),
+                type: 'Retail Sale',
+                description: sale.customerName ? `Retail to ${sale.customerName}` : 'Retail Sale',
+                amount: parseFloat(sale.total),
+                isIncome: true,
+                id: sale.id
+            });
+        });
+        
+        purchaseHistory.forEach(purchase => {
+            allTransactions.push({
+                date: new Date(purchase.date),
                 type: 'Purchase',
-                description: bill.customerName ? `Purchase from ${bill.customerName}` : 'Purchase',
-                amount: parseFloat(bill.total),
+                description: purchase.customerName ? `Purchase from ${purchase.customerName}` : 'Purchase',
+                amount: parseFloat(purchase.total),
                 isIncome: false,
-                id: bill.id
+                id: purchase.id
             });
         });
         

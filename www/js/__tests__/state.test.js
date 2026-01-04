@@ -27,8 +27,12 @@ describe('AppState', () => {
             expect(AppState.billItems).toEqual([]);
         });
 
-        it('should have empty billHistory array', () => {
-            expect(AppState.billHistory).toEqual([]);
+        it('should have empty purchaseHistory array', () => {
+            expect(AppState.purchaseHistory).toEqual([]);
+        });
+
+        it('should have empty retailSalesHistory array', () => {
+            expect(AppState.retailSalesHistory).toEqual([]);
         });
 
         it('should have empty salesHistory array', () => {

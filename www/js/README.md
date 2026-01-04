@@ -69,8 +69,8 @@ www/js/
 
 | Module | Description |
 |--------|-------------|
-| `billing.js` | Purchase bills with weights, multiple rates, labour charges |
-| `sales.js` | Wholesale sales with stock deduction |
+| `billing.js` | Retail sales (billing tab) with weights, multiple rates, labour charges |
+| `sales.js` | Wholesale sales (sales tab) with stock deduction |
 | `retail-sales.js` | Retail point-of-sale |
 | `items.js` | Item CRUD, purchase/sale/wholesale rates |
 | `stock.js` | Stock levels, adjustments, history |

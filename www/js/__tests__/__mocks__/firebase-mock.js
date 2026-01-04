@@ -9,7 +9,8 @@
  */
 export const mockDataStore = {
     items: [],
-    bills: [],
+    purchases: [],
+    retailSales: [],
     sales: [],
     expenses: [],
     stockAdjustments: [],
@@ -23,7 +24,8 @@ export const mockDataStore = {
  */
 export function resetMockData() {
     mockDataStore.items = [];
-    mockDataStore.bills = [];
+    mockDataStore.purchases = [];
+    mockDataStore.retailSales = [];
     mockDataStore.sales = [];
     mockDataStore.expenses = [];
     mockDataStore.stockAdjustments = [];
@@ -62,33 +64,33 @@ export const MockFirebaseService = {
         }
     },
 
-    // Bills
-    async loadBills() {
-        return [...mockDataStore.bills];
+    // Purchases
+    async loadPurchases() {
+        return [...mockDataStore.purchases];
     },
 
-    async saveBill(bill) {
-        if (bill.id) {
-            const index = mockDataStore.bills.findIndex(b => b.id === bill.id);
+    async savePurchase(purchase) {
+        if (purchase.id) {
+            const index = mockDataStore.purchases.findIndex(b => b.id === purchase.id);
             if (index >= 0) {
-                mockDataStore.bills[index] = bill;
+                mockDataStore.purchases[index] = purchase;
             }
         } else {
-            bill.id = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            mockDataStore.bills.push(bill);
+            purchase.id = `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            mockDataStore.purchases.push(purchase);
         }
-        return bill;
+        return purchase;
     },
 
-    async deleteBill(billId) {
-        const index = mockDataStore.bills.findIndex(b => b.id === billId);
+    async deletePurchase(purchaseId) {
+        const index = mockDataStore.purchases.findIndex(b => b.id === purchaseId);
         if (index >= 0) {
-            mockDataStore.bills.splice(index, 1);
+            mockDataStore.purchases.splice(index, 1);
         }
     },
 
-    // Sales
-    async loadWholesaleSales() {
+    // Sales (Wholesale)
+    async loadSales() {
         return [...mockDataStore.sales];
     },
 
@@ -170,14 +172,39 @@ export const MockFirebaseService = {
         return session;
     },
 
+    // Retail Sales
+    async loadRetailSales() {
+        return [...mockDataStore.retailSales];
+    },
+
+    async saveRetailSale(sale) {
+        if (sale.id) {
+            const index = mockDataStore.retailSales.findIndex(s => s.id === sale.id);
+            if (index >= 0) {
+                mockDataStore.retailSales[index] = sale;
+            }
+        } else {
+            sale.id = `retail_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            mockDataStore.retailSales.push(sale);
+        }
+        return sale;
+    },
+
+    async deleteRetailSale(saleId) {
+        const index = mockDataStore.retailSales.findIndex(s => s.id === saleId);
+        if (index >= 0) {
+            mockDataStore.retailSales.splice(index, 1);
+        }
+    },
+
     // Stock calculation mock
     async calculateStock() {
         const stock = {};
         
-        // Add stock from bills (purchases)
-        mockDataStore.bills.forEach(bill => {
-            if (bill.items) {
-                bill.items.forEach(item => {
+        // Add stock from purchases
+        mockDataStore.purchases.forEach(purchase => {
+            if (purchase.items) {
+                purchase.items.forEach(item => {
                     const key = item.itemId || item.name;
                     if (!stock[key]) {
                         stock[key] = { quantity: 0, rate: 0 };
@@ -188,8 +215,20 @@ export const MockFirebaseService = {
             }
         });
 
-        // Subtract stock from sales
+        // Subtract stock from wholesale sales
         mockDataStore.sales.forEach(sale => {
+            if (sale.items) {
+                sale.items.forEach(item => {
+                    const key = item.itemId || item.name;
+                    if (stock[key]) {
+                        stock[key].quantity -= parseFloat(item.qty || item.quantity || 0);
+                    }
+                });
+            }
+        });
+
+        // Subtract stock from retail sales
+        mockDataStore.retailSales.forEach(sale => {
             if (sale.items) {
                 sale.items.forEach(item => {
                     const key = item.itemId || item.name;
@@ -216,7 +255,8 @@ export const MockAppState = {
     userName: 'Test User',
     userRole: 'owner',
     items: [],
-    billHistory: [],
+    purchaseHistory: [],
+    retailSalesHistory: [],
     salesHistory: [],
     expensesHistory: [],
     stockAdjustments: [],
@@ -235,7 +275,8 @@ export const MockAppState = {
  */
 export function resetMockAppState() {
     MockAppState.items = [];
-    MockAppState.billHistory = [];
+    MockAppState.purchaseHistory = [];
+    MockAppState.retailSalesHistory = [];
     MockAppState.salesHistory = [];
     MockAppState.expensesHistory = [];
     MockAppState.stockAdjustments = [];

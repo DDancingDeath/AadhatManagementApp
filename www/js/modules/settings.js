@@ -118,7 +118,8 @@ export class SettingsManager {
     static async clearAllData() {
         // Show collection selection modal
         const collections = [
-            { id: 'bills', name: 'Purchases' },
+            { id: 'purchases', name: 'Purchases' },
+            { id: 'retailSales', name: 'Retail Sales' },
             { id: 'wholesaleSales', name: 'Wholesale Sales' },
             { id: 'expenses', name: 'Expenses' },
             { id: 'stockAdjustments', name: 'Stock Adj.' },
@@ -544,7 +545,8 @@ export class SettingsManager {
             // Collections to check
             const collections = [
                 { name: 'items', label: 'Items', icon: '📦' },
-                { name: 'bills', label: 'Purchases', icon: '📥' },
+                { name: 'purchases', label: 'Purchases', icon: '📥' },
+                { name: 'retailSales', label: 'Retail Sales', icon: '🛒' },
                 { name: 'wholesaleSales', label: 'Wholesale Sales', icon: '📤' },
                 { name: 'expenses', label: 'Expenses', icon: '💳' },
                 { name: 'stockAdjustments', label: 'Stock Adjustments', icon: '📊' },

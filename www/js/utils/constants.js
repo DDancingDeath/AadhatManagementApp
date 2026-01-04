@@ -62,7 +62,8 @@ export const APP_CONFIG = {
     // Firebase collections
     COLLECTIONS: {
         ITEMS: 'items',
-        BILLS: 'bills',
+        PURCHASES: 'purchases',
+        RETAIL_SALES: 'retailSales',
         WHOLESALE_SALES: 'wholesaleSales',
         EXPENSES: 'expenses',
         STOCK_ADJUSTMENTS: 'stockAdjustments',

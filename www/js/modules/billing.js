@@ -748,7 +748,7 @@ const BillingManager = {
         
         try {
             // Query the appropriate collection based on type
-            const collection = type === 'sale' ? 'sales' : 'bills';
+            const collection = type === 'sale' ? 'retailSales' : 'purchases';
             const snapshot = await db.collection(collection)
                 .where('timestamp', '>=', todayStart.getTime())
                 .where('timestamp', '<', todayEnd.getTime())
@@ -831,7 +831,7 @@ const BillingManager = {
         
         try {
             UIManager.showLoading();
-            await FirebaseService.saveBill(bill);
+            await FirebaseService.savePurchase(bill);
             
             // Audit log
             await AuditService.log(AuditService.ACTIONS.CREATE_BILL, {
@@ -1341,7 +1341,7 @@ const BillingManager = {
         
         try {
             UIManager.showLoading();
-            await FirebaseService.saveSale(sale);
+            await FirebaseService.saveRetailSale(sale);
             
             // Audit log
             await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
@@ -1993,7 +1993,7 @@ const BillingManager = {
     async editBill(billIndex, billType = 'purchase') {
         try {
             // Get bill from correct history based on type
-            const history = billType === 'sale' ? AppState.salesHistory : AppState.billHistory;
+            const history = billType === 'sale' ? AppState.retailSalesHistory : AppState.purchaseHistory;
             const bill = history[billIndex];
             if (!bill) {
                 UIManager.showToast('Bill not found');
@@ -2109,7 +2109,7 @@ const BillingManager = {
             const billType = this.editingBillType || 'purchase';
             
             // Get bill from correct history based on type
-            const history = billType === 'sale' ? AppState.salesHistory : AppState.billHistory;
+            const history = billType === 'sale' ? AppState.retailSalesHistory : AppState.purchaseHistory;
             const bill = history[billIndex];
             
             if (!bill) {
@@ -2156,8 +2156,8 @@ const BillingManager = {
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
                 };
 
-                await FirebaseService.updateBill(updatedBill);
-                AppState.billHistory[billIndex] = updatedBill;
+                await FirebaseService.updatePurchase(updatedBill);
+                AppState.purchaseHistory[billIndex] = updatedBill;
                 
                 // Log audit entry for edit
                 await AuditService.log(AuditService.ACTIONS.EDIT_BILL, {

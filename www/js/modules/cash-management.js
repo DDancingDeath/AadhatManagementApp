@@ -152,11 +152,11 @@ export class CashManagementManager {
         });
 
         // Calculate cash purchases
-        const bills = AppState.billHistory || [];
-        bills.forEach(bill => {
-            const billTime = new Date(bill.date).getTime();
-            if (billTime >= todayStart && billTime < todayEnd && bill.payment?.cash > 0) {
-                this.todayTransactions.cashPurchases += bill.payment.cash;
+        const purchases = AppState.purchaseHistory || [];
+        purchases.forEach(purchase => {
+            const purchaseTime = new Date(purchase.date).getTime();
+            if (purchaseTime >= todayStart && purchaseTime < todayEnd && purchase.payment?.cash > 0) {
+                this.todayTransactions.cashPurchases += purchase.payment.cash;
             }
         });
 
@@ -663,9 +663,9 @@ export class CashManagementManager {
 
         const customers = new Set();
         
-        // Get customers from bill history
-        AppState.billHistory?.forEach(bill => {
-            if (bill.customerName) customers.add(bill.customerName);
+        // Get customers from purchase history
+        AppState.purchaseHistory?.forEach(purchase => {
+            if (purchase.customerName) customers.add(purchase.customerName);
         });
         
         // Get customers from sales history
