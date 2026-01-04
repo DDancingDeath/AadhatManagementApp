@@ -133,10 +133,19 @@ export class AnalyticsManager {
             return itemDate >= cutoffDate;
         };
         
+        // Return with both new names and legacy aliases for backward compatibility
+        const purchases = (AppState.purchaseHistory || []).filter(filterByDate);
+        const wholesaleSales = (AppState.salesHistory || []).filter(filterByDate);
+        const retailSales = (AppState.retailSalesHistory || []).filter(filterByDate);
+        
         return {
-            purchases: AppState.purchaseHistory.filter(filterByDate),
-            wholesaleSales: AppState.salesHistory.filter(filterByDate),
-            retailSales: AppState.retailSalesHistory.filter(filterByDate),
+            // New names
+            purchases,
+            wholesaleSales,
+            retailSales,
+            // Legacy aliases (bills = purchases, sales = wholesale + retail combined)
+            bills: purchases,
+            sales: [...wholesaleSales, ...retailSales],
             expenses: {
                 business: (AppState.businessExpenses || []).filter(filterByDate),
                 personal: (AppState.personalExpenses || []).filter(filterByDate)
@@ -291,10 +300,10 @@ export class AnalyticsManager {
             return sum + (stockItem.quantity || 0) * (stockItem.rate || 0);
         }, 0);
         
-        const salesWithExpenses = sales.filter(s => s.expenses && s.expenses > 0).length;
-        const expenseTrackingRate = sales.length > 0 ? (salesWithExpenses / sales.length) * 100 : 0;
+        const salesWithExpenses = allSales.filter(s => s.expenses && s.expenses > 0).length;
+        const expenseTrackingRate = allSales.length > 0 ? (salesWithExpenses / allSales.length) * 100 : 0;
         
-        const avgProfitPerSale = sales.length > 0 ? sales.reduce((sum, s) => sum + (s.profit || 0), 0) / sales.length : 0;
+        const avgProfitPerSale = allSales.length > 0 ? allSales.reduce((sum, s) => sum + (s.profit || 0), 0) / allSales.length : 0;
         
         container.innerHTML = `
             <div class="stats-card" style="background: ${totalOutstanding > 50000 ? '#fee' : '#efe'}; border-left: 4px solid ${totalOutstanding > 50000 ? '#dc3545' : '#28a745'};">

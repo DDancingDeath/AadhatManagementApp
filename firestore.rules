@@ -61,6 +61,11 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     
+    // Cash sessions - all authenticated users can read/write
+    match /cashSessions/{sessionId} {
+      allow read, write: if isSignedIn();
+    }
+    
     // Settings collection - all authenticated users can read/write
     match /settings/{settingId} {
       allow read, write: if isSignedIn();
