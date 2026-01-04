@@ -207,9 +207,17 @@ export class HistoryManager {
         container.innerHTML = "";
 
         sortedBills.forEach((bill, sortedIndex) => {
-            const billIndex = bill.isPurchase 
-                ? purchaseHistory.findIndex(b => b.id === bill.id)
-                : salesHistory.findIndex(s => s.id === bill.id);
+            // Find correct index based on bill type
+            let billIndex;
+            if (bill.type === 'purchase') {
+                billIndex = purchaseHistory.findIndex(b => b.id === bill.id);
+            } else if (bill.type === 'retail') {
+                billIndex = retailSalesHistory.findIndex(s => s.id === bill.id);
+            } else if (bill.type === 'wholesale') {
+                billIndex = salesHistory.findIndex(s => s.id === bill.id);
+            } else {
+                billIndex = -1;
+            }
             const div = document.createElement("div");
             div.className = "history-item";
             div.setAttribute('data-type', bill.type);
@@ -239,7 +247,7 @@ export class HistoryManager {
             const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
             const formattedDate = Helpers.formatDateTime(bill.date);
-            const itemColor = bill.type === 'sale' ? '#28a745' : '#007bff';
+            const itemColor = (bill.type === 'retail' || bill.type === 'wholesale') ? '#28a745' : '#007bff';
             
             div.innerHTML = `
                 <div class="history-header">
@@ -339,7 +347,18 @@ export class HistoryManager {
     */
 
     static async viewBill(index, type = 'purchase') {
-        const history = type === 'sale' ? AppState.salesHistory : AppState.purchaseHistory;
+        // Determine which history array to use based on type
+        let history;
+        if (type === 'purchase') {
+            history = AppState.purchaseHistory;
+        } else if (type === 'retail') {
+            history = AppState.retailSalesHistory;
+        } else if (type === 'wholesale') {
+            history = AppState.salesHistory;
+        } else {
+            UIManager.showModal(`Unknown bill type: ${type}`);
+            return;
+        }
         const bill = history[index];
         
         if (!bill) {
@@ -407,26 +426,32 @@ export class HistoryManager {
             </div>
         ` : '';
         
+        const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
+        
         const content = `
             <div style="padding: 16px; max-width: 100%;">
-                ${bill.customerName ? `
-                    <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
-                        <span style="color: #6c757d; font-size: 14px;">Customer:</span>
-                        <strong style="display: block; font-size: 16px; color: #212529; margin-top: 4px;">${bill.customerName}</strong>
+                <div class="bill-info-section">
+                    <div class="bill-info-row">
+                        <div class="bill-info-label">Bill No:</div>
+                        <div class="bill-info-value"><strong style="color: ${billColor};">#${billNumber}</strong></div>
                     </div>
-                ` : ''}
-                
-                <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px; display: flex; align-items: center; gap: 8px;">
-                    <span style="color: #6c757d; font-size: 14px;">Date:</span>
-                    <span style="font-size: 14px; color: #212529;">${Helpers.formatDateTime(bill.date)}</span>
+                    <div class="bill-info-row">
+                        <div class="bill-info-label">Date:</div>
+                        <div class="bill-info-value">${Helpers.formatDateTime(bill.date)}</div>
+                    </div>
+                    ${bill.createdByName || bill.userName ? `
+                        <div class="bill-info-row">
+                            <div class="bill-info-label">Created By:</div>
+                            <div class="bill-info-value">${bill.createdByName || bill.userName}</div>
+                        </div>
+                    ` : ''}
+                    ${bill.customerName ? `
+                        <div class="bill-info-row">
+                            <div class="bill-info-label">Customer:</div>
+                            <div class="bill-info-value"><strong>${bill.customerName}</strong></div>
+                        </div>
+                    ` : ''}
                 </div>
-                
-                ${bill.createdByName || bill.userName ? `
-                    <div style="margin-bottom: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px; display: flex; align-items: center; gap: 8px;">
-                        <span style="color: #6c757d; font-size: 14px;">Created By:</span>
-                        <span style="font-size: 14px; color: #212529;">${bill.createdByName || bill.userName}</span>
-                    </div>
-                ` : ''}
                 
                 ${bill.comments ? `
                     <div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
@@ -491,8 +516,6 @@ export class HistoryManager {
             </div>
         `;
         
-        const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
-        const billType = isPurchase ? 'Purchase Bill' : 'Sale';
         document.getElementById('billDetailsContent').innerHTML = content;
         
         // Show all buttons for both purchases and sales
@@ -521,13 +544,34 @@ export class HistoryManager {
     }
 
     static async deleteBill(index) {
-        // Determine if it's a purchase or sale based on current view
-        const activeFilterBtn = document.querySelector('#history .filter-btn.active');
-        const isSale = activeFilterBtn?.classList.contains('filter-sale');
-        const history = isSale ? AppState.salesHistory : AppState.purchaseHistory;
+        // Use the stored bill type from viewBill, or fall back to filter button
+        const billType = window.currentBillType;
+        
+        // Get the correct history array based on bill type
+        let history;
+        let collectionName;
+        
+        if (billType === 'purchase') {
+            history = AppState.purchaseHistory;
+            collectionName = 'purchases';
+        } else if (billType === 'retail') {
+            history = AppState.retailSalesHistory;
+            collectionName = 'retailSales';
+        } else if (billType === 'wholesale') {
+            history = AppState.salesHistory;
+            collectionName = 'wholesaleSales';
+        } else {
+            // Fallback to filter button for legacy bills
+            const activeFilterBtn = document.querySelector('#history .filter-btn.active');
+            const isSale = activeFilterBtn?.classList.contains('filter-sale');
+            history = isSale ? AppState.salesHistory : AppState.purchaseHistory;
+            collectionName = isSale ? 'wholesaleSales' : 'purchases';
+        }
+        
         const bill = history[index];
         
         if (!bill) {
+            this.closeBillDetails();
             UIManager.showToast('Bill not found');
             return;
         }
@@ -538,7 +582,6 @@ export class HistoryManager {
             // Delete from Firebase
             const userId = AppState.currentUser?.uid;
             if (userId) {
-                const collectionName = isSale ? 'wholesaleSales' : 'purchases';
                 const snapshot = await db.collection(collectionName)
                     .where('userId', '==', userId)
                     .where('timestamp', '==', bill.timestamp || bill.id)
@@ -556,6 +599,7 @@ export class HistoryManager {
             history.splice(index, 1);
             
             // Log audit entry
+            const isSale = billType !== 'purchase';
             const auditAction = isSale ? AuditService.ACTIONS.DELETE_SALE : AuditService.ACTIONS.DELETE_BILL;
             await AuditService.log(auditAction, {
                 billNumber: bill.billNumber || 'N/A',
@@ -670,8 +714,17 @@ export class HistoryManager {
         `;
 
         bills.forEach(bill => {
-            const isSale = type === 'sale';
-            const history = isSale ? AppState.salesHistory : purchaseHistory;
+            // Use bill.type (retail/wholesale/purchase) to determine correct history array
+            let history;
+            if (bill.type === 'purchase') {
+                history = purchaseHistory;
+            } else if (bill.type === 'retail') {
+                history = AppState.retailSalesHistory || [];
+            } else if (bill.type === 'wholesale') {
+                history = AppState.salesHistory || [];
+            } else {
+                history = purchaseHistory;
+            }
             const billIndex = history.findIndex(b => b.id === bill.id);
             const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
@@ -704,7 +757,7 @@ export class HistoryManager {
                     <tr style="border-bottom: 1px solid #e5e7eb; background: ${rowBackground}; cursor: pointer; transition: all 0.3s ease;" 
                         onmouseover="this.style.background='${hoverBackground}'; this.style.transform='scale(1.01)'" 
                         onmouseout="this.style.background='${rowBackground}'; this.style.transform='scale(1)'"
-                        onclick="window.app.history.viewBill(${billIndex}, '${type}')">
+                        onclick="window.app.history.viewBill(${billIndex}, '${bill.type}')">
                         ${isFirstRow ? `
                             <td rowspan="${rowspan}" style="padding: 12px 8px; border-right: 1px solid #e5e7eb; font-weight: 500;">
                                 ${bill.customerName || '-'}

@@ -83,8 +83,9 @@ export class OutstandingManager {
      */
     static renderDue() {
         const currentDueFilter = AppState.currentDueFilter;
-        const purchaseHistory = AppState.purchaseHistory;
-        const salesHistory = AppState.salesHistory;
+        const purchaseHistory = AppState.purchaseHistory || [];
+        const salesHistory = AppState.salesHistory || [];  // wholesale
+        const retailSalesHistory = AppState.retailSalesHistory || [];  // retail
         const container = document.getElementById("dueList");
         
         const dueTransactions = [];
@@ -111,7 +112,8 @@ export class OutstandingManager {
                 }
             });
         } else if (currentDueFilter === 'sale') {
-            salesHistory.forEach(sale => {
+            // Only retail sales - wholesale dues are on wholesale page
+            retailSalesHistory.forEach(sale => {
                 const dueReceived = sale.payment ? (sale.payment.due || 0) : (sale.dueAmount || 0);
                 
                 if (dueReceived > 0 && !sale.cleared) {
@@ -122,7 +124,7 @@ export class OutstandingManager {
                     
                     dueTransactions.push({
                         ...sale,
-                        transactionType: 'sale',
+                        transactionType: 'retail',
                         outstanding: dueReceived,
                         totalAmount: totalReceivable,
                         paidAmount: totalReceived,
@@ -160,11 +162,12 @@ export class OutstandingManager {
             div.className = "history-item";
             div.setAttribute('data-type', transaction.transactionType);
             
-            const itemColor = transaction.transactionType === 'sale' ? '#28a745' : '#007bff';
+            const itemColor = transaction.transactionType === 'purchase' ? '#007bff' : '#28a745';
+            const billNumber = transaction.billNumber || transaction.id?.toString().substring(0, 8) || 'N/A';
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">#${transaction.id}</span>${transaction.customerName ? `  <strong>${transaction.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">#${billNumber}</span>${transaction.customerName ? `  <strong>${transaction.customerName}</strong>` : ''}
                     <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
                 </div>
                 <div class="history-date">${Helpers.formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${transaction.createdByName}</strong>` : ''}</div>
@@ -212,7 +215,10 @@ export class OutstandingManager {
             let transaction;
             if (transactionType === 'purchase') {
                 transaction = AppState.purchaseHistory.find(b => String(b.id) === String(transactionId));
+            } else if (transactionType === 'retail') {
+                transaction = AppState.retailSalesHistory.find(s => String(s.id) === String(transactionId));
             } else {
+                // wholesale
                 transaction = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
             }
             
@@ -251,11 +257,16 @@ export class OutstandingManager {
             if (transactionType === 'purchase') {
                 const totalPayable = transaction.grandTotal || transaction.amountPayable || transaction.total || 0;
                 transaction.payment.due = totalPayable - transaction.payment.total;
-                await FirebaseService.updateBill(transaction);
-            } else {
+                await FirebaseService.updatePurchase(transaction);
+            } else if (transactionType === 'retail') {
                 const totalReceivable = transaction.total || 0;
                 transaction.payment.due = totalReceivable - transaction.payment.total;
-                await FirebaseService.updateSale(transaction);
+                await FirebaseService.updateRetailSale(transaction);
+            } else {
+                // wholesale
+                const totalReceivable = transaction.total || 0;
+                transaction.payment.due = totalReceivable - transaction.payment.total;
+                await FirebaseService.updateWholesaleSale(transaction);
             }
             
             paymentInput.value = '';
@@ -281,7 +292,14 @@ export class OutstandingManager {
 
     static async markAsCleared(transactionId, transactionType) {
         try {
-            const collection = transactionType === 'purchase' ? 'purchases' : 'wholesaleSales';
+            let collection;
+            if (transactionType === 'purchase') {
+                collection = 'purchases';
+            } else if (transactionType === 'retail') {
+                collection = 'retailSales';
+            } else {
+                collection = 'wholesaleSales';
+            }
             
             await db.collection(collection).doc(String(transactionId)).update({
                 cleared: true,
@@ -290,13 +308,16 @@ export class OutstandingManager {
                 clearedByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             });
             
+            // Update local state
+            let transaction;
             if (transactionType === 'purchase') {
-                const purchase = AppState.purchaseHistory.find(b => String(b.id) === String(transactionId));
-                if (purchase) purchase.cleared = true;
+                transaction = AppState.purchaseHistory.find(b => String(b.id) === String(transactionId));
+            } else if (transactionType === 'retail') {
+                transaction = AppState.retailSalesHistory.find(s => String(s.id) === String(transactionId));
             } else {
-                const sale = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
-                if (sale) sale.cleared = true;
+                transaction = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
             }
+            if (transaction) transaction.cleared = true;
             
             UIManager.hapticFeedback('light');
             UIManager.showToast('✓ Outstanding marked as cleared');
@@ -308,18 +329,23 @@ export class OutstandingManager {
     }
 
     static async showDetails(transactionId, transactionType) {
-        const purchaseHistory = AppState.purchaseHistory;
-        const salesHistory = AppState.salesHistory;
-        
         if (transactionType === 'purchase') {
-            const purchaseIndex = purchaseHistory.findIndex(b => String(b.id) === String(transactionId));
+            const purchaseIndex = AppState.purchaseHistory.findIndex(b => String(b.id) === String(transactionId));
             if (purchaseIndex >= 0) {
                 await window.app.history.viewBill(purchaseIndex, 'purchase');
             } else {
                 UIManager.showModal('Purchase not found');
             }
+        } else if (transactionType === 'retail') {
+            const saleIndex = AppState.retailSalesHistory.findIndex(s => String(s.id) === String(transactionId));
+            if (saleIndex >= 0) {
+                await window.app.history.viewBill(saleIndex, 'retail');
+            } else {
+                UIManager.showModal('Retail sale not found');
+            }
         } else {
-            const saleIndex = salesHistory.findIndex(s => String(s.id) === String(transactionId));
+            // wholesale
+            const saleIndex = AppState.salesHistory.findIndex(s => String(s.id) === String(transactionId));
             if (saleIndex >= 0) {
                 await window.app.wholesaleSales.reprintSale(saleIndex);
             } else {

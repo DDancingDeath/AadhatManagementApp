@@ -823,7 +823,18 @@ const BillingManager = {
      */
     async editBill(billIndex, billType = 'purchase') {
         try {
-            const history = billType === 'sale' ? AppState.retailSalesHistory : AppState.purchaseHistory;
+            // Determine which history array to use based on type
+            let history;
+            if (billType === 'purchase') {
+                history = AppState.purchaseHistory;
+            } else if (billType === 'retail') {
+                history = AppState.retailSalesHistory;
+            } else if (billType === 'wholesale') {
+                history = AppState.salesHistory;
+            } else {
+                UIManager.showToast(`Unknown bill type: ${billType}`);
+                return;
+            }
             const bill = history[billIndex];
             if (!bill) {
                 UIManager.showToast('Bill not found');
@@ -834,7 +845,8 @@ const BillingManager = {
             this.editingBillId = bill.id;
             this.editingBillType = billType;
 
-            const mode = billType === 'sale' ? 'sale' : 'purchase';
+            // Retail bills use 'sale' mode, wholesale cannot be edited from billing tab
+            const mode = billType === 'retail' ? 'sale' : 'purchase';
             if (this.currentMode !== mode) {
                 const btn = mode === 'sale' ? document.getElementById('saleModeBtn') : document.getElementById('purchaseModeBtn');
                 this.switchMode(mode, { currentTarget: btn });
@@ -920,7 +932,18 @@ const BillingManager = {
             const billIndex = this.editingBillIndex;
             const billType = this.editingBillType || 'purchase';
             
-            const history = billType === 'sale' ? AppState.retailSalesHistory : AppState.purchaseHistory;
+            // Determine which history array to use based on type
+            let history;
+            if (billType === 'purchase') {
+                history = AppState.purchaseHistory;
+            } else if (billType === 'retail') {
+                history = AppState.retailSalesHistory;
+            } else if (billType === 'wholesale') {
+                history = AppState.salesHistory;
+            } else {
+                UIManager.showToast(`Unknown bill type: ${billType}`);
+                return;
+            }
             const bill = history[billIndex];
             
             if (!bill) {

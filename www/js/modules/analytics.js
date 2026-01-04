@@ -179,7 +179,8 @@ export class AnalyticsManager {
      */
     static renderOverview() {
         const data = this.getFilteredData();
-        const { bills, sales } = data;
+        const bills = data?.bills || [];
+        const sales = data?.sales || [];
         
         // Calculate key metrics
         const totalTransactions = bills.length + sales.length;
@@ -364,7 +365,8 @@ export class AnalyticsManager {
 
     static renderSalesAnalytics() {
         const data = this.getFilteredData();
-        const { bills, sales } = data;
+        const bills = data?.bills || [];
+        const sales = data?.sales || [];
         
         const totalSales = sales.reduce((sum, s) => sum + (s.total || 0), 0);
         const totalPurchases = bills.reduce((sum, b) => sum + (b.grandTotal || b.total || 0), 0);
@@ -517,12 +519,15 @@ export class AnalyticsManager {
     }
 
     static renderItemsAnalytics() {
-        const data = this.getFilteredData();
-        const allSales = [...data.wholesaleSales, ...data.retailSales];
+        const data = this.getFilteredData() || {};
+        const wholesaleSales = data.wholesaleSales || [];
+        const retailSales = data.retailSales || [];
+        const purchases = data.purchases || [];
+        const allSales = [...wholesaleSales, ...retailSales];
         
         this.renderTopSellingItemsByRevenue(allSales);
         this.renderTopSellingItemsByQuantity(allSales);
-        this.renderTopPurchasedItems(data.purchases);
+        this.renderTopPurchasedItems(purchases);
         this.renderItemProfitability(allSales);
     }
 
@@ -767,13 +772,16 @@ export class AnalyticsManager {
     }
 
     static renderCustomersAnalytics() {
-        const data = this.getFilteredData();
-        const allSales = [...data.wholesaleSales, ...data.retailSales];
+        const data = this.getFilteredData() || {};
+        const wholesaleSales = data.wholesaleSales || [];
+        const retailSales = data.retailSales || [];
+        const purchases = data.purchases || [];
+        const allSales = [...wholesaleSales, ...retailSales];
         
         this.renderTopCustomersByRevenue(allSales);
-        this.renderTopSuppliersByVolume(data.purchases);
-        this.renderCustomerPaymentBehavior(allSales, data.purchases);
-        this.renderCustomerActivity(allSales, data.purchases);
+        this.renderTopSuppliersByVolume(purchases);
+        this.renderCustomerPaymentBehavior(allSales, purchases);
+        this.renderCustomerActivity(allSales, purchases);
     }
 
     static renderTopCustomersByRevenue(sales) {

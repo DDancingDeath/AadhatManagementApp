@@ -277,7 +277,7 @@ export class ReportsManager {
             const date = new Date(bill.date);
             const dateStr = date.toLocaleDateString('en-IN');
             const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-            const type = bill.type === 'sale' ? 'Sale' : 'Purchase';
+            const type = 'Purchase'; // filteredPurchases only contains purchases
             const customer = bill.customerName || '-';
             
             bill.items.forEach(item => {
@@ -474,7 +474,7 @@ export class ReportsManager {
                 ${filteredPurchases.slice(0, 20).map(bill => `
                     <tr>
                         <td>${new Date(bill.date).toLocaleDateString('en-IN')}</td>
-                        <td>${bill.type === 'sale' ? 'Sale' : 'Purchase'}</td>
+                        <td>Purchase</td>
                         <td>${bill.customerName || '-'}</td>
                         <td>${bill.items.map(i => i.name).join(', ')}</td>
                         <td class="text-right">₹${bill.total.toLocaleString('en-IN')}</td>

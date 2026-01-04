@@ -198,4 +198,35 @@ export class Helpers {
             console.error('Pick contact error:', error);
         }
     }
+
+    // -------------------- BILL NUMBER GENERATION --------------------
+
+    /**
+     * Generate a bill number with prefix and date
+     * Format: {prefix}{YYYYMMDD}-{sequence}
+     * @param {string} prefix - Bill type prefix ('P' for purchase, 'S' for retail sale, 'W' for wholesale)
+     * @param {string} collectionName - Firebase collection name to query for sequence
+     * @returns {Promise<string>} Generated bill number
+     */
+    static async generateBillNumber(prefix, collectionName) {
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+        
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayEnd = new Date(todayStart);
+        todayEnd.setDate(todayEnd.getDate() + 1);
+        
+        try {
+            const snapshot = await db.collection(collectionName)
+                .where('timestamp', '>=', todayStart.getTime())
+                .where('timestamp', '<', todayEnd.getTime())
+                .get();
+            
+            const nextNum = snapshot.size + 1;
+            return `${prefix}${dateStr}-${String(nextNum).padStart(3, '0')}`;
+        } catch (error) {
+            console.error('Error generating bill number:', error);
+            return `${prefix}${dateStr}-${Date.now().toString().slice(-3)}`;
+        }
+    }
 }

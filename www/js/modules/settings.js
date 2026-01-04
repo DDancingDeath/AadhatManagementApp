@@ -161,17 +161,21 @@ export class SettingsManager {
             }
         }, 100);
         
-        const confirmed = await UIManager.showModalWithHtml(
-            modalHTML,
-            'Clear Data',
-            true
-        );
+        // Show modal and get selected collections before it closes
+        let selectedCollections = [];
+        
+        const confirmed = await new Promise((resolve) => {
+            UIManager.showModalWithHtml(modalHTML, 'Clear Data', true).then((result) => {
+                if (result) {
+                    // Capture checkbox values while modal content still exists
+                    const checkboxes = document.querySelectorAll('.collection-checkbox:checked');
+                    selectedCollections = Array.from(checkboxes).map(cb => cb.dataset.collection);
+                }
+                resolve(result);
+            });
+        });
         
         if (!confirmed) return;
-        
-        // Get selected collections
-        const checkboxes = document.querySelectorAll('.collection-checkbox:checked');
-        const selectedCollections = Array.from(checkboxes).map(cb => cb.dataset.collection);
         
         if (selectedCollections.length === 0) {
             UIManager.showToast('No collections selected');

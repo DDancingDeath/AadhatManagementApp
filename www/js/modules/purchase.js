@@ -448,26 +448,7 @@ const PurchaseManager = {
      * @returns {Promise<string>} Generated bill number
      */
     async generateBillNumber() {
-        const prefix = 'P';
-        const today = new Date();
-        const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-        
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const todayEnd = new Date(todayStart);
-        todayEnd.setDate(todayEnd.getDate() + 1);
-        
-        try {
-            const snapshot = await db.collection('purchases')
-                .where('timestamp', '>=', todayStart.getTime())
-                .where('timestamp', '<', todayEnd.getTime())
-                .get();
-            
-            const nextNum = snapshot.size + 1;
-            return `${prefix}${dateStr}-${String(nextNum).padStart(3, '0')}`;
-        } catch (error) {
-            console.error('Error generating bill number:', error);
-            return `${prefix}${dateStr}-${Date.now().toString().slice(-3)}`;
-        }
+        return Helpers.generateBillNumber('P', 'purchases');
     },
 
     /**
@@ -508,7 +489,7 @@ const PurchaseManager = {
             ? laborCalculationSpan?.textContent || null 
             : null;
         
-        const billNumber = await this.generateBillNumber();
+        const billNumber = await Helpers.generateBillNumber('P', 'purchases');
         
         const bill = {
             id: Helpers.generateId(),

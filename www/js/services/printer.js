@@ -1046,6 +1046,7 @@ const PrinterService = {
         // Convert sale data to bill format for printing
         const billData = {
             id: saleData.id || Date.now(),
+            billNumber: saleData.billNumber,
             customerName: saleData.customerName || 'Walk-in Customer',
             items: saleData.items.map(item => ({
                 name: item.name,
@@ -1053,19 +1054,29 @@ const PrinterService = {
                 qty: item.qty || item.quantity,
                 total: item.total
             })),
+            total: saleData.total,
+            saleTotal: saleData.total,
+            grandTotal: saleData.total,
+            amountPayable: saleData.total,
             totals: {
                 billTotal: saleData.total,
                 labor: 0,
                 payable: saleData.total
+            },
+            payment: saleData.payment || {
+                online: 0,
+                cash: 0,
+                due: saleData.total
             },
             payments: {
                 online: 0,
                 cash: 0,
                 due: saleData.total
             },
-            comments: '',
+            comments: saleData.comments || '',
             date: saleData.date || new Date().toLocaleString('en-IN'),
-            mode: 'sale'
+            mode: 'sale',
+            isPurchase: false
         };
 
         // Use the standard printBill method

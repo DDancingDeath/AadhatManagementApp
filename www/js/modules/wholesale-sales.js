@@ -10,25 +10,7 @@ let wholesaleSaleItems = [];
 
 export class WholesaleSalesManager {
     static async generateBillNumber() {
-        const today = new Date();
-        const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-        
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const todayEnd = new Date(todayStart);
-        todayEnd.setDate(todayEnd.getDate() + 1);
-        
-        try {
-            const snapshot = await db.collection('wholesaleSales')
-                .where('timestamp', '>=', todayStart.getTime())
-                .where('timestamp', '<', todayEnd.getTime())
-                .get();
-            
-            const nextNum = snapshot.size + 1;
-            return `S${dateStr}-${String(nextNum).padStart(3, '0')}`;
-        } catch (error) {
-            console.error('Error generating sale number:', error);
-            return `S${dateStr}-${Date.now().toString().slice(-3)}`;
-        }
+        return Helpers.generateBillNumber('W', 'wholesaleSales');
     }
 
     static async pickContact() {
@@ -259,7 +241,7 @@ export class WholesaleSalesManager {
         const profitPercent = Helpers.getElementNumber('salesProfitPercent');
         
         // Generate bill number
-        const billNumber = await this.generateBillNumber();
+        const billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
         
         const saleData = {
             id: Date.now(),
@@ -277,6 +259,7 @@ export class WholesaleSalesManager {
             profit,
             profitPercent,
             comments,
+            type: 'wholesale',
             payment: {
                 online: 0,
                 cash: 0,
@@ -291,7 +274,7 @@ export class WholesaleSalesManager {
         };
         
         try {
-            await FirebaseService.saveSale(saleData);
+            await FirebaseService.saveWholesaleSale(saleData);
             
             // Audit log
             await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
@@ -479,7 +462,7 @@ export class WholesaleSalesManager {
         sale.payment.due = sale.total - sale.payment.total;
         
         try {
-            await FirebaseService.updateSale(sale);
+            await FirebaseService.updateWholesaleSale(sale);
             
             paymentInput.value = '';
             this.renderSalesOutstanding();
@@ -504,7 +487,7 @@ export class WholesaleSalesManager {
         sale.cleared = true;
         
         try {
-            await FirebaseService.updateSale(sale);
+            await FirebaseService.updateWholesaleSale(sale);
             
             this.renderSalesOutstanding();
             window.app.outstanding.renderDue();
@@ -559,9 +542,10 @@ export class WholesaleSalesManager {
                 const div = document.createElement("div");
                 div.className = "history-item";
                 
+                const billNumber = sale.billNumber || sale.id;
                 div.innerHTML = `
                     <div class="history-header">
-                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${sale.id}')">#${sale.id}</span>${sale.customerName ? `  <strong>${sale.customerName}</strong>` : ''}</span>
+                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${sale.id}')">#${billNumber}</span>${sale.customerName ? `  <strong>${sale.customerName}</strong>` : ''}</span>
                         <span style="color: #dc3545; font-weight: 700;">Due: ₹${Math.round(sale.outstanding)}</span>
                     </div>
                     <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
@@ -631,7 +615,7 @@ export class WholesaleSalesManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSale(${saleIndex})">#${sale.id}</span>${sale.customerName ? `<strong>${sale.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSale(${saleIndex})">#${sale.billNumber || sale.id}</span>${sale.customerName ? `<strong>${sale.customerName}</strong>` : ''}
                     <span style="color: #28a745; font-weight: 700;">₹ ${Math.round(sale.total)}</span>
                 </div>
                 <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
@@ -653,86 +637,118 @@ export class WholesaleSalesManager {
             return;
         }
         
+        // Store index and type for edit/delete functionality
+        window.currentBillIndex = index;
+        window.currentBillType = 'wholesale';
+        
         const itemsHTML = sale.items.map(item => {
             const qty = item.qty || item.quantity || 0;
             return `
                 <tr>
-                    <td>${item.name}</td>
-                    <td>${qty} kg</td>
-                    <td>₹${item.rate}</td>
-                    <td><strong>₹${Math.round(item.total)}</strong></td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${qty}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${Math.round(item.total)}</strong></td>
                 </tr>
             `;
         }).join('');
         
         const payment = sale.payment || {};
         const paymentHTML = (payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
-            <div class="bill-payment-section">
-                <h4>Payment Details</h4>
-                ${payment.online > 0 ? `<div class="bill-payment-row"><span>Online:</span><strong>₹${Math.round(payment.online)}</strong></div>` : ''}
-                ${payment.cash > 0 ? `<div class="bill-payment-row"><span>Cash:</span><strong>₹${Math.round(payment.cash)}</strong></div>` : ''}
-                ${payment.due > 0 ? `<div class="bill-payment-row" style="color: #dc3545;"><span>Due:</span><strong>₹${Math.round(payment.due)}</strong></div>` : ''}
+            <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6; margin-top: 12px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #212529;">Payment Details</h4>
+                ${payment.online > 0 ? `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                        <span>Online:</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #cfe2ff; color: #084298;">₹${Math.round(payment.online)}</span>
+                    </div>
+                ` : ''}
+                ${payment.cash > 0 ? `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                        <span>Cash:</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #d1e7dd; color: #0f5132;">₹${Math.round(payment.cash)}</span>
+                    </div>
+                ` : ''}
+                ${payment.due > 0 ? `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                        <span>Due:</span>
+                        <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #fff3cd; color: #997404;">₹${Math.round(payment.due)}</span>
+                    </div>
+                ` : ''}
             </div>
         ` : '';
         
         const paymentsHistoryHTML = sale.payments && sale.payments.length > 0 ? `
-            <div class="bill-payment-section" style="background: #e7f5e9;">
-                <h4 style="color: #155724;">Payment History</h4>
+            <div style="background: #e7f5e9; padding: 14px; border-radius: 10px; border: 1px solid #c3e6c3; margin-top: 12px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #155724;">Payment History</h4>
                 ${sale.payments.map(p => `
-                    <div class="bill-payment-row"><span>• ${p.date}${p.recordedBy ? ` by ${p.recordedBy}` : ''}</span><strong>₹${Math.round(p.amount)}</strong></div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
+                        <span>• ${p.date}${p.recordedBy ? ` by ${p.recordedBy}` : ''}</span>
+                        <strong>₹${Math.round(p.amount)}</strong>
+                    </div>
                 `).join('')}
             </div>
         ` : '';
         
+        const billNumber = sale.billNumber || sale.id;
+        
         const content = `
-            <div class="bill-info-section">
-                ${sale.customerName ? `
+            <div style="padding: 16px; max-width: 100%;">
+                <div class="bill-info-section">
                     <div class="bill-info-row">
-                        <div class="bill-info-label">Customer:</div>
-                        <div class="bill-info-value"><strong>${sale.customerName}</strong></div>
+                        <div class="bill-info-label">Bill No:</div>
+                        <div class="bill-info-value"><strong style="color: #28a745;">#${billNumber}</strong></div>
                     </div>
-                ` : ''}
-                <div class="bill-info-row">
-                    <div class="bill-info-label">Date:</div>
-                    <div class="bill-info-value">${sale.date}</div>
+                    <div class="bill-info-row">
+                        <div class="bill-info-label">Date:</div>
+                        <div class="bill-info-value">${sale.date}</div>
+                    </div>
+                    ${sale.createdByName ? `
+                        <div class="bill-info-row">
+                            <div class="bill-info-label">Created By:</div>
+                            <div class="bill-info-value">${sale.createdByName}</div>
+                        </div>
+                    ` : ''}
+                    ${sale.customerName ? `
+                        <div class="bill-info-row">
+                            <div class="bill-info-label">Customer:</div>
+                            <div class="bill-info-value"><strong>${sale.customerName}</strong></div>
+                        </div>
+                    ` : ''}
                 </div>
-                ${sale.createdByName ? `
-                    <div class="bill-info-row">
-                        <div class="bill-info-label">Created By:</div>
-                        <div class="bill-info-value">${sale.createdByName}</div>
-                    </div>
-                ` : ''}
+                
                 ${sale.comments ? `
-                    <div class="bill-info-row" style="background: #fff3cd; padding: 8px; border-radius: 6px; border-left: 4px solid #ffc107;">
-                        <div class="bill-info-label">Comments:</div>
-                        <div class="bill-info-value">${sale.comments}</div>
+                    <div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+                        <span style="color: #6c757d; font-size: 14px;">Comments:</span>
+                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${sale.comments}</div>
                     </div>
                 ` : ''}
-            </div>
-            
-            <table class="bill-items-table">
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th>Qty</th>
-                        <th>Rate</th>
-                        <th>Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${itemsHTML}
-                </tbody>
-            </table>
-            
-            <div class="bill-totals-section">
-                <div class="bill-totals-row total">
-                    <span>Total:</span>
-                    <strong>₹${Math.round(sale.total)}</strong>
+                
+                <h4 style="margin: 16px 0 12px 0; color: #212529; font-size: 15px;">Sale Items</h4>
+                <table style="width: 100%; border-collapse: collapse; background: white; margin-bottom: 16px;">
+                    <thead>
+                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding: 10px 8px; text-align: left; font-size: 14px; font-weight: 600; color: #495057;">Item</th>
+                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Rate (₹)</th>
+                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Qty (kg)</th>
+                            <th style="padding: 10px 8px; text-align: right; font-size: 14px; font-weight: 600; color: #495057;">Total (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsHTML}
+                    </tbody>
+                </table>
+                
+                <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6;">
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px;">
+                        <span style="font-weight: 600;">Sale Total:</span>
+                        <strong style="font-size: 17px; color: #28a745;">₹${Math.round(sale.total)}</strong>
+                    </div>
                 </div>
+                
+                ${paymentHTML}
+                ${paymentsHistoryHTML}
             </div>
-            
-            ${paymentHTML}
-            ${paymentsHistoryHTML}
         `;
         
         document.getElementById('billDetailsContent').innerHTML = content;
