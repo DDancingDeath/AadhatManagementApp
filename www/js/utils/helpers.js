@@ -1,9 +1,20 @@
-// -------------------- UTILITY HELPERS --------------------
+/**
+ * Utility Helpers Module
+ * Common utility functions used throughout the application
+ * @module utils/helpers
+ */
 
+/**
+ * Static utility helper class
+ */
 export class Helpers {
     // -------------------- FORMATTING --------------------
     
-    // Escape HTML to prevent XSS
+    /**
+     * Escape HTML to prevent XSS attacks
+     * @param {string} text - Text to escape
+     * @returns {string} Escaped HTML string
+     */
     static escapeHtml(text) {
         const map = {
             '&': '&amp;',
@@ -15,7 +26,11 @@ export class Helpers {
         return text.replace(/[&<>"']/g, m => map[m]);
     }
 
-    // Format date (DD MMM YYYY)
+    /**
+     * Format date as DD MMM YYYY
+     * @param {Date|string} date - Date to format
+     * @returns {string} Formatted date string
+     */
     static formatDate(date) {
         if (!date) return '';
         const d = new Date(date);
@@ -26,7 +41,11 @@ export class Helpers {
         });
     }
 
-    // Format date with time (DD/MM/YYYY, HH:MM AM/PM)
+    /**
+     * Format date with time as DD/MM/YYYY, HH:MM AM/PM
+     * @param {string} dateString - Date string to format
+     * @returns {string} Formatted date/time string
+     */
     static formatDateTime(dateString) {
         if (!dateString) return '';
         try {
@@ -44,12 +63,19 @@ export class Helpers {
         }
     }
 
-    // Get current date/time string in en-IN locale
+    /**
+     * Get current date/time string in en-IN locale
+     * @returns {string} Current date/time string
+     */
     static getCurrentDateTime() {
         return new Date().toLocaleString('en-IN');
     }
 
-    // Format currency
+    /**
+     * Format amount as Indian Rupee currency
+     * @param {number} amount - Amount to format
+     * @returns {string} Formatted currency string
+     */
     static formatCurrency(amount) {
         return new Intl.NumberFormat('en-IN', {
             style: 'currency',
@@ -59,12 +85,20 @@ export class Helpers {
 
     // -------------------- GENERATORS --------------------
 
-    // Generate unique ID
+    /**
+     * Generate a unique ID using timestamp and random string
+     * @returns {string} Unique identifier
+     */
     static generateId() {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
     }
 
-    // Debounce function
+    /**
+     * Create a debounced version of a function
+     * @param {Function} func - Function to debounce
+     * @param {number} wait - Milliseconds to wait
+     * @returns {Function} Debounced function
+     */
     static debounce(func, wait) {
         let timeout;
         return function executedFunction(...args) {
@@ -79,34 +113,59 @@ export class Helpers {
 
     // -------------------- INPUT HELPERS --------------------
 
-    // Get float value from input element (for rates, weights)
+    /**
+     * Get float value from input element
+     * @param {string} elementId - Input element ID
+     * @param {number} [defaultValue=0] - Default value if parsing fails
+     * @returns {number} Parsed float value
+     */
     static getInputNumber(elementId, defaultValue = 0) {
         const el = document.getElementById(elementId);
         const value = parseFloat(el?.value);
         return isNaN(value) ? defaultValue : value;
     }
 
-    // Get integer value from input element (for amounts, totals)
+    /**
+     * Get integer value from input element
+     * @param {string} elementId - Input element ID
+     * @param {number} [defaultValue=0] - Default value if parsing fails
+     * @returns {number} Parsed integer value
+     */
     static getInputInt(elementId, defaultValue = 0) {
         const el = document.getElementById(elementId);
         const value = parseInt(el?.value, 10);
         return isNaN(value) ? defaultValue : value;
     }
 
-    // Get trimmed string value from input element
+    /**
+     * Get trimmed string value from input element
+     * @param {string} elementId - Input element ID
+     * @param {string} [defaultValue=''] - Default value if empty
+     * @returns {string} Trimmed input value
+     */
     static getInputText(elementId, defaultValue = '') {
         const el = document.getElementById(elementId);
         return el?.value?.trim() || defaultValue;
     }
 
-    // Get float value from element's text content (for weights, rates)
+    /**
+     * Get float value from element's text content
+     * @param {string} elementId - Element ID
+     * @param {number} [defaultValue=0] - Default value if parsing fails
+     * @returns {number} Parsed float value
+     */
     static getElementNumber(elementId, defaultValue = 0) {
         const el = document.getElementById(elementId);
         const value = parseFloat(el?.textContent);
         return isNaN(value) ? defaultValue : value;
     }
 
-    // Get integer value from element's text content (for amounts, totals)
+    /**
+     * Get integer value from element's text content
+     * @param {string} elementId - Element ID
+     * @param {number} [defaultValue=0] - Default value if parsing fails
+     * @returns {number} Parsed integer value
+     */
     static getElementInt(elementId, defaultValue = 0) {
         const el = document.getElementById(elementId);
         const value = parseInt(el?.textContent, 10);
@@ -115,7 +174,11 @@ export class Helpers {
 
     // -------------------- DEVICE HELPERS --------------------
 
-    // Pick contact from device
+    /**
+     * Pick a contact from the device's contact list
+     * @param {string} inputElementId - ID of input element to populate with contact name
+     * @returns {Promise<void>}
+     */
     static async pickContact(inputElementId) {
         try {
             if ('contacts' in navigator && 'ContactsManager' in window) {

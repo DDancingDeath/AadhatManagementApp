@@ -1,9 +1,22 @@
+/**
+ * @fileoverview Firebase Firestore Service Module
+ * Provides all database operations for the Aadhat Management App.
+ * Handles CRUD operations for items, bills, sales, expenses, stock, and cash management.
+ * @module firebase/firestore-service
+ */
+
 // -------------------- FIREBASE DATA OPERATIONS --------------------
 
 import { AppState } from '../utils/state.js';
 import { APP_CONFIG } from '../utils/constants.js';
 
-// Get Firestore database reference
+/**
+ * Gets the Firestore database reference.
+ * Attempts to get firebase.firestore() first, falls back to global db.
+ * @returns {firebase.firestore.Firestore} The Firestore database instance
+ * @throws {Error} If Firestore is not initialized
+ * @private
+ */
 const getDb = () => {
     if (typeof firebase !== 'undefined' && firebase.firestore) {
         return firebase.firestore();
@@ -15,16 +28,28 @@ const getDb = () => {
     throw new Error('Firestore not initialized');
 };
 
-// Store unsubscribe functions for cleanup
+/** @type {Function[]} Array of unsubscribe functions for real-time listeners */
 const unsubscribeFunctions = [];
 
+/**
+ * Firebase Service object containing all database operations.
+ * Provides methods for CRUD operations on all collections.
+ * @namespace FirebaseService
+ */
 const FirebaseService = {
-    // Get the database reference
+    /**
+     * Gets the Firestore database reference.
+     * @type {firebase.firestore.Firestore}
+     */
     get db() {
         return getDb();
     },
 
-    // Cleanup all listeners
+    /**
+     * Cleans up all active real-time listeners.
+     * Should be called when user logs out or app is destroyed.
+     * @returns {void}
+     */
     cleanup() {
         unsubscribeFunctions.forEach(unsubscribe => {
             if (typeof unsubscribe === 'function') {
@@ -34,13 +59,26 @@ const FirebaseService = {
         unsubscribeFunctions.length = 0;
     },
 
-    // Load items from Firestore
+    /**
+     * Loads all items from Firestore.
+     * @async
+     * @returns {Promise<Array<{id: string, name: string, hindiName?: string, rate?: number}>>} Array of item objects
+     */
     async loadItems() {
         const snapshot = await getDb().collection('items').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    // Save item to Firestore
+    /**
+     * Saves an item to Firestore. Creates new if no ID, updates if ID exists.
+     * @async
+     * @param {Object} item - The item to save
+     * @param {string} [item.id] - Item ID (if updating existing)
+     * @param {string} item.name - Item name
+     * @param {string} [item.hindiName] - Item name in Hindi
+     * @param {number} [item.rate] - Default rate for the item
+     * @returns {Promise<Object>} The saved item with ID
+     */
     async saveItem(item) {
         if (item.id) {
             await getDb().collection('items').doc(item.id).set(item);
@@ -51,18 +89,38 @@ const FirebaseService = {
         return item;
     },
 
-    // Delete item from Firestore
+    /**
+     * Deletes an item from Firestore.
+     * @async
+     * @param {string} itemId - The ID of the item to delete
+     * @returns {Promise<void>}
+     */
     async deleteItem(itemId) {
         await getDb().collection('items').doc(itemId).delete();
     },
 
-    // Load bills from Firestore
+    /**
+     * Loads all bills from Firestore, ordered by date descending.
+     * @async
+     * @returns {Promise<Array<Object>>} Array of bill objects
+     */
     async loadBills() {
         const snapshot = await getDb().collection('bills').orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    // Save bill to Firestore
+    /**
+     * Saves a bill to Firestore. Creates new if no ID, updates if ID exists.
+     * Automatically adds userId and userName from AppState.
+     * @async
+     * @param {Object} bill - The bill to save
+     * @param {string} [bill.id] - Bill ID (if updating existing)
+     * @param {string} bill.partyName - Party/customer name
+     * @param {string} bill.date - Bill date
+     * @param {Array} bill.items - Array of bill items
+     * @param {number} bill.total - Total bill amount
+     * @returns {Promise<Object>} The saved bill with ID
+     */
     async saveBill(bill) {
         if (!bill.userId && AppState.currentUser) {
             bill.userId = AppState.currentUser.uid;
@@ -80,7 +138,14 @@ const FirebaseService = {
         return bill;
     },
 
-    // Update bill in Firestore
+    /**
+     * Updates an existing bill in Firestore.
+     * @async
+     * @param {Object} bill - The bill to update
+     * @param {string} bill.id - Bill ID (required)
+     * @returns {Promise<Object>} The updated bill
+     * @throws {Error} If bill.id is not provided
+     */
     async updateBill(bill) {
         if (!bill.id) {
             throw new Error('Bill ID is required for update');
@@ -89,18 +154,37 @@ const FirebaseService = {
         return bill;
     },
 
-    // Delete bill from Firestore
+    /**
+     * Deletes a bill from Firestore.
+     * @async
+     * @param {string} billId - The ID of the bill to delete
+     * @returns {Promise<void>}
+     */
     async deleteBill(billId) {
         await getDb().collection('bills').doc(billId).delete();
     },
 
-    // Load wholesale sales from Firestore
+    /**
+     * Loads all wholesale sales from Firestore, ordered by date descending.
+     * @async
+     * @returns {Promise<Array<Object>>} Array of sale objects
+     */
     async loadSales() {
         const snapshot = await getDb().collection('wholesaleSales').orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    // Save sale to Firestore
+    /**
+     * Saves a wholesale sale to Firestore. Creates new if no ID, updates if ID exists.
+     * @async
+     * @param {Object} sale - The sale to save
+     * @param {string} [sale.id] - Sale ID (if updating existing)
+     * @param {string} sale.partyName - Party/customer name
+     * @param {string} sale.date - Sale date
+     * @param {Array} sale.items - Array of sale items
+     * @param {number} sale.total - Total sale amount
+     * @returns {Promise<Object>} The saved sale with ID
+     */
     async saveSale(sale) {
         if (!sale.userId && AppState.currentUser) {
             sale.userId = AppState.currentUser.uid;
@@ -118,7 +202,14 @@ const FirebaseService = {
         return sale;
     },
 
-    // Update sale in Firestore
+    /**
+     * Updates an existing sale in Firestore.
+     * @async
+     * @param {Object} sale - The sale to update
+     * @param {string} sale.id - Sale ID (required)
+     * @returns {Promise<Object>} The updated sale
+     * @throws {Error} If sale.id is not provided
+     */
     async updateSale(sale) {
         if (!sale.id) {
             throw new Error('Sale ID is required for update');
@@ -127,7 +218,17 @@ const FirebaseService = {
         return sale;
     },
 
-    // Save retail sale to Firestore
+    /**
+     * Saves a retail sale to Firestore. Uses wholesaleSales collection.
+     * @async
+     * @param {Object} sale - The retail sale to save
+     * @param {string} [sale.id] - Sale ID (if updating existing)
+     * @param {string} sale.customerName - Customer name
+     * @param {string} sale.date - Sale date
+     * @param {Array} sale.items - Array of sale items
+     * @param {number} sale.total - Total sale amount
+     * @returns {Promise<Object>} The saved sale with ID
+     */
     async saveRetailSale(sale) {
         if (!sale.userId && AppState.currentUser) {
             sale.userId = AppState.currentUser.uid;
@@ -145,13 +246,26 @@ const FirebaseService = {
         return sale;
     },
 
-    // Load expenses from Firestore
+    /**
+     * Loads all expenses from Firestore, ordered by date descending.
+     * @async
+     * @returns {Promise<Array<Object>>} Array of expense objects
+     */
     async loadExpenses() {
         const snapshot = await getDb().collection('expenses').orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    // Save expense to Firestore
+    /**
+     * Saves an expense to Firestore.
+     * @async
+     * @param {Object} expense - The expense to save
+     * @param {string} expense.description - Expense description
+     * @param {number} expense.amount - Expense amount
+     * @param {string} expense.date - Expense date
+     * @param {string} [expense.category] - Expense category
+     * @returns {Promise<Object>} The saved expense with ID
+     */
     async saveExpense(expense) {
         if (!expense.userId && AppState.currentUser) {
             expense.userId = AppState.currentUser.uid;
@@ -164,7 +278,14 @@ const FirebaseService = {
         return { id: docRef.id, ...expense };
     },
 
-    // Delete expense from Firestore
+    /**
+     * Deletes an expense from Firestore.
+     * Handles both old numeric IDs and new Firebase document IDs.
+     * Also updates local AppState.expensesHistory.
+     * @async
+     * @param {string|number} expenseId - The ID of the expense to delete
+     * @returns {Promise<void>}
+     */
     async deleteExpense(expenseId) {
         // Handle both old numeric IDs and new Firebase document IDs
         if (typeof expenseId === 'number' || !isNaN(Number(expenseId))) {
@@ -184,13 +305,28 @@ const FirebaseService = {
         }
     },
 
-    // Load stock adjustments from Firestore
+    /**
+     * Loads all stock adjustments from Firestore, ordered by date descending.
+     * @async
+     * @returns {Promise<Array<Object>>} Array of stock adjustment objects
+     */
     async loadStockAdjustments() {
         const snapshot = await getDb().collection('stockAdjustments').orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    // Save stock adjustment to Firestore
+    /**
+     * Saves a stock adjustment to Firestore.
+     * @async
+     * @param {Object} adjustment - The stock adjustment to save
+     * @param {string} adjustment.itemId - ID of the item being adjusted
+     * @param {string} adjustment.adjustType - Type of adjustment ('add', 'remove', 'set')
+     * @param {number} adjustment.quantity - Adjustment quantity
+     * @param {number} [adjustment.rate] - Rate for the adjustment
+     * @param {string} adjustment.date - Adjustment date
+     * @param {string} [adjustment.reason] - Reason for adjustment
+     * @returns {Promise<Object>} The saved adjustment with ID
+     */
     async saveStockAdjustment(adjustment) {
         if (!adjustment.userId && AppState.currentUser) {
             adjustment.userId = AppState.currentUser.uid;
@@ -203,7 +339,12 @@ const FirebaseService = {
         return { id: docRef.id, ...adjustment };
     },
 
-    // Load withdrawals from Firestore
+    /**
+     * Loads all withdrawals from Firestore, ordered by date descending.
+     * Converts Firestore Timestamp to JavaScript Date objects.
+     * @async
+     * @returns {Promise<Array<Object>>} Array of withdrawal objects
+     */
     async loadWithdrawals() {
         try {
             const snapshot = await getDb().collection('withdrawals').orderBy('date', 'desc').get();
@@ -221,7 +362,15 @@ const FirebaseService = {
         }
     },
 
-    // Save withdrawal to Firestore
+    /**
+     * Saves a withdrawal to Firestore.
+     * @async
+     * @param {Object} withdrawal - The withdrawal to save
+     * @param {number} withdrawal.amount - Withdrawal amount
+     * @param {string} withdrawal.date - Withdrawal date
+     * @param {string} [withdrawal.description] - Description of withdrawal
+     * @returns {Promise<Object>} The saved withdrawal with ID
+     */
     async saveWithdrawal(withdrawal) {
         if (!withdrawal.userId && AppState.currentUser) {
             withdrawal.userId = AppState.currentUser.uid;
@@ -234,11 +383,21 @@ const FirebaseService = {
         return { id: docRef.id, ...withdrawal };
     },
 
-    // Calculate stock from all bills and sales
+    /**
+     * Calculates current stock levels from all bills, sales, and adjustments.
+     * Uses purchase bills to add stock, sales to subtract stock.
+     * Applies stock adjustments (add, remove, set) to final values.
+     * @async
+     * @returns {Promise<Object.<string, {quantity: number, rate: number}>>} Stock object keyed by item ID
+     */
     async calculateStock() {
         const stock = {};
         
-        // Helper function to get item key (use itemId if available, otherwise name)
+        /**
+         * Helper function to get item key (use itemId if available, otherwise name)
+         * @param {Object} item - Item from bill/sale
+         * @returns {string} Item key for stock lookup
+         */
         const getItemKey = (item) => {
             if (item.itemId) {
                 const foundItem = AppState.items.find(i => i.id === item.itemId);
@@ -341,7 +500,12 @@ const FirebaseService = {
         return stock;
     },
 
-    // Set up real-time listeners for live sync
+    /**
+     * Sets up real-time Firestore listeners for live data synchronization.
+     * Listens to items, bills, sales, expenses, and stock adjustments collections.
+     * Updates AppState and triggers render functions when data changes.
+     * @returns {void}
+     */
     setupRealtimeListeners() {
         // Clear any existing listeners first
         this.cleanup();
@@ -401,7 +565,16 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubStockAdj);
     },
 
-    // Notify owners of edits
+    /**
+     * Notifies all owner users when a document is edited.
+     * Creates notification documents for each owner in the notifications collection.
+     * @async
+     * @param {string} type - Type of document edited (e.g., 'bill', 'sale')
+     * @param {string} docId - ID of the edited document
+     * @param {Object} oldData - Original data before edit
+     * @param {Object} newData - New data after edit
+     * @returns {Promise<void>}
+     */
     async notifyOwnersOfEdit(type, docId, oldData, newData) {
         try {
             const usersSnapshot = await getDb().collection('users').where('role', '==', 'owner').get();
@@ -430,13 +603,25 @@ const FirebaseService = {
         }
     },
 
-    // Load withdrawals from Firestore (secondary method with timestamp order)
+    /**
+     * Loads withdrawals from Firestore ordered by timestamp (secondary method).
+     * @async
+     * @returns {Promise<Array<Object>>} Array of withdrawal objects
+     */
     async loadWithdrawalsByTimestamp() {
         const snapshot = await getDb().collection('withdrawals').orderBy('timestamp', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    // Save withdrawal to Firestore (with additional user tracking)
+    /**
+     * Saves a withdrawal with additional tracking information.
+     * Adds withdrawnBy and withdrawnByName fields for audit trail.
+     * @async
+     * @param {Object} withdrawal - The withdrawal to save
+     * @param {number} withdrawal.amount - Withdrawal amount
+     * @param {string} withdrawal.date - Withdrawal date
+     * @returns {Promise<Object>} The saved withdrawal with ID and tracking info
+     */
     async saveWithdrawalWithTracking(withdrawal) {
         if (!withdrawal.userId && AppState.currentUser) {
             withdrawal.userId = AppState.currentUser.uid;
@@ -452,13 +637,26 @@ const FirebaseService = {
         return { id: docRef.id, ...withdrawal };
     },
 
-    // Load cash sessions from Firestore
+    /**
+     * Loads all cash management sessions from Firestore, ordered by date descending.
+     * @async
+     * @returns {Promise<Array<Object>>} Array of cash session objects
+     */
     async loadCashSessions() {
         const snapshot = await getDb().collection('cashManagement').orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    // Save cash session to Firestore
+    /**
+     * Saves a cash management session to Firestore.
+     * @async
+     * @param {Object} session - The cash session to save
+     * @param {string} [session.id] - Session ID (if updating existing)
+     * @param {string} session.date - Session date
+     * @param {number} session.openingCash - Opening cash amount
+     * @param {number} [session.closingCash] - Closing cash amount
+     * @returns {Promise<Object>} The saved session with ID
+     */
     async saveCashSession(session) {
         if (session.id) {
             await getDb().collection('cashManagement').doc(session.id).set(session);
@@ -469,7 +667,14 @@ const FirebaseService = {
         return session;
     },
 
-    // Update cash session in Firestore
+    /**
+     * Updates an existing cash management session in Firestore.
+     * @async
+     * @param {Object} session - The session to update
+     * @param {string} session.id - Session ID (required)
+     * @returns {Promise<Object>} The updated session
+     * @throws {Error} If session.id is not provided
+     */
     async updateCashSession(session) {
         if (!session.id) {
             throw new Error('Session ID is required for update');

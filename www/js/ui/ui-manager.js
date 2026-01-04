@@ -1,20 +1,73 @@
+/**
+ * @fileoverview UI Manager Module
+ * Provides centralized UI utility functions for the Aadhat Management App.
+ * Handles loading states, toasts, modals, and haptic feedback.
+ * @module ui/ui-manager
+ */
+
 // -------------------- UI UTILITIES --------------------
 
 import { AppState } from '../utils/state.js';
 
+/**
+ * UI Manager object containing all UI utility functions.
+ * @namespace UIManager
+ */
 const UIManager = {
-    // Loading state
+    /**
+     * Shows the loading overlay.
+     * @returns {void}
+     */
     showLoading() {
         const overlay = document.getElementById('loadingOverlay');
         if (overlay) overlay.classList.add('active');
     },
 
+    /**
+     * Hides the loading overlay.
+     * @returns {void}
+     */
     hideLoading() {
         const overlay = document.getElementById('loadingOverlay');
         if (overlay) overlay.classList.remove('active');
     },
 
-    // Toast notification
+    /**
+     * Wraps an async operation with loading state.
+     * Shows loading overlay before the operation, hides it after completion.
+     * @async
+     * @template T
+     * @param {Promise<T>|Function} operation - The async operation or function to execute
+     * @returns {Promise<T>} The result of the operation
+     * @throws {Error} Rethrows any error from the operation after hiding loading
+     * @example
+     * // Usage with a promise
+     * const result = await UIManager.withLoading(FirebaseService.loadItems());
+     * 
+     * // Usage with an async function
+     * const result = await UIManager.withLoading(async () => {
+     *     const items = await FirebaseService.loadItems();
+     *     return items.filter(i => i.active);
+     * });
+     */
+    async withLoading(operation) {
+        this.showLoading();
+        try {
+            if (typeof operation === 'function') {
+                return await operation();
+            }
+            return await operation;
+        } finally {
+            this.hideLoading();
+        }
+    },
+
+    /**
+     * Shows a toast notification message.
+     * @param {string} message - The message to display
+     * @param {number} [duration=2000] - Duration in milliseconds to show the toast
+     * @returns {void}
+     */
     showToast(message, duration = 2000) {
         const toast = document.getElementById('toast');
         if (!toast) return;
@@ -27,7 +80,13 @@ const UIManager = {
         }, duration);
     },
 
-    // Modal
+    /**
+     * Shows a modal dialog with message and optional cancel button.
+     * @param {string} message - The message to display
+     * @param {string} [title='Alert'] - The modal title
+     * @param {boolean} [showCancel=false] - Whether to show cancel button
+     * @returns {Promise<boolean>} Resolves with user's choice (true for OK, false for Cancel)
+     */
     showModal(message, title = 'Alert', showCancel = false) {
         return new Promise((resolve) => {
             const overlay = document.getElementById('modalOverlay');
@@ -50,6 +109,11 @@ const UIManager = {
         });
     },
 
+    /**
+     * Closes the modal dialog and resolves with result.
+     * @param {boolean} result - The result to resolve the modal promise with
+     * @returns {void}
+     */
     closeModal(result) {
         const overlay = document.getElementById('modalOverlay');
         if (overlay) {
@@ -61,8 +125,13 @@ const UIManager = {
         }
     },
 
-    // Custom modal with HTML content (sanitized)
-    // Note: Only use this for trusted content or sanitize input before calling
+    /**
+     * Shows a custom modal with HTML content and custom buttons.
+     * WARNING: Only use for trusted content. Consider using DOMPurify for user-generated content.
+     * @param {string} html - The HTML content to display
+     * @param {Array<{text: string, value: any, class?: string}>} buttons - Array of button configs
+     * @returns {Promise<any>} Resolves with the clicked button's value
+     */
     showCustomModal(html, buttons) {
         return new Promise((resolve) => {
             const overlay = document.getElementById('modalOverlay');
@@ -97,7 +166,14 @@ const UIManager = {
         });
     },
 
-    // Show modal with HTML content (for trusted internal use only)
+    /**
+     * Shows a modal with HTML content. For trusted internal use only.
+     * WARNING: Only use for trusted content. Consider DOMPurify for user-generated content.
+     * @param {string} htmlMessage - The HTML message to display
+     * @param {string} [title='Alert'] - The modal title
+     * @param {boolean} [showCancel=false] - Whether to show cancel button
+     * @returns {Promise<boolean>} Resolves with user's choice
+     */
     showModalWithHtml(htmlMessage, title = 'Alert', showCancel = false) {
         return new Promise((resolve) => {
             const overlay = document.getElementById('modalOverlay');
@@ -120,7 +196,11 @@ const UIManager = {
         });
     },
 
-    // Haptic feedback
+    /**
+     * Triggers haptic feedback vibration on supported devices.
+     * @param {'light'|'medium'|'heavy'|'success'|'error'} [type='light'] - Type of haptic feedback
+     * @returns {void}
+     */
     hapticFeedback(type = 'light') {
         try {
             if ('vibrate' in navigator) {
