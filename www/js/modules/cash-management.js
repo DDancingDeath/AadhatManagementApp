@@ -423,38 +423,38 @@ export class CashManagementManager {
             return;
         }
 
-        // Check if yesterday's closing matches today's opening
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayDate = yesterday.toISOString().split('T')[0];
-        
-        const sessions = await FirebaseService.loadCashSessions();
-        const yesterdaySession = sessions.find(s => s.date === yesterdayDate);
-        
-        if (yesterdaySession && yesterdaySession.signedOut) {
-            const diff = Math.abs(yesterdaySession.closingBalance - amount);
-            if (diff > 1) {
-                const confirmed = await UIManager.showModal(
-                    `Yesterday's closing was ₹${yesterdaySession.closingBalance}, but you're signing in with ₹${amount}.\nDifference: ₹${diff.toFixed(2)}\n\nDo you want to continue?`,
-                    'Cash Mismatch Warning',
-                    true
-                );
-                if (!confirmed) return;
-            }
-        }
-
-        const session = {
-            id: generateId(),
-            date: new Date().toISOString().split('T')[0],
-            openingBalance: amount,
-            signInTime: new Date().toISOString(),
-            userId: AppState.currentUser?.uid || 'unknown',
-            userName: AppState.userName || 'Unknown',
-            signedOut: false,
-            duePayments: []
-        };
-
         try {
+            // Check if yesterday's closing matches today's opening
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayDate = yesterday.toISOString().split('T')[0];
+            
+            const sessions = await FirebaseService.loadCashSessions();
+            const yesterdaySession = sessions.find(s => s.date === yesterdayDate);
+            
+            if (yesterdaySession && yesterdaySession.signedOut) {
+                const diff = Math.abs(yesterdaySession.closingBalance - amount);
+                if (diff > 1) {
+                    const confirmed = await UIManager.showModal(
+                        `Yesterday's closing was ₹${yesterdaySession.closingBalance}, but you're signing in with ₹${amount}.\nDifference: ₹${diff.toFixed(2)}\n\nDo you want to continue?`,
+                        'Cash Mismatch Warning',
+                        true
+                    );
+                    if (!confirmed) return;
+                }
+            }
+
+            const session = {
+                id: generateId(),
+                date: new Date().toISOString().split('T')[0],
+                openingBalance: amount,
+                signInTime: new Date().toISOString(),
+                userId: AppState.currentUser?.uid || 'unknown',
+                userName: AppState.userName || 'Unknown',
+                signedOut: false,
+                duePayments: []
+            };
+
             await FirebaseService.saveCashSession(session);
             this.todaySession = session;
             await this.calculateTodayTransactions();
@@ -702,13 +702,14 @@ export class CashManagementManager {
     }
 
     static async showSessionDetails(sessionDate) {
-        const sessions = await FirebaseService.loadCashSessions();
-        const session = sessions.find(s => s.date === sessionDate);
-        
-        if (!session) {
-            UIManager.showToast('Session not found');
-            return;
-        }
+        try {
+            const sessions = await FirebaseService.loadCashSessions();
+            const session = sessions.find(s => s.date === sessionDate);
+            
+            if (!session) {
+                UIManager.showToast('Session not found');
+                return;
+            }
 
         const date = new Date(session.date).toLocaleDateString('en-IN', { 
             weekday: 'long', 
@@ -903,6 +904,10 @@ export class CashManagementManager {
             </div>
         `;
 
-        UIManager.showModal(modalContent, 'Cash Session Details', false);
+            UIManager.showModal(modalContent, 'Cash Session Details', false);
+        } catch (error) {
+            console.error('Error loading session details:', error);
+            UIManager.showToast('Failed to load session details');
+        }
     }
 }

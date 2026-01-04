@@ -18,19 +18,20 @@ export class StockManager {
         const container = document.getElementById("stockList");
         if (!container) return;
 
-        const stock = await FirebaseService.calculateStock();
-        AppState.stock = stock;
+        try {
+            const stock = await FirebaseService.calculateStock();
+            AppState.stock = stock;
 
-        if (Object.keys(stock).length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No stock data available</p>';
-            return;
-        }
+            if (Object.keys(stock).length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No stock data available</p>';
+                return;
+            }
 
-        container.innerHTML = "";
-        
-        // Consolidate stock by itemId to prevent duplicates
-        const consolidatedStock = {};
-        Object.keys(stock).forEach(key => {
+            container.innerHTML = "";
+            
+            // Consolidate stock by itemId to prevent duplicates
+            const consolidatedStock = {};
+            Object.keys(stock).forEach(key => {
             // Key could be itemId or old name-based key
             const item = AppState.items.find(i => i.id === key || i.name === key || i.hindiName === key);
             if (!item) return;
@@ -94,7 +95,11 @@ export class StockManager {
             `;
             
             container.appendChild(div);
-        });
+            });
+        } catch (error) {
+            console.error('Error loading stock:', error);
+            container.innerHTML = '<p style="text-align: center; color: #dc3545; margin-top: 40px;">Failed to load stock data</p>';
+        }
     }
 
     static searchStock() {
@@ -356,67 +361,72 @@ export class StockManager {
         const container = document.getElementById("adjustmentHistory");
         if (!container) return;
 
-        const adjustments = await FirebaseService.loadStockAdjustments();
-        AppState.stockAdjustments = adjustments;
-        
-        // Sort by timestamp/date (newest first)
-        adjustments.sort((a, b) => {
-            const timeA = a.timestamp || new Date(a.date).getTime();
-            const timeB = b.timestamp || new Date(b.date).getTime();
-            return timeB - timeA;
-        });
+        try {
+            const adjustments = await FirebaseService.loadStockAdjustments();
+            AppState.stockAdjustments = adjustments;
+            
+            // Sort by timestamp/date (newest first)
+            adjustments.sort((a, b) => {
+                const timeA = a.timestamp || new Date(a.date).getTime();
+                const timeB = b.timestamp || new Date(b.date).getTime();
+                return timeB - timeA;
+            });
 
-        if (adjustments.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>';
-            return;
-        }
+            if (adjustments.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>';
+                return;
+            }
 
-        container.innerHTML = "";
-        
-        adjustments.forEach(adj => {
-            const div = document.createElement("div");
-            div.className = "history-item";
+            container.innerHTML = "";
             
-            const typeLabels = { add: 'Added', remove: 'Removed', set: 'Set to' };
-            const typeColors = { add: '#28a745', remove: '#dc3545', set: '#007bff' };
-            
-            // Handle legacy data that might not have adjustType or quantity
-            const adjustType = adj.adjustType || 'set';
-            const quantity = adj.quantity !== undefined ? adj.quantity : 'Unknown';
-            const typeLabel = typeLabels[adjustType] || 'Adjusted';
-            const typeColor = typeColors[adjustType] || '#6c757d';
-            
-            // Find item to show in correct language
-            const item = AppState.items.find(i => i.id === adj.itemId || i.name === adj.itemName);
-            const displayName = (AppState.settings.showHindi && item?.hindiName) ? item.hindiName : (item?.name || adj.itemName || 'Unknown Item');
-            
-            // Use adjustment rate if available, otherwise fall back to current stock rate
-            const adjustmentRate = adj.rate || 0;
-            const stockKey = adj.itemId || adj.itemName;
-            const currentStockRate = AppState.stock[stockKey]?.rate || 0;
-            const displayRate = adjustmentRate > 0 ? adjustmentRate : currentStockRate;
-            
-            // Calculate value impact if rate is available
-            const valueImpact = (quantity !== 'Unknown' && displayRate > 0) ? quantity * displayRate : null;
-            
-            div.innerHTML = `
-                <div class="history-header">
-                    <strong>${displayName}</strong>
-                    <span style="color: ${typeColor}; font-weight: 600;">
-                        ${typeLabel} ${quantity !== 'Unknown' ? quantity + ' kg' : ''}
-                    </span>
-                </div>
-                <div class="history-date">${adj.date || 'Unknown date'}${adj.createdByName ? ` • By: ${adj.createdByName}` : ''}</div>
-                <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
-                    ${displayRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${displayRate.toFixed(2)}/kg${valueImpact ? ` • Value: ₹${Math.round(valueImpact)}` : ''}</div>` : ''}
-                    <div style="font-size: 13px; color: #666;">
-                        ${(adj.previousStock || 0).toFixed(1)} kg → ${(adj.newStock || 0).toFixed(1)} kg
+            adjustments.forEach(adj => {
+                const div = document.createElement("div");
+                div.className = "history-item";
+                
+                const typeLabels = { add: 'Added', remove: 'Removed', set: 'Set to' };
+                const typeColors = { add: '#28a745', remove: '#dc3545', set: '#007bff' };
+                
+                // Handle legacy data that might not have adjustType or quantity
+                const adjustType = adj.adjustType || 'set';
+                const quantity = adj.quantity !== undefined ? adj.quantity : 'Unknown';
+                const typeLabel = typeLabels[adjustType] || 'Adjusted';
+                const typeColor = typeColors[adjustType] || '#6c757d';
+                
+                // Find item to show in correct language
+                const item = AppState.items.find(i => i.id === adj.itemId || i.name === adj.itemName);
+                const displayName = (AppState.settings.showHindi && item?.hindiName) ? item.hindiName : (item?.name || adj.itemName || 'Unknown Item');
+                
+                // Use adjustment rate if available, otherwise fall back to current stock rate
+                const adjustmentRate = adj.rate || 0;
+                const stockKey = adj.itemId || adj.itemName;
+                const currentStockRate = AppState.stock[stockKey]?.rate || 0;
+                const displayRate = adjustmentRate > 0 ? adjustmentRate : currentStockRate;
+                
+                // Calculate value impact if rate is available
+                const valueImpact = (quantity !== 'Unknown' && displayRate > 0) ? quantity * displayRate : null;
+                
+                div.innerHTML = `
+                    <div class="history-header">
+                        <strong>${displayName}</strong>
+                        <span style="color: ${typeColor}; font-weight: 600;">
+                            ${typeLabel} ${quantity !== 'Unknown' ? quantity + ' kg' : ''}
+                        </span>
                     </div>
-                    ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${adj.reason}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
-                </div>
-            `;
-            
-            container.appendChild(div);
-        });
+                    <div class="history-date">${adj.date || 'Unknown date'}${adj.createdByName ? ` • By: ${adj.createdByName}` : ''}</div>
+                    <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                        ${displayRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${displayRate.toFixed(2)}/kg${valueImpact ? ` • Value: ₹${Math.round(valueImpact)}` : ''}</div>` : ''}
+                        <div style="font-size: 13px; color: #666;">
+                            ${(adj.previousStock || 0).toFixed(1)} kg → ${(adj.newStock || 0).toFixed(1)} kg
+                        </div>
+                        ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${adj.reason}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
+                    </div>
+                `;
+                
+                container.appendChild(div);
+            });
+        } catch (error) {
+            console.error('Error loading adjustment history:', error);
+            container.innerHTML = '<p style="text-align: center; color: #dc3545; margin-top: 20px;">Failed to load history</p>';
+        }
     }
 }
