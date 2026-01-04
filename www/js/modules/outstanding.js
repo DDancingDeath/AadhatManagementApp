@@ -291,7 +291,7 @@ export class OutstandingManager {
         if (transactionType === 'purchase') {
             const billIndex = billHistory.findIndex(b => String(b.id) === String(transactionId));
             if (billIndex >= 0) {
-                await window.app.history.reprintBill(billIndex);
+                await window.app.history.viewBill(billIndex, 'purchase');
             } else {
                 UIManager.showModal('Bill not found');
             }

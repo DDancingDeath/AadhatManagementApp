@@ -461,11 +461,6 @@ export class HistoryManager {
         document.getElementById('billDetailsOverlay').classList.add('active');
     }
 
-    static async reprintBill(index) {
-        // Backward compatibility - redirect to viewBill
-        return this.viewBill(index, 'purchase');
-    }
-
     static closeBillDetails() {
         document.getElementById('billDetailsOverlay').classList.remove('active');
     }

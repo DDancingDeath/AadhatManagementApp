@@ -130,11 +130,6 @@ async function loadUserDataAndInitialize() {
         // Set up real-time listeners
         FirebaseService.setupRealtimeListeners();
         
-        // Restore any draft bills (if function exists in legacy code)
-        if (typeof window.restoreBillDraft === 'function') {
-            window.restoreBillDraft();
-        }
-        
         // Show app content
         const appContent = document.getElementById('appContent');
         if (appContent) {
@@ -170,11 +165,6 @@ async function loadUserDataAndInitialize() {
         
         // Clean up old audit logs (runs silently for owners)
         AuditService.cleanupOldLogs();
-        
-        // Load settings (if function exists in legacy code)
-        if (typeof window.loadSettings === 'function') {
-            window.loadSettings();
-        }
         
         UIManager.hideLoading();
         
@@ -227,9 +217,6 @@ window.initializeApp = loadUserDataAndInitialize;
 
 // Expose functions needed by Firebase listeners
 window.renderexpensesHistory = () => ExpensesManager.renderexpensesHistory();
-
-// Global bridge function for legacy template compatibility
-window.loadSellItemDetails = () => WholesaleSalesManager.loadItemDetails();
 
 // Expose clean API to window for HTML event handlers
 window.app = {
@@ -426,7 +413,7 @@ window.app = {
         saveBillToHistory: () => HistoryManager.saveBillToHistory(),
         render: () => HistoryManager.renderHistory(),
         viewBill: (index, type) => HistoryManager.viewBill(index, type),
-        reprintBill: (index) => HistoryManager.reprintBill(index),
+        
         closeBillDetails: () => HistoryManager.closeBillDetails(),
         confirmDeleteBill: (index) => HistoryManager.confirmDeleteBill(index),
         deleteBill: (index) => HistoryManager.deleteBill(index),
@@ -547,6 +534,4 @@ window.app = {
     }
 };
 
-// Expose printer manager globally for legacy template compatibility
-window.printerManager = printerManager;
-window.connectedPrinter = printerManager;
+
