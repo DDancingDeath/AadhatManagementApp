@@ -21,8 +21,13 @@ service cloud.firestore {
     // This is a shared business app where staff need full access
     // ============================================
     
-    // Bills collection - all authenticated users can read/write
-    match /bills/{billId} {
+    // Purchases collection (renamed from bills) - all authenticated users can read/write
+    match /purchases/{purchaseId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // Retail Sales collection - all authenticated users can read/write
+    match /retailSales/{saleId} {
       allow read, write: if isSignedIn();
     }
     
