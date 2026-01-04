@@ -28,7 +28,6 @@ import { TemplateLoader } from './utils/template-loader.js';
 
 // Load and inject HTML templates from separate .html files
 async function injectTemplates() {
-    console.log('Loading templates from HTML files...');
     const templates = await TemplateLoader.loadAllTemplates();
     TemplateLoader.injectTemplates(templates);
 }
@@ -109,8 +108,6 @@ async function loadUserDataAndInitialize() {
         }
         
         // Load all data from Firestore
-        console.log('Loading data from Firestore...');
-        
         const [items, bills, sales, payments, stockAdjustments, withdrawals] = await Promise.all([
             FirebaseService.loadItems(),
             FirebaseService.loadBills(),
@@ -127,13 +124,6 @@ async function loadUserDataAndInitialize() {
         AppState.paymentsHistory = payments;
         AppState.stockAdjustments = stockAdjustments;
         AppState.withdrawalsHistory = withdrawals;
-        
-        console.log('Data loaded:', {
-            items: items.length,
-            bills: bills.length,
-            sales: sales.length,
-            payments: payments.length
-        });
         
         // Calculate stock
         AppState.stock = await FirebaseService.calculateStock();
@@ -188,7 +178,6 @@ async function loadUserDataAndInitialize() {
         }
         
         UIManager.hideLoading();
-        console.log('App initialized successfully!');
         
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -199,8 +188,6 @@ async function loadUserDataAndInitialize() {
 
 // Initialize app on DOM ready
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('DOM loaded, initializing app...');
-    
     // STEP 1: Load and inject all HTML templates from .html files
     await injectTemplates();
     
@@ -211,7 +198,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (typeof firebase !== 'undefined' && firebase.auth) {
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
-                console.log('User is signed in:', user.uid);
                 // Set current user in AppState
                 AppState.currentUser = user;
                 const authScreen = document.getElementById('authScreen');
@@ -220,7 +206,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
                 loadUserDataAndInitialize();
             } else {
-                console.log('No user signed in');
                 // Clean up Firebase listeners when user signs out
                 FirebaseService.cleanup();
                 AppState.currentUser = null;
@@ -573,5 +558,3 @@ window.app = {
 // Expose printer manager globally for legacy template compatibility
 window.printerManager = printerManager;
 window.connectedPrinter = printerManager;
-
-console.log('Main app script loaded (ES6 modules)');

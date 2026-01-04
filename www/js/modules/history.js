@@ -316,8 +316,6 @@ export class HistoryManager {
         const history = type === 'sale' ? AppState.salesHistory : AppState.billHistory;
         const bill = history[index];
         
-        console.log('📋 ViewBill debug:', { index, type, bill, comments: bill?.comments });
-        
         if (!bill) {
             UIManager.showModal('Bill not found');
             return;

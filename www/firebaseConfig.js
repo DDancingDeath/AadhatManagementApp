@@ -20,11 +20,9 @@ const firebaseConfig = {
 let app;
 try {
   app = firebase.initializeApp(firebaseConfig);
-  console.log('Firebase initialized successfully');
 } catch (error) {
   if (error.code === 'app/duplicate-app') {
     app = firebase.app();
-    console.log('Firebase app already initialized');
   } else {
     console.error('Firebase initialization error:', error);
     throw error;
@@ -39,9 +37,6 @@ const db = firebase.firestore();
 
 // Enable offline persistence (Note: Using compat API for simplicity)
 db.enablePersistence({ synchronizeTabs: true })
-  .then(() => {
-    console.log('Firestore offline persistence enabled');
-  })
   .catch((err) => {
     if (err.code === 'failed-precondition') {
       console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');

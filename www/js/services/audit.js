@@ -57,7 +57,6 @@ export class AuditService {
             };
             
             await db.collection('auditLogs').add(auditEntry);
-            console.log('[AUDIT]', action, details);
             
         } catch (error) {
             // Don't let audit failures break the app
@@ -142,7 +141,6 @@ export class AuditService {
                 .get();
             
             if (snapshot.empty) {
-                console.log('[AUDIT] No old logs to clean up');
                 return { deleted: 0 };
             }
             
@@ -153,7 +151,6 @@ export class AuditService {
             });
             await batch.commit();
             
-            console.log(`[AUDIT] Cleaned up ${snapshot.size} logs older than ${this.RETENTION_DAYS} days`);
             return { deleted: snapshot.size };
             
         } catch (error) {

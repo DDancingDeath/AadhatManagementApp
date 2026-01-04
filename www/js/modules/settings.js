@@ -7,8 +7,6 @@ export class SettingsManager {
     static loadSettings() {
         const { settings } = AppState;
         
-        console.log('[Settings] Loading settings, userRole:', AppState.userRole);
-        
         document.getElementById('settingHeavyWeight').value = settings.heavyWeightThreshold;
         document.getElementById('settingLaborRate').value = settings.laborRate;
         document.getElementById('settingAutoLabor').checked = settings.autoLaborEnabled;
@@ -18,7 +16,6 @@ export class SettingsManager {
         const dataManagementSection = document.getElementById('dataManagementSection');
         if (dataManagementSection) {
             const isOwner = AppState.userRole === 'owner';
-            console.log('[Settings] Is owner:', isOwner);
             dataManagementSection.style.display = isOwner ? 'block' : 'none';
         }
         
@@ -227,7 +224,6 @@ export class SettingsManager {
             
             if (!window.bluetoothSerial) {
                 const msg = 'Bluetooth is only available in the mobile app.\n\nWeb printing will be used instead.';
-                console.log('[SETTINGS]', msg);
                 await UIManager.showModal(msg);
                 return;
             }
@@ -273,7 +269,6 @@ export class SettingsManager {
             // Add click handler to the button
             const button = deviceCard.querySelector('button');
             button.addEventListener('click', () => {
-                console.log('[SETTINGS] Button clicked for:', address, name);
                 this.connectToPrinter(address, name);
             });
             
@@ -569,7 +564,7 @@ export class SettingsManager {
                         });
                     }
                 } catch (e) {
-                    console.log(`Could not query ${col.name}:`, e.message);
+                    // Silently skip inaccessible collections
                 }
             }
             

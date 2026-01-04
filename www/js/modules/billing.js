@@ -121,7 +121,6 @@ const BillingManager = {
             const doc = await db.collection('itemFrequency').doc(userId).get();
             if (doc.exists) {
                 this.itemFrequency = doc.data();
-                console.log('✅ Loaded item frequency from database');
             } else {
                 // Initialize empty frequency
                 this.itemFrequency = { purchase: {}, sale: {} };
@@ -176,7 +175,6 @@ const BillingManager = {
             
             // Save to database
             await db.collection('itemFrequency').doc(userId).set(this.itemFrequency);
-            console.log('✅ Updated item frequency in database');
         } catch (error) {
             console.error('Failed to update item frequency:', error);
         }
@@ -270,7 +268,6 @@ const BillingManager = {
         if (itemIndex !== undefined && itemIndex !== '') {
             const item = AppState.items[parseInt(itemIndex)];
             if (item && item.rates && item.rates.length > 0) {
-                console.log(`Loading ${item.rates.length} rates for ${item.name}:`, item.rates);
                 item.rates.forEach(rate => {
                     const option = document.createElement('option');
                     option.value = rate;
@@ -278,9 +275,6 @@ const BillingManager = {
                 });
                 
                 // Leave rate empty for user to select or type
-                console.log(`✅ Loaded ${item.rates.length} rate options`);
-            } else {
-                console.log('No rates found for item:', item);
             }
         }
     },
@@ -729,7 +723,6 @@ const BillingManager = {
         const customerName = document.getElementById('customerName')?.value || '';
         const commentsElement = document.getElementById('billComments');
         const comments = commentsElement?.value || '';
-        console.log('💬 Comments debug:', { element: !!commentsElement, value: comments, rawValue: commentsElement?.value });
         
         // Validate payment - at least one payment method must be provided
         if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {

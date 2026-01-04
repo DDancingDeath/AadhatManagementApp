@@ -143,7 +143,7 @@ const UIManager = {
                 }
             }
         } catch (e) {
-            console.log('Haptic feedback not supported');
+            // Haptic feedback not supported on this device
         }
     }
 };

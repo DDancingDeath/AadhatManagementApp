@@ -32,7 +32,6 @@ const FirebaseService = {
             }
         });
         unsubscribeFunctions.length = 0;
-        console.log('Firebase listeners cleaned up');
     },
 
     // Load items from Firestore
@@ -400,8 +399,6 @@ const FirebaseService = {
             }
         });
         unsubscribeFunctions.push(unsubStockAdj);
-
-        console.log('Real-time listeners set up with cleanup support');
     },
 
     // Notify owners of edits

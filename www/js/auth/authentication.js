@@ -6,15 +6,9 @@ import { UIManager } from '../ui/ui-manager.js';
 const AuthManager = {
     // Show/Hide authentication tabs
     showAuthTab(tab) {
-        console.log('=== showAuthTab called with:', tab, '===');
-        
         const tabs = document.querySelectorAll('.auth-tab');
         const loginForm = document.getElementById('loginForm');
         const registerForm = document.getElementById('registerForm');
-        
-        console.log('Found tabs:', tabs.length);
-        console.log('Found loginForm:', !!loginForm);
-        console.log('Found registerForm:', !!registerForm);
         
         if (!loginForm || !registerForm) {
             console.error('Forms not found!');
@@ -28,7 +22,6 @@ const AuthManager = {
         
         // Remove active from all tabs and hide all forms
         tabs.forEach((t, i) => {
-            console.log('Processing tab', i, ':', t);
             t.classList.remove('active');
         });
         loginForm.classList.add('hidden');
@@ -38,18 +31,10 @@ const AuthManager = {
         if (tab === 'login') {
             tabs[0].classList.add('active');
             loginForm.classList.remove('hidden');
-            console.log('✓ Login form shown, register hidden');
         } else if (tab === 'register') {
             tabs[1].classList.add('active');
             registerForm.classList.remove('hidden');
-            console.log('✓ Register form shown, login hidden');
         }
-        
-        // Verify the changes
-        console.log('Login form hidden?', loginForm.classList.contains('hidden'));
-        console.log('Register form hidden?', registerForm.classList.contains('hidden'));
-        console.log('Tab 0 active?', tabs[0].classList.contains('active'));
-        console.log('Tab 1 active?', tabs[1].classList.contains('active'));
         
         return false;
     },
@@ -66,19 +51,13 @@ const AuthManager = {
                 e.preventDefault();
                 e.stopPropagation();
                 const tabType = index === 0 ? 'login' : 'register';
-                console.log('Tab clicked:', tabType);
                 AuthManager.showAuthTab(tabType);
             });
         });
-        console.log('Auth tabs initialized, found', tabs.length, 'tabs');
     },
 
     // Handle login
     async handleLogin() {
-        console.log('=== LOGIN STARTED ===');
-        console.log('Device:', navigator.userAgent);
-        console.log('Online:', navigator.onLine);
-        
         // Check Firebase initialization
         if (typeof firebase === 'undefined') {
             UIManager.showToast('Firebase not loaded. Please refresh the page.');
@@ -86,14 +65,8 @@ const AuthManager = {
             return;
         }
         
-        console.log('Firebase auth initialized:', !!firebase.auth);
-        console.log('Firebase db initialized:', !!firebase.firestore);
-        
         const emailInput = document.getElementById('loginEmail');
         const passwordInput = document.getElementById('loginPassword');
-        
-        console.log('Email input found:', !!emailInput);
-        console.log('Password input found:', !!passwordInput);
         
         if (!emailInput || !passwordInput) {
             UIManager.showToast('Form elements not found');
@@ -104,28 +77,20 @@ const AuthManager = {
         const email = emailInput.value.trim();
         const password = passwordInput.value;
         
-        console.log('Email:', email);
-        console.log('Password length:', password.length);
-        
         if (!email || !password) {
             UIManager.showToast('Please enter email and password');
             return;
         }
         
-        console.log('Starting Firebase auth...');
         UIManager.showLoading();
         
         try {
-            console.log('Calling signInWithEmailAndPassword...');
             const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
-            console.log('Sign in successful!', userCredential.user.uid);
             
             const userId = userCredential.user.uid;
-            console.log('Fetching user document from Firestore...');
             const userDoc = await firebase.firestore().collection('users').doc(userId).get();
             
             if (!userDoc.exists) {
-                console.log('User document not found');
                 await firebase.auth().signOut();
                 UIManager.hideLoading();
                 UIManager.showToast('User account not found. Please register.');
@@ -133,10 +98,8 @@ const AuthManager = {
             }
             
             const userData = userDoc.data();
-            console.log('User data:', userData);
             
             if (userData.status === 'pending') {
-                console.log('User account pending approval');
                 await firebase.auth().signOut();
                 UIManager.hideLoading();
                 UIManager.showToast('Your account is pending approval. Please wait for admin approval.');
@@ -144,7 +107,6 @@ const AuthManager = {
             }
             
             if (userData.status === 'rejected') {
-                console.log('User account rejected');
                 await firebase.auth().signOut();
                 UIManager.hideLoading();
                 UIManager.showToast('Your account has been rejected. Please contact admin.');
@@ -155,7 +117,6 @@ const AuthManager = {
             AppState.userRole = userData.role || 'staff';
             AppState.userName = userData.name || 'User';
             
-            console.log('Login successful! Role:', AppState.userRole);
             UIManager.showToast('Login successful!');
             
             // Hide auth screen and initialize app
@@ -205,8 +166,6 @@ const AuthManager = {
             
             UIManager.showToast(errorMessage, 4000);
         }
-        
-        console.log('=== LOGIN ENDED ===');
     },
 
     // Handle registration
@@ -272,26 +231,19 @@ const AuthManager = {
 
     // Handle forgot password
     async handleForgotPassword() {
-        console.log('=== PASSWORD RESET STARTED ===');
-        
         const emailInput = document.getElementById('loginEmail');
         let email = emailInput?.value?.trim();
-        
-        console.log('Email from input field:', email);
         
         if (!email) {
             email = prompt('Enter your email address to reset password:');
             if (!email) {
-                console.log('User cancelled prompt');
                 return;
             }
             email = email.trim();
-            console.log('Email from prompt:', email);
         }
         
         if (!email) {
             UIManager.showToast('Please enter an email address');
-            console.log('No email provided');
             return;
         }
         
@@ -299,12 +251,10 @@ const AuthManager = {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             UIManager.showToast('Please enter a valid email address');
-            console.log('Invalid email format:', email);
             return;
         }
         
         try {
-            console.log('Attempting to send password reset email to:', email);
             UIManager.showLoading();
             
             // Configure action code settings for password reset
@@ -315,7 +265,6 @@ const AuthManager = {
             
             await firebase.auth().sendPasswordResetEmail(email, actionCodeSettings);
             
-            console.log('Password reset email sent successfully!');
             UIManager.hideLoading();
             UIManager.showToast('✅ Password reset email sent to ' + email + '! Check your inbox and spam folder.', 5000);
         } catch (error) {
@@ -352,8 +301,6 @@ const AuthManager = {
             
             UIManager.showToast(errorMessage, 5000);
         }
-        
-        console.log('=== PASSWORD RESET ENDED ===');
     },
 
     // Handle logout

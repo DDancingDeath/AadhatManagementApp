@@ -69,17 +69,6 @@ export class TemplateLoader {
         appContent.insertAdjacentHTML('beforeend', templates.sales);
         appContent.insertAdjacentHTML('beforeend', templates.payments);
         
-        // Debug: Check if billing sections exist after injection
-        setTimeout(() => {
-            const purchaseSection = document.getElementById('purchaseSection');
-            const saleSection = document.getElementById('saleSection');
-            console.log('🔍 Billing sections check:', {
-                purchaseSection: !!purchaseSection,
-                saleSection: !!saleSection,
-                purchaseDisplay: purchaseSection?.style.display,
-                saleDisplay: saleSection?.style.display
-            });
-        }, 100);
         appContent.insertAdjacentHTML('beforeend', templates.reports);
         appContent.insertAdjacentHTML('beforeend', templates.configure);
         appContent.insertAdjacentHTML('beforeend', templates.settings);
@@ -91,7 +80,5 @@ export class TemplateLoader {
         
         // Inject modals at the end
         document.body.insertAdjacentHTML('beforeend', templates.modals);
-        
-        console.log('✅ All templates injected from HTML files');
     }
 }

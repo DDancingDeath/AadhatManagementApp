@@ -118,7 +118,6 @@ export class CashManagementManager {
 
         // Calculate cash expenses
         const payments = AppState.paymentsHistory || [];
-        console.log('📊 Checking expenses:', payments.length, 'payments');
         payments.forEach(payment => {
             // Parse Indian locale date format: "28/12/2025, 7:55:07 pm"
             let paymentTime;
@@ -144,17 +143,14 @@ export class CashManagementManager {
                 paymentTime = new Date(payment.date).getTime();
             }
             
-            console.log('💵 Expense:', payment.type, payment.amount, 'Date:', payment.date, 'Parsed:', paymentTime, 'Today range:', todayStart, '-', todayEnd);
             // Separate business and personal expenses
             if (!isNaN(paymentTime) && paymentTime >= todayStart && paymentTime < todayEnd) {
                 const amount = payment.amount || 0;
                 if (payment.type === 'Personal') {
                     this.todayTransactions.personalExpenses += amount;
-                    console.log('✅ Added personal expense:', amount, 'New total:', this.todayTransactions.personalExpenses);
                 } else {
                     // All other types are business expenses
                     this.todayTransactions.businessExpenses += amount;
-                    console.log('✅ Added business expense:', amount, 'New total:', this.todayTransactions.businessExpenses);
                 }
             }
         });

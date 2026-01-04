@@ -244,14 +244,9 @@ export class PaymentsManager {
         const expense = AppState.paymentsHistory.find(p => p.id == expenseId && p.category === category);
         
         if (!expense) {
-            console.log('Expense not found. Looking for:', expenseId, category);
-            console.log('Available payments:', AppState.paymentsHistory);
             UIManager.showToast('Expense not found');
             return;
         }
-
-        console.log('Found expense:', expense);
-        console.log('Expense ID:', expense.id, 'Type:', typeof expense.id);
 
         // Store current expense for edit/delete operations
         window.currentExpenseId = String(expense.id);
@@ -419,8 +414,6 @@ export class PaymentsManager {
     }
 
     static async deleteExpense(expenseId, category, showConfirm = true) {
-        console.log('deleteExpense called with:', expenseId, 'Type:', typeof expenseId);
-        
         if (!expenseId || expenseId === 'undefined') {
             console.error('Invalid expense ID:', expenseId);
             UIManager.showToast('Invalid expense ID');

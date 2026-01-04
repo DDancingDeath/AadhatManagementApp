@@ -32,15 +32,12 @@ class BluetoothPrinterManager {
                     await new Promise((resolve, reject) => {
                         permissions.checkPermission(permission, (status) => {
                             if (status.hasPermission) {
-                                console.log('[SCAN] Permission already granted:', permission);
                                 resolve();
                             } else {
-                                console.log('[SCAN] Requesting permission:', permission);
                                 permissions.requestPermission(
                                     permission,
                                     (result) => {
                                         if (result.hasPermission) {
-                                            console.log('[SCAN] Permission granted:', permission);
                                             resolve();
                                         } else {
                                             reject(new Error('Permission denied: ' + permission));
@@ -65,7 +62,6 @@ class BluetoothPrinterManager {
                         });
                     });
                 }
-                console.log('[SCAN] All permissions granted');
             } catch (permError) {
                 console.error('[SCAN] Permission error:', permError);
                 throw new Error('Bluetooth permissions required. Please grant all permissions when prompted, or enable them manually in app settings.');
@@ -76,11 +72,9 @@ class BluetoothPrinterManager {
             UIManager.showLoading();
             
             try {
-                console.log('[SCAN] Calling bluetoothSerial.list()...');
                 window.bluetoothSerial.list(
                     (devices) => {
                         UIManager.hideLoading();
-                        console.log('[SCAN] Found devices:', devices);
                         resolve(devices || []);
                     },
                     (error) => {
@@ -108,14 +102,12 @@ class BluetoothPrinterManager {
             }
             
             UIManager.showLoading();
-            console.log('[CONNECT] Connecting to:', deviceId, deviceName);
             
             return new Promise((resolve, reject) => {
                 window.bluetoothSerial.connect(
                     deviceId,
                     () => {
                         UIManager.hideLoading();
-                        console.log('[CONNECT] Connected successfully');
                         this.device = deviceId;
                         this.printerName = deviceName;
                         resolve(true);
@@ -144,7 +136,6 @@ class BluetoothPrinterManager {
                         () => {
                             this.device = null;
                             this.printerName = null;
-                            console.log('[DISCONNECT] Disconnected');
                             resolve();
                         },
                         () => {
@@ -427,13 +418,9 @@ class BluetoothPrinterManager {
             throw new Error('Bluetooth Serial plugin not available');
         }
         
-        console.log('[WRITE] Generating bill canvas...');
-        
         try {
             const finalCanvas = await this.generateBillCanvas(billData);
             const finalCtx = finalCanvas.getContext('2d');
-            
-            console.log('[WRITE] Converting to bitmap...');
             
             // Get image data from FINAL canvas
             const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
@@ -468,8 +455,6 @@ class BluetoothPrinterManager {
                 bitmapData.push(...line);
             }
             
-            console.log('[WRITE] Bitmap created:', bitmapData.length, 'bytes for', finalCanvas.height, 'lines');
-            
             // Build ESC/POS commands for image printing
             const commands = [];
             
@@ -502,8 +487,6 @@ class BluetoothPrinterManager {
             commands.push(0x1B, 0x64, 0x03); // ESC d 3 - feed 3 lines
             commands.push(0x1D, 0x56, 0x41, 0x03); // GS V A 3 - partial cut
             
-            console.log('[WRITE] Sending', commands.length, 'bytes to printer...');
-            
             // Convert to Uint8Array for binary transmission
             const commandBytes = new Uint8Array(commands);
             
@@ -511,7 +494,6 @@ class BluetoothPrinterManager {
                 window.bluetoothSerial.write(
                     commandBytes,
                     () => {
-                        console.log('[WRITE] Print successful!');
                         resolve(true);
                     },
                     (error) => {
@@ -641,13 +623,9 @@ class BluetoothPrinterManager {
             throw new Error('Bluetooth Serial plugin not available');
         }
         
-        console.log('[WRITE EXPENSE] Generating expense canvas...');
-        
         try {
             const finalCanvas = await this.generateExpenseCanvas(expense);
             const finalCtx = finalCanvas.getContext('2d');
-            
-            console.log('[WRITE EXPENSE] Converting to bitmap...');
             
             // Get image data
             const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
@@ -679,8 +657,6 @@ class BluetoothPrinterManager {
                 bitmapData.push(...line);
             }
             
-            console.log('[WRITE EXPENSE] Bitmap created:', bitmapData.length, 'bytes');
-            
             // Build ESC/POS commands
             const commands = [];
             
@@ -698,15 +674,12 @@ class BluetoothPrinterManager {
             commands.push(0x1B, 0x64, 0x03); // Feed 3 lines
             commands.push(0x1D, 0x56, 0x41, 0x03); // Partial cut
             
-            console.log('[WRITE EXPENSE] Sending', commands.length, 'bytes to printer...');
-            
             const commandBytes = new Uint8Array(commands);
             
             return new Promise((resolve, reject) => {
                 window.bluetoothSerial.write(
                     commandBytes,
                     () => {
-                        console.log('[WRITE EXPENSE] Print successful!');
                         resolve(true);
                     },
                     (error) => {
@@ -821,9 +794,7 @@ const PrinterService = {
         // Try Bluetooth first if available and connected
         if (this.manager.device && window.bluetoothSerial) {
             try {
-                console.log('[PRINT] Attempting Bluetooth print...');
                 await this.manager.write(billData);
-                console.log('[PRINT] Bluetooth print successful!');
                 UIManager.showToast('✓ Printed successfully');
                 return true;
             } catch (error) {
@@ -834,7 +805,6 @@ const PrinterService = {
             }
         } else {
             // No Bluetooth printer - show preview
-            console.log('[PRINT] No Bluetooth printer, showing preview');
             return await this.showBillPreview(billData);
         }
     },
@@ -947,9 +917,7 @@ const PrinterService = {
         // Try Bluetooth first if available and connected
         if (this.manager.device && window.bluetoothSerial) {
             try {
-                console.log('[PRINT EXPENSE] Attempting Bluetooth print...');
                 await this.manager.writeExpense(expense);
-                console.log('[PRINT EXPENSE] Bluetooth print successful!');
                 UIManager.showToast('✓ Expense printed successfully');
                 return true;
             } catch (error) {
@@ -960,7 +928,6 @@ const PrinterService = {
             }
         } else {
             // No Bluetooth printer - show preview
-            console.log('[PRINT EXPENSE] No Bluetooth printer, showing preview');
             return await this.showExpensePreview(expense);
         }
     },
