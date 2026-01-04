@@ -23,7 +23,6 @@ www/js/
 │   ├── analytics.js          # Usage analytics and charts
 │   ├── billing.js            # Purchase bill creation (weights, labour)
 │   ├── cash-management.js    # Session-based cash tracking
-│   ├── configure.js          # App configuration
 │   ├── datefilter.js         # Date range filtering
 │   ├── finance.js            # Financial overview and profit/loss
 │   ├── history.js            # Bill history and editing
@@ -31,7 +30,6 @@ www/js/
 │   ├── miscellaneous.js      # Expenses and withdrawals
 │   ├── outstanding.js        # Outstanding payments tracking
 │   ├── reports.js            # Reports generation
-│   ├── retail-sales.js       # Retail sales functionality
 │   ├── sales.js              # Wholesale sales management
 │   ├── settings.js           # App settings, audit logs, storage stats
 │   ├── stock.js              # Stock tracking and adjustments
