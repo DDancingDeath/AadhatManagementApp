@@ -92,8 +92,8 @@ export class SettingsManager {
         // Show collection selection modal
         const collections = [
             { id: 'bills', name: 'Purchases' },
-            { id: 'sales', name: 'Sales' },
-            { id: 'payments', name: 'Payments' },
+            { id: 'wholesaleSales', name: 'Wholesale Sales' },
+            { id: 'expenses', name: 'Expenses' },
             { id: 'stockAdjustments', name: 'Stock Adj.' },
             { id: 'withdrawals', name: 'Withdrawals' },
             { id: 'cashManagement', name: 'Cash Mgmt' },
@@ -518,8 +518,8 @@ export class SettingsManager {
             const collections = [
                 { name: 'items', label: 'Items', icon: '📦' },
                 { name: 'bills', label: 'Purchases', icon: '📥' },
-                { name: 'sales', label: 'Sales', icon: '📤' },
-                { name: 'payments', label: 'Payments', icon: '💳' },
+                { name: 'wholesaleSales', label: 'Wholesale Sales', icon: '📤' },
+                { name: 'expenses', label: 'Expenses', icon: '💳' },
                 { name: 'stockAdjustments', label: 'Stock Adjustments', icon: '📊' },
                 { name: 'withdrawals', label: 'Withdrawals', icon: '💸' },
                 { name: 'cashManagement', label: 'Cash Management', icon: '💰' },

@@ -28,7 +28,7 @@ export class FinanceManager {
     static calculateOverview() {
         const salesHistory = AppState.salesHistory || [];
         const billHistory = AppState.billHistory || [];
-        const paymentsHistory = AppState.paymentsHistory || [];
+        const expensesHistory = AppState.expensesHistory || [];
         const withdrawalsHistory = AppState.withdrawalsHistory || [];
 
         // Calculate total revenue from sales and sales expenses
@@ -49,7 +49,7 @@ export class FinanceManager {
         // Calculate business and personal expenses (from Miscellaneous tab)
         let businessExpenses = 0;
         let personalExpenses = 0;
-        paymentsHistory.forEach(payment => {
+        expensesHistory.forEach(payment => {
             const amount = parseFloat(payment.amount) || 0;
             if (payment.category === 'business') {
                 businessExpenses += amount;
@@ -133,7 +133,7 @@ export class FinanceManager {
     static renderMonthlyProfitChart() {
         const salesHistory = AppState.salesHistory || [];
         const billHistory = AppState.billHistory || [];
-        const paymentsHistory = AppState.paymentsHistory || [];
+        const expensesHistory = AppState.expensesHistory || [];
         
         // Group transactions by month
         const monthlyData = {};
@@ -160,7 +160,7 @@ export class FinanceManager {
         });
         
         // Process expenses (business and personal from Miscellaneous tab)
-        paymentsHistory.forEach(payment => {
+        expensesHistory.forEach(payment => {
             const date = new Date(payment.date);
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[monthKey]) {
@@ -207,7 +207,7 @@ export class FinanceManager {
     static renderTransactions() {
         const salesHistory = AppState.salesHistory || [];
         const billHistory = AppState.billHistory || [];
-        const paymentsHistory = AppState.paymentsHistory || [];
+        const expensesHistory = AppState.expensesHistory || [];
         const withdrawalsHistory = AppState.withdrawalsHistory || [];
         
         const container = document.getElementById('allTransactionsList');
@@ -251,7 +251,7 @@ export class FinanceManager {
             });
         });
         
-        paymentsHistory.forEach(payment => {
+        expensesHistory.forEach(payment => {
             allTransactions.push({
                 date: new Date(payment.date),
                 type: payment.category === 'business' ? 'Business Expense' : 'Personal Expense',

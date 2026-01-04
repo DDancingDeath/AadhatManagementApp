@@ -25,8 +25,8 @@ export class TemplateLoader {
             'history',
             'due',
             'stock',
-            'sales',
-            'payments',
+            'wholesale-sales',
+            'expenses',
             'reports',
             'configure',
             'settings',
@@ -66,8 +66,8 @@ export class TemplateLoader {
         appContent.insertAdjacentHTML('beforeend', templates.history);
         appContent.insertAdjacentHTML('beforeend', templates.due);
         appContent.insertAdjacentHTML('beforeend', templates.stock);
-        appContent.insertAdjacentHTML('beforeend', templates.sales);
-        appContent.insertAdjacentHTML('beforeend', templates.payments);
+        appContent.insertAdjacentHTML('beforeend', templates['wholesale-sales']);
+        appContent.insertAdjacentHTML('beforeend', templates.expenses);
         
         appContent.insertAdjacentHTML('beforeend', templates.reports);
         appContent.insertAdjacentHTML('beforeend', templates.configure);

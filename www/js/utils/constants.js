@@ -63,8 +63,8 @@ export const APP_CONFIG = {
     COLLECTIONS: {
         ITEMS: 'items',
         BILLS: 'bills',
-        SALES: 'sales',
-        PAYMENTS: 'payments',
+        WHOLESALE_SALES: 'wholesaleSales',
+        EXPENSES: 'expenses',
         STOCK_ADJUSTMENTS: 'stockAdjustments',
         WITHDRAWALS: 'withdrawals',
         USERS: 'users',

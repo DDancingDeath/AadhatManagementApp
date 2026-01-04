@@ -1,0 +1,106 @@
+<div id="expenses" class="tab">
+
+        <div class="filter-buttons" style="margin-bottom: 20px;">
+            <button class="filter-btn active" onclick="window.app.expenses.filterExpenseTab('business', event)">Business Expenses</button>
+            <button class="filter-btn" onclick="window.app.expenses.filterExpenseTab('personal', event)">Personal Expenses</button>
+        </div>
+
+        <!-- Business Expenses Section -->
+        <div id="businessExpenseSection">
+            <div class="form-row">
+                <label>Expense Type:</label>
+                <input type="text" id="businessExpenseType" list="businessExpenseTypeOptions" placeholder="Enter expense type" />
+                <datalist id="businessExpenseTypeOptions">
+                    <option value="Labor">
+                    <option value="Staff Salary">
+                    <option value="Weighing Machine">
+                    <option value="Electricity">
+                    <option value="Rent">
+                    <option value="Maintenance">
+                    <option value="Transportation">
+                </datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="businessExpenseAmount" placeholder="Enter amount" />
+            </div>
+
+            <div class="form-row">
+                <label>Person Name (Optional):</label>
+                <input type="text" id="businessExpensePerson" list="businessExpensePersonOptions" placeholder="Enter name" />
+                <datalist id="businessExpensePersonOptions"></datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Remarks (Optional):</label>
+                <input type="text" id="businessExpenseRemarks" placeholder="Enter remarks" />
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="save-btn" onclick="window.app.expenses.saveBusinessExpense()">Save Expense</button>
+                <button class="print-btn" onclick="window.app.expenses.saveAndPrintBusiness()">Print Expense</button>
+            </div>
+
+            <h3>Business Expense History</h3>
+            <div id="businessExpenseHistoryList">
+                <p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>
+            </div>
+        </div>
+
+        <!-- Personal Expenses Section -->
+        <div id="personalExpenseSection" style="display: none;">
+            <div class="form-row">
+                <label>Expense Type:</label>
+                <input type="text" id="personalExpenseType" list="personalExpenseTypeOptions" placeholder="Enter expense type" />
+                <datalist id="personalExpenseTypeOptions">
+                    <option value="Newspaper">
+                    <option value="Bike Servicing">
+                    <option value="Phone Bill">
+                    <option value="Personal Shopping">
+                    <option value="Medical">
+                    <option value="Entertainment">
+                </datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="personalExpenseAmount" placeholder="Enter amount" />
+            </div>
+
+            <div class="form-row">
+                <label>Person Name (Optional):</label>
+                <input type="text" id="personalExpensePerson" list="personalExpensePersonOptions" placeholder="Enter name" />
+                <datalist id="personalExpensePersonOptions"></datalist>
+            </div>
+
+            <div class="form-row">
+                <label>Remarks (Optional):</label>
+                <input type="text" id="personalExpenseRemarks" placeholder="Enter remarks" />
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button class="save-btn" onclick="window.app.expenses.savePersonalExpense()">Save Expense</button>
+                <button class="print-btn" onclick="window.app.expenses.saveAndPrintPersonal()">Print Expense</button>
+            </div>
+
+            <h3>Personal Expense History</h3>
+            <div id="personalExpenseHistoryList">
+                <p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>
+            </div>
+        </div>
+
+        <!-- Expense Details Modal -->
+        <div class="bill-details-overlay" id="expenseDetailsOverlay">
+            <div class="bill-details-container">
+                <div class="bill-details-content" id="expenseDetailsContent">
+                    <!-- Expense content will be inserted here -->
+                </div>
+                <div class="bill-details-footer">
+                    <button class="bill-action-btn btn-delete" id="expenseDeleteBtn" onclick="window.app.expenses.confirmDeleteExpense()">Delete</button>
+                    <button class="bill-action-btn btn-edit" id="expenseEditBtn" onclick="window.app.expenses.editExpenseFromModal()">Edit</button>
+                    <button class="bill-action-btn btn-close" onclick="window.app.expenses.closeExpenseDetails()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>

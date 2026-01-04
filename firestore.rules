@@ -26,8 +26,8 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     
-    // Sales collection - all authenticated users can read/write
-    match /sales/{saleId} {
+    // Wholesale Sales collection - all authenticated users can read/write
+    match /wholesaleSales/{saleId} {
       allow read, write: if isSignedIn();
     }
     
@@ -36,8 +36,8 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     
-    // Payments/Expenses collection - all authenticated users can read/write
-    match /payments/{paymentId} {
+    // Expenses collection - all authenticated users can read/write
+    match /expenses/{expenseId} {
       allow read, write: if isSignedIn();
     }
     

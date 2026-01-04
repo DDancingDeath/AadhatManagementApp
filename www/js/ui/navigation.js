@@ -82,10 +82,10 @@ const NavigationManager = {
             setTimeout(() => window.app.outstanding.filterDue('purchase', { target: document.querySelector('#due .filter-btn') }), 100);
         }
         
-        // Render sales history when Sales tab is shown
-        if (tabId === 'sales' && window.app?.sales) {
-            this.resetFilterButtons('sales');
-            setTimeout(() => window.app.sales.filterTab('sales', { target: document.querySelector('#sales .filter-btn') }), 100);
+        // Render wholesale sales history when Wholesale Sales tab is shown
+        if (tabId === 'wholesale-sales' && window.app?.wholesaleSales) {
+            this.resetFilterButtons('wholesale-sales');
+            setTimeout(() => window.app.wholesaleSales.filterTab('sales', { target: document.querySelector('#wholesale-sales .filter-btn') }), 100);
         }
         
         // Render stock when Stock tab is shown

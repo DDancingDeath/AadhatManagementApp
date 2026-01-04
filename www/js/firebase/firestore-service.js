@@ -94,9 +94,9 @@ const FirebaseService = {
         await getDb().collection('bills').doc(billId).delete();
     },
 
-    // Load sales from Firestore
+    // Load wholesale sales from Firestore
     async loadSales() {
-        const snapshot = await getDb().collection('sales').orderBy('date', 'desc').get();
+        const snapshot = await getDb().collection('wholesaleSales').orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -110,9 +110,9 @@ const FirebaseService = {
         }
         
         if (sale.id) {
-            await getDb().collection('sales').doc(String(sale.id)).set(sale);
+            await getDb().collection('wholesaleSales').doc(String(sale.id)).set(sale);
         } else {
-            const docRef = await getDb().collection('sales').add(sale);
+            const docRef = await getDb().collection('wholesaleSales').add(sale);
             sale.id = docRef.id;
         }
         return sale;
@@ -123,7 +123,7 @@ const FirebaseService = {
         if (!sale.id) {
             throw new Error('Sale ID is required for update');
         }
-        await getDb().collection('sales').doc(String(sale.id)).set(sale);
+        await getDb().collection('wholesaleSales').doc(String(sale.id)).set(sale);
         return sale;
     },
 
@@ -137,50 +137,50 @@ const FirebaseService = {
         }
         
         if (sale.id) {
-            await getDb().collection('sales').doc(sale.id).set(sale);
+            await getDb().collection('wholesaleSales').doc(sale.id).set(sale);
         } else {
-            const docRef = await getDb().collection('sales').add(sale);
+            const docRef = await getDb().collection('wholesaleSales').add(sale);
             sale.id = docRef.id;
         }
         return sale;
     },
 
-    // Load payments from Firestore
-    async loadPayments() {
-        const snapshot = await getDb().collection('payments').orderBy('date', 'desc').get();
+    // Load expenses from Firestore
+    async loadExpenses() {
+        const snapshot = await getDb().collection('expenses').orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
-    // Save payment to Firestore
-    async savePayment(payment) {
-        if (!payment.userId && AppState.currentUser) {
-            payment.userId = AppState.currentUser.uid;
+    // Save expense to Firestore
+    async saveExpense(expense) {
+        if (!expense.userId && AppState.currentUser) {
+            expense.userId = AppState.currentUser.uid;
         }
-        if (!payment.userName && AppState.userName) {
-            payment.userName = AppState.userName;
+        if (!expense.userName && AppState.userName) {
+            expense.userName = AppState.userName;
         }
         
-        const docRef = await getDb().collection('payments').add(payment);
-        return { id: docRef.id, ...payment };
+        const docRef = await getDb().collection('expenses').add(expense);
+        return { id: docRef.id, ...expense };
     },
 
-    // Delete payment from Firestore
-    async deletePayment(paymentId) {
+    // Delete expense from Firestore
+    async deleteExpense(expenseId) {
         // Handle both old numeric IDs and new Firebase document IDs
-        if (typeof paymentId === 'number' || !isNaN(Number(paymentId))) {
-            // Old payment with numeric ID - query by id field
-            const snapshot = await getDb().collection('payments').where('id', '==', Number(paymentId)).get();
+        if (typeof expenseId === 'number' || !isNaN(Number(expenseId))) {
+            // Old expense with numeric ID - query by id field
+            const snapshot = await getDb().collection('expenses').where('id', '==', Number(expenseId)).get();
             const deletePromises = snapshot.docs.map(doc => doc.ref.delete());
             await Promise.all(deletePromises);
         } else {
-            // New payment with Firebase document ID
-            await getDb().collection('payments').doc(paymentId).delete();
+            // New expense with Firebase document ID
+            await getDb().collection('expenses').doc(expenseId).delete();
         }
         
         // Update local state
-        const index = AppState.paymentsHistory.findIndex(p => p.id == paymentId);
+        const index = AppState.expensesHistory.findIndex(e => e.id == expenseId);
         if (index !== -1) {
-            AppState.paymentsHistory.splice(index, 1);
+            AppState.expensesHistory.splice(index, 1);
         }
     },
 
@@ -370,8 +370,8 @@ const FirebaseService = {
         });
         unsubscribeFunctions.push(unsubBills);
         
-        // Listen to sales collection
-        const unsubSales = getDb().collection('sales').orderBy('date', 'desc').onSnapshot(snapshot => {
+        // Listen to wholesale sales collection
+        const unsubSales = getDb().collection('wholesaleSales').orderBy('date', 'desc').onSnapshot(snapshot => {
             AppState.salesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             if (typeof window.renderSalesHistory === 'function') {
                 window.renderSalesHistory();
@@ -382,14 +382,14 @@ const FirebaseService = {
         });
         unsubscribeFunctions.push(unsubSales);
         
-        // Listen to payments collection
-        const unsubPayments = getDb().collection('payments').orderBy('date', 'desc').onSnapshot(snapshot => {
-            AppState.paymentsHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (typeof window.renderPaymentsHistory === 'function') {
-                window.renderPaymentsHistory();
+        // Listen to expenses collection
+        const unsubExpenses = getDb().collection('expenses').orderBy('date', 'desc').onSnapshot(snapshot => {
+            AppState.expensesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (typeof window.renderExpensesHistory === 'function') {
+                window.renderExpensesHistory();
             }
         });
-        unsubscribeFunctions.push(unsubPayments);
+        unsubscribeFunctions.push(unsubExpenses);
         
         // Listen to stock adjustments collection
         const unsubStockAdj = getDb().collection('stockAdjustments').orderBy('date', 'desc').onSnapshot(snapshot => {

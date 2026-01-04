@@ -15,7 +15,7 @@ export const AppState = {
     stock: {},
     salesItems: [],
     salesHistory: [],
-    paymentsHistory: [],
+    expensesHistory: [],
     stockAdjustments: [],
     withdrawalsHistory: [],
     

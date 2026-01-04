@@ -117,7 +117,7 @@ export class CashManagementManager {
         });
 
         // Calculate cash expenses
-        const payments = AppState.paymentsHistory || [];
+        const payments = AppState.expensesHistory || [];
         payments.forEach(payment => {
             // Parse Indian locale date format: "28/12/2025, 7:55:07 pm"
             let paymentTime;

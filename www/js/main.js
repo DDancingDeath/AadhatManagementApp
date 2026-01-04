@@ -9,11 +9,11 @@ import { ItemsManager } from './modules/items.js';
 import { PrinterService, printerManager } from './services/printer.js';
 import { BillingManager } from './modules/billing.js';
 import { StockManager } from './modules/stock.js';
-import { SalesManager } from './modules/sales.js';
+import { WholesaleSalesManager } from './modules/wholesale-sales.js';
 import { HistoryManager } from './modules/history.js';
 import { OutstandingManager } from './modules/outstanding.js';
 import { ReportsManager } from './modules/reports.js';
-import { PaymentsManager } from './modules/miscellaneous.js';
+import { ExpensesManager } from './modules/miscellaneous.js';
 import { SettingsManager } from './modules/settings.js';
 import { DateFilterManager } from './modules/datefilter.js';
 import { UsersManager } from './modules/users.js';
@@ -111,7 +111,7 @@ async function loadUserDataAndInitialize() {
             FirebaseService.loadItems(),
             FirebaseService.loadBills(),
             FirebaseService.loadSales(),
-            FirebaseService.loadPayments(),
+            FirebaseService.loadExpenses(),
             FirebaseService.loadStockAdjustments(),
             FirebaseService.loadWithdrawals(),
             BillingManager.loadItemFrequency()
@@ -120,7 +120,7 @@ async function loadUserDataAndInitialize() {
         AppState.items = items;
         AppState.billHistory = bills;
         AppState.salesHistory = sales;
-        AppState.paymentsHistory = payments;
+        AppState.expensesHistory = payments;
         AppState.stockAdjustments = stockAdjustments;
         AppState.withdrawalsHistory = withdrawals;
         
@@ -157,10 +157,10 @@ async function loadUserDataAndInitialize() {
         // Render initial views
         ItemsManager.renderItems();
         BillingManager.loadItemsDropdown();
-        SalesManager.loadItemsDropdown();
+        WholesaleSalesManager.loadItemsDropdown();
         BillingManager.updateDraftCount();
-        PaymentsManager.updateExpensePersonOptions();
-        PaymentsManager.renderPaymentsHistory();
+        ExpensesManager.updateExpensePersonOptions();
+        ExpensesManager.renderexpensesHistory();
         
         // Check for auto-saved bill
         await BillingManager.checkAutoSave();
@@ -226,10 +226,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 window.initializeApp = loadUserDataAndInitialize;
 
 // Expose functions needed by Firebase listeners
-window.renderPaymentsHistory = () => PaymentsManager.renderPaymentsHistory();
+window.renderexpensesHistory = () => ExpensesManager.renderexpensesHistory();
 
 // Global bridge function for legacy template compatibility
-window.loadSellItemDetails = () => SalesManager.loadItemDetails();
+window.loadSellItemDetails = () => WholesaleSalesManager.loadItemDetails();
 
 // Expose clean API to window for HTML event handlers
 window.app = {
@@ -401,24 +401,24 @@ window.app = {
         renderAdjustmentHistory: () => StockManager.renderAdjustmentHistory()
     },
     
-    // Sales
-    sales: {
-        loadItemsDropdown: () => SalesManager.loadItemsDropdown(),
-        loadItemDetails: () => SalesManager.loadItemDetails(),
-        addToWholesaleBill: () => SalesManager.addToWholesaleBill(),
-        removeWholesaleItem: (index) => SalesManager.removeWholesaleItem(index),
-        completeSale: () => SalesManager.completeSale(),
-        printWholesaleSale: () => SalesManager.printWholesaleSale(),
-        shareViaWhatsApp: () => SalesManager.shareViaWhatsApp(),
-        filterTab: (view, evt) => SalesManager.filterSalesTab(view, evt),
-        renderHistory: () => SalesManager.renderSalesHistory(),
-        renderOutstanding: () => SalesManager.renderSalesOutstanding(),
-        recordPayment: (saleId) => SalesManager.recordPayment(saleId),
-        markSaleAsCleared: (saleId) => SalesManager.markSaleAsCleared(saleId),
-        reprintSale: (index) => SalesManager.reprintSale(index),
-        reprintSaleById: (saleId) => SalesManager.reprintSaleById(saleId),
-        updateProfitCalculation: () => SalesManager.updateProfitCalculation(),
-        pickContact: () => SalesManager.pickContact()
+    // Wholesale Sales
+    wholesaleSales: {
+        loadItemsDropdown: () => WholesaleSalesManager.loadItemsDropdown(),
+        loadItemDetails: () => WholesaleSalesManager.loadItemDetails(),
+        addToWholesaleBill: () => WholesaleSalesManager.addToWholesaleBill(),
+        removeWholesaleItem: (index) => WholesaleSalesManager.removeWholesaleItem(index),
+        completeSale: () => WholesaleSalesManager.completeSale(),
+        printWholesaleSale: () => WholesaleSalesManager.printWholesaleSale(),
+        shareViaWhatsApp: () => WholesaleSalesManager.shareViaWhatsApp(),
+        filterTab: (view, evt) => WholesaleSalesManager.filterSalesTab(view, evt),
+        renderHistory: () => WholesaleSalesManager.renderSalesHistory(),
+        renderOutstanding: () => WholesaleSalesManager.renderSalesOutstanding(),
+        recordPayment: (saleId) => WholesaleSalesManager.recordPayment(saleId),
+        markSaleAsCleared: (saleId) => WholesaleSalesManager.markSaleAsCleared(saleId),
+        reprintSale: (index) => WholesaleSalesManager.reprintSale(index),
+        reprintSaleById: (saleId) => WholesaleSalesManager.reprintSaleById(saleId),
+        updateProfitCalculation: () => WholesaleSalesManager.updateProfitCalculation(),
+        pickContact: () => WholesaleSalesManager.pickContact()
     },
     
     // History
@@ -462,21 +462,21 @@ window.app = {
         exportPDF: () => ReportsManager.exportToPDF()
     },
     
-    // Payments
-    payments: {
-        filterExpenseTab: (view, evt) => PaymentsManager.filterExpenseTab(view, evt),
-        saveBusinessExpense: () => PaymentsManager.saveBusinessExpense(),
-        savePersonalExpense: () => PaymentsManager.savePersonalExpense(),
-        renderHistory: () => PaymentsManager.renderPaymentsHistory(),
-        updateExpensePersonOptions: () => PaymentsManager.updateExpensePersonOptions(),
-        saveAndPrintBusiness: () => PaymentsManager.saveAndPrintBusiness(),
-        saveAndPrintPersonal: () => PaymentsManager.saveAndPrintPersonal(),
-        viewExpenseDetails: (index, category) => PaymentsManager.viewExpenseDetails(index, category),
-        closeExpenseDetails: () => PaymentsManager.closeExpenseDetails(),
-        editExpenseFromModal: () => PaymentsManager.editExpenseFromModal(),
-        confirmDeleteExpense: () => PaymentsManager.confirmDeleteExpense(),
-        editExpense: (expenseId, category) => PaymentsManager.editExpense(expenseId, category),
-        deleteExpense: (expenseId, category) => PaymentsManager.deleteExpense(expenseId, category)
+    // Expenses
+    expenses: {
+        filterExpenseTab: (view, evt) => ExpensesManager.filterExpenseTab(view, evt),
+        saveBusinessExpense: () => ExpensesManager.saveBusinessExpense(),
+        savePersonalExpense: () => ExpensesManager.savePersonalExpense(),
+        renderHistory: () => ExpensesManager.renderexpensesHistory(),
+        updateExpensePersonOptions: () => ExpensesManager.updateExpensePersonOptions(),
+        saveAndPrintBusiness: () => ExpensesManager.saveAndPrintBusiness(),
+        saveAndPrintPersonal: () => ExpensesManager.saveAndPrintPersonal(),
+        viewExpenseDetails: (index, category) => ExpensesManager.viewExpenseDetails(index, category),
+        closeExpenseDetails: () => ExpensesManager.closeExpenseDetails(),
+        editExpenseFromModal: () => ExpensesManager.editExpenseFromModal(),
+        confirmDeleteExpense: () => ExpensesManager.confirmDeleteExpense(),
+        editExpense: (expenseId, category) => ExpensesManager.editExpense(expenseId, category),
+        deleteExpense: (expenseId, category) => ExpensesManager.deleteExpense(expenseId, category)
     },
     
     // Finance

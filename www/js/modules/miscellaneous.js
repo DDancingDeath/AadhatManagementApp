@@ -1,13 +1,13 @@
-// Payments & Expenses Module
+// Expenses Module
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 
-export class PaymentsManager {
+export class ExpensesManager {
     static updateExpensePersonOptions() {
         const uniquePersons = [...new Set(
-            AppState.paymentsHistory
+            AppState.expensesHistory
                 .filter(p => p.personName && p.personName.trim() !== '')
                 .map(p => p.personName)
         )];
@@ -24,7 +24,7 @@ export class PaymentsManager {
     }
 
     static filterExpenseTab(view, evt) {
-        const buttons = document.querySelectorAll('#payments .filter-btn');
+        const buttons = document.querySelectorAll('#expenses .filter-btn');
         buttons.forEach(btn => btn.classList.remove('active'));
         if (evt) evt.target.classList.add('active');
         
@@ -67,7 +67,7 @@ export class PaymentsManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.savePayment(expense);
+        await FirebaseService.saveExpense(expense);
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast('✓ Business expense saved');
@@ -109,7 +109,7 @@ export class PaymentsManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.savePayment(expense);
+        await FirebaseService.saveExpense(expense);
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast('✓ Personal expense saved');
@@ -124,14 +124,14 @@ export class PaymentsManager {
         }
     }
 
-    static renderPaymentsHistory() {
+    static renderexpensesHistory() {
         this.renderBusinessExpenseHistory();
         this.renderPersonalExpenseHistory();
     }
 
     static renderBusinessExpenseHistory() {
         const container = document.getElementById('businessExpenseHistoryList');
-        const businessExpenses = AppState.paymentsHistory.filter(p => p.category === 'business' && p.id);
+        const businessExpenses = AppState.expensesHistory.filter(p => p.category === 'business' && p.id);
         
         if (businessExpenses.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>';
@@ -142,7 +142,7 @@ export class PaymentsManager {
             <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;"
                  onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'; this.style.transform='translateY(-2px)'"
                  onmouseout="this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'; this.style.transform='translateY(0)'"
-                 onclick="window.app.payments.viewExpenseDetails('${payment.id}', 'business')">
+                 onclick="window.app.expenses.viewExpenseDetails('${payment.id}', 'business')">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                     <div>
                         ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${payment.personName}</div>` : ''}
@@ -160,7 +160,7 @@ export class PaymentsManager {
 
     static renderPersonalExpenseHistory() {
         const container = document.getElementById('personalExpenseHistoryList');
-        const personalExpenses = AppState.paymentsHistory.filter(p => p.category === 'personal' && p.id);
+        const personalExpenses = AppState.expensesHistory.filter(p => p.category === 'personal' && p.id);
         
         if (personalExpenses.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>';
@@ -171,7 +171,7 @@ export class PaymentsManager {
             <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;"
                  onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'; this.style.transform='translateY(-2px)'"
                  onmouseout="this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'; this.style.transform='translateY(0)'"
-                 onclick="window.app.payments.viewExpenseDetails('${payment.id}', 'personal')">
+                 onclick="window.app.expenses.viewExpenseDetails('${payment.id}', 'personal')">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                     <div>
                         ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${payment.personName}</div>` : ''}
@@ -223,7 +223,7 @@ export class PaymentsManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.savePayment(expense);
+        await FirebaseService.saveExpense(expense);
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast('✓ Business expense saved');
@@ -242,7 +242,7 @@ export class PaymentsManager {
     }
 
     static viewExpenseDetails(expenseId, category) {
-        const expense = AppState.paymentsHistory.find(p => p.id == expenseId && p.category === category);
+        const expense = AppState.expensesHistory.find(p => p.id == expenseId && p.category === category);
         
         if (!expense) {
             UIManager.showToast('Expense not found');
@@ -389,7 +389,7 @@ export class PaymentsManager {
     }
 
     static async editExpense(expenseId, category) {
-        const expense = AppState.paymentsHistory.find(p => p.id == expenseId);
+        const expense = AppState.expensesHistory.find(p => p.id == expenseId);
         if (!expense) {
             UIManager.showToast('Expense not found');
             return;
@@ -426,7 +426,7 @@ export class PaymentsManager {
         }
 
         try {
-            await FirebaseService.deletePayment(String(expenseId));
+            await FirebaseService.deleteExpense(String(expenseId));
             UIManager.hapticFeedback('medium');
             UIManager.showToast('✓ Expense deleted');
             
@@ -466,7 +466,7 @@ export class PaymentsManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.savePayment(expense);
+        await FirebaseService.saveExpense(expense);
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast('✓ Personal expense saved');

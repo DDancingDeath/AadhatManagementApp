@@ -298,7 +298,7 @@ export class OutstandingManager {
         } else {
             const saleIndex = salesHistory.findIndex(s => String(s.id) === String(transactionId));
             if (saleIndex >= 0) {
-                await window.app.sales.reprintSale(saleIndex);
+                await window.app.wholesaleSales.reprintSale(saleIndex);
             } else {
                 UIManager.showModal('Sale not found');
             }
