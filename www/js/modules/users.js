@@ -1,6 +1,7 @@
 // User Management Module
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
+import { escapeHtml } from '../utils/helpers.js';
 
 export class UsersManager {
     static async loadUsers() {
@@ -43,8 +44,8 @@ export class UsersManager {
         container.innerHTML = users.map(user => `
             <div style="background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
                 <div style="margin-bottom: 12px;">
-                    <strong style="font-size: 16px;">${this.escapeHtml(user.name)}</strong>
-                    <p style="color: #666; margin: 4px 0;">${this.escapeHtml(user.email)}</p>
+                    <strong style="font-size: 16px;">${escapeHtml(user.name)}</strong>
+                    <p style="color: #666; margin: 4px 0;">${escapeHtml(user.email)}</p>
                     <p style="color: #999; font-size: 12px;">Registered: ${user.createdAt ? new Date(user.createdAt.toDate()).toLocaleDateString() : 'Recently'}</p>
                 </div>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -85,8 +86,8 @@ export class UsersManager {
                 <div style="background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
                         <div style="flex: 1;">
-                            <strong style="font-size: 16px;">${this.escapeHtml(user.name)}</strong>
-                            <p style="color: #666; margin: 4px 0;">${this.escapeHtml(user.email)}</p>
+                            <strong style="font-size: 16px;">${escapeHtml(user.name)}</strong>
+                            <p style="color: #666; margin: 4px 0;">${escapeHtml(user.email)}</p>
                             <span style="display: inline-block; padding: 4px 12px; background: ${roleColors[user.role]}; color: white; border-radius: 12px; font-size: 12px; margin-top: 4px;">
                                 ${roleIcons[user.role]} ${user.role.toUpperCase()}
                             </span>
@@ -145,7 +146,7 @@ export class UsersManager {
         
         const html = `
             <div style="text-align: left;">
-                <p style="margin-bottom: 16px;">Change role for <strong>${this.escapeHtml(userName)}</strong></p>
+                <p style="margin-bottom: 16px;">Change role for <strong>${escapeHtml(userName)}</strong></p>
                 <select id="newRoleSelect" style="width: 100%; padding: 12px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
                     ${roleOptions}
                 </select>
@@ -221,14 +222,4 @@ export class UsersManager {
         });
     }
 
-    static escapeHtml(text) {
-        const map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        };
-        return text.replace(/[&<>"']/g, m => map[m]);
-    }
 }
