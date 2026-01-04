@@ -1,6 +1,5 @@
 // Analytics Module
 import { AppState } from '../utils/state.js';
-import { UIManager } from '../ui/ui-manager.js';
 
 export class AnalyticsManager {
     static currentView = 'overview';
