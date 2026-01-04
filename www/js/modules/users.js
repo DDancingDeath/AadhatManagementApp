@@ -1,9 +1,25 @@
-// User Management Module
+/**
+ * @fileoverview User Management Module
+ * Handles user registration, approval, role management, and access control
+ * Owner-only functionality for managing staff and managers
+ * @module modules/users
+ */
+
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 
+/**
+ * Users Manager - Manages user operations
+ * @class UsersManager
+ */
 export class UsersManager {
+    /**
+     * Load all users from Firebase
+     * Separates into pending and active users
+     * @async
+     * @returns {Promise<void>}
+     */
     static async loadUsers() {
         const userRole = AppState.userRole;
         if (userRole !== 'owner') return;
@@ -32,6 +48,10 @@ export class UsersManager {
         }
     }
 
+    /**
+     * Render list of pending user registrations
+     * @param {Array<Object>} users - Array of pending user objects
+     */
     static renderPendingUsers(users) {
         const container = document.getElementById('pendingUsersList');
         if (!container) return;
@@ -66,6 +86,10 @@ export class UsersManager {
         `).join('');
     }
 
+    /**
+     * Render list of active approved users
+     * @param {Array<Object>} users - Array of active user objects
+     */
     static renderActiveUsers(users) {
         const container = document.getElementById('activeUsersList');
         if (!container) return;

@@ -1,11 +1,35 @@
-// Analytics Module
+/**
+ * @fileoverview Analytics Module
+ * Provides data visualization and business insights
+ * Includes overview metrics, sales analytics, item performance, and customer analysis
+ * @module modules/analytics
+ */
+
 import { AppState } from '../utils/state.js';
 
+/**
+ * Analytics Manager - Manages business analytics and reporting
+ * @class AnalyticsManager
+ */
 export class AnalyticsManager {
+    /**
+     * Current analytics view
+     * @type {'overview'|'sales'|'items'|'customers'}
+     */
     static currentView = 'overview';
+    
+    /**
+     * Current time period filter
+     * @type {'7days'|'30days'|'90days'|'all'}
+     */
     static currentPeriod = '30days';
 
-    // Helper function to get item ID and display name from item name
+    /**
+     * Get item ID and display name from item name
+     * Resolves item by name or Hindi name to get consistent ID
+     * @param {string} itemName - Name of the item to look up
+     * @returns {{id: string, displayName: string}} Item info object
+     */
     static getItemInfo(itemName) {
         if (!itemName) return { id: 'unknown', displayName: 'Unknown' };
         
@@ -23,6 +47,11 @@ export class AnalyticsManager {
         return { id: itemName, displayName: itemName };
     }
 
+    /**
+     * Switch between analytics view tabs
+     * @param {'overview'|'sales'|'items'|'customers'} view - View to display
+     * @param {Event} [evt] - Optional click event for button styling
+     */
     static filterTab(view, evt) {
         this.currentView = view;
         
@@ -52,6 +81,11 @@ export class AnalyticsManager {
         this.renderAnalytics();
     }
 
+    /**
+     * Set the time period filter for analytics data
+     * @param {'7days'|'30days'|'90days'|'all'} period - Period to filter by
+     * @param {Event} [evt] - Optional click event for button styling
+     */
     static setPeriod(period, evt) {
         this.currentPeriod = period;
         AppState.analyticsPeriod = period;
@@ -69,6 +103,11 @@ export class AnalyticsManager {
         this.renderAnalytics();
     }
 
+    /**
+     * Get filtered data based on current period
+     * Filters bills, sales, and expenses by date
+     * @returns {{bills: Array, sales: Array, expenses: {business: Array, personal: Array}}}
+     */
     static getFilteredData() {
         const now = new Date();
         let cutoffDate = null;
@@ -104,6 +143,9 @@ export class AnalyticsManager {
         };
     }
 
+    /**
+     * Render the appropriate analytics view based on currentView
+     */
     static renderAnalytics() {
         switch (this.currentView) {
             case 'overview':
@@ -121,6 +163,10 @@ export class AnalyticsManager {
         }
     }
 
+    /**
+     * Render the overview analytics section
+     * Shows key metrics, trends, and health scorecard
+     */
     static renderOverview() {
         const data = this.getFilteredData();
         const { bills, sales } = data;

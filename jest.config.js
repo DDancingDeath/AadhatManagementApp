@@ -29,6 +29,7 @@ module.exports = {
     collectCoverageFrom: [
         'www/js/utils/helpers.js',
         'www/js/utils/validator.js',
+        'www/js/utils/state.js',
         // Exclude files that require Firebase, DOM, or Capacitor
         '!www/js/__tests__/**',
         '!www/js/main.js',
@@ -37,7 +38,6 @@ module.exports = {
         '!www/js/modules/**',
         '!www/js/services/**',
         '!www/js/ui/**',
-        '!www/js/utils/state.js',
         '!www/js/utils/constants.js',
         '!www/js/utils/template-loader.js'
     ],
@@ -55,6 +55,12 @@ module.exports = {
             functions: 85,
             lines: 95,
             statements: 95
+        },
+        'www/js/utils/state.js': {
+            branches: 100,
+            functions: 100,
+            lines: 100,
+            statements: 100
         }
     },
     

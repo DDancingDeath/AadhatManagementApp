@@ -1,10 +1,24 @@
-// Expenses Module
+/**
+ * @fileoverview Expenses Module
+ * Handles business and personal expense tracking
+ * Supports expense categorization, history, and receipt printing
+ * @module modules/miscellaneous
+ */
+
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 
+/**
+ * Expenses Manager - Manages expense operations
+ * @class ExpensesManager
+ */
 export class ExpensesManager {
+    /**
+     * Update expense person autocomplete options
+     * Extracts unique person names from expense history
+     */
     static updateExpensePersonOptions() {
         const uniquePersons = [...new Set(
             AppState.expensesHistory
@@ -23,6 +37,11 @@ export class ExpensesManager {
         }
     }
 
+    /**
+     * Filter between business and personal expense tabs
+     * @param {'business'|'personal'} view - Tab to display
+     * @param {Event} [evt] - Optional click event for button styling
+     */
     static filterExpenseTab(view, evt) {
         const buttons = document.querySelectorAll('#expenses .filter-btn');
         buttons.forEach(btn => btn.classList.remove('active'));
@@ -40,6 +59,12 @@ export class ExpensesManager {
         }
     }
 
+    /**
+     * Save a business expense with loading indicator
+     * Validates input, creates expense object, and saves to Firebase
+     * @async
+     * @returns {Promise<void>}
+     */
     static async saveBusinessExpense() {
         const type = document.getElementById('businessExpenseType').value.trim();
         const personName = document.getElementById('businessExpensePerson').value.trim();
@@ -67,7 +92,10 @@ export class ExpensesManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.saveExpense(expense);
+        // Use withLoading for the Firebase operation
+        await UIManager.withLoading(async () => {
+            await FirebaseService.saveExpense(expense);
+        });
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast('✓ Business expense saved');
@@ -82,6 +110,12 @@ export class ExpensesManager {
         }
     }
 
+    /**
+     * Save a personal expense with loading indicator
+     * Validates input, creates expense object, and saves to Firebase
+     * @async
+     * @returns {Promise<void>}
+     */
     static async savePersonalExpense() {
         const type = document.getElementById('personalExpenseType').value.trim();
         const amount = Number(document.getElementById('personalExpenseAmount').value);
@@ -109,7 +143,10 @@ export class ExpensesManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.saveExpense(expense);
+        // Use withLoading for the Firebase operation
+        await UIManager.withLoading(async () => {
+            await FirebaseService.saveExpense(expense);
+        });
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast('✓ Personal expense saved');
@@ -124,11 +161,18 @@ export class ExpensesManager {
         }
     }
 
+    /**
+     * Render all expense history (business + personal)
+     */
     static renderexpensesHistory() {
         this.renderBusinessExpenseHistory();
         this.renderPersonalExpenseHistory();
     }
 
+    /**
+     * Render business expense history list
+     * Displays expense cards with hover effects
+     */
     static renderBusinessExpenseHistory() {
         const container = document.getElementById('businessExpenseHistoryList');
         const businessExpenses = AppState.expensesHistory.filter(p => p.category === 'business' && p.id);

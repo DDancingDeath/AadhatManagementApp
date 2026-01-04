@@ -1,12 +1,32 @@
-// -------------------- CASH MANAGEMENT MODULE --------------------
+/**
+ * @fileoverview Cash Management Module
+ * Handles daily cash sessions, sign-in/out, transactions, and reconciliation
+ * Tracks cash flow from sales, purchases, and expenses
+ * @module modules/cash-management
+ */
 
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 
+/**
+ * Cash Management Manager - Manages daily cash operations
+ * @class CashManagementManager
+ */
 export class CashManagementManager {
+    /**
+     * Current day's cash session
+     * @type {Object|null}
+     * @static
+     */
     static todaySession = null;
+    
+    /**
+     * Aggregated transactions for today
+     * @type {{cashSales: number, cashPurchases: number, businessExpenses: number, personalExpenses: number, dueReceived: number, duePaid: number, cashDeposits: number}}
+     * @static
+     */
     static todayTransactions = {
         cashSales: 0,
         cashPurchases: 0,
@@ -17,11 +37,19 @@ export class CashManagementManager {
         cashDeposits: 0
     };
 
+    /**
+     * Initialize cash management module
+     * Loads today's session, calculates transactions, and sets up UI
+     * @async
+     * @returns {Promise<void>}
+     */
     static async init() {
-        // Load today's cash session
-        await this.loadTodaySession();
-        // Recalculate transactions to get latest data
-        await this.calculateTodayTransactions();
+        await UIManager.withLoading(async () => {
+            // Load today's cash session
+            await this.loadTodaySession();
+            // Recalculate transactions to get latest data
+            await this.calculateTodayTransactions();
+        });
         this.updateUI();
         this.loadCustomerOptions();
         this.renderHistory();
@@ -42,6 +70,10 @@ export class CashManagementManager {
         this.updateTransactionForm();
     }
     
+    /**
+     * Update form fields based on transaction type
+     * Shows/hides customer name field and updates labels
+     */
     static updateTransactionForm() {
         const type = document.getElementById('cashTransactionType').value;
         const amountLabel = document.getElementById('amountLabel');
@@ -66,6 +98,12 @@ export class CashManagementManager {
         }
     }
 
+    /**
+     * Load today's cash session from Firebase
+     * Finds session matching today's date (YYYY-MM-DD format)
+     * @async
+     * @returns {Promise<void>}
+     */
     static async loadTodaySession() {
         try {
             const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
@@ -82,6 +120,12 @@ export class CashManagementManager {
         }
     }
 
+    /**
+     * Calculate all cash transactions for today
+     * Aggregates sales, purchases, expenses, and due payments
+     * @async
+     * @returns {Promise<void>}
+     */
     static async calculateTodayTransactions() {
         const today = new Date().toISOString().split('T')[0];
         const todayStart = new Date(today).getTime();

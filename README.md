@@ -100,9 +100,20 @@ npm run test:coverage
 
 ```
 www/js/__tests__/
-├── helpers.test.js     # Tests for utility helper functions
-└── validator.test.js   # Tests for form validation utilities
+├── __mocks__/
+│   └── firebase-mock.js   # Mock Firebase/Firestore for testing
+├── helpers.test.js        # Tests for utility helper functions (26 tests)
+├── state.test.js          # Tests for AppState module (31 tests)
+└── validator.test.js      # Tests for form validation utilities (45 tests)
 ```
+
+### Current Coverage
+
+| File | Statements | Branches | Functions | Lines |
+|------|------------|----------|-----------|-------|
+| helpers.js | 62.96% | 38.88% | 75% | 62.74% |
+| state.js | 100% | 100% | 100% | 100% |
+| validator.js | 96.22% | 93.47% | 90% | 96% |
 
 ### Writing Tests
 

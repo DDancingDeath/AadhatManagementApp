@@ -1,4 +1,8 @@
-// -------------------- BILLING MODULE --------------------
+/**
+ * @fileoverview Billing module for managing purchase and sale transactions
+ * Handles bill creation, item management, weight tracking, and mode switching
+ * @module modules/billing
+ */
 
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
@@ -8,20 +12,65 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 
-// Bill state
+/**
+ * @type {Array<Object>} Current bill items for purchase mode
+ * @private
+ */
 let billItems = [];
+
+/**
+ * @type {Array<Object>} Current items for sale mode
+ * @private
+ */
 let saleItems = [];
+
+/**
+ * @type {Array<number>} Weight entries for purchase mode
+ * @private
+ */
 let weights = [];
+
+/**
+ * @type {Array<number>} Weight entries for sale mode
+ * @private
+ */
 let saleWeights = [];
+
+/**
+ * @type {number|null} Timer ID for auto-save functionality
+ * @private
+ */
 let autoSaveTimer = null;
 
+/**
+ * Billing Manager - Handles all billing operations
+ * @namespace BillingManager
+ */
 const BillingManager = {
-    // -------------------- MODE TOGGLE --------------------
+    /**
+     * Current billing mode
+     * @type {'purchase'|'sale'}
+     */
+    currentMode: 'purchase',
     
-    currentMode: 'purchase', // 'purchase' or 'sale'
+    /**
+     * Whether auto-save is enabled
+     * @type {boolean}
+     */
     autoSaveEnabled: true,
-    itemFrequency: { purchase: {}, sale: {} }, // Cached frequency from database
     
+    /**
+     * Cached item frequency data from database
+     * @type {{purchase: Object, sale: Object}}
+     */
+    itemFrequency: { purchase: {}, sale: {} },
+    
+    /**
+     * Switch between purchase and sale modes
+     * Auto-saves current mode before switching
+     * @param {'purchase'|'sale'} mode - The mode to switch to
+     * @param {Event} [event] - Optional click event for button styling
+     */
     switchMode(mode, event) {
         const purchaseSection = document.getElementById('purchaseSection');
         const saleSection = document.getElementById('saleSection');
@@ -111,8 +160,12 @@ const BillingManager = {
         UIManager.hapticFeedback();
     },
     
-    // -------------------- ITEMS & RATES LOADING --------------------
-    
+    /**
+     * Load item frequency data from Firebase
+     * Tracks which items are used most often for smart ordering
+     * @async
+     * @returns {Promise<void>}
+     */
     async loadItemFrequency() {
         try {
             const userId = AppState.currentUser?.uid;
@@ -131,6 +184,14 @@ const BillingManager = {
         }
     },
     
+    /**
+     * Update item frequency after a transaction
+     * Applies weighted scoring based on recency, quantity, and usage count
+     * @async
+     * @param {Array<Object>} items - Items used in the transaction
+     * @param {'purchase'|'sale'} [mode='purchase'] - The transaction mode
+     * @returns {Promise<void>}
+     */
     async updateItemFrequency(items, mode = 'purchase') {
         try {
             const userId = AppState.currentUser?.uid;

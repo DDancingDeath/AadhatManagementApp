@@ -1,9 +1,25 @@
+/**
+ * @fileoverview Finance Management Module
+ * Handles financial overview, transactions, withdrawals, and profit tracking
+ * Provides balance calculations and monthly profit charts
+ * @module modules/finance
+ */
+
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 
+/**
+ * Finance Manager - Manages financial operations and reporting
+ * @class FinanceManager
+ */
 export class FinanceManager {
+    /**
+     * Switch between finance view tabs
+     * @param {'overview'|'transactions'|'withdrawals'} view - View to display
+     * @param {Event} [evt] - Optional click event for button styling
+     */
     static filterTab(view, evt) {
         // Update button states
         const buttons = document.querySelectorAll('#finance .filter-btn');
@@ -25,6 +41,10 @@ export class FinanceManager {
         }
     }
 
+    /**
+     * Calculate and render financial overview
+     * Computes revenue, expenses, profit, and balance
+     */
     static calculateOverview() {
         const salesHistory = AppState.salesHistory || [];
         const billHistory = AppState.billHistory || [];
@@ -85,6 +105,17 @@ export class FinanceManager {
         this.renderMonthlyProfitChart();
     }
 
+    /**
+     * Render the account breakdown table
+     * Shows detailed breakdown of revenue, costs, and expenses
+     * @param {number} revenue - Total sales revenue
+     * @param {number} purchases - Total purchase costs
+     * @param {number} salesExp - Sales-related expenses
+     * @param {number} businessExp - Business expenses
+     * @param {number} personalExp - Personal expenses
+     * @param {number} withdrawals - Total withdrawals
+     * @param {number} balance - Current balance
+     */
     static renderAccountBreakdown(revenue, purchases, salesExp, businessExp, personalExp, withdrawals, balance) {
         const tbody = document.querySelector('#accountBreakdownTable tbody');
         if (!tbody) return;
@@ -130,6 +161,10 @@ export class FinanceManager {
         tbody.innerHTML = html;
     }
 
+    /**
+     * Render monthly profit chart using Chart.js
+     * Shows profit trends over the past 6 months
+     */
     static renderMonthlyProfitChart() {
         const salesHistory = AppState.salesHistory || [];
         const billHistory = AppState.billHistory || [];

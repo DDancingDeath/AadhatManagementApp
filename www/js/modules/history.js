@@ -1,13 +1,34 @@
-// History Management Module
+/**
+ * @fileoverview History Management Module
+ * Handles bill history, sales history, and transaction records
+ * Provides both card and table view modes for displaying history
+ * @module modules/history
+ */
+
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 
+/**
+ * History Manager - Manages transaction history
+ * @class HistoryManager
+ */
 export class HistoryManager {
-    static viewMode = 'card'; // 'card' or 'table'
+    /**
+     * Current view mode for history display
+     * @type {'card'|'table'}
+     * @static
+     */
+    static viewMode = 'card';
 
+    /**
+     * Save current bill to history with loading indicator
+     * Collects all bill data, saves to Firebase, and clears current bill
+     * @async
+     * @returns {Promise<void>}
+     */
     static async saveBillToHistory() {
         const billItems = AppState.billItems;
         const settings = AppState.settings;
@@ -24,7 +45,9 @@ export class HistoryManager {
         const customerName = document.getElementById("customerName").value.trim();
         const billComments = document.getElementById("billComments").value.trim();
         
-        const customerPhone = AppState.customerPhoneNumber || '';        // Update customer options
+        const customerPhone = AppState.customerPhoneNumber || '';
+        
+        // Update customer options
         if (customerName) {
             this.updateCustomerOptions(customerName);
         }
@@ -48,7 +71,10 @@ export class HistoryManager {
             type: 'purchase'
         };
 
-        await FirebaseService.saveBill(bill);
+        // Use withLoading for the Firebase operation
+        await UIManager.withLoading(async () => {
+            await FirebaseService.saveBill(bill);
+        });
         
         const state = AppState;
         state.billHistory.unshift(bill);
@@ -93,6 +119,11 @@ export class HistoryManager {
         window.app.items.loadItemsDropdown();
     }
 
+    /**
+     * Update customer name autocomplete options
+     * Extracts unique customer names from bill history
+     * @param {string} newCustomer - New customer name to add
+     */
     static updateCustomerOptions(newCustomer) {
         const billHistory = AppState.billHistory;
         const uniqueCustomers = [...new Set(
@@ -111,6 +142,12 @@ export class HistoryManager {
         }
     }
 
+    /**
+     * Render transaction history with search and filtering
+     * Supports both card and table view modes
+     * @param {'purchase'|'sale'} [type='purchase'] - Type of transactions to show
+     * @param {string} [searchTerm=''] - Optional search term to filter by
+     */
     static renderHistory(type = 'purchase', searchTerm = '') {
         const billHistory = AppState.billHistory || [];
         const salesHistory = AppState.salesHistory || [];

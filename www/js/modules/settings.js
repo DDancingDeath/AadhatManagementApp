@@ -1,9 +1,23 @@
-// Settings Module
+/**
+ * @fileoverview Settings Module
+ * Handles application settings including display, labor rates, dark mode,
+ * printer configuration, data management, and audit logs
+ * @module modules/settings
+ */
+
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AuditService } from '../services/audit.js';
 
+/**
+ * Settings Manager - Manages application settings
+ * @class SettingsManager
+ */
 export class SettingsManager {
+    /**
+     * Load settings from AppState and populate form fields
+     * Configures visibility based on user role
+     */
     static loadSettings() {
         const { settings } = AppState;
         
@@ -59,6 +73,10 @@ export class SettingsManager {
         this.updatePrinterStatus();
     }
 
+    /**
+     * Toggle dark mode on/off
+     * Persists preference to localStorage
+     */
     static toggleDarkMode() {
         const enabled = document.getElementById('settingDarkMode').checked;
         localStorage.setItem('darkMode', enabled);
@@ -73,6 +91,10 @@ export class SettingsManager {
         UIManager.showToast(enabled ? 'Dark mode enabled' : 'Dark mode disabled');
     }
 
+    /**
+     * Save current settings to AppState and localStorage
+     * Updates related UI components after save
+     */
     static saveSettings() {
         AppState.settings.heavyWeightThreshold = Number(document.getElementById('settingHeavyWeight').value) || 30;
         AppState.settings.laborRate = Number(document.getElementById('settingLaborRate').value) || 6;
@@ -88,6 +110,11 @@ export class SettingsManager {
         window.app.billing.loadItemsDropdown();
     }
 
+    /**
+     * Clear all data from selected collections
+     * Shows collection selection modal for owner users
+     * @async
+     */
     static async clearAllData() {
         // Show collection selection modal
         const collections = [

@@ -1,10 +1,27 @@
-// Stock Management Module
+/**
+ * @fileoverview Stock Management Module
+ * Handles inventory stock tracking, calculation, and adjustments
+ * Calculates stock from purchase/sale history and displays current levels
+ * @module modules/stock
+ */
+
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 
+/**
+ * Stock Manager - Manages inventory stock operations
+ * @class StockManager
+ */
 export class StockManager {
+    /**
+     * Update stock for a specific item
+     * Adds quantity to existing stock or creates new entry
+     * @param {string} itemName - Name of the item
+     * @param {number} quantity - Quantity to add (can be negative)
+     * @param {number} [rate] - Optional rate per kg
+     */
     static updateStock(itemName, quantity, rate) {
         if (!AppState.stock[itemName]) {
             AppState.stock[itemName] = { quantity: 0, rate: rate || 0 };
@@ -15,12 +32,21 @@ export class StockManager {
         }
     }
 
+    /**
+     * Render current stock levels with loading indicator
+     * Calculates stock from Firebase and displays in the UI
+     * @async
+     * @returns {Promise<void>}
+     */
     static async renderStock() {
         const container = document.getElementById("stockList");
         if (!container) return;
 
         try {
-            const stock = await FirebaseService.calculateStock();
+            // Use withLoading for the Firebase operation
+            const stock = await UIManager.withLoading(async () => {
+                return await FirebaseService.calculateStock();
+            });
             AppState.stock = stock;
 
             if (Object.keys(stock).length === 0) {
@@ -103,6 +129,10 @@ export class StockManager {
         }
     }
 
+    /**
+     * Search and filter stock items by name
+     * Hides non-matching items and shows "no results" message
+     */
     static searchStock() {
         const searchInput = document.getElementById("stockSearchInput");
         const searchTerm = searchInput?.value.toLowerCase().trim() || '';
@@ -146,6 +176,11 @@ export class StockManager {
         }
     }
 
+    /**
+     * Filter between stock view tabs (current stock vs adjustments)
+     * @param {'current'|'adjustment'} section - Section to display
+     * @param {Event} [event] - Optional click event for button styling
+     */
     static filterStockTab(section, event) {
         const sections = {
             current: document.getElementById("currentStockSection"),
@@ -173,6 +208,10 @@ export class StockManager {
         }
     }
 
+    /**
+     * Load items into the stock adjustment dropdown
+     * Populates select element with all inventory items
+     */
     static loadAdjustItemsDropdown() {
         const select = document.getElementById("adjustItem");
         if (!select) return;

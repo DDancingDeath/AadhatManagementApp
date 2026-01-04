@@ -1,11 +1,25 @@
-// Outstanding Payments Module
+/**
+ * @fileoverview Outstanding Payments Module
+ * Handles tracking and managing due payments for purchases and sales
+ * Provides filtering, search, and payment clearing functionality
+ * @module modules/outstanding
+ */
+
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 
+/**
+ * Outstanding Manager - Manages due payments
+ * @class OutstandingManager
+ */
 export class OutstandingManager {
+    /**
+     * Search and filter outstanding payments
+     * Filters by customer name, amount, or date
+     */
     static searchOutstanding() {
         const searchInput = document.getElementById("outstandingSearchInput");
         const searchTerm = searchInput?.value.toLowerCase().trim() || '';
@@ -46,6 +60,11 @@ export class OutstandingManager {
         }
     }
 
+    /**
+     * Filter outstanding payments by type
+     * @param {'purchase'|'sale'} filter - Type of transactions to show
+     * @param {Event} [evt] - Optional click event for button styling
+     */
     static filterDue(filter, evt) {
         AppState.currentDueFilter = filter;
         
@@ -58,6 +77,10 @@ export class OutstandingManager {
         this.renderDue();
     }
 
+    /**
+     * Render due payments list
+     * Shows outstanding amounts for purchases or sales based on filter
+     */
     static renderDue() {
         const currentDueFilter = AppState.currentDueFilter;
         const billHistory = AppState.billHistory;

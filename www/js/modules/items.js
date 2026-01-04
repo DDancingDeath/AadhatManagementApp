@@ -1,23 +1,47 @@
-// -------------------- ITEMS & RATES MANAGEMENT --------------------
+/**
+ * @fileoverview Items & Rates Management Module
+ * Handles CRUD operations for inventory items and their associated rates
+ * Supports purchase, wholesale, and sale rate categories
+ * @module modules/items
+ */
 
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 
+/**
+ * Items Manager - Manages inventory items and rates
+ * @namespace ItemsManager
+ */
 const ItemsManager = {
-    // Debounce timers for item updates
+    /**
+     * Debounce timers for auto-save operations
+     * @type {Object.<string, number>}
+     * @private
+     */
     updateTimers: {},
     
-    // Modal state
+    /**
+     * Currently editing item index for modal operations
+     * @type {number|null}
+     */
     currentEditingItemIndex: null,
+    
+    /**
+     * Modal rates for editing
+     * @type {{purchase: Array<number>, wholesale: Array<number>, sale: Array<number>}}
+     */
     modalRates: {
         purchase: [],
         wholesale: [],
         sale: []
     },
 
-    // Render items list
+    /**
+     * Render the items list in the DOM
+     * Creates item cards with rate inputs for each category
+     */
     renderItems() {
         const container = document.getElementById('itemsList');
         if (!container) return;
@@ -102,7 +126,12 @@ const ItemsManager = {
         });
     },
 
-    // Add new item
+    /**
+     * Add a new item to the inventory
+     * Creates item with empty rates and saves to Firebase
+     * @async
+     * @returns {Promise<void>}
+     */
     async addItem() {
         const newItem = {
             name: '',
@@ -111,21 +140,20 @@ const ItemsManager = {
             saleRates: []
         };
         
-        UIManager.showLoading();
-        try {
+        await UIManager.withLoading(async () => {
             const savedItem = await FirebaseService.saveItem(newItem);
             AppState.items.push(savedItem);
             this.renderItems();
-            UIManager.hideLoading();
-            UIManager.showToast('Item added');
-        } catch (error) {
-            console.error('Error adding item:', error);
-            UIManager.hideLoading();
-            UIManager.showToast('Failed to add item');
-        }
+        });
+        UIManager.showToast('Item added');
     },
 
-    // Update item name (AUTO-SAVE with debounce)
+    /**
+     * Update item name with auto-save
+     * Debounced to prevent excessive Firebase calls
+     * @param {number} index - Item index in AppState.items
+     * @param {string} value - New item name
+     */
     updateItemName(index, value) {
         clearTimeout(this.updateTimers[`name_${index}`]);
         AppState.items[index].name = value;
