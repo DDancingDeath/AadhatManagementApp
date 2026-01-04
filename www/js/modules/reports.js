@@ -312,4 +312,217 @@ export class ReportsManager {
         UIManager.hapticFeedback('medium');
         UIManager.showToast(`Exported ${filteredBills.length} bills to CSV`);
     }
+
+    static exportToPDF() {
+        const billHistory = AppState.billHistory;
+        const salesHistory = AppState.salesHistory;
+        let filteredBills = this.filterByDate(billHistory);
+        filteredBills = this.filterByReportFilters(filteredBills);
+        
+        if (filteredBills.length === 0) {
+            UIManager.showToast("No data to export for the selected filters");
+            return;
+        }
+
+        // Calculate summary data
+        const totalSales = filteredBills.reduce((sum, bill) => sum + bill.total, 0);
+        const totalBills = filteredBills.length;
+        const totalLabour = filteredBills.reduce((sum, bill) => sum + (bill.laborCharges || 0), 0);
+        const totalCash = filteredBills.reduce((sum, bill) => sum + (bill.payment?.cash || 0), 0);
+        const totalOnline = filteredBills.reduce((sum, bill) => sum + (bill.payment?.online || 0), 0);
+
+        let purchaseOutstanding = 0;
+        billHistory.forEach(bill => {
+            const outstanding = bill.payment?.due || 0;
+            if (outstanding > 0) purchaseOutstanding += outstanding;
+        });
+
+        let saleOutstanding = 0;
+        salesHistory.forEach(sale => {
+            const outstanding = sale.payment?.due || 0;
+            if (outstanding > 0) saleOutstanding += outstanding;
+        });
+
+        // Item-wise data
+        const itemData = {};
+        filteredBills.forEach(bill => {
+            bill.items.forEach(item => {
+                if (!itemData[item.name]) {
+                    itemData[item.name] = { count: 0, qty: 0, value: 0 };
+                }
+                itemData[item.name].count++;
+                itemData[item.name].qty += item.qty;
+                itemData[item.name].value += item.total;
+            });
+        });
+
+        const dateRange = this.getDateRangeText();
+        const generatedAt = new Date().toLocaleString('en-IN');
+
+        // Build HTML for PDF
+        const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Aadhat Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #007bff; padding-bottom: 20px; }
+        .header h1 { color: #007bff; margin-bottom: 5px; }
+        .header p { color: #666; font-size: 14px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+        .summary-card { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }
+        .summary-card.warning { border-left-color: #ffc107; background: #fff3cd; }
+        .summary-card.success { border-left-color: #28a745; background: #d4edda; }
+        .summary-card h4 { font-size: 12px; color: #666; margin-bottom: 8px; text-transform: uppercase; }
+        .summary-card .value { font-size: 24px; font-weight: bold; color: #333; }
+        .section { margin-bottom: 30px; }
+        .section h3 { color: #007bff; margin-bottom: 15px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; font-weight: 600; color: #333; }
+        tr:hover { background: #f8f9fa; }
+        .text-right { text-align: right; }
+        .footer { margin-top: 40px; text-align: center; color: #888; font-size: 12px; border-top: 1px solid #ddd; padding-top: 20px; }
+        @media print { body { padding: 10px; } .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Aadhat Business Report</h1>
+        <p>Period: ${dateRange} | Generated: ${generatedAt}</p>
+    </div>
+
+    <div class="summary-grid">
+        <div class="summary-card">
+            <h4>Total Purchases</h4>
+            <div class="value">₹${totalSales.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="summary-card">
+            <h4>Total Bills</h4>
+            <div class="value">${totalBills}</div>
+        </div>
+        <div class="summary-card">
+            <h4>Labor Cost</h4>
+            <div class="value">₹${totalLabour.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="summary-card">
+            <h4>Cash Payment</h4>
+            <div class="value">₹${totalCash.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="summary-card">
+            <h4>Online Payment</h4>
+            <div class="value">₹${totalOnline.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="summary-card">
+            <h4>Total Payment</h4>
+            <div class="value">₹${(totalCash + totalOnline).toLocaleString('en-IN')}</div>
+        </div>
+        <div class="summary-card warning">
+            <h4>Purchase Outstanding</h4>
+            <div class="value" style="color: #dc3545;">₹${purchaseOutstanding.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="summary-card success">
+            <h4>Sale Outstanding</h4>
+            <div class="value" style="color: #28a745;">₹${saleOutstanding.toLocaleString('en-IN')}</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Item-wise Summary</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Item Name</th>
+                    <th class="text-right">Purchases</th>
+                    <th class="text-right">Quantity (kg)</th>
+                    <th class="text-right">Total Value (₹)</th>
+                    <th class="text-right">Avg Rate (₹/kg)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${Object.entries(itemData)
+                    .sort((a, b) => b[1].value - a[1].value)
+                    .map(([name, data]) => `
+                        <tr>
+                            <td>${name}</td>
+                            <td class="text-right">${data.count}</td>
+                            <td class="text-right">${data.qty.toFixed(2)}</td>
+                            <td class="text-right">₹${data.value.toLocaleString('en-IN')}</td>
+                            <td class="text-right">₹${(data.value / data.qty).toFixed(2)}</td>
+                        </tr>
+                    `).join('')}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>Recent Transactions</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Customer</th>
+                    <th>Items</th>
+                    <th class="text-right">Amount (₹)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filteredBills.slice(0, 20).map(bill => `
+                    <tr>
+                        <td>${new Date(bill.date).toLocaleDateString('en-IN')}</td>
+                        <td>${bill.type === 'sale' ? 'Sale' : 'Purchase'}</td>
+                        <td>${bill.customerName || '-'}</td>
+                        <td>${bill.items.map(i => i.name).join(', ')}</td>
+                        <td class="text-right">₹${bill.total.toLocaleString('en-IN')}</td>
+                    </tr>
+                `).join('')}
+                ${filteredBills.length > 20 ? `<tr><td colspan="5" style="text-align: center; color: #888;">... and ${filteredBills.length - 20} more transactions</td></tr>` : ''}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer">
+        <p>Report generated by Aadhat Management App</p>
+    </div>
+</body>
+</html>`;
+
+        // Open in new window for printing/saving as PDF
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(html);
+        printWindow.document.close();
+        
+        // Trigger print dialog after content loads
+        printWindow.onload = () => {
+            printWindow.print();
+        };
+
+        UIManager.hapticFeedback('medium');
+        UIManager.showToast('PDF report opened - use Print > Save as PDF');
+    }
+
+    static getDateRangeText() {
+        const filter = AppState.currentDateFilter;
+        const customRange = AppState.customDateRange;
+        
+        switch (filter) {
+            case 'today':
+                return 'Today (' + new Date().toLocaleDateString('en-IN') + ')';
+            case 'week':
+                return 'This Week';
+            case 'month':
+                return 'This Month';
+            case 'custom':
+                if (customRange.from && customRange.to) {
+                    return `${customRange.from.toLocaleDateString('en-IN')} to ${customRange.to.toLocaleDateString('en-IN')}`;
+                }
+                return 'Custom Range';
+            default:
+                return 'All Time';
+        }
+    }
 }

@@ -72,6 +72,35 @@ export function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
+// -------------------- INPUT HELPERS --------------------
+
+// Get numeric value from input element (returns 0 if invalid)
+export function getInputNumber(elementId, defaultValue = 0) {
+    const el = document.getElementById(elementId);
+    const value = parseFloat(el?.value);
+    return isNaN(value) ? defaultValue : value;
+}
+
+// Get integer value from input element
+export function getInputInt(elementId, defaultValue = 0) {
+    const el = document.getElementById(elementId);
+    const value = parseInt(el?.value, 10);
+    return isNaN(value) ? defaultValue : value;
+}
+
+// Get trimmed string value from input element
+export function getInputText(elementId, defaultValue = '') {
+    const el = document.getElementById(elementId);
+    return el?.value?.trim() || defaultValue;
+}
+
+// Get numeric value from element's text content
+export function getElementNumber(elementId, defaultValue = 0) {
+    const el = document.getElementById(elementId);
+    const value = parseFloat(el?.textContent);
+    return isNaN(value) ? defaultValue : value;
+}
+
 // Pick contact from device
 export async function pickContact(inputElementId) {
     try {

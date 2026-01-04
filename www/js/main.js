@@ -459,10 +459,7 @@ window.app = {
         renderReports: () => ReportsManager.renderReports(),
         applyFilters: () => ReportsManager.applyFilters(),
         exportCSV: () => ReportsManager.exportToCSV(),
-        exportPDF: () => {
-            UIManager.showToast('PDF export - coming soon');
-            console.log('exportPDF - not yet implemented');
-        }
+        exportPDF: () => ReportsManager.exportToPDF()
     },
     
     // Payments
