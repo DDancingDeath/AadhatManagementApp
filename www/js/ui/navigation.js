@@ -122,6 +122,11 @@ const NavigationManager = {
         if (tabId === 'configure') {
             this.resetFilterButtons('configure');
         }
+        
+        // Load settings when Settings tab is shown
+        if (tabId === 'settings' && window.app?.settings) {
+            setTimeout(() => window.app.settings.load(), 100);
+        }
     },
 
     // Show tab

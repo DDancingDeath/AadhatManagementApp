@@ -3,6 +3,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
+import { AuditService } from '../services/audit.js';
 import { pickContact } from '../utils/helpers.js';
 
 let wholesaleSaleItems = [];
@@ -291,6 +292,15 @@ export class SalesManager {
         
         try {
             await FirebaseService.saveSale(saleData);
+            
+            // Audit log
+            await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
+                billNumber: saleData.billNumber,
+                total: saleData.total,
+                customerName: saleData.customerName || 'N/A',
+                itemCount: saleData.items.length,
+                source: 'sales-tab'
+            });
             
             // Update customer options
             this.updateWholesaleCustomerOptions(customerName);

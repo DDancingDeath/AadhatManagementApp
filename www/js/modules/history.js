@@ -2,6 +2,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { AuditService } from '../services/audit.js';
 
 export class HistoryManager {
     static viewMode = 'card'; // 'card' or 'table'
@@ -534,6 +535,14 @@ export class HistoryManager {
             
             // Remove from local state
             history.splice(index, 1);
+            
+            // Log audit entry
+            const auditAction = isSale ? AuditService.ACTIONS.DELETE_SALE : AuditService.ACTIONS.DELETE_BILL;
+            await AuditService.log(auditAction, {
+                billNumber: bill.billNumber || 'N/A',
+                amount: bill.total || bill.grandTotal || 0,
+                customer: bill.customer || bill.supplier || 'N/A'
+            });
             
             // Recalculate stock after deletion
             AppState.stock = await FirebaseService.calculateStock();

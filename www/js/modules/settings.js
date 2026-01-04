@@ -1,10 +1,13 @@
 // Settings Module
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
+import { AuditService } from '../services/audit.js';
 
 export class SettingsManager {
     static loadSettings() {
         const { settings } = AppState;
+        
+        console.log('[Settings] Loading settings, userRole:', AppState.userRole);
         
         document.getElementById('settingHeavyWeight').value = settings.heavyWeightThreshold;
         document.getElementById('settingLaborRate').value = settings.laborRate;
@@ -14,7 +17,27 @@ export class SettingsManager {
         // Show data management section only for owners
         const dataManagementSection = document.getElementById('dataManagementSection');
         if (dataManagementSection) {
-            dataManagementSection.style.display = AppState.userRole === 'owner' ? 'block' : 'none';
+            const isOwner = AppState.userRole === 'owner';
+            console.log('[Settings] Is owner:', isOwner);
+            dataManagementSection.style.display = isOwner ? 'block' : 'none';
+        }
+        
+        // Show audit logs section only for owners
+        const auditLogsSection = document.getElementById('auditLogsSection');
+        if (auditLogsSection) {
+            auditLogsSection.style.display = AppState.userRole === 'owner' ? 'block' : 'none';
+        }
+        
+        // Show storage section only for owners
+        const storageSection = document.getElementById('storageSection');
+        if (storageSection) {
+            storageSection.style.display = AppState.userRole === 'owner' ? 'block' : 'none';
+        }
+        
+        // Update email display
+        const userEmail = document.getElementById('userEmail');
+        if (userEmail && AppState.currentUser?.email) {
+            userEmail.textContent = AppState.currentUser.email;
         }
         
         const darkModeCheckbox = document.getElementById('settingDarkMode');
@@ -165,6 +188,12 @@ export class SettingsManager {
             
             // Clear local storage
             localStorage.clear();
+            
+            // Log audit entry
+            await AuditService.log(AuditService.ACTIONS.CLEAR_DATA, {
+                collections: selectedCollections,
+                recordsDeleted: deletedCount
+            });
             
             UIManager.hideLoading();
             UIManager.showToast(`Cleared ${deletedCount} records from ${selectedCollections.length} collections`);
@@ -359,5 +388,226 @@ export class SettingsManager {
             UIManager.hideLoading();
             await UIManager.showModal('Test print failed: ' + error.message);
         }
+    }
+
+    // Audit Logs Methods
+    static auditLogs = [];
+    
+    static async loadAuditLogs() {
+        if (AppState.userRole !== 'owner') {
+            UIManager.showToast('Only owners can view audit logs');
+            return;
+        }
+        
+        UIManager.showLoading();
+        try {
+            this.auditLogs = await AuditService.getRecentLogs(100);
+            this.renderAuditLogs();
+            UIManager.hideLoading();
+        } catch (error) {
+            console.error('Error loading audit logs:', error);
+            UIManager.hideLoading();
+            UIManager.showToast('Failed to load audit logs');
+        }
+    }
+    
+    static filterAuditLogs() {
+        this.renderAuditLogs();
+    }
+    
+    static renderAuditLogs() {
+        const container = document.getElementById('auditLogsList');
+        if (!container) return;
+        
+        const filterAction = document.getElementById('auditFilterAction')?.value || '';
+        
+        let filteredLogs = this.auditLogs;
+        if (filterAction) {
+            filteredLogs = this.auditLogs.filter(log => log.action === filterAction);
+        }
+        
+        if (filteredLogs.length === 0) {
+            container.innerHTML = '<p style="padding: 16px; text-align: center; color: #888;">No audit logs found</p>';
+            return;
+        }
+        
+        container.innerHTML = filteredLogs.map(log => {
+            const date = new Date(log.timestamp);
+            const formattedDate = date.toLocaleString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            const actionIcon = this.getActionIcon(log.action);
+            const actionColor = this.getActionColor(log.action);
+            const details = this.formatDetails(log.details);
+            
+            return `
+                <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; gap: 12px; align-items: flex-start;">
+                    <span style="font-size: 20px;">${actionIcon}</span>
+                    <div style="flex: 1;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-weight: 600; color: ${actionColor};">${log.action.replace(/_/g, ' ')}</span>
+                            <span style="font-size: 11px; color: #888;">${formattedDate}</span>
+                        </div>
+                        <div style="font-size: 12px; color: #666;">
+                            <strong>${log.userName}</strong> (${log.userRole})
+                        </div>
+                        ${details ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${details}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    static getActionIcon(action) {
+        const icons = {
+            'CREATE_BILL': '📥',
+            'DELETE_BILL': '🗑️',
+            'CREATE_SALE': '📤',
+            'DELETE_SALE': '🗑️',
+            'DELETE_ITEM': '🗑️',
+            'UPDATE_PAYMENT': '💰',
+            'RECORD_PAYMENT': '💰',
+            'CLEAR_DATA': '⚠️',
+            'LOGIN': '🔑',
+            'LOGOUT': '🚪'
+        };
+        return icons[action] || '📋';
+    }
+    
+    static getActionColor(action) {
+        if (action.includes('DELETE') || action === 'CLEAR_DATA') return '#e74c3c';
+        if (action.includes('CREATE')) return '#27ae60';
+        if (action.includes('PAYMENT')) return '#3498db';
+        return '#333';
+    }
+    
+    static formatDetails(details) {
+        if (!details || typeof details !== 'object') return '';
+        
+        const parts = [];
+        if (details.billNumber) parts.push(`Bill: ${details.billNumber}`);
+        if (details.amount) parts.push(`Amount: ₹${details.amount}`);
+        if (details.customer) parts.push(`Customer: ${details.customer}`);
+        if (details.itemName) parts.push(`Item: ${details.itemName}`);
+        if (details.paymentAmount) parts.push(`Payment: ₹${details.paymentAmount}`);
+        if (details.collections) parts.push(`Collections: ${details.collections.join(', ')}`);
+        if (details.recordsDeleted) parts.push(`Records: ${details.recordsDeleted}`);
+        
+        return parts.join(' • ');
+    }
+
+    // Storage Stats Methods
+    static async loadStorageStats() {
+        if (AppState.userRole !== 'owner') {
+            UIManager.showToast('Only owners can view storage stats');
+            return;
+        }
+        
+        UIManager.showLoading();
+        try {
+            const db = firebase.firestore();
+            const userId = AppState.currentUser?.uid;
+            
+            if (!userId) {
+                UIManager.hideLoading();
+                UIManager.showToast('User not logged in');
+                return;
+            }
+            
+            // Collections to check
+            const collections = [
+                { name: 'items', label: 'Items', icon: '📦' },
+                { name: 'bills', label: 'Purchases', icon: '📥' },
+                { name: 'sales', label: 'Sales', icon: '📤' },
+                { name: 'payments', label: 'Payments', icon: '💳' },
+                { name: 'stockAdjustments', label: 'Stock Adjustments', icon: '📊' },
+                { name: 'withdrawals', label: 'Withdrawals', icon: '💸' },
+                { name: 'cashManagement', label: 'Cash Management', icon: '💰' },
+                { name: 'users', label: 'Users', icon: '👥' },
+                { name: 'auditLogs', label: 'Audit Logs', icon: '📋' },
+                { name: 'autoSaves', label: 'Auto Saves', icon: '💾' },
+                { name: 'drafts', label: 'Drafts', icon: '📝' }
+            ];
+            
+            let totalDocs = 0;
+            let totalEstimatedBytes = 0;
+            const breakdown = [];
+            
+            for (const col of collections) {
+                try {
+                    let query;
+                    // Some collections filter by userId, others don't
+                    if (['users', 'auditLogs'].includes(col.name)) {
+                        query = db.collection(col.name);
+                    } else {
+                        query = db.collection(col.name).where('userId', '==', userId);
+                    }
+                    
+                    const snapshot = await query.get();
+                    const docCount = snapshot.size;
+                    
+                    // Estimate size (rough: 1KB per document average)
+                    let estimatedBytes = 0;
+                    snapshot.docs.forEach(doc => {
+                        const data = JSON.stringify(doc.data());
+                        estimatedBytes += data.length * 2; // UTF-16 encoding
+                    });
+                    
+                    totalDocs += docCount;
+                    totalEstimatedBytes += estimatedBytes;
+                    
+                    if (docCount > 0) {
+                        breakdown.push({
+                            ...col,
+                            count: docCount,
+                            size: estimatedBytes
+                        });
+                    }
+                } catch (e) {
+                    console.log(`Could not query ${col.name}:`, e.message);
+                }
+            }
+            
+            // Update UI
+            document.getElementById('totalDocuments').textContent = totalDocs.toLocaleString();
+            document.getElementById('estimatedSize').textContent = this.formatBytes(totalEstimatedBytes);
+            
+            // Render breakdown
+            const breakdownContainer = document.getElementById('collectionBreakdown');
+            if (breakdown.length > 0) {
+                breakdownContainer.innerHTML = `
+                    <div style="font-weight: 600; margin-bottom: 8px; color: #333;">Collection Breakdown:</div>
+                    ${breakdown.sort((a, b) => b.count - a.count).map(col => `
+                        <div style="display: flex; justify-content: space-between; padding: 8px; background: white; border-radius: 4px; margin-bottom: 4px;">
+                            <span>${col.icon} ${col.label}</span>
+                            <span style="color: #666;">${col.count} docs (${this.formatBytes(col.size)})</span>
+                        </div>
+                    `).join('')}
+                `;
+            } else {
+                breakdownContainer.innerHTML = '<p style="color: #888; text-align: center;">No data found</p>';
+            }
+            
+            document.getElementById('storageStats').style.display = 'block';
+            UIManager.hideLoading();
+            
+        } catch (error) {
+            console.error('Error loading storage stats:', error);
+            UIManager.hideLoading();
+            UIManager.showToast('Failed to load storage stats');
+        }
+    }
+    
+    static formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 }

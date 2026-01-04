@@ -3,6 +3,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { formatDate } from '../utils/helpers.js';
+import { AuditService } from '../services/audit.js';
 
 export class OutstandingManager {
     static searchOutstanding() {
@@ -236,6 +237,14 @@ export class OutstandingManager {
             
             paymentInput.value = '';
             this.renderDue();
+            
+            // Log audit entry
+            await AuditService.log(AuditService.ACTIONS.UPDATE_PAYMENT, {
+                billNumber: transaction.billNumber || 'N/A',
+                paymentAmount: paymentAmount,
+                transactionType: transactionType,
+                customer: transaction.customer || transaction.supplier || 'N/A'
+            });
             
             const paymentLabel = transactionType === 'purchase' ? 'Payment' : 'Payment';
             UIManager.showToast(`✓ ${paymentLabel} of ₹${paymentAmount} recorded`);

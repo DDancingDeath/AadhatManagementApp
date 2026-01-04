@@ -21,6 +21,7 @@ import { ConfigureManager } from './modules/configure.js';
 import { FinanceManager } from './modules/finance.js';
 import { AnalyticsManager } from './modules/analytics.js';
 import { CashManagementManager } from './modules/cash-management.js';
+import { AuditService } from './services/audit.js';
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
@@ -177,6 +178,9 @@ async function loadUserDataAndInitialize() {
         
         // Update printer status
         PrinterService.updateStatus();
+        
+        // Clean up old audit logs (runs silently for owners)
+        AuditService.cleanupOldLogs();
         
         // Load settings (if function exists in legacy code)
         if (typeof window.loadSettings === 'function') {
@@ -536,7 +540,10 @@ window.app = {
         connectToPrinter: (id, name) => SettingsManager.connectToPrinter(id, name),
         disconnectPrinter: () => SettingsManager.disconnectPrinter(),
         updatePrinterStatus: () => SettingsManager.updatePrinterStatus(),
-        testPrint: () => SettingsManager.testPrint()
+        testPrint: () => SettingsManager.testPrint(),
+        loadAuditLogs: () => SettingsManager.loadAuditLogs(),
+        filterAuditLogs: () => SettingsManager.filterAuditLogs(),
+        loadStorageStats: () => SettingsManager.loadStorageStats()
     },
     
     // Date Filter

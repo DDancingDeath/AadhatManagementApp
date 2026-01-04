@@ -4,6 +4,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
+import { AuditService } from '../services/audit.js';
 import { formatCurrency, debounce, generateId, pickContact } from '../utils/helpers.js';
 import { DEFAULT_SETTINGS, TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 
@@ -779,6 +780,14 @@ const BillingManager = {
             UIManager.showLoading();
             await FirebaseService.saveBill(bill);
             
+            // Audit log
+            await AuditService.log(AuditService.ACTIONS.CREATE_BILL, {
+                billNumber: bill.billNumber,
+                total: bill.billTotal,
+                customerName: bill.customerName || 'N/A',
+                itemCount: bill.items.length
+            });
+            
             // Update item frequency in database
             await this.updateItemFrequency(billItems, 'purchase');
             
@@ -1280,6 +1289,15 @@ const BillingManager = {
         try {
             UIManager.showLoading();
             await FirebaseService.saveSale(sale);
+            
+            // Audit log
+            await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
+                billNumber: sale.billNumber,
+                total: sale.total,
+                customerName: sale.customerName || 'N/A',
+                itemCount: sale.items.length,
+                source: 'billing-tab'
+            });
             
             // Update item frequency in database
             await this.updateItemFrequency(saleItems, 'sale');
@@ -2088,6 +2106,13 @@ const BillingManager = {
                 await FirebaseService.updateBill(updatedBill);
                 AppState.billHistory[billIndex] = updatedBill;
                 
+                // Log audit entry for edit
+                await AuditService.log(AuditService.ACTIONS.EDIT_BILL, {
+                    billNumber: updatedBill.billNumber || 'N/A',
+                    amount: billTotal,
+                    supplier: supplierName
+                });
+                
                 // Recalculate stock after edit
                 AppState.stock = await FirebaseService.calculateStock();
                 
@@ -2147,6 +2172,13 @@ const BillingManager = {
                 if (saleIndex !== -1) {
                     AppState.salesHistory[saleIndex] = updatedSale;
                 }
+                
+                // Log audit entry for edit
+                await AuditService.log(AuditService.ACTIONS.EDIT_SALE, {
+                    billNumber: updatedSale.billNumber || 'N/A',
+                    amount: salesTotal,
+                    customer: saleCustomer
+                });
                 
                 // Recalculate stock after edit
                 AppState.stock = await FirebaseService.calculateStock();

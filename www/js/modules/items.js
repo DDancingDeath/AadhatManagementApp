@@ -3,6 +3,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { AuditService } from '../services/audit.js';
 
 const ItemsManager = {
     // Debounce timers for item updates
@@ -265,11 +266,19 @@ const ItemsManager = {
         
         if (!confirmed) return;
         
+        const itemName = AppState.items[index].name || 'Unnamed';
+        
         UIManager.showLoading();
         try {
             await FirebaseService.deleteItem(AppState.items[index].id);
             AppState.items.splice(index, 1);
             this.renderItems();
+            
+            // Log audit entry
+            await AuditService.log(AuditService.ACTIONS.DELETE_ITEM, {
+                itemName: itemName
+            });
+            
             UIManager.hideLoading();
             UIManager.showToast('Item deleted');
         } catch (error) {

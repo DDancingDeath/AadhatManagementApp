@@ -91,5 +91,12 @@ service cloud.firestore {
     match /drafts/{docId} {
       allow read, write: if isSignedIn();
     }
+    
+    // Audit logs - all can write (for logging), only owners can read
+    match /auditLogs/{logId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && isAdmin();
+      allow update, delete: if false; // Never allow modification or deletion
+    }
   }
 }
