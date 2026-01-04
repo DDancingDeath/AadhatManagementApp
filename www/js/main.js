@@ -17,7 +17,6 @@ import { PaymentsManager } from './modules/miscellaneous.js';
 import { SettingsManager } from './modules/settings.js';
 import { DateFilterManager } from './modules/datefilter.js';
 import { UsersManager } from './modules/users.js';
-import { ConfigureManager } from './modules/configure.js';
 import { FinanceManager } from './modules/finance.js';
 import { AnalyticsManager } from './modules/analytics.js';
 import { CashManagementManager } from './modules/cash-management.js';
@@ -508,10 +507,6 @@ window.app = {
         signOut: () => CashManagementManager.signOut(),
         recordTransaction: () => CashManagementManager.recordTransaction(),
         showDetails: (sessionDate) => CashManagementManager.showSessionDetails(sessionDate)
-    },
-    
-    // Configure (Settings)
-    configure: {
     },
     
     // Settings
