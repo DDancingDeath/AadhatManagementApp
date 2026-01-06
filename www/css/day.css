@@ -1,0 +1,310 @@
+/* ==================== DAY PAGE STYLES ==================== */
+
+.day-container {
+  padding: 20px;
+}
+
+/* Stats Grid Layouts */
+.stats-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stats-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.stats-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* Stat Cards */
+.stat-card {
+  padding: 16px;
+  border-radius: var(--radius-md);
+  text-align: center;
+  transition: all var(--transition);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.stat-label {
+  font-size: 13px;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.stat-value-sm {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.stat-subtitle {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* Stat Card Variants */
+.stat-card-success {
+  background: var(--success-light);
+}
+.stat-card-success .stat-label,
+.stat-card-success .stat-subtitle {
+  color: var(--success-dark);
+}
+.stat-value-success {
+  color: var(--success-color);
+}
+
+.stat-card-success-light {
+  background: #ecfdf5;
+}
+.stat-card-success-light .stat-label {
+  color: var(--success-dark);
+}
+
+.stat-card-info {
+  background: var(--info-light);
+}
+.stat-card-info .stat-label,
+.stat-card-info .stat-subtitle {
+  color: var(--info-dark);
+}
+.stat-value-info {
+  color: var(--info-color);
+}
+
+.stat-card-info-light {
+  background: #eff6ff;
+}
+.stat-card-info-light .stat-label {
+  color: var(--info-dark);
+}
+
+.stat-card-warning {
+  background: var(--warning-light);
+}
+.stat-card-warning .stat-label,
+.stat-card-warning .stat-subtitle {
+  color: #92400e;
+}
+.stat-value-warning {
+  color: var(--warning-dark);
+}
+
+.stat-card-danger {
+  background: var(--danger-light);
+}
+.stat-card-danger .stat-label,
+.stat-card-danger .stat-subtitle {
+  color: #991b1b;
+}
+.stat-value-danger {
+  color: var(--danger-color);
+}
+
+.stat-card-purple {
+  background: #f3e8ff;
+}
+.stat-card-purple .stat-label {
+  color: #6b21a8;
+}
+.stat-value-purple {
+  color: #7c3aed;
+}
+
+/* Section Title */
+.section-title {
+  margin: 0 0 14px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Summary Grid */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  font-size: 14px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  align-items: center;
+}
+
+.summary-item span {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.summary-item strong {
+  font-weight: 700;
+}
+
+.summary-item-success {
+  background: #f0fdf4;
+}
+.summary-item-success strong {
+  color: var(--success-color);
+}
+
+.summary-item-info {
+  background: #eff6ff;
+}
+.summary-item-info strong {
+  color: var(--info-color);
+}
+
+.summary-item-danger {
+  background: #fef2f2;
+}
+.summary-item-danger strong {
+  color: var(--danger-color);
+}
+
+.summary-item-warning {
+  background: #fefce8;
+}
+.summary-item-warning strong {
+  color: var(--warning-dark);
+}
+
+/* Summary Total */
+.summary-total {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: var(--primary-gradient);
+  border-radius: var(--radius);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.summary-total span {
+  color: white;
+  font-weight: 600;
+}
+
+.summary-total strong {
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* Items Grid */
+.items-grid {
+  display: grid;
+  gap: 10px;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 16px;
+  font-style: italic;
+}
+
+/* Item Detail Row */
+.item-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--light-bg);
+  border-radius: var(--radius);
+  transition: all var(--transition);
+}
+
+.item-detail-row:hover {
+  background: var(--border-color);
+}
+
+.item-detail-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.item-detail-qty {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-right: 12px;
+}
+
+.item-detail-amount {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.item-detail-amount.purchase {
+  color: var(--purchase-color);
+}
+
+.item-detail-amount.sale {
+  color: var(--sale-color);
+}
+
+/* Dark mode adjustments */
+body.dark-mode .stat-card-success,
+body.dark-mode .stat-card-success-light {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+body.dark-mode .stat-card-info,
+body.dark-mode .stat-card-info-light {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+body.dark-mode .stat-card-warning {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+body.dark-mode .stat-card-danger {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+body.dark-mode .stat-card-purple {
+  background: rgba(124, 58, 237, 0.15);
+}
+
+body.dark-mode .summary-item-success {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+body.dark-mode .summary-item-info {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+body.dark-mode .summary-item-danger {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+body.dark-mode .summary-item-warning {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+body.dark-mode .item-detail-row {
+  background: var(--white);
+}
+
+body.dark-mode .item-detail-row:hover {
+  background: var(--border-color);
+}

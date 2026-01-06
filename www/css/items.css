@@ -1,10 +1,16 @@
 .item-card {
-  background: var(--white);
-  padding: 16px;
-  border-radius: 12px;
-  margin-bottom: 12px;
+  background: var(--card-bg);
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 14px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
+  transition: all var(--transition);
+}
+
+.item-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .item-header {
@@ -18,28 +24,36 @@
   flex: 1;
   font-size: 16px;
   font-weight: 600;
-  padding: 12px;
+  padding: 12px 14px;
   border: 2px solid var(--border-color);
-  border-radius: 8px;
-  transition: border-color 0.2s;
+  border-radius: var(--radius);
+  transition: all var(--transition);
+  background: var(--card-bg);
+  color: var(--text-primary);
 }
 
 .item-name-input:focus {
   border-color: var(--primary-color);
   outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .delete-item-btn {
-  background: var(--danger-color);
-  color: var(--white);
+  background: linear-gradient(135deg, var(--danger-color), var(--danger-dark));
+  color: white;
   border: none;
   padding: 10px 16px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: transform 0.2s;
+  transition: all var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+
+.delete-item-btn:hover {
+  box-shadow: var(--shadow);
 }
 
 .delete-item-btn:active {
@@ -63,14 +77,15 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 6px;
-  border-radius: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
   border: 2px solid;
+  transition: all var(--transition);
 }
 
 .rate-group:has(.rate-input.purchase) {
-  border-color: #007bff;
-  background: #e7f3ff;
+  border-color: var(--purchase-color);
+  background: var(--purchase-light);
 }
 
 .rate-group:has(.rate-input.wholesale) {
@@ -79,8 +94,8 @@
 }
 
 .rate-group:has(.rate-input.sale) {
-  border-color: #28a745;
-  background: #d4edda;
+  border-color: var(--sale-color);
+  background: var(--sale-light);
 }
 
 .rates-container .rate-input {
@@ -94,6 +109,7 @@
   text-align: center;
   margin: 0;
   -moz-appearance: textfield;
+  color: var(--text-primary);
 }
 
 .rates-container .rate-input::-webkit-outer-spin-button,

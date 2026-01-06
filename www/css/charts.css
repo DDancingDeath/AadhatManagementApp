@@ -1,7 +1,7 @@
 .chart-container {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 20px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   margin-bottom: 20px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
@@ -15,19 +15,25 @@
 
 /* -------------------- ITEM WISE REPORT -------------------- */
 .item-report {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   margin-bottom: 12px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
+  transition: all var(--transition);
+}
+
+.item-report:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .item-report-header {
   font-weight: 700;
   font-size: 16px;
   margin-bottom: 8px;
-  color: var(--dark-color);
+  color: var(--text-primary);
 }
 
 .item-report-details {
@@ -48,8 +54,19 @@
   }
 }
 
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .tab.active {
-  animation: slideIn 0.3s ease;
+  animation: fadeInUp 0.3s ease;
 }
 
 /* -------------------- UTILITIES -------------------- */
@@ -69,7 +86,7 @@ html {
   margin-bottom: 20px;
   background: var(--light-bg);
   padding: 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 
 .mode-btn {
@@ -78,15 +95,19 @@ html {
   border: 2px solid transparent;
   color: var(--text-secondary);
   padding: 12px 16px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition);
+}
+
+.mode-btn:hover {
+  color: var(--primary-color);
 }
 
 .mode-btn.active {
-  background: var(--white);
+  background: var(--card-bg);
   color: var(--primary-color);
   border-color: var(--primary-color);
   box-shadow: var(--shadow);
@@ -98,17 +119,21 @@ html {
 
 /* -------------------- MODE TOGGLE BUTTON -------------------- */
 .mode-toggle-btn {
-  background: linear-gradient(135deg, #28a745, #20c997);
-  color: var(--white);
+  background: linear-gradient(135deg, var(--sale-color), var(--sale-dark));
+  color: white;
   border: none;
   padding: 10px 20px;
-  border-radius: 20px;
+  border-radius: var(--radius-full);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: var(--shadow);
-  transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition);
   white-space: nowrap;
+}
+
+.mode-toggle-btn:hover {
+  box-shadow: var(--shadow);
 }
 
 .mode-toggle-btn:active {
@@ -116,7 +141,7 @@ html {
 }
 
 .mode-toggle-btn.sale-mode {
-  background: linear-gradient(135deg, #007bff, #0056b3);
+  background: linear-gradient(135deg, var(--purchase-color), var(--purchase-dark));
 }
 
 /* -------------------- MODAL POPUP -------------------- */
@@ -128,6 +153,7 @@ html {
   height: 100%;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 20000;
   display: flex;
   align-items: center;
@@ -144,15 +170,15 @@ html {
 }
 
 .modal-box {
-  background: var(--white);
-  border-radius: 16px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  background: var(--card-bg);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
   max-width: 90vw;
   width: 100%;
   max-height: 90vh;
   overflow: hidden;
   transform: scale(0.9);
-  transition: transform 0.3s ease;
+  transition: transform var(--transition-slow);
   display: flex;
   flex-direction: column;
 }
@@ -162,18 +188,18 @@ html {
 }
 
 .modal-header {
-  background: linear-gradient(135deg, var(--primary-color), #0056b3);
-  color: var(--white);
+  background: var(--primary-gradient);
+  color: white;
   padding: 20px 24px;
   text-align: center;
 }
 
 body:has(.tab.purchase-theme.active) .modal-overlay .modal-header {
-  background: linear-gradient(135deg, #007bff, #0056b3);
+  background: linear-gradient(135deg, var(--purchase-color), var(--purchase-dark));
 }
 
 body:has(.tab.sale-theme.active) .modal-overlay .modal-header {
-  background: linear-gradient(135deg, #28a745, #1e7e34);
+  background: linear-gradient(135deg, var(--sale-color), var(--sale-dark));
 }
 
 .modal-header h3 {
@@ -185,7 +211,7 @@ body:has(.tab.sale-theme.active) .modal-overlay .modal-header {
 .modal-body {
   padding: 24px;
   text-align: center;
-  color: var(--dark-color);
+  color: var(--text-primary);
   line-height: 1.6;
   font-size: 15px;
   overflow-y: auto;
@@ -208,12 +234,17 @@ body:has(.tab.sale-theme.active) .modal-overlay .modal-header {
 .modal-btn {
   padding: 12px 24px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition);
   min-width: 80px;
+}
+
+.modal-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
 }
 
 .modal-btn:active {
@@ -221,7 +252,7 @@ body:has(.tab.sale-theme.active) .modal-overlay .modal-header {
 }
 
 .modal-btn-cancel {
-  background: var(--white);
+  background: var(--card-bg);
   color: var(--text-secondary);
   border: 2px solid var(--border-color);
 }
@@ -231,29 +262,29 @@ body:has(.tab.sale-theme.active) .modal-overlay .modal-header {
 }
 
 .modal-btn-confirm {
-  background: var(--primary-color);
-  color: var(--white);
-  box-shadow: var(--shadow);
+  background: var(--primary-gradient);
+  color: white;
+  box-shadow: var(--shadow-sm);
 }
 
 .modal-btn-confirm:hover {
-  background: #0056b3;
+  box-shadow: var(--shadow);
 }
 
 body:has(.tab.purchase-theme.active) .modal-btn-confirm {
-  background: #007bff;
+  background: linear-gradient(135deg, var(--purchase-color), var(--purchase-dark));
 }
 
 body:has(.tab.purchase-theme.active) .modal-btn-confirm:hover {
-  background: #0056b3;
+  box-shadow: var(--shadow);
 }
 
 body:has(.tab.sale-theme.active) .modal-btn-confirm {
-  background: #28a745;
+  background: linear-gradient(135deg, var(--sale-color), var(--sale-dark));
 }
 
 body:has(.tab.sale-theme.active) .modal-btn-confirm:hover {
-  background: #1e7e34;
+  box-shadow: var(--shadow);
 }
 
 /* -------------------- ENHANCED TOUCH INTERACTIONS -------------------- */
@@ -262,7 +293,7 @@ button, .btn, input[type="submit"], input[type="button"] {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 button:active, .btn:active {

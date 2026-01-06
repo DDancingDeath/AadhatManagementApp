@@ -1,20 +1,28 @@
 /* -------------------- SETTINGS -------------------- */
 .settings-card {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 20px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   margin-bottom: 16px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
+  transition: all var(--transition);
+}
+
+.settings-card:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .settings-card h3 {
   margin: 0 0 16px 0;
-  color: var(--primary-color);
   font-size: 18px;
   font-weight: 700;
   padding-bottom: 12px;
-  border-bottom: 2px solid var(--light-bg);
+  border-bottom: 2px solid var(--border-color);
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .setting-description {
@@ -22,21 +30,25 @@
   color: var(--text-secondary);
   margin: 8px 0 16px 0;
   font-style: italic;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .danger-btn {
-  background: var(--danger-color);
-  color: var(--white);
+  background: linear-gradient(135deg, var(--danger-color), var(--danger-dark));
+  color: white;
   border: none;
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
   width: 100%;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition);
+}
+
+.danger-btn:hover {
   box-shadow: var(--shadow);
-  transition: transform 0.2s;
 }
 
 .danger-btn:active {

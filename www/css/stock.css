@@ -1,10 +1,16 @@
 .stock-item {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 18px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   margin-bottom: 12px;
   box-shadow: var(--shadow);
   border-left: 4px solid var(--success-color);
+  transition: all var(--transition);
+}
+
+.stock-item:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateX(4px);
 }
 
 .stock-header {
@@ -13,6 +19,7 @@
   margin-bottom: 10px;
   font-weight: 700;
   font-size: 18px;
+  color: var(--text-primary);
 }
 
 .stock-details {
@@ -22,14 +29,16 @@
 }
 
 .stock-details strong {
-  color: var(--dark-color);
+  color: var(--text-primary);
 }
 
 .stock-low {
   border-left-color: var(--warning-color);
+  background: linear-gradient(90deg, var(--warning-light), var(--card-bg));
 }
 
 .stock-out {
   border-left-color: var(--danger-color);
-  opacity: 0.7;
+  background: linear-gradient(90deg, var(--danger-light), var(--card-bg));
+  opacity: 0.85;
 }

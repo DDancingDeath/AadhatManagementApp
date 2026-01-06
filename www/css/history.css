@@ -1,18 +1,24 @@
 .history-item {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 18px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   margin-bottom: 16px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow);
   border-left: 4px solid var(--primary-color);
+  transition: all var(--transition);
+}
+
+.history-item:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateX(4px);
 }
 
 .history-item[data-type="purchase"] {
-  border-left-color: #007bff;
+  border-left-color: var(--purchase-color);
 }
 
 .history-item[data-type="sale"] {
-  border-left-color: #28a745;
+  border-left-color: var(--sale-color);
 }
 
 .history-header {
@@ -21,6 +27,7 @@
   margin-bottom: 12px;
   font-weight: 700;
   font-size: 16px;
+  color: var(--text-primary);
 }
 
 .history-date {
@@ -38,7 +45,7 @@
 
 .history-labor {
   font-size: 14px;
-  color: var(--warning-color);
+  color: var(--warning-dark);
   margin: 8px 0;
   font-weight: 600;
 }
@@ -52,32 +59,33 @@
 }
 
 .payment-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   font-weight: 600;
   font-size: 13px;
 }
 
 .payment-online {
-  background: #cfe2ff;
-  color: #084298;
+  background: var(--info-light);
+  color: var(--info-dark);
 }
 
 .payment-cash {
-  background: #d1e7dd;
-  color: #0f5132;
+  background: var(--success-light);
+  color: var(--success-dark);
 }
 
 .payment-due {
-  background: #fff3cd;
-  color: #997404;
+  background: var(--warning-light);
+  color: var(--warning-dark);
 }
 
 .history-items-detail {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 2px solid var(--light-bg);
+  border-top: 2px solid var(--border-color);
 }
 
 .history-item-detail {
@@ -92,7 +100,7 @@
 }
 
 .history-item-detail strong {
-  color: var(--dark-color);
+  color: var(--text-primary);
   font-size: 15px;
 }
 

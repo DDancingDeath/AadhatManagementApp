@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v1';
+const CACHE_NAME = 'aadhat-v2';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -32,12 +32,14 @@ const STATIC_ASSETS = [
     '/js/modules/users.js',
     '/js/modules/datefilter.js',
     '/js/modules/configure.js',
+    '/js/modules/day.js',
     '/js/services/printer.js',
     '/js/services/audit.js',
     '/css/variables.css',
     '/css/auth.css',
     '/css/billing.css',
     '/css/buttons.css',
+    '/css/day.css',
     '/css/charts.css',
     '/css/datefilter.css',
     '/css/hamburger.css',
@@ -161,10 +163,16 @@ self.addEventListener('fetch', (event) => {
                     })
                     .catch(() => {
                         // Offline fallback for HTML pages
-                        if (event.request.headers.get('accept').includes('text/html')) {
+                        if (event.request.headers.get('accept')?.includes('text/html')) {
                             return caches.match('/index.html');
                         }
+                        // Return empty response for other failed requests
+                        return new Response('', { status: 404, statusText: 'Not Found' });
                     });
+            })
+            .catch(() => {
+                // Fallback if cache match fails
+                return new Response('', { status: 500, statusText: 'Service Worker Error' });
             })
     );
 });

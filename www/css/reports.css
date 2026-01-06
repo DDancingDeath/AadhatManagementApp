@@ -6,16 +6,22 @@
 }
 
 .report-card {
-  background: linear-gradient(135deg, var(--white), #f8f9fa);
+  background: var(--card-bg);
   padding: 24px 16px;
-  border-radius: 16px;
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
   text-align: center;
-  border: 2px solid var(--border-color);
+  border: 1px solid var(--border-color);
+  transition: all var(--transition);
+}
+
+.report-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .report-card h3 {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-secondary);
   margin: 0 0 12px 0;
   font-weight: 600;
@@ -24,41 +30,58 @@
 }
 
 .report-value {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
-  color: var(--primary-color);
   margin: 0;
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .popular-item {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   margin-bottom: 10px;
   box-shadow: var(--shadow);
   display: flex;
   justify-content: space-between;
   align-items: center;
   border: 1px solid var(--border-color);
+  transition: all var(--transition);
+}
+
+.popular-item:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateX(4px);
 }
 
 /* -------------------- SETTINGS -------------------- */
 .settings-card {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 20px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   margin-bottom: 16px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
+  transition: all var(--transition);
+}
+
+.settings-card:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .settings-card h3 {
   margin: 0 0 16px 0;
-  color: var(--primary-color);
   font-size: 18px;
   font-weight: 700;
   padding-bottom: 12px;
-  border-bottom: 2px solid var(--light-bg);
+  border-bottom: 2px solid var(--border-color);
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .setting-description {
@@ -66,21 +89,25 @@
   color: var(--text-secondary);
   margin: 8px 0 16px 0;
   font-style: italic;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .danger-btn {
-  background: var(--danger-color);
-  color: var(--white);
+  background: linear-gradient(135deg, var(--danger-color), var(--danger-dark));
+  color: white;
   border: none;
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
   width: 100%;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition);
+}
+
+.danger-btn:hover {
   box-shadow: var(--shadow);
-  transition: transform 0.2s;
 }
 
 .danger-btn:active {
@@ -89,9 +116,9 @@
 
 /* -------------------- DATE FILTER -------------------- */
 .date-filter-card {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 20px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   margin-bottom: 20px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);

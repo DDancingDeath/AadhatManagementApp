@@ -3,22 +3,37 @@
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%) translateY(100px);
-  background: rgba(0, 0, 0, 0.9);
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
   color: white;
-  padding: 12px 24px;
-  border-radius: 24px;
+  padding: 14px 28px;
+  border-radius: var(--radius-full);
   font-size: 14px;
-  font-weight: 500;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  font-weight: 600;
+  box-shadow: var(--shadow-xl);
   z-index: 100000;
   opacity: 0;
-  transition: all 0.3s ease;
+  transition: all var(--transition-slow);
   pointer-events: none;
-  max-width: 80%;
+  max-width: 85%;
   text-align: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
 }
 
 .toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+.toast.success {
+  background: linear-gradient(135deg, var(--success-color) 0%, var(--success-dark) 100%);
+}
+
+.toast.error {
+  background: linear-gradient(135deg, var(--danger-color) 0%, var(--danger-dark) 100%);
+}
+
+.toast.warning {
+  background: linear-gradient(135deg, var(--warning-color) 0%, var(--warning-dark) 100%);
 }

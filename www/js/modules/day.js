@@ -34,18 +34,14 @@ export const DayManager = {
         const cashContent = document.getElementById('dayCashContent');
         
         if (tab === 'today') {
-            todayBtn.style.background = '#667eea';
-            todayBtn.style.color = 'white';
-            cashBtn.style.background = '#e5e7eb';
-            cashBtn.style.color = '#374151';
+            todayBtn.classList.add('active');
+            cashBtn.classList.remove('active');
             todayContent.style.display = 'block';
             cashContent.style.display = 'none';
             this.loadTodayData();
         } else {
-            cashBtn.style.background = '#667eea';
-            cashBtn.style.color = 'white';
-            todayBtn.style.background = '#e5e7eb';
-            todayBtn.style.color = '#374151';
+            cashBtn.classList.add('active');
+            todayBtn.classList.remove('active');
             todayContent.style.display = 'none';
             cashContent.style.display = 'block';
             this.loadCashManagement();
@@ -255,13 +251,12 @@ export const DayManager = {
         const itemsArray = Object.values(itemsMap).sort((a, b) => b.totalValue - a.totalValue);
 
         if (itemsArray.length === 0) {
-            container.innerHTML = `<p style="text-align: center; color: #9ca3af; padding: 10px;">No ${type === 'purchase' ? 'purchases' : 'sales'} today</p>`;
+            container.innerHTML = `<p class="empty-state">No ${type === 'purchase' ? 'purchases' : 'sales'} today</p>`;
             return;
         }
 
-        const bgColor = type === 'purchase' ? '#f0fdf4' : '#eff6ff';
-        const textColor = type === 'purchase' ? '#065f46' : '#1e40af';
-        const valueColor = type === 'purchase' ? '#059669' : '#2563eb';
+        const cardClass = type === 'purchase' ? 'stat-card-success-light' : 'stat-card-info-light';
+        const labelClass = type === 'purchase' ? 'stat-value-success' : 'stat-value-info';
 
         container.innerHTML = itemsArray.map(item => {
             const avgRate = item.rates.length > 0 
@@ -269,13 +264,13 @@ export const DayManager = {
                 : 0;
             
             return `
-                <div style="background: ${bgColor}; padding: 12px; border-radius: 8px;">
-                    <div style="font-weight: 600; color: #374151; font-size: 15px; margin-bottom: 6px;">${item.name}</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 13px; color: ${textColor};">
-                        <div><strong>${type === 'purchase' ? 'Purchases' : 'Sales'}:</strong> ${item.count} times</div>
-                        <div><strong>Quantity:</strong> ${item.quantity.toFixed(2)} kg</div>
-                        <div><strong>Total Value:</strong> <span style="color: ${valueColor}; font-weight: 600;">${formatCurrency(item.totalValue)}</span></div>
-                        <div><strong>Avg Rate:</strong> ${formatCurrency(avgRate)}/kg</div>
+                <div class="stat-card ${cardClass}" style="text-align: left; padding: 14px;">
+                    <div style="font-weight: 600; color: var(--text-primary); font-size: 15px; margin-bottom: 8px;">${item.name}</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 13px;">
+                        <div><span style="color: var(--text-secondary);">${type === 'purchase' ? 'Purchases:' : 'Sales:'}</span> <strong>${item.count}x</strong></div>
+                        <div><span style="color: var(--text-secondary);">Qty:</span> <strong>${item.quantity.toFixed(2)} kg</strong></div>
+                        <div><span style="color: var(--text-secondary);">Total:</span> <strong class="${labelClass}">${formatCurrency(item.totalValue)}</strong></div>
+                        <div><span style="color: var(--text-secondary);">Avg Rate:</span> <strong>${formatCurrency(avgRate)}/kg</strong></div>
                     </div>
                 </div>
             `;

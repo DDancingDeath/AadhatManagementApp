@@ -1,8 +1,8 @@
 /* -------------------- DATE FILTER -------------------- */
 .date-filter-card {
-  background: var(--white);
+  background: var(--card-bg);
   padding: 20px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   margin-bottom: 20px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
@@ -17,32 +17,38 @@
 .filter-btn {
   background: var(--light-bg);
   border: 2px solid var(--border-color);
-  color: var(--dark-color);
+  color: var(--text-primary);
   padding: 10px 16px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition);
   flex: 1;
   min-width: 80px;
 }
 
-.filter-btn.active {
-  background: var(--primary-color);
-  color: var(--white);
+.filter-btn:hover {
   border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.filter-btn.active {
+  background: var(--primary-gradient);
+  color: white;
+  border-color: transparent;
+  box-shadow: var(--shadow-sm);
 }
 
 .filter-btn.filter-purchase.active {
-  background: #007bff;
-  border-color: #007bff;
+  background: linear-gradient(135deg, var(--purchase-color), var(--purchase-dark));
+  border-color: transparent;
   color: white;
 }
 
 .filter-btn.filter-sale.active {
-  background: #28a745;
-  border-color: #28a745;
+  background: linear-gradient(135deg, var(--sale-color), var(--sale-dark));
+  border-color: transparent;
   color: white;
 }
 

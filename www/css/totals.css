@@ -1,8 +1,8 @@
 /* -------------------- BILL TOTALS -------------------- */
 .bill-totals {
-  background: var(--white);
-  padding: 14px;
-  border-radius: 10px;
+  background: var(--card-bg);
+  padding: 16px;
+  border-radius: var(--radius-lg);
   margin: 16px 0;
   box-shadow: var(--shadow);
   border: 1px solid var(--border-color);
@@ -12,12 +12,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 10px 0;
   font-size: 15px;
 }
 
 .total-row span {
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .total-row strong {
@@ -30,17 +31,18 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 10px 0;
   gap: 8px;
 }
 
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-weight: 600;
   cursor: pointer;
   font-size: 15px;
+  color: var(--text-primary);
 }
 
 .checkbox-label input[type="checkbox"] {
@@ -52,40 +54,46 @@
 
 .labor-input-row input[type="number"] {
   width: 120px;
-  padding: 8px;
+  padding: 10px;
   text-align: right;
   font-size: 16px;
   font-weight: 600;
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius);
   margin: 0;
   max-width: 120px;
+  transition: all var(--transition);
+}
+
+.labor-input-row input[type="number"]:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .grand-total {
-  padding-top: 10px !important;
-  margin-top: 8px;
+  padding: 14px !important;
+  margin-top: 10px;
   font-size: 16px !important;
-  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-  padding: 10px !important;
-  border-radius: 8px;
-  margin: 8px -4px;
+  background: linear-gradient(135deg, var(--success-light), #a7f3d0);
+  border-radius: var(--radius);
+  margin: 10px -4px;
 }
 
 .grand-total span {
   font-weight: 700;
+  color: var(--success-dark);
 }
 
 .grand-total strong {
-  font-size: 20px !important;
-  color: var(--success-color) !important;
+  font-size: 22px !important;
+  color: var(--success-dark) !important;
 }
 
 .payment-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 10px 0;
   gap: 12px;
 }
 
@@ -94,55 +102,65 @@
   font-weight: 600;
   font-size: 15px;
   flex: 1;
+  color: var(--text-primary);
 }
 
 .payment-row span {
   font-weight: 600;
   font-size: 15px;
+  color: var(--text-secondary);
 }
 
 .payment-row strong {
   font-size: 18px;
   color: var(--primary-color);
-  transition: color 0.3s;
+  transition: color var(--transition);
 }
 
 .payment-row input[type="number"] {
   width: 120px;
   min-width: 120px;
   max-width: 120px;
-  padding: 8px;
+  padding: 10px;
   text-align: right;
   font-size: 16px;
   font-weight: 600;
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius);
   margin: 0;
   flex-shrink: 0;
+  transition: all var(--transition);
+}
+
+.payment-row input[type="number"]:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .payment-row.payment-total {
-  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-  padding: 10px;
-  border-radius: 8px;
-  margin: 8px -4px;
-  transition: background 0.3s;
+  background: linear-gradient(135deg, var(--info-light), #bfdbfe);
+  padding: 14px;
+  border-radius: var(--radius);
+  margin: 10px -4px;
+  transition: background var(--transition);
 }
 
 .payment-row.payment-total span {
   font-weight: 700;
+  color: var(--info-dark);
 }
 
 .payment-row.payment-total strong {
   font-size: 18px;
+  color: var(--info-dark);
 }
 
 .payment-row.payment-excess {
-  background: linear-gradient(135deg, #ffebee, #ffcdd2) !important;
+  background: linear-gradient(135deg, var(--danger-light), #fecaca) !important;
 }
 
 .payment-row.payment-excess strong {
-  color: var(--danger-color) !important;
+  color: var(--danger-dark) !important;
   animation: pulse 1.5s ease-in-out infinite;
 }
 

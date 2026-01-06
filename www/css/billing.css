@@ -2,7 +2,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .form-row label {
@@ -10,7 +10,7 @@
   flex-shrink: 0;
   font-weight: 600;
   font-size: 14px;
-  color: var(--dark-color);
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -18,12 +18,13 @@
 .form-row input[type="number"],
 .form-row input[type="text"] {
   flex: 1;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 2px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 15px;
-  background: var(--white);
-  transition: border-color 0.2s;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  transition: all var(--transition);
   margin: 0;
 }
 
@@ -42,28 +43,33 @@ input[type="number"] {
 .form-row input:focus {
   border-color: var(--primary-color);
   outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .quick-add-btn-inline {
-  background: var(--primary-color);
-  color: var(--white);
+  background: var(--primary-gradient);
+  color: white;
   border: none;
-  padding: 10px 16px;
-  border-radius: 8px;
+  padding: 12px 18px;
+  border-radius: var(--radius);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  box-shadow: var(--shadow);
-  transition: transform 0.2s;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition);
 }
 
 .tab.purchase-theme .quick-add-btn-inline {
-  background: linear-gradient(135deg, #007bff, #0056b3);
+  background: linear-gradient(135deg, var(--purchase-color), var(--purchase-dark));
 }
 
 .tab.sale-theme .quick-add-btn-inline {
-  background: linear-gradient(135deg, #28a745, #20c997);
+  background: linear-gradient(135deg, var(--sale-color), var(--sale-dark));
+}
+
+.quick-add-btn-inline:hover {
+  box-shadow: var(--shadow);
 }
 
 .quick-add-btn-inline:active {
@@ -73,20 +79,21 @@ input[type="number"] {
 label {
   display: block;
   margin-top: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-weight: 600;
   font-size: 14px;
-  color: var(--dark-color);
+  color: var(--text-primary);
 }
 
 select, input[type="number"], input[type="text"] {
   width: 100%;
-  padding: 12px;
+  padding: 12px 14px;
   border: 2px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--radius);
   font-size: 15px;
-  background: var(--white);
-  transition: border-color 0.2s;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  transition: all var(--transition);
 }
 
 /* Remove spinner arrows from all number inputs */
@@ -103,6 +110,7 @@ input[type="number"] {
 select:focus, input:focus {
   border-color: var(--primary-color);
   outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .weight-input-row {
@@ -117,17 +125,21 @@ select:focus, input:focus {
 }
 
 .quick-add-btn {
-  background: var(--primary-color);
-  color: var(--white);
+  background: var(--primary-gradient);
+  color: white;
   border: none;
   padding: 14px 20px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition);
+}
+
+.quick-add-btn:hover {
   box-shadow: var(--shadow);
-  transition: transform 0.2s;
 }
 
 .quick-add-btn:active {
@@ -142,46 +154,52 @@ select:focus, input:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 12px;
-  background: var(--white);
-  border-radius: 10px;
+  padding: 14px;
+  background: var(--card-bg);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow);
   min-height: 50px;
+  border: 1px solid var(--border-color);
 }
 
 .weight-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  background: linear-gradient(135deg, var(--info-light), #bfdbfe);
   padding: 8px 12px;
-  border-radius: 18px;
-  border: 2px solid var(--primary-color);
+  border-radius: var(--radius-full);
+  border: 2px solid var(--info-color);
   font-size: 14px;
   font-weight: 600;
-  color: var(--dark-color);
-  box-shadow: 0 2px 4px rgba(0,123,255,0.2);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
 }
 
 .weight-chip-remove {
-  background: var(--danger-color);
-  color: var(--white);
+  background: linear-gradient(135deg, var(--danger-color), var(--danger-dark));
+  color: white;
   border: none;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
+  transition: all var(--transition);
+}
+
+.weight-chip-remove:hover {
+  transform: scale(1.1);
 }
 
 .bill-summary {
-  background: var(--white);
-  padding: 10px 14px;
-  border-radius: 10px;
+  background: var(--card-bg);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
   margin: 12px 0;
   box-shadow: var(--shadow);
   display: flex;
@@ -197,30 +215,34 @@ select:focus, input:focus {
 
 .summary-item span {
   font-size: 14px;
-  color: var(--dark-color);
-  font-weight: 700;
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .summary-item strong {
   font-size: 16px;
   font-weight: 700;
-  color: var(--dark-color);
+  color: var(--text-primary);
   margin-left: 4px;
 }
 
 .add-to-bill-btn {
   width: 100%;
-  background: linear-gradient(135deg, var(--primary-color), #0056b3);
-  color: var(--white);
+  background: var(--primary-gradient);
+  color: white;
   border: none;
-  padding: 14px;
-  border-radius: 10px;
+  padding: 16px;
+  border-radius: var(--radius-md);
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
   margin: 16px 0;
+  box-shadow: var(--shadow);
+  transition: all var(--transition);
+}
+
+.add-to-bill-btn:hover {
   box-shadow: var(--shadow-lg);
-  transition: transform 0.2s;
 }
 
 .add-to-bill-btn:active {
@@ -229,37 +251,43 @@ select:focus, input:focus {
 
 /* -------------------- BILLING THEME -------------------- */
 .tab.purchase-theme {
-  background: linear-gradient(to bottom, #f8f9fa 0%, #ffffff 100%);
+  background: linear-gradient(to bottom, var(--light-bg) 0%, var(--card-bg) 100%);
 }
 
 .tab.sale-theme {
-  background: linear-gradient(to bottom, #e7f3ff 0%, #ffffff 100%);
+  background: linear-gradient(to bottom, var(--sale-light) 0%, var(--card-bg) 100%);
 }
 
 .tab.purchase-theme .add-to-bill-btn {
-  background: linear-gradient(135deg, #007bff, #0056b3);
+  background: linear-gradient(135deg, var(--purchase-color), var(--purchase-dark));
 }
 
 .tab.sale-theme .add-to-bill-btn {
-  background: linear-gradient(135deg, #28a745, #20c997);
+  background: linear-gradient(135deg, var(--sale-color), var(--sale-dark));
 }
 
 .tab.purchase-theme h2,
 .tab.purchase-theme h3 {
-  color: #007bff;
+  background: linear-gradient(135deg, var(--purchase-color), var(--purchase-dark));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .tab.sale-theme h2,
 .tab.sale-theme h3 {
-  color: #28a745;
+  background: linear-gradient(135deg, var(--sale-color), var(--sale-dark));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .tab.purchase-theme .bill-totals {
-  border-left: 4px solid #007bff;
+  border-left: 4px solid var(--purchase-color);
 }
 
 .tab.sale-theme .bill-totals {
-  border-left: 4px solid #28a745;
+  border-left: 4px solid var(--sale-color);
 }
 
 .rates-container {
@@ -275,31 +303,33 @@ select:focus, input:focus {
   font-size: 16px;
   font-weight: 600;
   border: 2px solid;
-  border-radius: 8px;
+  border-radius: var(--radius);
   text-align: center;
+  transition: all var(--transition);
 }
 
 .rate-input.purchase {
-  border-color: #007bff;
-  background: #e7f3ff;
+  border-color: var(--purchase-color);
+  background: var(--purchase-light);
 }
 
 .rate-input.sale {
-  border-color: #28a745;
-  background: #d4edda;
+  border-color: var(--sale-color);
+  background: var(--sale-light);
 }
 
 .rate-input:focus {
   outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .delete-rate {
-  background: var(--danger-color);
-  color: var(--white);
+  background: linear-gradient(135deg, var(--danger-color), var(--danger-dark));
+  color: white;
   border: none;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 18px;
   cursor: pointer;
   display: inline-flex;
@@ -308,13 +338,18 @@ select:focus, input:focus {
   line-height: 1;
   font-weight: bold;
   margin-right: 4px;
+  transition: all var(--transition);
+}
+
+.delete-rate:hover {
+  transform: scale(1.05);
 }
 
 .add-rate-plus {
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 20px;
   font-weight: bold;
   cursor: pointer;
@@ -322,25 +357,26 @@ select:focus, input:focus {
   align-items: center;
   justify-content: center;
   line-height: 1;
-  color: var(--white);
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  color: white;
+  transition: all var(--transition);
+  box-shadow: var(--shadow-sm);
 }
 
 .add-rate-plus.purchase {
-  background: #007bff;
+  background: linear-gradient(135deg, var(--purchase-color), var(--purchase-dark));
 }
 
 .add-rate-plus.wholesale {
-  background: #9333ea;
+  background: linear-gradient(135deg, #9333ea, #7c3aed);
 }
 
 .add-rate-plus.sale {
-  background: #28a745;
+  background: linear-gradient(135deg, var(--sale-color), var(--sale-dark));
 }
 
 .add-rate-plus:hover {
   transform: scale(1.05);
+  box-shadow: var(--shadow);
 }
 
 .add-rate-plus:active {
