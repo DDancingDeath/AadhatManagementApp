@@ -217,7 +217,8 @@ export class Helpers {
         todayEnd.setDate(todayEnd.getDate() + 1);
         
         try {
-            const snapshot = await db.collection(collectionName)
+            const getCol = window.getCollection || ((name) => name);
+            const snapshot = await db.collection(getCol(collectionName))
                 .where('timestamp', '>=', todayStart.getTime())
                 .where('timestamp', '<', todayEnd.getTime())
                 .get();

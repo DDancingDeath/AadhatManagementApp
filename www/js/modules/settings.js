@@ -203,11 +203,13 @@ export class SettingsManager {
                 return;
             }
             
-            // Delete selected collections
+            // Delete selected collections (with environment prefix)
             let deletedCount = 0;
+            const getCol = window.getCollection || ((name) => name); // Fallback if not defined
             
             for (const collectionId of selectedCollections) {
-                const snapshot = await db.collection(collectionId).get();
+                const prefixedCollection = getCol(collectionId);
+                const snapshot = await db.collection(prefixedCollection).get();
                 if (snapshot.size > 0) {
                     const deletePromises = snapshot.docs.map(doc => doc.ref.delete());
                     await Promise.all(deletePromises);
@@ -565,15 +567,17 @@ export class SettingsManager {
             let totalDocs = 0;
             let totalEstimatedBytes = 0;
             const breakdown = [];
+            const getCol = window.getCollection || ((name) => name); // Fallback if not defined
             
             for (const col of collections) {
                 try {
                     let query;
+                    const prefixedName = getCol(col.name);
                     // Some collections filter by userId, others don't
                     if (['users', 'auditLogs'].includes(col.name)) {
-                        query = db.collection(col.name);
+                        query = db.collection(prefixedName);
                     } else {
-                        query = db.collection(col.name).where('userId', '==', userId);
+                        query = db.collection(prefixedName).where('userId', '==', userId);
                     }
                     
                     const snapshot = await query.get();

@@ -88,7 +88,7 @@ const AuthManager = {
             const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
             
             const userId = userCredential.user.uid;
-            const userDoc = await firebase.firestore().collection('users').doc(userId).get();
+            const userDoc = await firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).get();
             
             if (!userDoc.exists) {
                 await firebase.auth().signOut();
@@ -191,7 +191,7 @@ const AuthManager = {
             const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
             const userId = userCredential.user.uid;
             
-            await firebase.firestore().collection('users').doc(userId).set({
+            await firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).set({
                 name: name,
                 email: email,
                 role: role,

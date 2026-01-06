@@ -56,7 +56,7 @@ export class AuditService {
                 date: new Date().toISOString()
             };
             
-            await db.collection('auditLogs').add(auditEntry);
+            await db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs').add(auditEntry);
             
         } catch (error) {
             // Don't let audit failures break the app
@@ -67,7 +67,7 @@ export class AuditService {
     static async getRecentLogs(limit = 50) {
         try {
             const db = firebase.firestore();
-            const snapshot = await db.collection('auditLogs')
+            const snapshot = await db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs')
                 .orderBy('timestamp', 'desc')
                 .limit(limit)
                 .get();
@@ -85,7 +85,7 @@ export class AuditService {
     static async getLogsByUser(userId, limit = 50) {
         try {
             const db = firebase.firestore();
-            const snapshot = await db.collection('auditLogs')
+            const snapshot = await db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs')
                 .where('userId', '==', userId)
                 .orderBy('timestamp', 'desc')
                 .limit(limit)
@@ -104,7 +104,7 @@ export class AuditService {
     static async getLogsByAction(action, limit = 50) {
         try {
             const db = firebase.firestore();
-            const snapshot = await db.collection('auditLogs')
+            const snapshot = await db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs')
                 .where('action', '==', action)
                 .orderBy('timestamp', 'desc')
                 .limit(limit)
@@ -135,7 +135,7 @@ export class AuditService {
             const cutoffDate = Date.now() - (this.RETENTION_DAYS * 24 * 60 * 60 * 1000);
             
             // Get logs older than retention period
-            const snapshot = await db.collection('auditLogs')
+            const snapshot = await db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs')
                 .where('timestamp', '<', cutoffDate)
                 .limit(100) // Process in batches to avoid timeout
                 .get();

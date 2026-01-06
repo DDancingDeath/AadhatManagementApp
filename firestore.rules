@@ -108,5 +108,59 @@ service cloud.firestore {
       allow read: if isSignedIn() && isAdmin();
       allow update, delete: if false; // Never allow modification or deletion
     }
+    
+    // ============================================
+    // DEVELOPMENT ENVIRONMENT COLLECTIONS (dev_ prefix)
+    // Mirror all production rules for dev collections
+    // ============================================
+    
+    match /dev_purchases/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_retailSales/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_wholesaleSales/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_items/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_expenses/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_stockAdjustments/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_withdrawals/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_cashManagement/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_cashSessions/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_users/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_itemFrequency/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_notifications/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_autoSaves/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_drafts/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_auditLogs/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_settings/{docId} {
+      allow read, write: if isSignedIn();
+    }
   }
 }

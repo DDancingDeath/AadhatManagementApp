@@ -26,7 +26,7 @@ export class UsersManager {
         
         try {
             const db = firebase.firestore();
-            const usersSnapshot = await db.collection('users').orderBy('createdAt', 'desc').get();
+            const usersSnapshot = await db.collection(window.getCollection ? window.getCollection('users') : 'users').orderBy('createdAt', 'desc').get();
             
             const pendingUsers = [];
             const activeUsers = [];
@@ -130,7 +130,7 @@ export class UsersManager {
     static async approveUser(userId, role) {
         try {
             const db = firebase.firestore();
-            await db.collection('users').doc(userId).update({
+            await db.collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).update({
                 role: role,
                 status: 'active',
                 approvedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -151,7 +151,7 @@ export class UsersManager {
         
         try {
             const db = firebase.firestore();
-            await db.collection('users').doc(userId).delete();
+            await db.collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).delete();
             
             UIManager.hapticFeedback('light');
             UIManager.showToast('Registration rejected');
@@ -193,7 +193,7 @@ export class UsersManager {
     static async changeUserRole(userId, newRole) {
         try {
             const db = firebase.firestore();
-            await db.collection('users').doc(userId).update({
+            await db.collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).update({
                 role: newRole,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });

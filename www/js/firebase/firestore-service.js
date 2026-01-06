@@ -28,6 +28,19 @@ const getDb = () => {
     throw new Error('Firestore not initialized');
 };
 
+/**
+ * Gets the prefixed collection name based on environment.
+ * In development: 'items' -> 'dev_items'
+ * In production: 'items' -> 'items'
+ * @param {string} name - The base collection name
+ * @returns {string} The prefixed collection name
+ * @private
+ */
+const col = (name) => {
+    const prefix = window.COLLECTION_PREFIX || '';
+    return prefix + name;
+};
+
 /** @type {Function[]} Array of unsubscribe functions for real-time listeners */
 const unsubscribeFunctions = [];
 
@@ -65,7 +78,7 @@ const FirebaseService = {
      * @returns {Promise<Array<{id: string, name: string, hindiName?: string, rate?: number}>>} Array of item objects
      */
     async loadItems() {
-        const snapshot = await getDb().collection('items').get();
+        const snapshot = await getDb().collection(col('items')).get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -81,9 +94,9 @@ const FirebaseService = {
      */
     async saveItem(item) {
         if (item.id) {
-            await getDb().collection('items').doc(item.id).set(item);
+            await getDb().collection(col('items')).doc(item.id).set(item);
         } else {
-            const docRef = await getDb().collection('items').add(item);
+            const docRef = await getDb().collection(col('items')).add(item);
             item.id = docRef.id;
         }
         return item;
@@ -96,7 +109,7 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deleteItem(itemId) {
-        await getDb().collection('items').doc(itemId).delete();
+        await getDb().collection(col('items')).doc(itemId).delete();
     },
 
     /**
@@ -105,7 +118,7 @@ const FirebaseService = {
      * @returns {Promise<Array<Object>>} Array of purchase objects
      */
     async loadPurchases() {
-        const snapshot = await getDb().collection('purchases').orderBy('date', 'desc').get();
+        const snapshot = await getDb().collection(col('purchases')).orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -130,9 +143,9 @@ const FirebaseService = {
         }
         
         if (purchase.id) {
-            await getDb().collection('purchases').doc(purchase.id).set(purchase);
+            await getDb().collection(col('purchases')).doc(purchase.id).set(purchase);
         } else {
-            const docRef = await getDb().collection('purchases').add(purchase);
+            const docRef = await getDb().collection(col('purchases')).add(purchase);
             purchase.id = docRef.id;
         }
         return purchase;
@@ -150,7 +163,7 @@ const FirebaseService = {
         if (!purchase.id) {
             throw new Error('Purchase ID is required for update');
         }
-        await getDb().collection('purchases').doc(purchase.id).set(purchase);
+        await getDb().collection(col('purchases')).doc(purchase.id).set(purchase);
         return purchase;
     },
 
@@ -161,7 +174,7 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deletePurchase(purchaseId) {
-        await getDb().collection('purchases').doc(purchaseId).delete();
+        await getDb().collection(col('purchases')).doc(purchaseId).delete();
     },
 
     /**
@@ -170,7 +183,7 @@ const FirebaseService = {
      * @returns {Promise<Array<Object>>} Array of sale objects
      */
     async loadSales() {
-        const snapshot = await getDb().collection('wholesaleSales').orderBy('date', 'desc').get();
+        const snapshot = await getDb().collection(col('wholesaleSales')).orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -194,9 +207,9 @@ const FirebaseService = {
         }
         
         if (sale.id) {
-            await getDb().collection('wholesaleSales').doc(String(sale.id)).set(sale);
+            await getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale);
         } else {
-            const docRef = await getDb().collection('wholesaleSales').add(sale);
+            const docRef = await getDb().collection(col('wholesaleSales')).add(sale);
             sale.id = docRef.id;
         }
         return sale;
@@ -214,7 +227,7 @@ const FirebaseService = {
         if (!sale.id) {
             throw new Error('Sale ID is required for update');
         }
-        await getDb().collection('wholesaleSales').doc(String(sale.id)).set(sale);
+        await getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale);
         return sale;
     },
 
@@ -238,9 +251,9 @@ const FirebaseService = {
         }
         
         if (sale.id) {
-            await getDb().collection('retailSales').doc(String(sale.id)).set(sale);
+            await getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale);
         } else {
-            const docRef = await getDb().collection('retailSales').add(sale);
+            const docRef = await getDb().collection(col('retailSales')).add(sale);
             sale.id = docRef.id;
         }
         return sale;
@@ -252,7 +265,7 @@ const FirebaseService = {
      * @returns {Promise<Array<Object>>} Array of retail sale objects
      */
     async loadRetailSales() {
-        const snapshot = await getDb().collection('retailSales').orderBy('date', 'desc').get();
+        const snapshot = await getDb().collection(col('retailSales')).orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -268,7 +281,7 @@ const FirebaseService = {
         if (!sale.id) {
             throw new Error('Sale ID is required for update');
         }
-        await getDb().collection('retailSales').doc(String(sale.id)).set(sale);
+        await getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale);
         return sale;
     },
 
@@ -279,7 +292,7 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deleteRetailSale(saleId) {
-        await getDb().collection('retailSales').doc(String(saleId)).delete();
+        await getDb().collection(col('retailSales')).doc(String(saleId)).delete();
     },
 
     /**
@@ -289,7 +302,7 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deleteWholesaleSale(saleId) {
-        await getDb().collection('wholesaleSales').doc(String(saleId)).delete();
+        await getDb().collection(col('wholesaleSales')).doc(String(saleId)).delete();
     },
 
     /**
@@ -298,7 +311,7 @@ const FirebaseService = {
      * @returns {Promise<Array<Object>>} Array of expense objects
      */
     async loadExpenses() {
-        const snapshot = await getDb().collection('expenses').orderBy('date', 'desc').get();
+        const snapshot = await getDb().collection(col('expenses')).orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -320,7 +333,7 @@ const FirebaseService = {
             expense.userName = AppState.userName;
         }
         
-        const docRef = await getDb().collection('expenses').add(expense);
+        const docRef = await getDb().collection(col('expenses')).add(expense);
         return { id: docRef.id, ...expense };
     },
 
@@ -336,12 +349,12 @@ const FirebaseService = {
         // Handle both old numeric IDs and new Firebase document IDs
         if (typeof expenseId === 'number' || !isNaN(Number(expenseId))) {
             // Old expense with numeric ID - query by id field
-            const snapshot = await getDb().collection('expenses').where('id', '==', Number(expenseId)).get();
+            const snapshot = await getDb().collection(col('expenses')).where('id', '==', Number(expenseId)).get();
             const deletePromises = snapshot.docs.map(doc => doc.ref.delete());
             await Promise.all(deletePromises);
         } else {
             // New expense with Firebase document ID
-            await getDb().collection('expenses').doc(expenseId).delete();
+            await getDb().collection(col('expenses')).doc(expenseId).delete();
         }
         
         // Update local state
@@ -357,7 +370,7 @@ const FirebaseService = {
      * @returns {Promise<Array<Object>>} Array of stock adjustment objects
      */
     async loadStockAdjustments() {
-        const snapshot = await getDb().collection('stockAdjustments').orderBy('date', 'desc').get();
+        const snapshot = await getDb().collection(col('stockAdjustments')).orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -381,7 +394,7 @@ const FirebaseService = {
             adjustment.userName = AppState.userName;
         }
         
-        const docRef = await getDb().collection('stockAdjustments').add(adjustment);
+        const docRef = await getDb().collection(col('stockAdjustments')).add(adjustment);
         return { id: docRef.id, ...adjustment };
     },
 
@@ -393,7 +406,7 @@ const FirebaseService = {
      */
     async loadWithdrawals() {
         try {
-            const snapshot = await getDb().collection('withdrawals').orderBy('date', 'desc').get();
+            const snapshot = await getDb().collection(col('withdrawals')).orderBy('date', 'desc').get();
             return snapshot.docs.map(doc => {
                 const data = doc.data();
                 return {
@@ -425,7 +438,7 @@ const FirebaseService = {
             withdrawal.userName = AppState.userName;
         }
         
-        const docRef = await getDb().collection('withdrawals').add(withdrawal);
+        const docRef = await getDb().collection(col('withdrawals')).add(withdrawal);
         return { id: docRef.id, ...withdrawal };
     },
 
@@ -573,7 +586,7 @@ const FirebaseService = {
         this.cleanup();
 
         // Listen to items collection
-        const unsubItems = getDb().collection('items').onSnapshot(snapshot => {
+        const unsubItems = getDb().collection(col('items')).onSnapshot(snapshot => {
             AppState.items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             // Update item-related UI components
             if (window.app?.items?.render) {
@@ -591,7 +604,7 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubItems);
         
         // Listen to purchases collection (renamed from bills)
-        const unsubPurchases = getDb().collection('purchases').orderBy('date', 'desc').onSnapshot(async snapshot => {
+        const unsubPurchases = getDb().collection(col('purchases')).orderBy('date', 'desc').onSnapshot(async snapshot => {
             AppState.purchaseHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
             // Recalculate stock when purchases change
@@ -662,7 +675,7 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubPurchases);
         
         // Listen to retail sales collection
-        const unsubRetailSales = getDb().collection('retailSales').orderBy('date', 'desc').onSnapshot(async snapshot => {
+        const unsubRetailSales = getDb().collection(col('retailSales')).orderBy('date', 'desc').onSnapshot(async snapshot => {
             AppState.retailSalesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
             // Recalculate stock when retail sales change
@@ -730,7 +743,7 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubRetailSales);
         
         // Listen to wholesale sales collection
-        const unsubSales = getDb().collection('wholesaleSales').orderBy('date', 'desc').onSnapshot(async snapshot => {
+        const unsubSales = getDb().collection(col('wholesaleSales')).orderBy('date', 'desc').onSnapshot(async snapshot => {
             AppState.salesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
             // Recalculate stock when sales change
@@ -809,7 +822,7 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubSales);
         
         // Listen to expenses collection
-        const unsubExpenses = getDb().collection('expenses').orderBy('date', 'desc').onSnapshot(snapshot => {
+        const unsubExpenses = getDb().collection(col('expenses')).orderBy('date', 'desc').onSnapshot(snapshot => {
             AppState.expensesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
             // Update expenses view if visible
@@ -849,7 +862,7 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubExpenses);
         
         // Listen to stock adjustments collection
-        const unsubStockAdj = getDb().collection('stockAdjustments').orderBy('date', 'desc').onSnapshot(async snapshot => {
+        const unsubStockAdj = getDb().collection(col('stockAdjustments')).orderBy('date', 'desc').onSnapshot(async snapshot => {
             AppState.stockAdjustments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
             // Recalculate stock when adjustments change
@@ -873,7 +886,7 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubStockAdj);
         
         // Listen to withdrawals collection
-        const unsubWithdrawals = getDb().collection('withdrawals').orderBy('date', 'desc').onSnapshot(snapshot => {
+        const unsubWithdrawals = getDb().collection(col('withdrawals')).orderBy('date', 'desc').onSnapshot(snapshot => {
             AppState.withdrawalsHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
             // Update finance view if visible
@@ -895,7 +908,7 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubWithdrawals);
         
         // Listen to cash sessions collection
-        const unsubCashSessions = getDb().collection('cashSessions').orderBy('date', 'desc').onSnapshot(snapshot => {
+        const unsubCashSessions = getDb().collection(col('cashSessions')).orderBy('date', 'desc').onSnapshot(snapshot => {
             // Update cash management if visible
             if (window.app?.cashManagement?.init) {
                 const cashTab = document.getElementById('cashManagement');
@@ -910,7 +923,7 @@ const FirebaseService = {
         unsubscribeFunctions.push(unsubCashSessions);
         
         // Listen to users collection (for owner to see new registrations)
-        const unsubUsers = getDb().collection('users').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        const unsubUsers = getDb().collection(col('users')).orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             // Update users management view if visible (owner only)
             if (AppState.userRole === 'owner' && window.app?.users?.loadUsers) {
                 const usersTab = document.getElementById('users');
@@ -936,7 +949,7 @@ const FirebaseService = {
      */
     async notifyOwnersOfEdit(type, docId, oldData, newData) {
         try {
-            const usersSnapshot = await getDb().collection('users').where('role', '==', 'owner').get();
+            const usersSnapshot = await getDb().collection(col('users')).where('role', '==', 'owner').get();
             const ownerIds = usersSnapshot.docs.map(doc => doc.id);
             
             const notification = {
@@ -952,7 +965,7 @@ const FirebaseService = {
             };
             
             for (const ownerId of ownerIds) {
-                await getDb().collection('notifications').add({
+                await getDb().collection(col('notifications')).add({
                     ...notification,
                     userId: ownerId
                 });
@@ -968,7 +981,7 @@ const FirebaseService = {
      * @returns {Promise<Array<Object>>} Array of withdrawal objects
      */
     async loadWithdrawalsByTimestamp() {
-        const snapshot = await getDb().collection('withdrawals').orderBy('timestamp', 'desc').get();
+        const snapshot = await getDb().collection(col('withdrawals')).orderBy('timestamp', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -992,7 +1005,7 @@ const FirebaseService = {
             withdrawal.withdrawnByName = AppState.userName;
         }
         
-        const docRef = await getDb().collection('withdrawals').add(withdrawal);
+        const docRef = await getDb().collection(col('withdrawals')).add(withdrawal);
         return { id: docRef.id, ...withdrawal };
     },
 
@@ -1002,7 +1015,7 @@ const FirebaseService = {
      * @returns {Promise<Array<Object>>} Array of cash session objects
      */
     async loadCashSessions() {
-        const snapshot = await getDb().collection('cashManagement').orderBy('date', 'desc').get();
+        const snapshot = await getDb().collection(col('cashManagement')).orderBy('date', 'desc').get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
@@ -1018,9 +1031,9 @@ const FirebaseService = {
      */
     async saveCashSession(session) {
         if (session.id) {
-            await getDb().collection('cashManagement').doc(session.id).set(session);
+            await getDb().collection(col('cashManagement')).doc(session.id).set(session);
         } else {
-            const docRef = await getDb().collection('cashManagement').add(session);
+            const docRef = await getDb().collection(col('cashManagement')).add(session);
             session.id = docRef.id;
         }
         return session;
@@ -1038,7 +1051,7 @@ const FirebaseService = {
         if (!session.id) {
             throw new Error('Session ID is required for update');
         }
-        await getDb().collection('cashManagement').doc(session.id).set(session);
+        await getDb().collection(col('cashManagement')).doc(session.id).set(session);
         return session;
     }
 };

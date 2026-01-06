@@ -163,7 +163,7 @@ const BillingManager = {
             const userId = AppState.currentUser?.uid;
             if (!userId) return;
             
-            const doc = await db.collection('itemFrequency').doc(userId).get();
+            const doc = await db.collection(window.getCollection ? window.getCollection('itemFrequency') : 'itemFrequency').doc(userId).get();
             if (doc.exists) {
                 this.itemFrequency = doc.data();
             } else {
@@ -215,7 +215,7 @@ const BillingManager = {
                 itemData.effectiveScore = itemData.score * decayFactor;
             });
             
-            await db.collection('itemFrequency').doc(userId).set(this.itemFrequency);
+            await db.collection(window.getCollection ? window.getCollection('itemFrequency') : 'itemFrequency').doc(userId).set(this.itemFrequency);
         } catch (error) {
             console.error('Failed to update item frequency:', error);
         }
@@ -424,7 +424,7 @@ const BillingManager = {
         }
 
         try {
-            await db.collection('drafts').doc(draft.id).set(draft);
+            await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts').doc(draft.id).set(draft);
             
             UIManager.showToast('✓ Draft saved to cloud!');
             UIManager.hapticFeedback('light');
@@ -465,7 +465,7 @@ const BillingManager = {
                 return;
             }
 
-            const snapshot = await db.collection('drafts')
+            const snapshot = await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts')
                 .where('userId', '==', currentUser.uid)
                 .get();
             
@@ -518,7 +518,7 @@ const BillingManager = {
      */
     async loadDraft(draftId) {
         try {
-            const draftDoc = await db.collection('drafts').doc(draftId).get();
+            const draftDoc = await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts').doc(draftId).get();
             
             if (!draftDoc.exists) {
                 UIManager.showToast('Draft not found');
@@ -549,7 +549,7 @@ const BillingManager = {
             PurchaseManager.updateTotals();
             this.closeDrafts();
 
-            await db.collection('drafts').doc(draftId).delete();
+            await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts').doc(draftId).delete();
             await this.updateDraftCount();
 
             UIManager.showToast('✓ Draft loaded!');
@@ -567,7 +567,7 @@ const BillingManager = {
      */
     async deleteDraft(draftId) {
         try {
-            await db.collection('drafts').doc(draftId).delete();
+            await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts').doc(draftId).delete();
             await this.updateDraftCount();
             await this.showDrafts();
             UIManager.showToast('Draft deleted');
@@ -586,7 +586,7 @@ const BillingManager = {
             const currentUser = firebase.auth().currentUser;
             if (!currentUser) return;
             
-            const snapshot = await db.collection('drafts')
+            const snapshot = await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts')
                 .where('userId', '==', currentUser.uid)
                 .get();
             
@@ -669,7 +669,7 @@ const BillingManager = {
                 saleTotal: Helpers.getElementInt('saleTotal')
             };
 
-            await db.collection('autoSaves').doc(AppState.currentUser.uid).set(autoSaveData);
+            await db.collection(window.getCollection ? window.getCollection('autoSaves') : 'autoSaves').doc(AppState.currentUser.uid).set(autoSaveData);
             
         } catch (error) {
             console.error('Auto-save failed:', error);
@@ -683,7 +683,7 @@ const BillingManager = {
     async deleteAutoSave() {
         try {
             if (!AppState.currentUser) return;
-            await db.collection('autoSaves').doc(AppState.currentUser.uid).delete();
+            await db.collection(window.getCollection ? window.getCollection('autoSaves') : 'autoSaves').doc(AppState.currentUser.uid).delete();
         } catch (error) {
             if (error.code !== 'not-found') {
                 console.error('Failed to delete auto-save:', error);
@@ -699,7 +699,7 @@ const BillingManager = {
         try {
             if (!AppState.currentUser) return;
             
-            const autoSaveDoc = await db.collection('autoSaves').doc(AppState.currentUser.uid).get();
+            const autoSaveDoc = await db.collection(window.getCollection ? window.getCollection('autoSaves') : 'autoSaves').doc(AppState.currentUser.uid).get();
             
             if (!autoSaveDoc.exists) return;
             

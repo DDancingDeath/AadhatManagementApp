@@ -98,7 +98,7 @@ async function loadUserDataAndInitialize() {
         // Fetch user data
         const userId = AppState.currentUser?.uid || firebase.auth().currentUser?.uid;
         if (userId) {
-            const userDoc = await firebase.firestore().collection('users').doc(userId).get();
+            const userDoc = await firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).get();
             if (userDoc.exists) {
                 const userData = userDoc.data();
                 AppState.userRole = userData.role || 'staff';
