@@ -10,26 +10,45 @@
 
 .filter-buttons {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  background: var(--card-bg);
 }
 
 .filter-btn {
   background: var(--light-bg);
   border: 2px solid var(--border-color);
   color: var(--text-primary);
-  padding: 10px 16px;
-  border-radius: var(--radius);
+  padding: 12px 16px;
+  border-radius: 0;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition);
   flex: 1;
   min-width: 80px;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
 }
 
-.filter-btn:hover {
-  border-color: var(--primary-color);
+.filter-btn:first-child {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.filter-btn:last-child {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.filter-btn:only-child {
+  border-radius: var(--radius-md);
+}
+
+.filter-btn:hover:not(.active) {
+  background: var(--border-color);
   color: var(--primary-color);
 }
 
@@ -54,6 +73,27 @@
 
 .filter-btn:active {
   transform: scale(0.98);
+}
+
+/* Secondary filter style (for period filters inside cards) */
+.filter-buttons-secondary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-buttons-secondary .filter-btn {
+  flex: 0 1 auto;
+  min-width: 60px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+}
+
+.filter-buttons-secondary .filter-btn:first-child,
+.filter-buttons-secondary .filter-btn:last-child {
+  border-radius: var(--radius);
 }
 
 
