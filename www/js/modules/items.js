@@ -420,6 +420,7 @@ const ItemsManager = {
             }
             
             this.renderItems();
+            this.renderItemsTable();
             UIManager.hideLoading();
             UIManager.showToast(`Import complete! ${imported} items imported`);
             

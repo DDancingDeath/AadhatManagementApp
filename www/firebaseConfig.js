@@ -42,9 +42,8 @@ const APP_ENV = getEnvironment();
 // Development: 'dev_items', 'dev_purchases', etc.
 const COLLECTION_PREFIX = APP_ENV === 'production' ? '' : 'dev_';
 
-// Collections that should NOT be prefixed (shared between dev and prod)
-// - users: Keep same user roles/permissions in dev
-const SHARED_COLLECTIONS = ['users'];
+// All collections are now prefixed in dev mode (no shared collections)
+// This keeps dev and prod data completely separate
 
 console.log(`🔧 App Environment: ${APP_ENV} | Collection Prefix: "${COLLECTION_PREFIX}"`);
 
@@ -64,13 +63,7 @@ window.APP_ENV = APP_ENV;
 window.COLLECTION_PREFIX = COLLECTION_PREFIX;
 
 // Helper function to get prefixed collection name
-// Some collections are shared (not prefixed) between dev and prod
-window.getCollection = (name) => {
-  if (SHARED_COLLECTIONS.includes(name)) {
-    return name; // No prefix for shared collections
-  }
-  return COLLECTION_PREFIX + name;
-};
+window.getCollection = (name) => COLLECTION_PREFIX + name;
 
 // Show environment indicator in UI (for development only)
 if (APP_ENV !== 'production') {

@@ -1,0 +1,133 @@
+<div id="day" class="tab">
+    <div style="padding: 20px;">
+        
+        <!-- Sub-navigation tabs -->
+        <div style="display: flex; gap: 0; margin-bottom: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <button id="dayTabToday" class="day-sub-tab active" onclick="window.app.day.showSubTab('today')" style="flex: 1; padding: 14px 20px; font-size: 15px; font-weight: 600; border: none; background: #667eea; color: white; cursor: pointer; transition: all 0.2s;">
+                📊 Today's Summary
+            </button>
+            <button id="dayTabCash" class="day-sub-tab" onclick="window.app.day.showSubTab('cash')" style="flex: 1; padding: 14px 20px; font-size: 15px; font-weight: 600; border: none; background: #e5e7eb; color: #374151; cursor: pointer; transition: all 0.2s;">
+                💵 Cash Management
+            </button>
+        </div>
+
+        <!-- Today's Summary Sub-Tab -->
+        <div id="dayTodayContent" class="day-content">
+
+            <!-- Quick Stats Cards -->
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px;">
+                <div style="background: #d1fae5; padding: 16px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 13px; color: #065f46; margin-bottom: 4px;">Total Purchases</div>
+                    <div style="font-size: 22px; font-weight: bold; color: #059669;" id="todayTotalPurchases">₹0</div>
+                    <div style="font-size: 12px; color: #065f46; margin-top: 4px;" id="todayPurchaseCount">0 bills</div>
+                </div>
+                <div style="background: #dbeafe; padding: 16px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 13px; color: #1e40af; margin-bottom: 4px;">Total Sales</div>
+                    <div style="font-size: 22px; font-weight: bold; color: #2563eb;" id="todayTotalSales">₹0</div>
+                    <div style="font-size: 12px; color: #1e40af; margin-top: 4px;" id="todaySaleCount">0 bills</div>
+                </div>
+                <div style="background: #fef3c7; padding: 16px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 13px; color: #92400e; margin-bottom: 4px;">Expenses</div>
+                    <div style="font-size: 22px; font-weight: bold; color: #d97706;" id="todayTotalExpenses">₹0</div>
+                    <div style="font-size: 12px; color: #92400e; margin-top: 4px;" id="todayExpenseCount">0 entries</div>
+                </div>
+                <div style="background: #fee2e2; padding: 16px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 13px; color: #991b1b; margin-bottom: 4px;">Labor Cost</div>
+                    <div style="font-size: 22px; font-weight: bold; color: #dc2626;" id="todayLaborCost">₹0</div>
+                    <div style="font-size: 12px; color: #991b1b; margin-top: 4px;">From purchases</div>
+                </div>
+            </div>
+
+            <!-- Quantity & Cash Flow Row -->
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
+                <div style="background: #ecfdf5; padding: 14px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 12px; color: #065f46; margin-bottom: 4px;">Qty Purchased</div>
+                    <div style="font-size: 18px; font-weight: bold; color: #059669;" id="todayQtyPurchased">0 kg</div>
+                </div>
+                <div style="background: #eff6ff; padding: 14px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 12px; color: #1e40af; margin-bottom: 4px;">Qty Sold</div>
+                    <div style="font-size: 18px; font-weight: bold; color: #2563eb;" id="todayQtySold">0 kg</div>
+                </div>
+                <div style="background: #f3e8ff; padding: 14px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 12px; color: #6b21a8; margin-bottom: 4px;" id="todayCashFlowLabel">Net Cash Flow</div>
+                    <div style="font-size: 18px; font-weight: bold; color: #7c3aed;" id="todayNetCashFlow">₹0</div>
+                </div>
+            </div>
+
+            <!-- Payment Summary -->
+            <div style="background: white; padding: 16px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #374151;">💳 Payment Summary</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 14px;">
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: #f0fdf4; border-radius: 6px;">
+                        <span>Cash Received:</span>
+                        <strong style="color: #16a34a;" id="todayCashReceived">₹0</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: #eff6ff; border-radius: 6px;">
+                        <span>Online Received:</span>
+                        <strong style="color: #2563eb;" id="todayOnlineReceived">₹0</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: #fef2f2; border-radius: 6px;">
+                        <span>Cash Paid:</span>
+                        <strong style="color: #dc2626;" id="todayCashPaid">₹0</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: #fefce8; border-radius: 6px;">
+                        <span>Online Paid:</span>
+                        <strong style="color: #ca8a04;" id="todayOnlinePaid">₹0</strong>
+                    </div>
+                </div>
+                <!-- Total Cash Flow -->
+                <div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: white; font-weight: 600;">Total Cash Flow:</span>
+                    <strong style="color: white; font-size: 18px;" id="todayTotalCashFlow">₹0</strong>
+                </div>
+            </div>
+
+            <!-- Due Summary -->
+            <div style="background: white; padding: 16px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #374151;">📋 Due Summary</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 14px;">
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: #d1fae5; border-radius: 6px;">
+                        <span>Due Received:</span>
+                        <strong style="color: #059669;" id="todayDueReceived">₹0</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: #fee2e2; border-radius: 6px;">
+                        <span>Due Paid:</span>
+                        <strong style="color: #dc2626;" id="todayDuePaid">₹0</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: #dbeafe; border-radius: 6px;">
+                        <span>Today's Due to Receive:</span>
+                        <strong style="color: #2563eb;" id="todayDueToReceive">₹0</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px; background: #fef3c7; border-radius: 6px;">
+                        <span>Today's Due to Pay:</span>
+                        <strong style="color: #d97706;" id="todayDueToPay">₹0</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Item-wise Purchase Details -->
+            <div style="background: white; padding: 16px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #374151;">🛒 Item-wise Purchase Details</h3>
+                <div id="todayPurchaseItems" style="display: grid; gap: 10px;">
+                    <p style="text-align: center; color: #9ca3af; padding: 10px;">No purchases today</p>
+                </div>
+            </div>
+
+            <!-- Item-wise Sale Details -->
+            <div style="background: white; padding: 16px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #374151;">💰 Item-wise Sale Details</h3>
+                <div id="todaySaleItems" style="display: grid; gap: 10px;">
+                    <p style="text-align: center; color: #9ca3af; padding: 10px;">No sales today</p>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Cash Management Sub-Tab (Hidden by default) -->
+        <div id="dayCashContent" class="day-content" style="display: none;">
+            <!-- Cash management content will be injected here dynamically -->
+            <div id="dayCashManagementContainer"></div>
+        </div>
+
+    </div>
+</div>

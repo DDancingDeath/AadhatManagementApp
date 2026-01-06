@@ -96,11 +96,12 @@ export class ReportsManager {
     static renderReports() {
         this.populateFilters();
         
-        const purchaseHistory = AppState.purchaseHistory; const salesHistory = AppState.salesHistory;
+        const purchaseHistory = AppState.purchaseHistory || []; 
+        const salesHistory = AppState.salesHistory || [];
         let filteredPurchases = this.filterByDate(purchaseHistory);
         filteredPurchases = this.filterByReportFilters(filteredPurchases);
         
-        const totalSales = filteredPurchases.reduce((sum, purchase) => sum + purchase.total, 0);
+        const totalSales = filteredPurchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
         const totalBills = filteredPurchases.length;
         const totalLabour = filteredPurchases.reduce((sum, purchase) => sum + (purchase.laborCharges || 0), 0);
         const totalCash = filteredPurchases.reduce((sum, purchase) => sum + (purchase.payment?.cash || 0), 0);

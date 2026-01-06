@@ -112,6 +112,12 @@ const NavigationManager = {
             setTimeout(() => window.app.analytics.init(), 100);
         }
         
+        // Initialize Day page when Day tab is shown
+        if (tabId === 'day' && window.app?.day) {
+            this.resetFilterButtons('day');
+            setTimeout(() => window.app.day.init(), 100);
+        }
+        
         // Initialize cash management when Cash Management tab is shown
         if (tabId === 'cash-management' && window.app?.cashManagement) {
             this.resetFilterButtons('cash-management');

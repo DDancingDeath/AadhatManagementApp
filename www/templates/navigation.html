@@ -15,6 +15,10 @@
             <button class="close-btn" onclick="window.app.nav.toggleMenu()">×</button>
         </div>
         <nav class="nav-menu">
+            <a href="#" onclick="window.app.nav.showTab('day', event)">
+                <span class="nav-icon">📅</span>
+                Day
+            </a>
             <a href="#" onclick="window.app.nav.showTab('billing', event)">
                 <span class="nav-icon">📋</span>
                 Billing
@@ -42,10 +46,6 @@
             <a href="#" onclick="window.app.nav.showTab('due', event)">
                 <span class="nav-icon">💸</span>
                 Outstanding
-            </a>
-            <a href="#" onclick="window.app.nav.showTab('cash-management', event)">
-                <span class="nav-icon">💵</span>
-                Cash Management
             </a>
             <a href="#" onclick="window.app.nav.showTab('reports', event)">
                 <span class="nav-icon">📈</span>

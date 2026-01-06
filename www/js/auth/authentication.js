@@ -173,10 +173,16 @@ const AuthManager = {
         const name = document.getElementById('registerName').value.trim();
         const email = document.getElementById('registerEmail').value.trim();
         const password = document.getElementById('registerPassword').value;
-        const role = document.getElementById('registerRole').value;
+        const confirmPassword = document.getElementById('registerConfirmPassword')?.value;
+        const role = 'staff'; // Default role for new registrations - can be changed by admin
         
         if (!name || !email || !password) {
             UIManager.showToast('Please fill all fields');
+            return;
+        }
+        
+        if (confirmPassword && password !== confirmPassword) {
+            UIManager.showToast('Passwords do not match');
             return;
         }
         

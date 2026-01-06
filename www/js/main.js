@@ -20,6 +20,7 @@ import { UsersManager } from './modules/users.js';
 import { FinanceManager } from './modules/finance.js';
 import { AnalyticsManager } from './modules/analytics.js';
 import { CashManagementManager } from './modules/cash-management.js';
+import { DayManager } from './modules/day.js';
 import { AuditService } from './services/audit.js';
 
 // Import template loader utility
@@ -101,8 +102,33 @@ async function loadUserDataAndInitialize() {
             const userDoc = await firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).get();
             if (userDoc.exists) {
                 const userData = userDoc.data();
+                
+                // Check if user is approved
+                if (userData.status === 'pending') {
+                    await firebase.auth().signOut();
+                    UIManager.hideLoading();
+                    UIManager.showToast('Your account is pending approval. Please wait for admin approval.');
+                    document.getElementById('authScreen').style.display = 'flex';
+                    return;
+                }
+                
+                if (userData.status === 'rejected') {
+                    await firebase.auth().signOut();
+                    UIManager.hideLoading();
+                    UIManager.showToast('Your account has been rejected. Please contact admin.');
+                    document.getElementById('authScreen').style.display = 'flex';
+                    return;
+                }
+                
                 AppState.userRole = userData.role || 'staff';
                 AppState.userName = userData.name || 'User';
+            } else {
+                // User document doesn't exist
+                await firebase.auth().signOut();
+                UIManager.hideLoading();
+                UIManager.showToast('User account not found. Please register.');
+                document.getElementById('authScreen').style.display = 'flex';
+                return;
             }
         }
         
@@ -528,6 +554,14 @@ window.app = {
         setPeriod: (period, evt) => AnalyticsManager.setPeriod(period, evt),
         render: () => AnalyticsManager.renderAnalytics(),
         init: () => AnalyticsManager.init()
+    },
+    
+    // Day (Today's Summary + Cash Management)
+    day: {
+        init: () => DayManager.init(),
+        showSubTab: (tab) => DayManager.showSubTab(tab),
+        loadTodayData: () => DayManager.loadTodayData(),
+        filterTransactions: () => DayManager.filterTransactions()
     },
     
     // Cash Management

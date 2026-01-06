@@ -67,6 +67,40 @@
             </button>
         </div>
 
+        <!-- Cash Transactions (Record Transaction) -->
+        <div id="cashDepositSection" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: none;">
+            <h3 style="margin: 0 0 15px 0; color: #333;">Record Cash Transaction</h3>
+            
+            <div class="form-row">
+                <label>Transaction Type:</label>
+                <select id="cashTransactionType" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;">
+                    <option value="deposit">Cash Added</option>
+                    <option value="received">(+) Due Received</option>
+                    <option value="paid">(-) Due Paid</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <label id="amountLabel">Amount (₹):</label>
+                <input type="number" inputmode="decimal" id="transactionAmount" placeholder="Enter amount" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+            </div>
+
+            <div class="form-row" id="customerNameRow">
+                <label>Customer Name (Optional):</label>
+                <input type="text" id="partyName" list="customerOptionsForDue" placeholder="Enter customer name" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+                <datalist id="customerOptionsForDue"></datalist>
+            </div>
+
+            <div class="form-row">
+                <label id="notesLabel">Reason/Notes (Optional):</label>
+                <input type="text" id="transactionNotes" placeholder="e.g., Cash low, Bill reference, etc." style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+            </div>
+
+            <button class="save-btn" onclick="window.app.cashManagement.recordTransaction()" style="width: 100%; padding: 14px; margin-top: 10px; background: #10b981; font-size: 16px; font-weight: 600;">
+                ✓ Record Transaction
+            </button>
+        </div>
+
         <div id="cashSignOutSection" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: none;">
             <h3 style="margin: 0 0 15px 0; color: #333;">Cash Sign Out</h3>
             
@@ -142,40 +176,6 @@
             
             <button class="save-btn" onclick="window.app.cashManagement.signOut()" style="width: 100%; padding: 14px; margin-top: 10px; background: #ef4444; font-size: 16px; font-weight: 600;">
                 ✓ Sign Out & Close Day
-            </button>
-        </div>
-
-        <!-- Cash Transactions -->
-        <div id="cashDepositSection" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: none;">
-            <h3 style="margin: 0 0 15px 0; color: #333;">Record Cash Transaction</h3>
-            
-            <div class="form-row">
-                <label>Transaction Type:</label>
-                <select id="cashTransactionType" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;">
-                    <option value="deposit">Cash Added</option>
-                    <option value="received">(+) Due Received</option>
-                    <option value="paid">(-) Due Paid</option>
-                </select>
-            </div>
-
-            <div class="form-row">
-                <label id="amountLabel">Amount (₹):</label>
-                <input type="number" inputmode="decimal" id="transactionAmount" placeholder="Enter amount" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
-            </div>
-
-            <div class="form-row" id="customerNameRow">
-                <label>Customer Name (Optional):</label>
-                <input type="text" id="partyName" list="customerOptionsForDue" placeholder="Enter customer name" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
-                <datalist id="customerOptionsForDue"></datalist>
-            </div>
-
-            <div class="form-row">
-                <label id="notesLabel">Reason/Notes (Optional):</label>
-                <input type="text" id="transactionNotes" placeholder="e.g., Cash low, Bill reference, etc." style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
-            </div>
-
-            <button class="save-btn" onclick="window.app.cashManagement.recordTransaction()" style="width: 100%; padding: 14px; margin-top: 10px; background: #10b981; font-size: 16px; font-weight: 600;">
-                ✓ Record Transaction
             </button>
         </div>
 

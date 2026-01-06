@@ -70,7 +70,15 @@ const UIManager = {
      */
     showToast(message, duration = 2000) {
         const toast = document.getElementById('toast');
-        if (!toast) return;
+        if (!toast) {
+            // Fallback: create toast element if not found
+            console.warn('Toast element not found, creating one...');
+            const newToast = document.createElement('div');
+            newToast.id = 'toast';
+            newToast.className = 'toast';
+            document.body.appendChild(newToast);
+            return this.showToast(message, duration); // Retry
+        }
         
         toast.textContent = message;
         toast.classList.add('show');

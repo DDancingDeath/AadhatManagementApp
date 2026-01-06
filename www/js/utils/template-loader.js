@@ -32,6 +32,7 @@ export class TemplateLoader {
             'settings',
             'finance',
             'analytics',
+            'day',
             'cash-management',
             'users',
             'chat'
@@ -61,6 +62,7 @@ export class TemplateLoader {
         
         // Inject each template individually using insertAdjacentHTML to ensure proper DOM parsing
         appContent.insertAdjacentHTML('beforeend', templates.navigation);
+        appContent.insertAdjacentHTML('beforeend', templates.day);
         appContent.insertAdjacentHTML('beforeend', templates.billing);
         appContent.insertAdjacentHTML('beforeend', templates.items);
         appContent.insertAdjacentHTML('beforeend', templates.history);
