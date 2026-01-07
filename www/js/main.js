@@ -541,10 +541,21 @@ window.app = {
     // Finance
     finance: {
         filterTab: (view, evt) => FinanceManager.filterTab(view, evt),
-        calculateOverview: () => FinanceManager.calculateOverview(),
-        renderTransactions: () => FinanceManager.renderTransactions(),
+        setDateFilter: (filter, evt) => FinanceManager.setDateFilter(filter, evt),
+        applyCustomDateFilter: () => FinanceManager.applyCustomDateFilter(),
+        renderDashboard: () => FinanceManager.renderDashboard(),
+        renderAssets: () => FinanceManager.renderAssets(),
+        renderWithdrawals: () => FinanceManager.renderWithdrawals(),
         recordWithdrawal: () => FinanceManager.recordWithdrawal(),
-        renderWithdrawalHistory: () => FinanceManager.renderWithdrawalHistory(),
+        toggleOtherPurpose: () => FinanceManager.toggleOtherPurpose(),
+        showAddAccountModal: () => FinanceManager.showAddAccountModal(),
+        closeAccountModal: () => FinanceManager.closeAccountModal(),
+        saveNewAccount: () => FinanceManager.saveNewAccount(),
+        quickAddAccount: (name, icon) => FinanceManager.quickAddAccount(name, icon),
+        editAccount: (index) => FinanceManager.editAccount(index),
+        closeEditAccountModal: () => FinanceManager.closeEditAccountModal(),
+        updateAccount: () => FinanceManager.updateAccount(),
+        deleteAccount: () => FinanceManager.deleteAccount(),
         init: () => FinanceManager.init()
     },
     

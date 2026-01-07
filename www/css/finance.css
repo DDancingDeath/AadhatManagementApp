@@ -1,0 +1,533 @@
+/* ==================== FINANCE PAGE STYLES ==================== */
+
+/* Finance Hero Card (Net Profit, Net Worth) */
+.finance-hero-card {
+    background: var(--primary-gradient);
+    color: white;
+    padding: 24px;
+    border-radius: var(--radius-lg);
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-lg);
+}
+
+.finance-hero-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.finance-hero-icon {
+    font-size: 36px;
+}
+
+.finance-hero-label {
+    font-size: 18px;
+    font-weight: 600;
+    display: block;
+}
+
+.finance-hero-period {
+    font-size: 12px;
+    opacity: 0.9;
+    background: rgba(255,255,255,0.2);
+    padding: 3px 10px;
+    border-radius: 12px;
+    margin-left: 8px;
+}
+
+.finance-hero-value {
+    font-size: 42px;
+    font-weight: 700;
+    margin-top: 8px;
+}
+
+/* ==================== STATS GRID (2x2) ==================== */
+.finance-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.finance-stat-card {
+    background: var(--card-bg);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
+.finance-stat-card.revenue {
+    border-left: 4px solid var(--success-color);
+}
+
+.finance-stat-card.investment {
+    border-left: 4px solid var(--primary-color);
+}
+
+.finance-stat-card.business {
+    border-left: 4px solid var(--warning-color);
+}
+
+.finance-stat-card.personal {
+    border-left: 4px solid var(--danger-color);
+}
+
+.finance-stat-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+}
+
+.finance-stat-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.finance-stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.finance-stat-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* ==================== SUMMARY ROWS ==================== */
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.summary-row:last-child {
+    border-bottom: none;
+}
+
+.summary-row.highlight {
+    background: var(--light-bg);
+    margin: 12px -16px -16px;
+    padding: 16px;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.amount-positive {
+    color: var(--success-color);
+    font-weight: 700;
+    font-size: 18px;
+}
+
+.amount-negative {
+    color: var(--danger-color);
+    font-weight: 700;
+    font-size: 18px;
+}
+
+/* ==================== CARD HEADER ==================== */
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.card-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* ==================== BREAKDOWN TABLE ==================== */
+.breakdown-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.breakdown-table td {
+    padding: 12px 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.breakdown-table td:last-child {
+    text-align: right;
+    font-weight: 600;
+}
+
+.breakdown-table .breakdown-subtotal {
+    background: var(--light-bg);
+}
+
+.breakdown-table .breakdown-subtotal td {
+    border-top: 2px solid var(--border-color);
+    padding-top: 14px;
+}
+
+.breakdown-table .breakdown-total {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+}
+
+.breakdown-table .breakdown-total td {
+    border-top: 2px solid var(--primary-color);
+    padding: 16px 8px;
+}
+
+/* ==================== MONTHLY CHART ==================== */
+.monthly-chart {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-around;
+    min-height: 180px;
+    padding: 16px 0;
+}
+
+.empty-state {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 32px;
+    font-size: 14px;
+}
+
+/* ==================== ASSET LIST ==================== */
+.asset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.asset-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--light-bg);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.asset-item:hover {
+    background: var(--border-color);
+    transform: translateX(4px);
+}
+
+.asset-info {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.asset-icon {
+    font-size: 28px;
+}
+
+.asset-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 15px;
+}
+
+.asset-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.asset-amount {
+    font-weight: 700;
+    font-size: 18px;
+}
+
+.asset-positive {
+    color: var(--success-color);
+}
+
+.asset-negative {
+    color: var(--danger-color);
+}
+
+/* ==================== QUICK ADD SECTION ==================== */
+.quick-add-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.quick-add-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+.quick-add-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.quick-add-btn {
+    padding: 10px 16px;
+    background: var(--light-bg);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.quick-add-btn:hover {
+    background: var(--primary-gradient);
+    color: white;
+    border-color: transparent;
+}
+
+/* ==================== ICON BUTTON ==================== */
+.btn-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    border: none;
+    background: var(--primary-gradient);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    transition: all var(--transition);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-icon:hover {
+    transform: scale(1.1);
+    box-shadow: var(--shadow);
+}
+
+/* ==================== ICON PICKER ==================== */
+.icon-picker {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.icon-option {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius);
+    border: 2px solid var(--border-color);
+    background: var(--light-bg);
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition);
+}
+
+.icon-option:hover {
+    border-color: var(--primary-color);
+    background: white;
+}
+
+.icon-option.active {
+    border-color: var(--primary-color);
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* ==================== WITHDRAWAL LIST ==================== */
+.withdrawal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.withdrawal-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--light-bg);
+    border-radius: var(--radius);
+    border-left: 4px solid var(--danger-color);
+}
+
+.withdrawal-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.withdrawal-person {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 15px;
+}
+
+.withdrawal-purpose {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.withdrawal-date {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.withdrawal-amount {
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--danger-color);
+}
+
+/* ==================== MODAL STYLES ==================== */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.modal-content {
+    background: var(--card-bg);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.modal-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: var(--light-bg);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition);
+}
+
+.modal-close:hover {
+    background: var(--danger-color);
+    color: white;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 12px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-color);
+    justify-content: flex-end;
+}
+
+/* ==================== FORM STYLES ==================== */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: var(--text-primary);
+}
+
+.form-control {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius);
+    font-size: 15px;
+    transition: all var(--transition);
+    background: var(--card-bg);
+    box-sizing: border-box;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+/* ==================== BUTTON STYLES ==================== */
+.btn {
+    padding: 12px 24px;
+    border-radius: var(--radius);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    border: none;
+}
+
+.btn-primary {
+    background: var(--primary-gradient);
+    color: white;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.btn-secondary {
+    background: var(--light-bg);
+    color: var(--text-primary);
+    border: 2px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    background: var(--border-color);
+}
+
+.btn-danger {
+    background: var(--danger-color);
+    color: white;
+}
+
+.btn-danger:hover {
+    opacity: 0.9;
+}
+
+.btn-block {
+    width: 100%;
+    display: block;
+}

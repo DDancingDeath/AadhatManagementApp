@@ -1,120 +1,326 @@
+<!-- Finance Section -->
 <div id="finance" class="tab">
+    <!-- Tab Navigation -->
+    <div class="filter-buttons">
+        <button class="filter-btn active" onclick="window.app.finance.filterTab('dashboard', event)">Dashboard</button>
+        <button class="filter-btn" onclick="window.app.finance.filterTab('assets', event)">Assets</button>
+        <button class="filter-btn" onclick="window.app.finance.filterTab('withdrawals', event)">Withdrawals</button>
+    </div>
 
-        <div class="filter-buttons" style="margin-bottom: 20px;">
-            <button class="filter-btn active" onclick="window.app.finance.filterTab('overview', event)">Overview</button>
-            <button class="filter-btn" onclick="window.app.finance.filterTab('transactions', event)">Transactions</button>
-            <button class="filter-btn" onclick="window.app.finance.filterTab('withdrawals', event)">Withdrawals</button>
-        </div>
-
-        <!-- OVERVIEW SECTION -->
-        <div id="financeOverviewSection">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
-                <!-- Current Balance Card -->
-                <div class="stats-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Current Balance</div>
-                    <div style="font-size: 32px; font-weight: 700;">₹<span id="currentBalance">0</span></div>
-                </div>
-
-                <!-- Total Revenue Card -->
-                <div class="stats-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Revenue</div>
-                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalRevenue">0</span></div>
-                </div>
-
-                <!-- Total Profit Card -->
-                <div class="stats-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Profit</div>
-                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalProfit">0</span></div>
-                </div>
-
-                <!-- Business Expenses Card -->
-                <div class="stats-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white;">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Business Expenses</div>
-                    <div style="font-size: 32px; font-weight: 700;">₹<span id="businessExpensesTotal">0</span></div>
-                </div>
-
-                <!-- Personal Expenses Card -->
-                <div class="stats-card" style="background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); color: white;">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Personal Expenses</div>
-                    <div style="font-size: 32px; font-weight: 700;">₹<span id="personalExpensesTotal">0</span></div>
-                </div>
-
-                <!-- Total Withdrawals Card -->
-                <div class="stats-card" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333;">
-                    <div style="font-size: 14px; opacity: 0.8; margin-bottom: 8px;">Total Withdrawals</div>
-                    <div style="font-size: 32px; font-weight: 700;">₹<span id="totalWithdrawals">0</span></div>
-                </div>
+    <!-- ==================== DASHBOARD SECTION ==================== -->
+    <div id="financeDashboardSection">
+        <!-- Date Filter -->
+        <div class="card">
+            <div class="filter-buttons">
+                <button class="filter-btn active" onclick="window.app.finance.setDateFilter('all', event)">All</button>
+                <button class="filter-btn" onclick="window.app.finance.setDateFilter('year', event)">Year</button>
+                <button class="filter-btn" onclick="window.app.finance.setDateFilter('month', event)">Month</button>
+                <button class="filter-btn" onclick="window.app.finance.setDateFilter('week', event)">Week</button>
+                <button class="filter-btn" onclick="window.app.finance.setDateFilter('custom', event)">Custom</button>
             </div>
-
-            <!-- Monthly Trends -->
-            <div class="settings-card">
-                <h3>Monthly Profit Trend</h3>
-                <div id="monthlyProfitChart" style="height: 200px; display: flex; align-items: flex-end; gap: 8px; padding: 20px 0;">
-                    <!-- Chart will be rendered here -->
-                </div>
-            </div>
-
-            <!-- Account Breakdown -->
-            <div class="settings-card">
-                <h3>Account Breakdown</h3>
-                <table style="width: 100%; border-collapse: collapse;">
-                    <thead>
-                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
-                            <th style="padding: 12px; text-align: left;">Description</th>
-                            <th style="padding: 12px; text-align: right;">Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody id="accountBreakdownTable">
-                        <!-- Breakdown will be rendered here -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- TRANSACTIONS SECTION -->
-        <div id="financeTransactionsSection" style="display: none;">
-            <div class="settings-card">
-                <h3>All Financial Transactions</h3>
-                <div id="allTransactionsList">
-                    <!-- Transactions will be rendered here -->
+            <!-- Custom Date Range (hidden by default) -->
+            <div id="financeCustomDateRange" style="display: none; margin-top: 12px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="date" id="financeStartDate" class="form-control" style="flex: 1;">
+                    <span>to</span>
+                    <input type="date" id="financeEndDate" class="form-control" style="flex: 1;">
+                    <button class="btn btn-primary" onclick="window.app.finance.applyCustomDateFilter()" style="padding: 8px 16px;">Go</button>
                 </div>
             </div>
         </div>
 
-        <!-- WITHDRAWALS SECTION -->
-        <div id="financeWithdrawalsSection" style="display: none;">
-            <div class="settings-card">
-                <h3>Record Money Withdrawal</h3>
-                
-                <div class="form-row">
-                    <label>Amount (₹):</label>
-                    <input type="number" inputmode="decimal" id="withdrawalAmount" placeholder="Enter amount" />
+        <!-- Net Profit Hero Card -->
+        <div class="finance-hero-card">
+            <div class="finance-hero-header">
+                <span class="finance-hero-icon">📊</span>
+                <div>
+                    <span class="finance-hero-label">Net Profit</span>
+                    <span class="finance-hero-period" id="financeProfitPeriod">All Time</span>
                 </div>
-
-                <div class="form-row">
-                    <label>Withdrawn By:</label>
-                    <input type="text" id="withdrawalPerson" list="withdrawalPersonOptions" placeholder="Enter name" />
-                    <datalist id="withdrawalPersonOptions"></datalist>
-                </div>
-
-                <div class="form-row">
-                    <label>Purpose:</label>
-                    <input type="text" id="withdrawalPurpose" placeholder="Enter purpose (Optional)" />
-                </div>
-
-                <div class="form-row">
-                    <label>Date:</label>
-                    <input type="date" id="withdrawalDate" />
-                </div>
-
-                <button class="save-btn" onclick="window.app.finance.recordWithdrawal()">Record Withdrawal</button>
             </div>
+            <div class="finance-hero-value" id="financeNetProfit">₹0</div>
+        </div>
 
-            <div class="settings-card">
-                <h3>Withdrawal History</h3>
-                <div id="withdrawalHistoryList">
-                    <p style="text-align: center; color: #888; margin-top: 40px;">No withdrawals recorded yet</p>
+        <!-- Stats Grid - 2x2 -->
+        <div class="finance-stats-grid">
+            <div class="finance-stat-card revenue">
+                <div class="finance-stat-icon">💰</div>
+                <div class="finance-stat-label">Revenue</div>
+                <div class="finance-stat-value" id="financeRevenue">₹0</div>
+                <div class="finance-stat-count" id="financeRevenueCount">0 sales</div>
+            </div>
+            <div class="finance-stat-card investment">
+                <div class="finance-stat-icon">📦</div>
+                <div class="finance-stat-label">Investment</div>
+                <div class="finance-stat-value" id="financeInvestment">₹0</div>
+                <div class="finance-stat-count" id="financeInvestmentCount">0 purchases</div>
+            </div>
+            <div class="finance-stat-card business">
+                <div class="finance-stat-icon">🏢</div>
+                <div class="finance-stat-label">Business Exp</div>
+                <div class="finance-stat-value" id="financeBusinessExp">₹0</div>
+                <div class="finance-stat-count" id="financeBusinessExpCount">0 entries</div>
+            </div>
+            <div class="finance-stat-card personal">
+                <div class="finance-stat-icon">👤</div>
+                <div class="finance-stat-label">Personal Exp</div>
+                <div class="finance-stat-value" id="financePersonalExp">₹0</div>
+                <div class="finance-stat-count" id="financePersonalExpCount">0 entries</div>
+            </div>
+        </div>
+
+        <!-- Withdrawal Summary -->
+        <div class="card">
+            <div class="card-header">
+                <h3>💸 Withdrawals Summary</h3>
+            </div>
+            <div class="summary-row">
+                <span>Total Withdrawn (All Time)</span>
+                <span class="amount-negative" id="financeTotalWithdrawn">₹0</span>
+            </div>
+            <div class="summary-row highlight">
+                <span>Available Balance</span>
+                <span class="amount-positive" id="financeAvailableBalance">₹0</span>
+            </div>
+        </div>
+
+        <!-- Profit Breakdown Table -->
+        <div class="card">
+            <div class="card-header">
+                <h3>📋 Profit Breakdown</h3>
+            </div>
+            <table class="breakdown-table">
+                <tbody id="financeProfitBreakdown">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Monthly Profit Chart -->
+        <div class="card">
+            <div class="card-header">
+                <h3>📈 Monthly Profit Trend</h3>
+            </div>
+            <div id="financeMonthlyChart" class="monthly-chart">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== ASSETS SECTION ==================== -->
+    <div id="financeAssetsSection" style="display: none;">
+        <!-- Net Worth Hero Card -->
+        <div class="finance-hero-card">
+            <div class="finance-hero-header">
+                <span class="finance-hero-icon">💎</span>
+                <span class="finance-hero-label">Net Worth</span>
+            </div>
+            <div class="finance-hero-value" id="financeNetWorth">₹0</div>
+        </div>
+
+        <!-- Auto-Populated Business Assets -->
+        <div class="card">
+            <div class="card-header">
+                <h3>📊 Business Assets</h3>
+            </div>
+            <div class="asset-list">
+                <div class="asset-item">
+                    <div class="asset-info">
+                        <span class="asset-icon">📦</span>
+                        <div>
+                            <div class="asset-name">Stock Value</div>
+                            <div class="asset-desc">Current inventory worth</div>
+                        </div>
+                    </div>
+                    <div class="asset-amount asset-positive" id="assetStockValue">₹0</div>
+                </div>
+                <div class="asset-item">
+                    <div class="asset-info">
+                        <span class="asset-icon">📥</span>
+                        <div>
+                            <div class="asset-name">Due to Receive</div>
+                            <div class="asset-desc">Outstanding from customers</div>
+                        </div>
+                    </div>
+                    <div class="asset-amount asset-positive" id="assetDueReceive">₹0</div>
+                </div>
+                <div class="asset-item">
+                    <div class="asset-info">
+                        <span class="asset-icon">📤</span>
+                        <div>
+                            <div class="asset-name">Due to Pay</div>
+                            <div class="asset-desc">Outstanding to suppliers</div>
+                        </div>
+                    </div>
+                    <div class="asset-amount asset-negative" id="assetDuePay">-₹0</div>
+                </div>
+                <div class="asset-item">
+                    <div class="asset-info">
+                        <span class="asset-icon">💵</span>
+                        <div>
+                            <div class="asset-name">Business Balance</div>
+                            <div class="asset-desc">Profit minus withdrawals</div>
+                        </div>
+                    </div>
+                    <div class="asset-amount asset-positive" id="assetBusinessBalance">₹0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Custom Accounts (Bank, Lent, Brother, etc.) -->
+        <div class="card">
+            <div class="card-header">
+                <h3>💳 Custom Accounts</h3>
+                <button class="btn-icon" onclick="window.app.finance.showAddAccountModal()">➕</button>
+            </div>
+            <div id="customAccountsList" class="asset-list">
+                <!-- Populated by JS -->
+            </div>
+            
+            <!-- Quick Add Buttons -->
+            <div class="quick-add-section">
+                <p class="quick-add-label">Quick Add:</p>
+                <div class="quick-add-buttons">
+                    <button class="quick-add-btn" onclick="window.app.finance.quickAddAccount('Bank Account', '🏦')">🏦 Bank</button>
+                    <button class="quick-add-btn" onclick="window.app.finance.quickAddAccount('Cash in Hand', '💵')">💵 Cash</button>
+                    <button class="quick-add-btn" onclick="window.app.finance.quickAddAccount('Lent to Someone', '🤝')">🤝 Lent</button>
+                    <button class="quick-add-btn" onclick="window.app.finance.quickAddAccount('Savings', '🏧')">🏧 Savings</button>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- ==================== WITHDRAWALS SECTION ==================== -->
+    <div id="financeWithdrawalsSection" style="display: none;">
+        <!-- Withdrawal Summary Card -->
+        <div class="card">
+            <div class="summary-row">
+                <span>Total Withdrawn</span>
+                <span class="amount-negative" id="withdrawalTotal">₹0</span>
+            </div>
+            <div class="summary-row highlight">
+                <span>Available to Withdraw</span>
+                <span class="amount-positive" id="withdrawalAvailable">₹0</span>
+            </div>
+        </div>
+
+        <!-- Record Withdrawal Form -->
+        <div class="card">
+            <div class="card-header">
+                <h3>💸 Record Withdrawal</h3>
+            </div>
+            <div class="form-group">
+                <label>Amount</label>
+                <input type="number" id="withdrawalAmount" placeholder="Enter amount" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Who Withdrew?</label>
+                <input type="text" id="withdrawalPerson" list="withdrawalPersonOptions" placeholder="Name (e.g., Self, Brother)" class="form-control">
+                <datalist id="withdrawalPersonOptions"></datalist>
+            </div>
+            <div class="form-group">
+                <label>Purpose</label>
+                <select id="withdrawalPurpose" class="form-control" onchange="window.app.finance.toggleOtherPurpose()">
+                    <option value="Personal Use">Personal Use</option>
+                    <option value="Salary">Salary</option>
+                    <option value="Investment">Investment</option>
+                    <option value="Loan Repayment">Loan Repayment</option>
+                    <option value="Family">Family</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="form-group" id="withdrawalOtherPurposeRow" style="display: none;">
+                <label>Specify Purpose</label>
+                <input type="text" id="withdrawalOtherPurpose" placeholder="Enter purpose" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" id="withdrawalDate" class="form-control">
+            </div>
+            <button class="btn btn-primary btn-block" onclick="window.app.finance.recordWithdrawal()">
+                Record Withdrawal
+            </button>
+        </div>
+
+        <!-- Withdrawal History -->
+        <div class="card">
+            <div class="card-header">
+                <h3>📜 Withdrawal History</h3>
+            </div>
+            <div id="withdrawalHistoryList">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== ADD ACCOUNT MODAL ==================== -->
+<div id="addAccountModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Add Custom Account</h3>
+            <button class="modal-close" onclick="window.app.finance.closeAccountModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Account Name</label>
+                <input type="text" id="newAccountName" placeholder="e.g., Bank Account, Brother, Lent to Raju" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Current Balance</label>
+                <input type="number" id="newAccountBalance" placeholder="0" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select id="newAccountType" class="form-control">
+                    <option value="asset">Asset (Money I Have / Lent)</option>
+                    <option value="liability">Liability (Money I Owe)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Icon</label>
+                <div id="accountIconPicker" class="icon-picker">
+                    <button type="button" class="icon-option active" data-icon="💳">💳</button>
+                    <button type="button" class="icon-option" data-icon="🏦">🏦</button>
+                    <button type="button" class="icon-option" data-icon="💵">💵</button>
+                    <button type="button" class="icon-option" data-icon="🏧">🏧</button>
+                    <button type="button" class="icon-option" data-icon="🤝">🤝</button>
+                    <button type="button" class="icon-option" data-icon="👨‍👩‍👧">👨‍👩‍👧</button>
+                    <button type="button" class="icon-option" data-icon="🏠">🏠</button>
+                    <button type="button" class="icon-option" data-icon="📱">📱</button>
+                    <button type="button" class="icon-option" data-icon="🚗">🚗</button>
+                    <button type="button" class="icon-option" data-icon="👤">👤</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="window.app.finance.closeAccountModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="window.app.finance.saveNewAccount()">Add Account</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== EDIT ACCOUNT MODAL ==================== -->
+<div id="editAccountModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Edit Account</h3>
+            <button class="modal-close" onclick="window.app.finance.closeEditAccountModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="editAccountId">
+            <div class="form-group">
+                <label>Account Name</label>
+                <input type="text" id="editAccountName" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Current Balance</label>
+                <input type="number" id="editAccountBalance" class="form-control">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" onclick="window.app.finance.deleteAccount()">Delete</button>
+            <button class="btn btn-primary" onclick="window.app.finance.updateAccount()">Update</button>
+        </div>
+    </div>
+</div>
