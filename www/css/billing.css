@@ -203,6 +203,7 @@ select:focus, input:focus {
   margin: 12px 0;
   box-shadow: var(--shadow);
   display: flex;
+  flex-wrap: nowrap;
   justify-content: space-around;
   gap: 16px;
   border: 1px solid var(--border-color);
@@ -211,6 +212,7 @@ select:focus, input:focus {
 .summary-item {
   text-align: center;
   flex: 1;
+  white-space: nowrap;
 }
 
 .summary-item span {

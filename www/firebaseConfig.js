@@ -26,12 +26,17 @@ const getEnvironment = () => {
   // 2. Check localStorage (persists across sessions)
   if (localStorage.getItem('appEnv')) return localStorage.getItem('appEnv');
   
-  // 3. Check if running on localhost
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+  // 3. Check if running on localhost in a BROWSER (not Capacitor app)
+  // Capacitor apps run from capacitor:// or file:// protocol, not http://localhost
+  const isCapacitorApp = window.location.protocol === 'capacitor:' || 
+                         window.location.protocol === 'file:' ||
+                         window.Capacitor?.isNativePlatform?.();
+  
+  if (!isCapacitorApp && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     return 'development';
   }
   
-  // 4. Default to production
+  // 4. Default to production (including Capacitor apps)
   return 'production';
 };
 

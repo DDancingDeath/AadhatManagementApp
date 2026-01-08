@@ -476,6 +476,7 @@ const PurchaseManager = {
         const dueAmount = Helpers.getInputInt('dueAmount');
         const customerName = Helpers.getInputText('customerName');
         const comments = Helpers.getInputText('billComments');
+        const printComments = document.getElementById('billPrintComments')?.checked || false;
         
         if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {
             UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
@@ -506,6 +507,7 @@ const PurchaseManager = {
             dueAmount,
             customerName,
             comments,
+            printComments,
             type: 'purchase',
             isPurchase: true,
             date: new Date().toISOString(),

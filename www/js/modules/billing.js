@@ -1038,6 +1038,7 @@ const BillingManager = {
                 const saleDue = Helpers.getInputInt('saleDueAmount');
                 const saleCustomer = Helpers.getInputText('saleCustomerName');
                 const saleComments = Helpers.getInputText('saleComments');
+                const printComments = document.getElementById('salePrintComments')?.checked || false;
 
                 const updatedSale = {
                     ...bill,
@@ -1050,6 +1051,7 @@ const BillingManager = {
                     dueAmount: saleDue,
                     customerName: saleCustomer,
                     comments: saleComments,
+                    printComments: printComments,
                     payment: {
                         online: saleOnline,
                         cash: saleCash,

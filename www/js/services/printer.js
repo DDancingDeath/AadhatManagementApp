@@ -367,6 +367,35 @@ class BluetoothPrinterManager {
             y += config.spacing.line;
         }
         
+        // Comments (टिप्पणी) - Only print if printComments flag is true and comments exist
+        if (billData.printComments && billData.comments && billData.comments.trim()) {
+            y += 8; // Gap before comments
+            ctx.font = `${config.fonts.body.size}px Arial`;
+            ctx.fillText('नोट:', config.padding.left, y);
+            y += config.spacing.line;
+            
+            // Word wrap comments to fit width
+            const maxWidth = config.width - (config.padding.left * 2) - 10;
+            const words = billData.comments.trim().split(' ');
+            let line = '';
+            
+            for (const word of words) {
+                const testLine = line + (line ? ' ' : '') + word;
+                const testWidth = ctx.measureText(testLine).width;
+                if (testWidth > maxWidth && line) {
+                    ctx.fillText(line, config.padding.left + 5, y);
+                    y += config.spacing.line - 4;
+                    line = word;
+                } else {
+                    line = testLine;
+                }
+            }
+            if (line) {
+                ctx.fillText(line, config.padding.left + 5, y);
+                y += config.spacing.line;
+            }
+        }
+        
         return y;
     }
 

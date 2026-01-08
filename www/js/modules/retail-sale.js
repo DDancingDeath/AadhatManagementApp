@@ -453,6 +453,7 @@ const RetailSaleManager = {
         const saleDue = Helpers.getInputInt('saleDueAmount');
         const saleCustomer = Helpers.getInputText('saleCustomerName');
         const saleComments = Helpers.getInputText('saleComments');
+        const printComments = document.getElementById('salePrintComments')?.checked || false;
         
         if (saleOnline === 0 && saleCash === 0 && saleDue === 0) {
             UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
@@ -474,6 +475,7 @@ const RetailSaleManager = {
             dueAmount: saleDue,
             customerName: saleCustomer,
             comments: saleComments,
+            printComments: printComments,
             type: 'retail',
             isPurchase: false,
             date: new Date().toISOString(),
