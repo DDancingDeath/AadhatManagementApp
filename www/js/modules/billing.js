@@ -890,25 +890,37 @@ const BillingManager = {
                 if (bill.customerName) document.getElementById('saleCustomerName').value = bill.customerName;
                 if (bill.comments) document.getElementById('saleComments').value = bill.comments;
                 
-                if (bill.payment) {
-                    if (bill.payment.online > 0) {
-                        document.getElementById('saleOnlinePayment').value = bill.payment.online;
-                        document.getElementById('saleOnlineCheckbox').checked = true;
-                    }
-                    if (bill.payment.cash > 0) {
-                        document.getElementById('saleCashPayment').value = bill.payment.cash;
-                        document.getElementById('saleCashCheckbox').checked = true;
-                    }
-                    if (bill.payment.due > 0) {
-                        document.getElementById('saleDueAmount').value = bill.payment.due;
-                        document.getElementById('saleDueCheckbox').checked = true;
-                    }
+                // Check payments from payment object or top-level properties
+                const onlineValue = bill.payment?.online || bill.onlinePayment || 0;
+                const cashValue = bill.payment?.cash || bill.cashPayment || 0;
+                
+                if (onlineValue > 0) {
+                    document.getElementById('saleOnlinePayment').value = onlineValue;
+                    document.getElementById('saleOnlineCheckbox').checked = true;
+                }
+                if (cashValue > 0) {
+                    document.getElementById('saleCashPayment').value = cashValue;
+                    document.getElementById('saleCashCheckbox').checked = true;
+                }
+                
+                // Check due from payment.due or dueAmount
+                const dueValue = bill.payment?.due || bill.dueAmount || 0;
+                if (dueValue > 0) {
+                    document.getElementById('saleDueAmount').value = dueValue;
+                    document.getElementById('saleDueCheckbox').checked = true;
                 }
                 
                 RetailSaleManager.renderSalesBill();
                 RetailSaleManager.updateSaleTotals();
                 
                 window.app.nav.showTab('billing');
+                // Switch to sale mode for retail sales
+                setTimeout(() => {
+                    const saleBtn = document.getElementById('saleModeBtn');
+                    if (saleBtn) {
+                        window.app.billing.switchMode('sale', { currentTarget: saleBtn });
+                    }
+                }, 100);
                 UIManager.showToast('✏️ Editing sale - modify and save');
             }
             

@@ -97,6 +97,10 @@ export class ExpensesManager {
             await FirebaseService.saveExpense(expense);
         });
         
+        // Add to AppState for immediate reflection
+        if (!AppState.expenseHistory) AppState.expenseHistory = [];
+        AppState.expenseHistory.push(expense);
+        
         UIManager.hapticFeedback('medium');
         UIManager.showToast('✓ Business expense saved');
         
@@ -107,6 +111,12 @@ export class ExpensesManager {
         
         if (window.app.finance && document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
             window.app.finance.calculateOverview();
+        }
+        
+        // Refresh cash management if available
+        if (window.app.cashManagement) {
+            window.app.cashManagement.calculateTodayTransactions();
+            window.app.cashManagement.render();
         }
     }
 
@@ -151,6 +161,10 @@ export class ExpensesManager {
         UIManager.hapticFeedback('medium');
         UIManager.showToast('✓ Personal expense saved');
         
+        // Add to AppState for immediate reflection
+        if (!AppState.expenseHistory) AppState.expenseHistory = [];
+        AppState.expenseHistory.push(expense);
+        
         document.getElementById('personalExpenseType').value = '';
         document.getElementById('personalExpenseAmount').value = '';
         document.getElementById('personalExpensePerson').value = '';
@@ -158,6 +172,12 @@ export class ExpensesManager {
         
         if (window.app.finance && document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
             window.app.finance.calculateOverview();
+        }
+        
+        // Refresh cash management if available
+        if (window.app.cashManagement) {
+            window.app.cashManagement.calculateTodayTransactions();
+            window.app.cashManagement.render();
         }
     }
 

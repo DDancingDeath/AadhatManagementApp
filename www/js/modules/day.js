@@ -5,7 +5,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 
-// Helper functions
+// Use helper functions
 const formatCurrency = (amount) => Helpers.formatCurrency(amount);
 const formatDate = (date) => Helpers.formatDate(date);
 
@@ -99,11 +99,25 @@ export const DayManager = {
         });
 
         // Calculate totals
-        const totalPurchases = todayPurchases.reduce((sum, p) => sum + (p.total || 0), 0);
-        const totalWholesaleSales = todayWholesaleSales.reduce((sum, s) => sum + (s.total || 0), 0);
-        const totalRetailSales = todayRetailSales.reduce((sum, s) => sum + (s.total || 0), 0);
+        // Purchases can have: grandTotal, amountPayable, billTotal, or total
+        const totalPurchases = todayPurchases.reduce((sum, p) => {
+            const amount = Number(p.grandTotal) || Number(p.amountPayable) || Number(p.billTotal) || Number(p.total) || 0;
+            return sum + amount;
+        }, 0);
+        const totalWholesaleSales = todayWholesaleSales.reduce((sum, s) => {
+            const amount = Number(s.grandTotal) || Number(s.total) || Number(s.saleTotal) || 0;
+            return sum + amount;
+        }, 0);
+        const totalRetailSales = todayRetailSales.reduce((sum, s) => {
+            const amount = Number(s.grandTotal) || Number(s.total) || Number(s.saleTotal) || 0;
+            return sum + amount;
+        }, 0);
         const totalSales = totalWholesaleSales + totalRetailSales;
-        const totalExpenses = todayExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+        // Expenses use 'amount' property
+        const totalExpenses = todayExpenses.reduce((sum, e) => {
+            const amount = Number(e.amount) || Number(e.total) || 0;
+            return sum + amount;
+        }, 0);
 
         // Calculate labor cost from purchases
         const totalLaborCost = todayPurchases.reduce((sum, p) => sum + (p.laborCharges || p.labour || 0), 0);
@@ -255,8 +269,8 @@ export const DayManager = {
             return;
         }
 
-        const cardClass = type === 'purchase' ? 'stat-card-success-light' : 'stat-card-info-light';
-        const labelClass = type === 'purchase' ? 'stat-value-success' : 'stat-value-info';
+        const cardClass = type === 'purchase' ? 'stat-card-info-light' : 'stat-card-success-light';
+        const labelClass = type === 'purchase' ? 'stat-value-info' : 'stat-value-success';
 
         container.innerHTML = itemsArray.map(item => {
             const avgRate = item.rates.length > 0 
@@ -270,7 +284,7 @@ export const DayManager = {
                         <div><span style="color: var(--text-secondary);">${type === 'purchase' ? 'Purchases:' : 'Sales:'}</span> <strong>${item.count}x</strong></div>
                         <div><span style="color: var(--text-secondary);">Qty:</span> <strong>${item.quantity.toFixed(2)} kg</strong></div>
                         <div><span style="color: var(--text-secondary);">Total:</span> <strong class="${labelClass}">${formatCurrency(item.totalValue)}</strong></div>
-                        <div><span style="color: var(--text-secondary);">Avg Rate:</span> <strong>${formatCurrency(avgRate)}/kg</strong></div>
+                        <div><span style="color: var(--text-secondary);">Avg Rate:</span> <strong>₹${avgRate}/kg</strong></div>
                     </div>
                 </div>
             `;

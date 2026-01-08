@@ -329,9 +329,9 @@ class BluetoothPrinterManager {
         // Add spacing before grand total
         y += 8;
         
-        // Grand total - for purchases it's after labor deduction, for sales it's the total
+        // Grand total - Total bill amount
         ctx.font = `bold ${config.fonts.total.size}px Arial`;
-        const grandTotalLabel = billData.isPurchase ? 'कुल भुगतान:' : 'कुल प्राप्त:';
+        const grandTotalLabel = 'कुल:';
         ctx.fillText(grandTotalLabel, config.padding.left, y);
         const amountPayable = billData.amountPayable || billData.grandTotal || billData.saleTotal || billData.total ||
                              (subtotal - (billData.laborCharges || 0));
@@ -340,11 +340,26 @@ class BluetoothPrinterManager {
         ctx.fillText(payableText, config.width - payableWidth - config.padding.left, y);
         y += config.spacing.line;
         
+        // Calculate actual received amount (cash + online)
+        const cashReceived = Number(billData.payment?.cash) || Number(billData.cashPayment) || 0;
+        const onlineReceived = Number(billData.payment?.online) || Number(billData.onlinePayment) || 0;
+        const totalReceived = cashReceived + onlineReceived;
+        
+        // Total Received (कुल प्राप्त / कुल भुगतान)
+        y += 4;
+        ctx.font = `${config.fonts.body.size}px Arial`;
+        const receivedLabel = billData.isPurchase ? 'कुल भुगतान:' : 'कुल प्राप्त:';
+        ctx.fillText(receivedLabel, config.padding.left, y);
+        const receivedText = '₹' + Math.round(totalReceived);
+        const receivedWidth = ctx.measureText(receivedText).width;
+        ctx.fillText(receivedText, config.width - receivedWidth - config.padding.left, y);
+        y += config.spacing.line;
+        
         // Due amount (बकाया)
         const dueAmount = billData.payment?.due || billData.dueAmount || 0;
         if (dueAmount > 0) {
             y += 4; // Small gap
-            ctx.font = `${config.fonts.body.size}px Arial`;
+            ctx.font = `bold ${config.fonts.body.size}px Arial`;
             ctx.fillText('बकाया:', config.padding.left, y);
             const dueText = '₹' + Math.round(dueAmount);
             const dueWidth = ctx.measureText(dueText).width;

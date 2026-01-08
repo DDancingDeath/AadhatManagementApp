@@ -45,14 +45,22 @@ export class CashManagementManager {
      */
     static async init() {
         await UIManager.withLoading(async () => {
-            // Load today's cash session
-            await this.loadTodaySession();
+            // Load all sessions once and cache
+            const sessions = await FirebaseService.loadCashSessions();
+            this.cachedSessions = sessions;
+            
+            // Auto sign-out any previous day sessions that weren't closed
+            await this.autoSignOutPreviousDays(sessions);
+            
+            // Load today's cash session from cached data
+            this.loadTodaySessionFromCache(sessions);
+            
             // Recalculate transactions to get latest data
-            await this.calculateTodayTransactions();
+            this.calculateTodayTransactions();
         });
         this.updateUI();
         this.loadCustomerOptions();
-        this.renderHistory();
+        this.renderHistoryFromCache();
         
         // Listen for cash amount input changes for validation
         const signOutInput = document.getElementById('cashSignOutAmount');
@@ -99,6 +107,60 @@ export class CashManagementManager {
     }
 
     /**
+     * Auto sign-out any previous day sessions that weren't closed
+     * Sets closing balance to 0 for unclosed sessions
+     * @param {Array} sessions - Cached sessions array
+     * @async
+     * @returns {Promise<void>}
+     */
+    static async autoSignOutPreviousDays(sessions) {
+        try {
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            
+            // Find any sessions that are not today and not signed out
+            const unclosedSessions = sessions.filter(s => s.date !== today && !s.signedOut);
+            
+            // Update all unclosed sessions in parallel
+            const updatePromises = unclosedSessions.map(async (session) => {
+                const updatedSession = {
+                    ...session,
+                    closingBalance: 0,
+                    expectedBalance: 0,
+                    difference: 0,
+                    signOutTime: new Date(session.date + 'T23:59:59').toISOString(),
+                    signedOut: true,
+                    autoSignedOut: true,
+                    autoSignOutReason: 'Session not closed by end of day'
+                };
+                
+                await FirebaseService.updateCashSession(updatedSession);
+                // Update in cache too
+                const idx = sessions.findIndex(s => s.id === session.id);
+                if (idx !== -1) sessions[idx] = updatedSession;
+                
+                console.log(`Auto signed-out session for ${session.date} with ₹0`);
+            });
+            
+            await Promise.all(updatePromises);
+            
+            if (unclosedSessions.length > 0) {
+                UIManager.showToast(`Auto-closed ${unclosedSessions.length} previous session(s) with ₹0`);
+            }
+        } catch (error) {
+            console.error('Error auto signing out previous sessions:', error);
+        }
+    }
+
+    /**
+     * Load today's cash session from cached sessions
+     * @param {Array} sessions - Cached sessions array
+     */
+    static loadTodaySessionFromCache(sessions) {
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        this.todaySession = sessions.find(s => s.date === today) || null;
+    }
+
+    /**
      * Load today's cash session from Firebase
      * Finds session matching today's date (YYYY-MM-DD format)
      * @async
@@ -142,21 +204,44 @@ export class CashManagementManager {
             cashDeposits: 0
         };
 
-        // Calculate cash sales
+        // Calculate cash sales from wholesale and retail
         const sales = AppState.salesHistory || [];
+        const retailSales = AppState.retailSalesHistory || [];
+        
+        // Process wholesale sales
         sales.forEach(sale => {
-            const saleTime = new Date(sale.date).getTime();
-            if (saleTime >= todayStart && saleTime < todayEnd && sale.payment?.cash > 0) {
-                this.todayTransactions.cashSales += sale.payment.cash;
+            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
+            const saleTime = saleDate.getTime();
+            if (saleTime >= todayStart && saleTime < todayEnd) {
+                const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
+                if (cashAmount > 0) {
+                    this.todayTransactions.cashSales += cashAmount;
+                }
+            }
+        });
+        
+        // Process retail sales
+        retailSales.forEach(sale => {
+            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
+            const saleTime = saleDate.getTime();
+            if (saleTime >= todayStart && saleTime < todayEnd) {
+                const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
+                if (cashAmount > 0) {
+                    this.todayTransactions.cashSales += cashAmount;
+                }
             }
         });
 
         // Calculate cash purchases
         const purchases = AppState.purchaseHistory || [];
         purchases.forEach(purchase => {
-            const purchaseTime = new Date(purchase.date).getTime();
-            if (purchaseTime >= todayStart && purchaseTime < todayEnd && purchase.payment?.cash > 0) {
-                this.todayTransactions.cashPurchases += purchase.payment.cash;
+            const purchaseDate = purchase.date?.toDate ? purchase.date.toDate() : new Date(purchase.date);
+            const purchaseTime = purchaseDate.getTime();
+            if (purchaseTime >= todayStart && purchaseTime < todayEnd) {
+                const cashAmount = Number(purchase.cashPayment) || Number(purchase.payment?.cash) || 0;
+                if (cashAmount > 0) {
+                    this.todayTransactions.cashPurchases += cashAmount;
+                }
             }
         });
 
@@ -189,8 +274,10 @@ export class CashManagementManager {
             
             // Separate business and personal expenses
             if (!isNaN(paymentTime) && paymentTime >= todayStart && paymentTime < todayEnd) {
-                const amount = payment.amount || 0;
-                if (payment.type === 'Personal') {
+                const amount = Number(payment.amount) || 0;
+                // Check category (lowercase) - expenses use 'personal' or 'business'
+                const category = (payment.category || payment.type || '').toLowerCase();
+                if (category === 'personal') {
                     this.todayTransactions.personalExpenses += amount;
                 } else {
                     // All other types are business expenses
@@ -317,9 +404,10 @@ export class CashManagementManager {
         const expected = this.calculateExpectedCash();
         
         // Calculate totals for 4-block view
-        const totalCashIn = cashAdded + sales + dueReceived;
+        // Cash In = Opening + Cash Added + Sales + Due Received
+        const totalCashIn = opening + cashAdded + sales + dueReceived;
         const totalCashOut = purchases + duePaid + totalExpenses;
-        const availableCash = opening + totalCashIn - totalCashOut;
+        const availableCash = totalCashIn - totalCashOut;
 
         if (this.todaySession.signedOut) {
             // Signed out - show Opening Balance + 7 other blocks
@@ -679,12 +767,77 @@ export class CashManagementManager {
             .join('');
     }
 
+    /**
+     * Render history from cached sessions (faster, no Firebase call)
+     */
+    static renderHistoryFromCache() {
+        const container = document.getElementById('cashHistoryList');
+        if (!container) return;
+
+        const sessions = this.cachedSessions || [];
+        
+        // Sort by date descending
+        sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        if (sessions.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">No cash management history</p>';
+            return;
+        }
+
+        container.innerHTML = sessions.map(session => {
+            const date = new Date(session.date).toLocaleDateString('en-IN', { 
+                weekday: 'short', 
+                day: 'numeric', 
+                month: 'short' 
+            });
+            
+            const status = session.signedOut 
+                ? '<span style="color: #6c757d;">✓ Closed</span>' 
+                : '<span style="color: #22c55e; font-weight: 600;">● Active</span>';
+            
+            const diff = session.difference || 0;
+            const absDiff = Math.abs(diff);
+            let diffColor;
+            if (absDiff < 50) {
+                diffColor = '#22c55e';
+            } else if (absDiff < 500) {
+                diffColor = '#f59e0b';
+            } else {
+                diffColor = '#ef4444';
+            }
+            const diffText = absDiff < 1 ? 'Matched' : (diff > 0 ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`);
+
+            return `
+                <div onclick="window.app.cashManagement.showDetails('${session.date}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <strong style="font-size: 15px;">${date}</strong>
+                        ${status}
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; color: #6c757d;">
+                        <div>Opening: <strong>₹${session.openingBalance}</strong></div>
+                        ${session.signedOut ? `
+                            <div>Closing: <strong>₹${session.closingBalance}</strong></div>
+                            <div>Expected: <strong>₹${session.expectedBalance || 0}</strong></div>
+                            <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
+                            ` : '<div>In Progress...</div>'}
+                        </div>
+                        ${session.duePayments && session.duePayments.length > 0 ? `
+                            <div style="margin-top: 8px; font-size: 13px; color: #6c757d;">
+                                ${session.duePayments.length} due payment(s) recorded
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+        }).join('');
+    }
+
     static async renderHistory() {
         const container = document.getElementById('cashHistoryList');
         if (!container) return;
 
         try {
             const sessions = await FirebaseService.loadCashSessions();
+            this.cachedSessions = sessions; // Update cache
             
             // Sort by date descending
             sessions.sort((a, b) => new Date(b.date) - new Date(a.date));

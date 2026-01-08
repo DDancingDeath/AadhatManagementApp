@@ -19,6 +19,17 @@
   grid-template-columns: repeat(3, 1fr);
 }
 
+.stats-grid-3 .stat-value-sm {
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stats-grid-3 .stat-card-purple .stat-value-sm {
+  font-size: 14px;
+}
+
 /* Stat Cards */
 .stat-card {
   padding: 16px;
@@ -307,4 +318,32 @@ body.dark-mode .item-detail-row {
 
 body.dark-mode .item-detail-row:hover {
   background: var(--border-color);
+}
+
+/* Mobile responsiveness for summary grids */
+@media (max-width: 480px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  
+  .summary-item {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 10px;
+    gap: 2px;
+  }
+  
+  .summary-item span {
+    font-size: 12px;
+    line-height: 1.3;
+    display: block;
+    width: 100%;
+  }
+  
+  .summary-item strong {
+    font-size: 16px;
+    display: block;
+    width: 100%;
+  }
 }
