@@ -564,10 +564,10 @@ window.app = {
     
     // Analytics
     analytics: {
-        filterTab: (view, evt) => AnalyticsManager.filterTab(view, evt),
-        setPeriod: (period, evt) => AnalyticsManager.setPeriod(period, evt),
-        render: () => AnalyticsManager.renderAnalytics(),
-        init: () => AnalyticsManager.init()
+        init: () => AnalyticsManager.init(),
+        renderAll: () => AnalyticsManager.renderAll(),
+        showTab: (tab, evt) => AnalyticsManager.showTab(tab, evt),
+        setProfitPeriod: (period, evt) => AnalyticsManager.setProfitPeriod(period, evt)
     },
     
     // Day (Today's Summary + Cash Management)

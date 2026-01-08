@@ -1,995 +1,859 @@
 /**
- * @fileoverview Analytics Module
- * Provides data visualization and business insights
- * Includes overview metrics, sales analytics, item performance, and customer analysis
+ * @fileoverview Analytics Module - Business Insights
+ * Provides intelligent analytics, predictions, and actionable insights
  * @module modules/analytics
  */
 
 import { AppState } from '../utils/state.js';
+import { Helpers } from '../utils/helpers.js';
+
+const formatCurrency = (amount) => Helpers.formatCurrency(amount);
 
 /**
- * Analytics Manager - Manages business analytics and reporting
- * @class AnalyticsManager
+ * Analytics Manager - Smart Business Insights
  */
 export class AnalyticsManager {
-    /**
-     * Current analytics view
-     * @type {'overview'|'sales'|'items'|'customers'}
-     */
-    static currentView = 'overview';
-    
-    /**
-     * Current time period filter
-     * @type {'7days'|'30days'|'90days'|'all'}
-     */
-    static currentPeriod = '30days';
+    static profitPeriod = '7days';
+    static currentTab = 'overview';
 
     /**
-     * Get item ID and display name from item name
-     * Resolves item by name or Hindi name to get consistent ID
-     * @param {string} itemName - Name of the item to look up
-     * @returns {{id: string, displayName: string}} Item info object
+     * Initialize analytics page
      */
-    static getItemInfo(itemName) {
-        if (!itemName) return { id: 'unknown', displayName: 'Unknown' };
-        
-        // Try to find the item in AppState.items by name or Hindi name
-        const item = AppState.items.find(i => 
-            i.name === itemName || i.hindiName === itemName
-        );
-        
-        if (item) {
-            // Use English name for display
-            return { id: item.id, displayName: item.name };
-        }
-        
-        // If not found, use the name itself as both ID and display name
-        return { id: itemName, displayName: itemName };
+    static init() {
+        this.currentTab = 'overview';
+        this.renderAll();
     }
 
     /**
-     * Switch between analytics view tabs
-     * @param {'overview'|'sales'|'items'|'customers'} view - View to display
-     * @param {Event} [evt] - Optional click event for button styling
+     * Show a specific tab
      */
-    static filterTab(view, evt) {
-        this.currentView = view;
-        
+    static showTab(tab, evt) {
+        this.currentTab = tab;
+
         // Update button states
-        document.querySelectorAll('#analytics .filter-btn').forEach(btn => {
-            if (btn.textContent.toLowerCase().includes(view)) {
-                btn.classList.add('active');
-            } else if (!btn.textContent.toLowerCase().includes('days') && !btn.textContent.toLowerCase().includes('time')) {
-                btn.classList.remove('active');
+        const buttons = document.querySelectorAll('#analytics > .filter-buttons > .filter-btn');
+        buttons.forEach(btn => {
+            const btnTab = btn.onclick?.toString().match(/showTab\('(\w+)'/)?.[1];
+            btn.classList.toggle('active', btnTab === tab);
+        });
+
+        // Show/hide tab contents
+        const tabs = ['overview', 'trends', 'items', 'insights'];
+        tabs.forEach(t => {
+            const tabEl = document.getElementById(`analytics${t.charAt(0).toUpperCase() + t.slice(1)}Tab`);
+            if (tabEl) {
+                tabEl.style.display = t === tab ? 'block' : 'none';
             }
         });
-        
-        // Show/hide sections
-        const sections = {
-            overview: document.getElementById('analyticsOverviewSection'),
-            sales: document.getElementById('analyticsSalesSection'),
-            items: document.getElementById('analyticsItemsSection'),
-            customers: document.getElementById('analyticsCustomersSection')
-        };
-        
-        Object.keys(sections).forEach(key => {
-            if (sections[key]) {
-                sections[key].style.display = key === view ? 'block' : 'none';
-            }
-        });
-        
-        this.renderAnalytics();
+
+        // Render relevant sections
+        this.renderTabContent(tab);
     }
 
     /**
-     * Set the time period filter for analytics data
-     * @param {'7days'|'30days'|'90days'|'all'} period - Period to filter by
-     * @param {Event} [evt] - Optional click event for button styling
+     * Render content for specific tab
      */
-    static setPeriod(period, evt) {
-        this.currentPeriod = period;
-        AppState.analyticsPeriod = period;
-        
-        // Update period button states
-        const periodButtons = document.querySelectorAll('#analytics .settings-card .filter-btn');
-        periodButtons.forEach(btn => {
-            if (btn.onclick && btn.onclick.toString().includes(period)) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
-        
-        this.renderAnalytics();
-    }
-
-    /**
-     * Get filtered data based on current period
-     * Filters bills, sales, and expenses by date
-     * @returns {{bills: Array, sales: Array, expenses: {business: Array, personal: Array}}}
-     */
-    static getFilteredData() {
-        const now = new Date();
-        let cutoffDate = null;
-        
-        switch (this.currentPeriod) {
-            case '7days':
-                cutoffDate = new Date(now - 7 * 24 * 60 * 60 * 1000);
-                break;
-            case '30days':
-                cutoffDate = new Date(now - 30 * 24 * 60 * 60 * 1000);
-                break;
-            case '90days':
-                cutoffDate = new Date(now - 90 * 24 * 60 * 60 * 1000);
-                break;
-            case 'all':
-            default:
-                cutoffDate = null;
-        }
-        
-        const filterByDate = (item) => {
-            if (!cutoffDate) return true;
-            const itemDate = item.timestamp ? new Date(item.timestamp) : new Date(item.date);
-            return itemDate >= cutoffDate;
-        };
-        
-        // Return with both new names and legacy aliases for backward compatibility
-        const purchases = (AppState.purchaseHistory || []).filter(filterByDate);
-        const wholesaleSales = (AppState.salesHistory || []).filter(filterByDate);
-        const retailSales = (AppState.retailSalesHistory || []).filter(filterByDate);
-        
-        return {
-            // New names
-            purchases,
-            wholesaleSales,
-            retailSales,
-            // Legacy aliases (bills = purchases, sales = wholesale + retail combined)
-            bills: purchases,
-            sales: [...wholesaleSales, ...retailSales],
-            expenses: {
-                business: (AppState.businessExpenses || []).filter(filterByDate),
-                personal: (AppState.personalExpenses || []).filter(filterByDate)
-            }
-        };
-    }
-
-    /**
-     * Render the appropriate analytics view based on currentView
-     */
-    static renderAnalytics() {
-        switch (this.currentView) {
+    static renderTabContent(tab) {
+        switch (tab) {
             case 'overview':
-                this.renderOverview();
+                this.renderTodayPrediction();
+                this.renderMonthSummary();
+                this.renderOutstandingDues();
+                this.renderMonthlyProjection();
                 break;
-            case 'sales':
-                this.renderSalesAnalytics();
+            case 'trends':
+                this.renderProfitTrend();
+                this.renderRateTrends();
                 break;
             case 'items':
-                this.renderItemsAnalytics();
+                this.renderItemsToFocus();
+                this.renderTopPerformers();
                 break;
-            case 'customers':
-                this.renderCustomersAnalytics();
+            case 'insights':
+                this.renderSmartSuggestions();
+                this.renderCustomerInsights();
                 break;
         }
     }
 
     /**
-     * Render the overview analytics section
-     * Shows key metrics, trends, and health scorecard
+     * Render all analytics sections
      */
-    static renderOverview() {
-        const data = this.getFilteredData();
-        const bills = data?.bills || [];
-        const sales = data?.sales || [];
-        
-        // Calculate key metrics
-        const totalTransactions = bills.length + sales.length;
-        
-        const totalPurchases = bills.reduce((sum, bill) => sum + (bill.grandTotal || bill.total || 0), 0);
-        const totalSalesRevenue = sales.reduce((sum, sale) => sum + (sale.total || 0), 0);
-        
-        // Calculate profit from sales (includes expenses)
-        const totalProfit = sales.reduce((sum, sale) => sum + (sale.profit || 0), 0);
-        
-        const avgTransaction = totalTransactions > 0 ? (totalPurchases + totalSalesRevenue) / totalTransactions : 0;
-        const profitMargin = totalSalesRevenue > 0 ? (totalProfit / totalSalesRevenue) * 100 : 0;
-        
-        // Update key metrics
-        document.getElementById('analyticsTransactionCount').textContent = totalTransactions;
-        document.getElementById('analyticsAvgTransaction').textContent = Math.round(avgTransaction);
-        document.getElementById('analyticsTotalProfit').textContent = Math.round(totalProfit);
-        document.getElementById('analyticsProfitMargin').textContent = profitMargin.toFixed(1);
-        
-        // Render daily trend chart
-        this.renderDailyTrendChart(sales);
-        
-        // Render health scorecard
-        this.renderHealthScorecard(data);
+    static renderAll() {
+        this.renderTodayPrediction();
+        this.renderMonthSummary();
+        this.renderOutstandingDues();
+        this.renderMonthlyProjection();
+        // Other tabs will render on demand
     }
 
-    static renderDailyTrendChart(sales) {
-        const chartContainer = document.getElementById('dailyTrendChart');
-        if (!chartContainer) return;
+    /**
+     * Get date helpers
+     */
+    static getDateHelpers() {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const dayOfMonth = now.getDate();
+        const daysRemaining = daysInMonth - dayOfMonth;
+
+        return { now, today, monthStart, lastMonthStart, lastMonthEnd, daysInMonth, dayOfMonth, daysRemaining };
+    }
+
+    /**
+     * Parse transaction date
+     */
+    static parseDate(dateField) {
+        if (!dateField) return new Date(0);
+        if (dateField.toDate) return dateField.toDate();
+        return new Date(dateField);
+    }
+
+    /**
+     * Filter transactions by date range
+     */
+    static filterByDateRange(transactions, startDate, endDate = new Date()) {
+        return (transactions || []).filter(t => {
+            const date = this.parseDate(t.date);
+            return date >= startDate && date <= endDate;
+        });
+    }
+
+    /**
+     * Get transaction total
+     */
+    static getTotal(t) {
+        return Number(t.grandTotal) || Number(t.amountPayable) || Number(t.billTotal) || Number(t.total) || 0;
+    }
+
+    /**
+     * Render Today's Cash Prediction
+     */
+    static renderTodayPrediction() {
+        const { today } = this.getDateHelpers();
+        const dayOfWeek = today.getDay();
+
+        // Get last 4 weeks of same weekday data
+        const sameDayData = [];
+        for (let i = 1; i <= 4; i++) {
+            const pastDate = new Date(today);
+            pastDate.setDate(pastDate.getDate() - (i * 7));
+            const nextDay = new Date(pastDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+
+            const dayPurchases = this.filterByDateRange(AppState.purchaseHistory, pastDate, nextDay);
+            const daySales = [
+                ...this.filterByDateRange(AppState.salesHistory, pastDate, nextDay),
+                ...this.filterByDateRange(AppState.retailSalesHistory, pastDate, nextDay)
+            ];
+
+            const purchaseTotal = dayPurchases.reduce((sum, p) => sum + this.getTotal(p), 0);
+            const salesTotal = daySales.reduce((sum, s) => sum + this.getTotal(s), 0);
+            const cashPaid = dayPurchases.reduce((sum, p) => sum + (p.cashPayment || p.payment?.cash || 0), 0);
+            const cashReceived = daySales.reduce((sum, s) => sum + (s.cashPayment || s.payment?.cash || 0), 0);
+
+            sameDayData.push({ purchaseTotal, salesTotal, cashPaid, cashReceived });
+        }
+
+        // Calculate averages
+        const validData = sameDayData.filter(d => d.purchaseTotal > 0 || d.salesTotal > 0);
+        const dataPoints = validData.length || 1;
+
+        const avgPurchases = validData.reduce((sum, d) => sum + d.purchaseTotal, 0) / dataPoints;
+        const avgSales = validData.reduce((sum, d) => sum + d.salesTotal, 0) / dataPoints;
+        const avgCashPaid = validData.reduce((sum, d) => sum + d.cashPaid, 0) / dataPoints;
+        const avgCashReceived = validData.reduce((sum, d) => sum + d.cashReceived, 0) / dataPoints;
+
+        const cashNeeded = Math.max(0, avgCashPaid - avgCashReceived);
+        const confidence = Math.min(95, 50 + (dataPoints * 10));
+
+        this.updateElement('predictedPurchases', formatCurrency(avgPurchases));
+        this.updateElement('predictedSales', formatCurrency(avgSales));
+        this.updateElement('predictedCashNeed', formatCurrency(cashNeeded));
+        this.updateElement('predictionConfidence', `${confidence}%`);
+    }
+
+    /**
+     * Render This Month Summary
+     */
+    static renderMonthSummary() {
+        const { monthStart, lastMonthStart, lastMonthEnd, now } = this.getDateHelpers();
+
+        // This month data
+        const thisMonthPurchases = this.filterByDateRange(AppState.purchaseHistory, monthStart);
+        const thisMonthSales = [
+            ...this.filterByDateRange(AppState.salesHistory, monthStart),
+            ...this.filterByDateRange(AppState.retailSalesHistory, monthStart)
+        ];
+        const thisMonthExpenses = this.filterByDateRange(AppState.expensesHistory, monthStart)
+            .filter(e => e.category !== 'personal');
+
+        // Last month data (for comparison)
+        const lastMonthPurchases = this.filterByDateRange(AppState.purchaseHistory, lastMonthStart, lastMonthEnd);
+        const lastMonthSales = [
+            ...this.filterByDateRange(AppState.salesHistory, lastMonthStart, lastMonthEnd),
+            ...this.filterByDateRange(AppState.retailSalesHistory, lastMonthStart, lastMonthEnd)
+        ];
+
+        // Calculate totals
+        const revenue = thisMonthSales.reduce((sum, s) => sum + this.getTotal(s), 0);
+        const purchases = thisMonthPurchases.reduce((sum, p) => sum + this.getTotal(p), 0);
+        const expenses = thisMonthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+        const profit = revenue - purchases - expenses;
+        const profitMargin = revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : 0;
+
+        // Last month totals
+        const lastRevenue = lastMonthSales.reduce((sum, s) => sum + this.getTotal(s), 0);
+        const lastPurchases = lastMonthPurchases.reduce((sum, p) => sum + this.getTotal(p), 0);
+
+        // Growth calculations
+        const revenueGrowth = lastRevenue > 0 ? (((revenue - lastRevenue) / lastRevenue) * 100).toFixed(0) : 0;
+        const purchaseGrowth = lastPurchases > 0 ? (((purchases - lastPurchases) / lastPurchases) * 100).toFixed(0) : 0;
+
+        this.updateElement('monthRevenue', formatCurrency(revenue));
+        this.updateElement('monthPurchases', formatCurrency(purchases));
+        this.updateElement('monthProfit', formatCurrency(profit));
+        this.updateElement('monthExpenses', formatCurrency(expenses));
+        this.updateElement('monthProfitMargin', `${profitMargin}% margin`);
+        this.updateElement('monthExpensesCount', `${thisMonthExpenses.length} transactions`);
+
+        const revenueGrowthEl = document.getElementById('monthRevenueGrowth');
+        if (revenueGrowthEl) {
+            const arrow = revenueGrowth >= 0 ? '↑' : '↓';
+            const color = revenueGrowth >= 0 ? '#16a34a' : '#dc2626';
+            revenueGrowthEl.innerHTML = `<span style="color: ${color}">${arrow} ${Math.abs(revenueGrowth)}%</span> vs last month`;
+        }
+
+        const purchaseGrowthEl = document.getElementById('monthPurchasesGrowth');
+        if (purchaseGrowthEl) {
+            const arrow = purchaseGrowth >= 0 ? '↑' : '↓';
+            const color = purchaseGrowth <= 0 ? '#16a34a' : '#dc2626'; // Lower is better for purchases
+            purchaseGrowthEl.innerHTML = `<span style="color: ${color}">${arrow} ${Math.abs(purchaseGrowth)}%</span> vs last month`;
+        }
+    }
+
+    /**
+     * Set profit trend period
+     */
+    static setProfitPeriod(period, evt) {
+        this.profitPeriod = period;
         
-        // Group sales by day
+        // Update button states
+        const buttons = document.querySelectorAll('#analytics .settings-card .filter-btn');
+        buttons.forEach(btn => {
+            if (btn.onclick && btn.onclick.toString().includes('setProfitPeriod')) {
+                btn.classList.toggle('active', btn.onclick.toString().includes(`'${period}'`));
+            }
+        });
+
+        this.renderProfitTrend();
+    }
+
+    /**
+     * Render Profit Trend Chart
+     */
+    static renderProfitTrend() {
+        const container = document.getElementById('profitTrendChart');
+        const summaryContainer = document.getElementById('profitTrendSummary');
+        if (!container) return;
+
+        // Calculate date range
+        const now = new Date();
+        let startDate;
+        switch (this.profitPeriod) {
+            case '7days': startDate = new Date(now - 7 * 24 * 60 * 60 * 1000); break;
+            case '30days': startDate = new Date(now - 30 * 24 * 60 * 60 * 1000); break;
+            case '90days': startDate = new Date(now - 90 * 24 * 60 * 60 * 1000); break;
+            default: startDate = new Date(now - 7 * 24 * 60 * 60 * 1000);
+        }
+
+        // Group data by day
         const dailyData = {};
-        
-        sales.forEach(sale => {
-            const date = sale.date ? new Date(sale.date).toLocaleDateString('en-IN') : 'Unknown';
-            if (!dailyData[date]) {
-                dailyData[date] = { revenue: 0, profit: 0, count: 0 };
+        const purchases = this.filterByDateRange(AppState.purchaseHistory, startDate);
+        const sales = [
+            ...this.filterByDateRange(AppState.salesHistory, startDate),
+            ...this.filterByDateRange(AppState.retailSalesHistory, startDate)
+        ];
+
+        // Initialize all days in range
+        const currentDate = new Date(startDate);
+        while (currentDate <= now) {
+            const dateKey = currentDate.toLocaleDateString('en-IN');
+            dailyData[dateKey] = { revenue: 0, cost: 0, profit: 0 };
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        // Fill in data
+        purchases.forEach(p => {
+            const date = this.parseDate(p.date).toLocaleDateString('en-IN');
+            if (dailyData[date]) {
+                dailyData[date].cost += this.getTotal(p);
             }
-            dailyData[date].revenue += sale.total || 0;
-            dailyData[date].profit += sale.profit || 0;
-            dailyData[date].count += 1;
         });
-        
-        // Sort by date
+
+        sales.forEach(s => {
+            const date = this.parseDate(s.date).toLocaleDateString('en-IN');
+            if (dailyData[date]) {
+                dailyData[date].revenue += this.getTotal(s);
+            }
+        });
+
+        // Calculate profit for each day
+        Object.keys(dailyData).forEach(date => {
+            dailyData[date].profit = dailyData[date].revenue - dailyData[date].cost;
+        });
+
         const sortedDates = Object.keys(dailyData).sort((a, b) => {
-            return new Date(a.split('/').reverse().join('-')) - new Date(b.split('/').reverse().join('-'));
+            const [d1, m1, y1] = a.split('/');
+            const [d2, m2, y2] = b.split('/');
+            return new Date(y1, m1 - 1, d1) - new Date(y2, m2 - 1, d2);
         });
-        
+
         if (sortedDates.length === 0) {
-            chartContainer.innerHTML = '<p style="text-align: center; color: #888; padding: 40px;">No sales data available for this period</p>';
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 40px;">No data available</p>';
             return;
         }
+
+        // Find max absolute value for scaling
+        const maxProfit = Math.max(...sortedDates.map(d => Math.abs(dailyData[d].profit)));
+        const chartHeight = 160;
+
+        // Render chart
+        let chartHTML = `<div style="display: flex; gap: 4px; align-items: center; height: ${chartHeight + 20}px; padding: 10px 0; overflow-x: auto;">`;
         
-        // Find max values for scaling
-        const maxRevenue = Math.max(...sortedDates.map(date => dailyData[date].revenue));
-        const maxProfit = Math.max(...sortedDates.map(date => dailyData[date].profit));
-        const maxValue = Math.max(maxRevenue, maxProfit);
-        
-        let chartHTML = '<div style="display: flex; gap: 8px; align-items: flex-end; height: 200px; padding: 10px; overflow-x: auto;">';
-        
-        sortedDates.forEach(date => {
+        sortedDates.forEach((date, index) => {
             const data = dailyData[date];
-            const revenueHeight = maxValue > 0 ? (data.revenue / maxValue) * 180 : 0;
-            const profitHeight = maxValue > 0 ? (data.profit / maxValue) * 180 : 0;
-            
+            const isPositive = data.profit >= 0;
+            const barHeight = maxProfit > 0 ? (Math.abs(data.profit) / maxProfit) * (chartHeight / 2) : 0;
+            const color = isPositive ? '#16a34a' : '#dc2626';
+            const bgColor = isPositive ? 'rgba(22, 163, 74, 0.8)' : 'rgba(220, 38, 38, 0.8)';
+
             chartHTML += `
-                <div style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px;">
-                    <div style="display: flex; gap: 4px; align-items: flex-end; height: 180px;">
-                        <div style="width: 20px; height: ${revenueHeight}px; background: linear-gradient(to top, #667eea, #764ba2); border-radius: 4px 4px 0 0;" 
-                             title="Revenue: ₹${Math.round(data.revenue)}"></div>
-                        <div style="width: 20px; height: ${profitHeight}px; background: linear-gradient(to top, #11998e, #38ef7d); border-radius: 4px 4px 0 0;"
-                             title="Profit: ₹${Math.round(data.profit)}"></div>
+                <div style="flex: 1; min-width: 30px; display: flex; flex-direction: column; align-items: center; height: 100%;">
+                    <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;">
+                        ${isPositive ? `
+                            <div style="height: ${chartHeight / 2}px; display: flex; align-items: flex-end; justify-content: center;">
+                                <div style="width: 80%; height: ${barHeight}px; background: ${bgColor}; border-radius: 3px 3px 0 0;" title="${formatCurrency(data.profit)}"></div>
+                            </div>
+                            <div style="height: ${chartHeight / 2}px; border-top: 1px solid var(--border-color);"></div>
+                        ` : `
+                            <div style="height: ${chartHeight / 2}px; border-bottom: 1px solid var(--border-color);"></div>
+                            <div style="height: ${chartHeight / 2}px; display: flex; align-items: flex-start; justify-content: center;">
+                                <div style="width: 80%; height: ${barHeight}px; background: ${bgColor}; border-radius: 0 0 3px 3px;" title="${formatCurrency(data.profit)}"></div>
+                            </div>
+                        `}
                     </div>
-                    <div style="font-size: 10px; color: #666; writing-mode: horizontal-tb; transform: rotate(-45deg); transform-origin: center; margin-top: 20px;">
-                        ${date.split('/').slice(0, 2).join('/')}
+                    <div style="font-size: 9px; color: var(--text-secondary); margin-top: 4px; white-space: nowrap;">
+                        ${date.split('/')[0]}/${date.split('/')[1]}
                     </div>
                 </div>
             `;
         });
-        
+
         chartHTML += '</div>';
-        chartHTML += `
-            <div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 13px;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <div style="width: 16px; height: 16px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 3px;"></div>
-                    <span>Revenue</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <div style="width: 16px; height: 16px; background: linear-gradient(135deg, #11998e, #38ef7d); border-radius: 3px;"></div>
-                    <span>Profit</span>
-                </div>
-            </div>
-        `;
-        
-        chartContainer.innerHTML = chartHTML;
-    }
+        container.innerHTML = chartHTML;
 
-    static renderHealthScorecard(data) {
-        const container = document.getElementById('healthScorecard');
-        if (!container) return;
-        
-        const { purchases, wholesaleSales, retailSales } = data;
-        const allSales = [...wholesaleSales, ...retailSales];
-        
-        // Calculate metrics
-        const totalOutstanding = [...purchases, ...allSales].reduce((sum, txn) => {
-            return sum + (txn.payment?.due || 0);
-        }, 0);
-        
-        const clearedCount = [...purchases, ...allSales].filter(txn => txn.cleared).length;
-        const totalCount = purchases.length + allSales.length;
-        const clearanceRate = totalCount > 0 ? (clearedCount / totalCount) * 100 : 0;
-        
-        const avgDaysToPayment = this.calculateAvgDaysToPayment([...purchases, ...allSales]);
-        
-        const stockValue = Object.keys(AppState.stock).reduce((sum, itemKey) => {
-            const stockItem = AppState.stock[itemKey];
-            return sum + (stockItem.quantity || 0) * (stockItem.rate || 0);
-        }, 0);
-        
-        const salesWithExpenses = allSales.filter(s => s.expenses && s.expenses > 0).length;
-        const expenseTrackingRate = allSales.length > 0 ? (salesWithExpenses / allSales.length) * 100 : 0;
-        
-        const avgProfitPerSale = allSales.length > 0 ? allSales.reduce((sum, s) => sum + (s.profit || 0), 0) / allSales.length : 0;
-        
-        container.innerHTML = `
-            <div class="stats-card" style="background: ${totalOutstanding > 50000 ? '#fee' : '#efe'}; border-left: 4px solid ${totalOutstanding > 50000 ? '#dc3545' : '#28a745'};">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Outstanding Amount</div>
-                <div style="font-size: 20px; font-weight: 700; color: ${totalOutstanding > 50000 ? '#dc3545' : '#28a745'};">₹${Math.round(totalOutstanding)}</div>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">${totalOutstanding > 50000 ? '⚠️ High' : '✓ Good'}</div>
-            </div>
-            
-            <div class="stats-card" style="background: ${clearanceRate < 70 ? '#fee' : '#efe'}; border-left: 4px solid ${clearanceRate < 70 ? '#ffa500' : '#28a745'};">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Clearance Rate</div>
-                <div style="font-size: 20px; font-weight: 700; color: ${clearanceRate < 70 ? '#ffa500' : '#28a745'};">${clearanceRate.toFixed(0)}%</div>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">${clearedCount}/${totalCount} cleared</div>
-            </div>
-            
-            <div class="stats-card" style="background: #e3f2fd; border-left: 4px solid #2196f3;">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Avg Collection Time</div>
-                <div style="font-size: 20px; font-weight: 700; color: #2196f3;">${avgDaysToPayment.toFixed(0)} days</div>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">Payment cycle</div>
-            </div>
-            
-            <div class="stats-card" style="background: #fff3e0; border-left: 4px solid #ff9800;">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Stock Value</div>
-                <div style="font-size: 20px; font-weight: 700; color: #ff9800;">₹${Math.round(stockValue)}</div>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">Current inventory</div>
-            </div>
-            
-            <div class="stats-card" style="background: ${expenseTrackingRate > 50 ? '#efe' : '#fee'}; border-left: 4px solid ${expenseTrackingRate > 50 ? '#28a745' : '#ffa500'};">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Expense Tracking</div>
-                <div style="font-size: 20px; font-weight: 700; color: ${expenseTrackingRate > 50 ? '#28a745' : '#ffa500'};">${expenseTrackingRate.toFixed(0)}%</div>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">${expenseTrackingRate > 50 ? '✓ Good practice' : '⚠️ Track more'}</div>
-            </div>
-            
-            <div class="stats-card" style="background: #f3e5f5; border-left: 4px solid #9c27b0;">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Avg Profit/Sale</div>
-                <div style="font-size: 20px; font-weight: 700; color: #9c27b0;">₹${Math.round(avgProfitPerSale)}</div>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">Per transaction</div>
-            </div>
-        `;
-    }
+        // Summary stats
+        const totalProfit = sortedDates.reduce((sum, d) => sum + dailyData[d].profit, 0);
+        const avgProfit = totalProfit / sortedDates.length;
+        const profitDays = sortedDates.filter(d => dailyData[d].profit > 0).length;
+        const lossDays = sortedDates.filter(d => dailyData[d].profit < 0).length;
 
-    static calculateAvgDaysToPayment(transactions) {
-        const paidTransactions = transactions.filter(txn => {
-            return txn.payments && txn.payments.length > 0;
-        });
-        
-        if (paidTransactions.length === 0) return 0;
-        
-        const totalDays = paidTransactions.reduce((sum, txn) => {
-            const createdDate = new Date(txn.date);
-            const lastPayment = txn.payments[txn.payments.length - 1];
-            const paymentDate = new Date(lastPayment.date);
-            const daysDiff = (paymentDate - createdDate) / (1000 * 60 * 60 * 24);
-            return sum + Math.max(0, daysDiff);
-        }, 0);
-        
-        return totalDays / paidTransactions.length;
-    }
-
-    static renderSalesAnalytics() {
-        const data = this.getFilteredData();
-        const bills = data?.bills || [];
-        const sales = data?.sales || [];
-        
-        const totalSales = sales.reduce((sum, s) => sum + (s.total || 0), 0);
-        const totalPurchases = bills.reduce((sum, b) => sum + (b.grandTotal || b.total || 0), 0);
-        
-        document.getElementById('analyticsTotalSales').textContent = Math.round(totalSales);
-        document.getElementById('analyticsTotalPurchases').textContent = Math.round(totalPurchases);
-        document.getElementById('analyticsSalesCount').textContent = sales.length;
-        document.getElementById('analyticsPurchaseCount').textContent = bills.length;
-        
-        this.renderSalesPurchasesChart(bills, sales);
-        this.renderPaymentMethodsChart(bills, sales);
-    }
-
-    static renderSalesPurchasesChart(bills, sales) {
-        const chartContainer = document.getElementById('salesPurchasesChart');
-        if (!chartContainer) return;
-        
-        // Group by date
-        const dailyData = {};
-        
-        bills.forEach(bill => {
-            const date = bill.date ? new Date(bill.date).toLocaleDateString('en-IN') : 'Unknown';
-            if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
-            dailyData[date].purchases += bill.grandTotal || bill.total || 0;
-        });
-        
-        sales.forEach(sale => {
-            const date = sale.date ? new Date(sale.date).toLocaleDateString('en-IN') : 'Unknown';
-            if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
-            dailyData[date].sales += sale.total || 0;
-        });
-        
-        const sortedDates = Object.keys(dailyData).sort((a, b) => {
-            return new Date(a.split('/').reverse().join('-')) - new Date(b.split('/').reverse().join('-'));
-        });
-        
-        if (sortedDates.length === 0) {
-            chartContainer.innerHTML = '<p style="text-align: center; color: #888; padding: 40px;">No data available</p>';
-            return;
-        }
-        
-        const maxValue = Math.max(...sortedDates.map(date => Math.max(dailyData[date].purchases, dailyData[date].sales)));
-        
-        let chartHTML = '<div style="display: flex; gap: 8px; align-items: flex-end; height: 200px; padding: 10px; overflow-x: auto;">';
-        
-        sortedDates.forEach(date => {
-            const data = dailyData[date];
-            const purchasesHeight = maxValue > 0 ? (data.purchases / maxValue) * 180 : 0;
-            const salesHeight = maxValue > 0 ? (data.sales / maxValue) * 180 : 0;
-            
-            chartHTML += `
-                <div style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px;">
-                    <div style="display: flex; gap: 4px; align-items: flex-end; height: 180px;">
-                        <div style="width: 20px; height: ${purchasesHeight}px; background: linear-gradient(to top, #ee0979, #ff6a00); border-radius: 4px 4px 0 0;" 
-                             title="Purchases: ₹${Math.round(data.purchases)}"></div>
-                        <div style="width: 20px; height: ${salesHeight}px; background: linear-gradient(to top, #11998e, #38ef7d); border-radius: 4px 4px 0 0;"
-                             title="Sales: ₹${Math.round(data.sales)}"></div>
+        if (summaryContainer) {
+            summaryContainer.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; text-align: center;">
+                    <div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">Total Profit</div>
+                        <div style="font-size: 16px; font-weight: 700; color: ${totalProfit >= 0 ? '#16a34a' : '#dc2626'};">${formatCurrency(totalProfit)}</div>
                     </div>
-                    <div style="font-size: 10px; color: #666; transform: rotate(-45deg); margin-top: 20px;">
-                        ${date.split('/').slice(0, 2).join('/')}
+                    <div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">Avg Daily</div>
+                        <div style="font-size: 16px; font-weight: 700; color: ${avgProfit >= 0 ? '#16a34a' : '#dc2626'};">${formatCurrency(avgProfit)}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">Profit Days</div>
+                        <div style="font-size: 16px; font-weight: 700; color: #16a34a;">${profitDays}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">Loss Days</div>
+                        <div style="font-size: 16px; font-weight: 700; color: #dc2626;">${lossDays}</div>
                     </div>
                 </div>
             `;
-        });
-        
-        chartHTML += '</div>';
-        chartHTML += `
-            <div style="display: flex; justify-content: center; gap: 20px; margin-top: 20px; font-size: 13px;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <div style="width: 16px; height: 16px; background: linear-gradient(135deg, #ee0979, #ff6a00); border-radius: 3px;"></div>
-                    <span>Purchases</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <div style="width: 16px; height: 16px; background: linear-gradient(135deg, #11998e, #38ef7d); border-radius: 3px;"></div>
-                    <span>Sales</span>
-                </div>
-            </div>
-        `;
-        
-        chartContainer.innerHTML = chartHTML;
+        }
     }
 
-    static renderPaymentMethodsChart(bills, sales) {
-        const chartContainer = document.getElementById('paymentMethodsChart');
-        if (!chartContainer) return;
-        
-        let totalCash = 0;
-        let totalOnline = 0;
-        let totalDue = 0;
-        
-        [...bills, ...sales].forEach(txn => {
-            totalCash += txn.payment?.cash || 0;
-            totalOnline += txn.payment?.online || 0;
-            totalDue += txn.payment?.due || 0;
+    /**
+     * Render Item Rate Trends
+     */
+    static renderRateTrends() {
+        const container = document.getElementById('rateTrendsContainer');
+        if (!container) return;
+
+        const { monthStart, lastMonthStart, lastMonthEnd } = this.getDateHelpers();
+
+        // Get purchase data for rate analysis
+        const thisMonthPurchases = this.filterByDateRange(AppState.purchaseHistory, monthStart);
+        const lastMonthPurchases = this.filterByDateRange(AppState.purchaseHistory, lastMonthStart, lastMonthEnd);
+
+        // Aggregate rates by item
+        const thisMonthRates = {};
+        const lastMonthRates = {};
+
+        thisMonthPurchases.forEach(p => {
+            (p.items || []).forEach(item => {
+                const name = item.item || item.name;
+                if (!name || !item.rate) return;
+                if (!thisMonthRates[name]) thisMonthRates[name] = [];
+                thisMonthRates[name].push(Number(item.rate));
+            });
         });
-        
-        const total = totalCash + totalOnline + totalDue;
-        
-        if (total === 0) {
-            chartContainer.innerHTML = '<p style="text-align: center; color: #888;">No payment data available</p>';
+
+        lastMonthPurchases.forEach(p => {
+            (p.items || []).forEach(item => {
+                const name = item.item || item.name;
+                if (!name || !item.rate) return;
+                if (!lastMonthRates[name]) lastMonthRates[name] = [];
+                lastMonthRates[name].push(Number(item.rate));
+            });
+        });
+
+        // Calculate average rates and trends
+        const rateTrends = [];
+        Object.keys(thisMonthRates).forEach(item => {
+            const thisAvg = thisMonthRates[item].reduce((a, b) => a + b, 0) / thisMonthRates[item].length;
+            const lastAvg = lastMonthRates[item] 
+                ? lastMonthRates[item].reduce((a, b) => a + b, 0) / lastMonthRates[item].length 
+                : thisAvg;
+            
+            const change = lastAvg > 0 ? ((thisAvg - lastAvg) / lastAvg) * 100 : 0;
+            
+            rateTrends.push({
+                item,
+                currentRate: thisAvg,
+                lastRate: lastAvg,
+                change,
+                purchases: thisMonthRates[item].length
+            });
+        });
+
+        // Sort by absolute change
+        rateTrends.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+
+        if (rateTrends.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">No rate data available this month</p>';
             return;
         }
-        
-        const cashPercent = (totalCash / total) * 100;
-        const onlinePercent = (totalOnline / total) * 100;
-        const duePercent = (totalDue / total) * 100;
-        
-        chartContainer.innerHTML = `
-            <div style="display: flex; gap: 30px; align-items: center; flex-wrap: wrap; justify-content: center;">
-                <div style="position: relative; width: 150px; height: 150px;">
-                    <svg viewBox="0 0 36 36" style="transform: rotate(-90deg);">
-                        <circle cx="18" cy="18" r="15.915" fill="none" stroke="#e0e0e0" stroke-width="3"></circle>
-                        <circle cx="18" cy="18" r="15.915" fill="none" stroke="#28a745" stroke-width="3" 
-                                stroke-dasharray="${cashPercent} ${100 - cashPercent}" stroke-dashoffset="0"></circle>
-                        <circle cx="18" cy="18" r="15.915" fill="none" stroke="#007bff" stroke-width="3" 
-                                stroke-dasharray="${onlinePercent} ${100 - onlinePercent}" stroke-dashoffset="${-cashPercent}"></circle>
-                        <circle cx="18" cy="18" r="15.915" fill="none" stroke="#dc3545" stroke-width="3" 
-                                stroke-dasharray="${duePercent} ${100 - duePercent}" stroke-dashoffset="${-(cashPercent + onlinePercent)}"></circle>
-                    </svg>
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
-                        <div style="font-size: 20px; font-weight: 700;">100%</div>
-                        <div style="font-size: 11px; color: #666;">Payments</div>
+
+        container.innerHTML = rateTrends.slice(0, 8).map(trend => {
+            const isUp = trend.change > 0;
+            const arrow = isUp ? '↑' : (trend.change < 0 ? '↓' : '→');
+            const color = isUp ? '#dc2626' : (trend.change < 0 ? '#16a34a' : '#6b7280');
+            const bgColor = isUp ? '#fee2e2' : (trend.change < 0 ? '#dcfce7' : '#f3f4f6');
+
+            return `
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: ${bgColor}; border-radius: 8px; margin-bottom: 8px;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);">${trend.item}</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">₹${trend.currentRate.toFixed(2)}/kg • ${trend.purchases} purchases</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-weight: 700; font-size: 16px; color: ${color};">${arrow} ${Math.abs(trend.change).toFixed(1)}%</div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">vs last month</div>
                     </div>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 12px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 20px; height: 20px; background: #28a745; border-radius: 3px;"></div>
-                        <div>
-                            <div style="font-size: 13px; color: #666;">Cash</div>
-                            <div style="font-weight: 600;">₹${Math.round(totalCash)} (${cashPercent.toFixed(1)}%)</div>
-                        </div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 20px; height: 20px; background: #007bff; border-radius: 3px;"></div>
-                        <div>
-                            <div style="font-size: 13px; color: #666;">Online</div>
-                            <div style="font-weight: 600;">₹${Math.round(totalOnline)} (${onlinePercent.toFixed(1)}%)</div>
-                        </div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 20px; height: 20px; background: #dc3545; border-radius: 3px;"></div>
-                        <div>
-                            <div style="font-size: 13px; color: #666;">Due</div>
-                            <div style="font-weight: 600;">₹${Math.round(totalDue)} (${duePercent.toFixed(1)}%)</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+            `;
+        }).join('');
     }
 
-    static renderItemsAnalytics() {
-        const data = this.getFilteredData() || {};
-        const wholesaleSales = data.wholesaleSales || [];
-        const retailSales = data.retailSales || [];
-        const purchases = data.purchases || [];
-        const allSales = [...wholesaleSales, ...retailSales];
-        
-        this.renderTopSellingItemsByRevenue(allSales);
-        this.renderTopSellingItemsByQuantity(allSales);
-        this.renderTopPurchasedItems(purchases);
-        this.renderItemProfitability(allSales);
-    }
-
-    static renderTopSellingItemsByRevenue(sales) {
-        const container = document.getElementById('topSellingItemsRevenue');
+    /**
+     * Render Items to Focus
+     */
+    static renderItemsToFocus() {
+        const container = document.getElementById('itemsToFocus');
         if (!container) return;
-        
-        const itemData = {};
-        
-        sales.forEach(sale => {
-            if (sale.items) {
-                sale.items.forEach(item => {
-                    const itemInfo = this.getItemInfo(item.name);
-                    if (!itemData[itemInfo.id]) {
-                        itemData[itemInfo.id] = {
-                            name: itemInfo.displayName,
-                            revenue: 0
-                        };
-                    }
-                    itemData[itemInfo.id].revenue += item.total || (item.rate * item.qty) || 0;
-                });
+
+        const { monthStart } = this.getDateHelpers();
+
+        // Get this month's transactions
+        const purchases = this.filterByDateRange(AppState.purchaseHistory, monthStart);
+        const sales = [
+            ...this.filterByDateRange(AppState.salesHistory, monthStart),
+            ...this.filterByDateRange(AppState.retailSalesHistory, monthStart)
+        ];
+
+        // Calculate item-wise profit margins
+        const itemStats = {};
+
+        // Aggregate purchase costs
+        purchases.forEach(p => {
+            (p.items || []).forEach(item => {
+                const name = item.item || item.name;
+                if (!name) return;
+                if (!itemStats[name]) itemStats[name] = { purchased: 0, purchaseQty: 0, sold: 0, soldQty: 0 };
+                itemStats[name].purchased += Number(item.total) || 0;
+                itemStats[name].purchaseQty += Number(item.qty || item.quantity) || 0;
+            });
+        });
+
+        // Aggregate sales revenue
+        sales.forEach(s => {
+            (s.items || []).forEach(item => {
+                const name = item.item || item.name;
+                if (!name) return;
+                if (!itemStats[name]) itemStats[name] = { purchased: 0, purchaseQty: 0, sold: 0, soldQty: 0 };
+                itemStats[name].sold += Number(item.total) || 0;
+                itemStats[name].soldQty += Number(item.qty || item.quantity) || 0;
+            });
+        });
+
+        // Calculate metrics and recommendations
+        const recommendations = [];
+        Object.keys(itemStats).forEach(item => {
+            const stats = itemStats[item];
+            const profit = stats.sold - stats.purchased;
+            const profitMargin = stats.sold > 0 ? (profit / stats.sold) * 100 : 0;
+            const avgPurchaseRate = stats.purchaseQty > 0 ? stats.purchased / stats.purchaseQty : 0;
+            const avgSaleRate = stats.soldQty > 0 ? stats.sold / stats.soldQty : 0;
+
+            let reason = '';
+            let priority = 0;
+            let icon = '';
+
+            // High margin items
+            if (profitMargin > 15 && stats.sold > 5000) {
+                reason = `High profit margin (${profitMargin.toFixed(0)}%) - Push more sales`;
+                priority = 3;
+                icon = '🔥';
+            }
+            // Low margin but high volume
+            else if (profitMargin > 0 && profitMargin < 10 && stats.soldQty > 50) {
+                reason = `High volume, low margin - Negotiate better rates`;
+                priority = 2;
+                icon = '💡';
+            }
+            // Items with good sale rate vs purchase rate
+            else if (avgSaleRate > avgPurchaseRate * 1.2 && stats.soldQty > 20) {
+                reason = `Good markup (₹${avgSaleRate.toFixed(0)} vs ₹${avgPurchaseRate.toFixed(0)}) - Increase stock`;
+                priority = 2;
+                icon = '📈';
+            }
+            // Purchased but not selling
+            else if (stats.purchased > 10000 && stats.sold < stats.purchased * 0.5) {
+                reason = `Low turnover - Focus on clearing stock`;
+                priority = 1;
+                icon = '⚠️';
+            }
+
+            if (reason) {
+                recommendations.push({ item, reason, priority, icon, profitMargin, revenue: stats.sold });
             }
         });
-        
-        const sortedItems = Object.values(itemData)
-            .sort((a, b) => b.revenue - a.revenue)
-            .slice(0, 10);
-        
-        if (sortedItems.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No item data available</p>';
-            return;
-        }
-        
-        const maxRevenue = sortedItems[0].revenue;
-        
-        let html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
-        
-        sortedItems.forEach((item, index) => {
-            const width = (item.revenue / maxRevenue) * 100;
-            html += `
-                <div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <span style="font-weight: 500; font-size: 14px;">${index + 1}. ${item.name}</span>
-                        <span style="font-weight: 600; color: #28a745;">₹${Math.round(item.revenue)}</span>
-                    </div>
-                    <div style="background: #f0f0f0; height: 24px; border-radius: 4px; overflow: hidden;">
-                        <div style="background: linear-gradient(90deg, #11998e, #38ef7d); height: 100%; width: ${width}%; transition: width 0.3s;"></div>
-                    </div>
-                </div>
-            `;
-        });
-        
-        html += '</div>';
-        container.innerHTML = html;
-    }
 
-    static renderTopSellingItemsByQuantity(sales) {
-        const container = document.getElementById('topSellingItemsQuantity');
-        if (!container) return;
-        
-        const itemData = {};
-        
-        sales.forEach(sale => {
-            if (sale.items) {
-                sale.items.forEach(item => {
-                    const itemInfo = this.getItemInfo(item.name);
-                    if (!itemData[itemInfo.id]) {
-                        itemData[itemInfo.id] = {
-                            name: itemInfo.displayName,
-                            qty: 0
-                        };
-                    }
-                    itemData[itemInfo.id].qty += item.qty || 0;
-                });
-            }
-        });
-        
-        const sortedItems = Object.values(itemData)
-            .sort((a, b) => b.qty - a.qty)
-            .slice(0, 10);
-        
-        if (sortedItems.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No item data available</p>';
-            return;
-        }
-        
-        const maxQty = sortedItems[0].qty;
-        
-        let html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
-        
-        sortedItems.forEach((item, index) => {
-            const width = (item.qty / maxQty) * 100;
-            html += `
-                <div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <span style="font-weight: 500; font-size: 14px;">${index + 1}. ${item.name}</span>
-                        <span style="font-weight: 600; color: #007bff;">${item.qty.toFixed(1)} kg</span>
-                    </div>
-                    <div style="background: #f0f0f0; height: 24px; border-radius: 4px; overflow: hidden;">
-                        <div style="background: linear-gradient(90deg, #667eea, #764ba2); height: 100%; width: ${width}%; transition: width 0.3s;"></div>
-                    </div>
-                </div>
-            `;
-        });
-        
-        html += '</div>';
-        container.innerHTML = html;
-    }
+        // Sort by priority
+        recommendations.sort((a, b) => b.priority - a.priority || b.revenue - a.revenue);
 
-    static renderTopPurchasedItems(bills) {
-        const container = document.getElementById('topPurchasedItems');
-        if (!container) return;
-        
-        const itemData = {};
-        
-        bills.forEach(bill => {
-            if (bill.items) {
-                bill.items.forEach(item => {
-                    const itemInfo = this.getItemInfo(item.name);
-                    if (!itemData[itemInfo.id]) {
-                        itemData[itemInfo.id] = {
-                            name: itemInfo.displayName,
-                            qty: 0,
-                            value: 0
-                        };
-                    }
-                    itemData[itemInfo.id].qty += item.qty || 0;
-                    itemData[itemInfo.id].value += item.total || (item.rate * item.qty) || 0;
-                });
-            }
-        });
-        
-        const sortedItems = Object.values(itemData)
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 10);
-        
-        if (sortedItems.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No purchase data available</p>';
+        if (recommendations.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">Not enough data for recommendations yet</p>';
             return;
         }
-        
-        const maxValue = sortedItems[0].value;
-        
-        let html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
-        
-        sortedItems.forEach((item, index) => {
-            const width = (item.value / maxValue) * 100;
-            html += `
-                <div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <span style="font-weight: 500; font-size: 14px;">${index + 1}. ${item.name}</span>
-                        <span style="font-weight: 600; color: #dc3545;">₹${Math.round(item.value)} (${item.qty.toFixed(1)} kg)</span>
-                    </div>
-                    <div style="background: #f0f0f0; height: 24px; border-radius: 4px; overflow: hidden;">
-                        <div style="background: linear-gradient(90deg, #ee0979, #ff6a00); height: 100%; width: ${width}%; transition: width 0.3s;"></div>
-                    </div>
-                </div>
-            `;
-        });
-        
-        html += '</div>';
-        container.innerHTML = html;
-    }
 
-    static renderItemProfitability(sales) {
-        const container = document.getElementById('itemProfitability');
-        if (!container) return;
-        
-        const itemData = {};
-        
-        sales.forEach(sale => {
-            if (sale.items) {
-                sale.items.forEach(item => {
-                    const itemInfo = this.getItemInfo(item.name);
-                    if (!itemData[itemInfo.id]) {
-                        itemData[itemInfo.id] = {
-                            name: itemInfo.displayName,
-                            revenue: 0,
-                            qty: 0,
-                            count: 0
-                        };
-                    }
-                    itemData[itemInfo.id].revenue += item.total || (item.rate * item.qty) || 0;
-                    itemData[itemInfo.id].qty += item.qty || 0;
-                    itemData[itemInfo.id].count += 1;
-                });
-            }
-        });
-        
-        const sortedItems = Object.values(itemData)
-            .map(item => ({
-                name: item.name,
-                revenue: item.revenue,
-                qty: item.qty,
-                count: item.count,
-                avgRate: item.qty > 0 ? item.revenue / item.qty : 0
-            }))
-            .sort((a, b) => b.revenue - a.revenue)
-            .slice(0, 15);
-        
-        if (sortedItems.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No profitability data available</p>';
-            return;
-        }
-        
-        let html = `
-            <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse;">
-                    <thead>
-                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
-                            <th style="padding: 12px; text-align: left; font-size: 13px;">#</th>
-                            <th style="padding: 12px; text-align: left; font-size: 13px;">Item</th>
-                            <th style="padding: 12px; text-align: right; font-size: 13px;">Revenue</th>
-                            <th style="padding: 12px; text-align: right; font-size: 13px;">Quantity</th>
-                            <th style="padding: 12px; text-align: right; font-size: 13px;">Avg Rate</th>
-                            <th style="padding: 12px; text-align: right; font-size: 13px;">Sales</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-        
-        sortedItems.forEach((item, index) => {
-            html += `
-                <tr style="border-bottom: 1px solid #e9ecef;">
-                    <td style="padding: 12px; font-size: 13px;">${index + 1}</td>
-                    <td style="padding: 12px; font-weight: 500; font-size: 13px;">${item.name}</td>
-                    <td style="padding: 12px; text-align: right; font-weight: 600; color: #28a745; font-size: 13px;">₹${Math.round(item.revenue)}</td>
-                    <td style="padding: 12px; text-align: right; font-size: 13px;">${item.qty.toFixed(1)} kg</td>
-                    <td style="padding: 12px; text-align: right; font-size: 13px;">₹${item.avgRate.toFixed(2)}</td>
-                    <td style="padding: 12px; text-align: right; font-size: 13px;">${item.count}</td>
-                </tr>
-            `;
-        });
-        
-        html += `
-                    </tbody>
-                </table>
+        container.innerHTML = recommendations.slice(0, 5).map((rec, idx) => `
+            <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 10px; margin-bottom: 10px; border-left: 4px solid ${rec.priority === 3 ? '#f59e0b' : rec.priority === 2 ? '#3b82f6' : '#6b7280'};">
+                <div style="font-size: 24px;">${rec.icon}</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 15px; color: var(--text-primary); margin-bottom: 4px;">${rec.item}</div>
+                    <div style="font-size: 13px; color: var(--text-secondary);">${rec.reason}</div>
+                </div>
             </div>
-        `;
-        
-        container.innerHTML = html;
+        `).join('');
     }
 
-    static renderCustomersAnalytics() {
-        const data = this.getFilteredData() || {};
-        const wholesaleSales = data.wholesaleSales || [];
-        const retailSales = data.retailSales || [];
-        const purchases = data.purchases || [];
-        const allSales = [...wholesaleSales, ...retailSales];
-        
-        this.renderTopCustomersByRevenue(allSales);
-        this.renderTopSuppliersByVolume(purchases);
-        this.renderCustomerPaymentBehavior(allSales, purchases);
-        this.renderCustomerActivity(allSales, purchases);
+    /**
+     * Render Top Performers
+     */
+    static renderTopPerformers() {
+        const revenueContainer = document.getElementById('topByRevenue');
+        const qtyContainer = document.getElementById('topByQuantity');
+        if (!revenueContainer || !qtyContainer) return;
+
+        const { monthStart } = this.getDateHelpers();
+
+        const sales = [
+            ...this.filterByDateRange(AppState.salesHistory, monthStart),
+            ...this.filterByDateRange(AppState.retailSalesHistory, monthStart)
+        ];
+
+        // Aggregate by item
+        const itemData = {};
+        sales.forEach(s => {
+            (s.items || []).forEach(item => {
+                const name = item.item || item.name;
+                if (!name) return;
+                if (!itemData[name]) itemData[name] = { revenue: 0, quantity: 0 };
+                itemData[name].revenue += Number(item.total) || 0;
+                itemData[name].quantity += Number(item.qty || item.quantity) || 0;
+            });
+        });
+
+        const items = Object.entries(itemData).map(([name, data]) => ({ name, ...data }));
+
+        // Top by revenue
+        const topRevenue = [...items].sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+        revenueContainer.innerHTML = topRevenue.length === 0 
+            ? '<p style="color: var(--text-secondary); font-size: 13px;">No sales data</p>'
+            : topRevenue.map((item, idx) => `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                    <div style="width: 22px; height: 22px; border-radius: 50%; background: ${idx === 0 ? '#fbbf24' : idx === 1 ? '#9ca3af' : idx === 2 ? '#cd7c32' : '#e5e7eb'}; color: ${idx < 3 ? 'white' : '#666'}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">${idx + 1}</div>
+                    <div style="flex: 1; font-size: 13px; color: var(--text-primary);">${item.name}</div>
+                    <div style="font-weight: 600; font-size: 13px; color: #16a34a;">${formatCurrency(item.revenue)}</div>
+                </div>
+            `).join('');
+
+        // Top by quantity
+        const topQty = [...items].sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+        qtyContainer.innerHTML = topQty.length === 0 
+            ? '<p style="color: var(--text-secondary); font-size: 13px;">No sales data</p>'
+            : topQty.map((item, idx) => `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                    <div style="width: 22px; height: 22px; border-radius: 50%; background: ${idx === 0 ? '#fbbf24' : idx === 1 ? '#9ca3af' : idx === 2 ? '#cd7c32' : '#e5e7eb'}; color: ${idx < 3 ? 'white' : '#666'}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">${idx + 1}</div>
+                    <div style="flex: 1; font-size: 13px; color: var(--text-primary);">${item.name}</div>
+                    <div style="font-weight: 600; font-size: 13px; color: #2563eb;">${item.quantity.toFixed(1)} kg</div>
+                </div>
+            `).join('');
     }
 
-    static renderTopCustomersByRevenue(sales) {
-        const container = document.getElementById('topCustomersByRevenue');
-        if (!container) return;
-        
+    /**
+     * Render Customer Insights
+     */
+    static renderCustomerInsights() {
+        const { monthStart } = this.getDateHelpers();
+
+        const purchases = this.filterByDateRange(AppState.purchaseHistory, monthStart);
+        const sales = [
+            ...this.filterByDateRange(AppState.salesHistory, monthStart),
+            ...this.filterByDateRange(AppState.retailSalesHistory, monthStart)
+        ];
+
+        // Get unique buyers and sellers
+        const buyers = new Set();
+        const sellers = new Set();
         const customerRevenue = {};
-        
-        sales.forEach(sale => {
-            const customer = sale.customerName || 'Walk-in';
-            if (!customerRevenue[customer]) {
-                customerRevenue[customer] = {
-                    revenue: 0,
-                    count: 0,
-                    avgTransaction: 0
-                };
+
+        sales.forEach(s => {
+            const buyer = s.buyer || s.customer || 'Walk-in';
+            if (buyer && buyer !== 'Walk-in') {
+                buyers.add(buyer);
+                customerRevenue[buyer] = (customerRevenue[buyer] || 0) + this.getTotal(s);
             }
-            customerRevenue[customer].revenue += sale.total || 0;
-            customerRevenue[customer].count += 1;
         });
-        
-        Object.keys(customerRevenue).forEach(customer => {
-            customerRevenue[customer].avgTransaction = customerRevenue[customer].revenue / customerRevenue[customer].count;
+
+        purchases.forEach(p => {
+            const seller = p.seller || p.vendor || 'Unknown';
+            if (seller && seller !== 'Unknown') sellers.add(seller);
         });
-        
-        const sortedCustomers = Object.entries(customerRevenue)
-            .sort((a, b) => b[1].revenue - a[1].revenue)
-            .slice(0, 10);
-        
-        if (sortedCustomers.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No customer data available</p>';
-            return;
+
+        const totalCustomerRevenue = Object.values(customerRevenue).reduce((a, b) => a + b, 0);
+        const avgPerCustomer = buyers.size > 0 ? totalCustomerRevenue / buyers.size : 0;
+
+        this.updateElement('activeBuyers', buyers.size);
+        this.updateElement('activeSellers', sellers.size);
+        this.updateElement('avgPerCustomer', formatCurrency(avgPerCustomer));
+
+        // Top customers
+        const topCustomers = Object.entries(customerRevenue)
+            .map(([name, revenue]) => ({ name, revenue }))
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 5);
+
+        const customersContainer = document.getElementById('topCustomers');
+        if (customersContainer) {
+            customersContainer.innerHTML = topCustomers.length === 0 
+                ? '<p style="color: var(--text-secondary); font-size: 13px; text-align: center;">No customer data this month</p>'
+                : `
+                    <div style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">Top Customers</div>
+                    ${topCustomers.map((c, idx) => `
+                        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                            <div style="width: 24px; height: 24px; border-radius: 50%; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">${idx + 1}</div>
+                            <div style="flex: 1; font-size: 14px; color: var(--text-primary);">${c.name}</div>
+                            <div style="font-weight: 600; font-size: 14px; color: #16a34a;">${formatCurrency(c.revenue)}</div>
+                        </div>
+                    `).join('')}
+                `;
         }
-        
-        let html = '<div style="display: flex; flex-direction: column; gap: 16px;">';
-        
-        sortedCustomers.forEach(([name, data], index) => {
-            const colors = ['#667eea', '#f093fb', '#4facfe', '#fa709a', '#11998e', '#ee0979', '#834d9b', '#2193b0', '#38ef7d', '#ff6a00'];
-            const color = colors[index % colors.length];
-            
-            html += `
-                <div style="background: linear-gradient(135deg, ${color}22, ${color}11); border-left: 4px solid ${color}; padding: 16px; border-radius: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-weight: 600; font-size: 15px;">${index + 1}. ${name}</span>
-                        <span style="font-weight: 700; font-size: 18px; color: ${color};">₹${Math.round(data.revenue)}</span>
-                    </div>
-                    <div style="display: flex; gap: 20px; font-size: 13px; color: #666;">
-                        <span>Transactions: <strong>${data.count}</strong></span>
-                        <span>Avg: <strong>₹${Math.round(data.avgTransaction)}</strong></span>
-                    </div>
-                </div>
-            `;
-        });
-        
-        html += '</div>';
-        container.innerHTML = html;
     }
 
-    static renderTopSuppliersByVolume(bills) {
-        const container = document.getElementById('topSuppliersByVolume');
+    /**
+     * Render Smart Suggestions
+     */
+    static renderSmartSuggestions() {
+        const container = document.getElementById('smartSuggestions');
         if (!container) return;
-        
-        const supplierData = {};
-        
-        bills.forEach(bill => {
-            const supplier = bill.customerName || 'Unknown';
-            if (!supplierData[supplier]) {
-                supplierData[supplier] = {
-                    volume: 0,
-                    count: 0,
-                    avgPurchase: 0
-                };
-            }
-            supplierData[supplier].volume += bill.grandTotal || bill.total || 0;
-            supplierData[supplier].count += 1;
-        });
-        
-        Object.keys(supplierData).forEach(supplier => {
-            supplierData[supplier].avgPurchase = supplierData[supplier].volume / supplierData[supplier].count;
-        });
-        
-        const sortedSuppliers = Object.entries(supplierData)
-            .sort((a, b) => b[1].volume - a[1].volume)
-            .slice(0, 10);
-        
-        if (sortedSuppliers.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; padding: 20px;">No supplier data available</p>';
-            return;
+
+        const { monthStart, daysRemaining, dayOfMonth } = this.getDateHelpers();
+        const suggestions = [];
+
+        // Get data
+        const purchases = this.filterByDateRange(AppState.purchaseHistory, monthStart);
+        const sales = [
+            ...this.filterByDateRange(AppState.salesHistory, monthStart),
+            ...this.filterByDateRange(AppState.retailSalesHistory, monthStart)
+        ];
+        const expenses = this.filterByDateRange(AppState.expensesHistory, monthStart)
+            .filter(e => e.category !== 'personal');
+
+        const totalRevenue = sales.reduce((sum, s) => sum + this.getTotal(s), 0);
+        const totalPurchases = purchases.reduce((sum, p) => sum + this.getTotal(p), 0);
+        const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+        const profit = totalRevenue - totalPurchases - totalExpenses;
+
+        // Outstanding analysis
+        const purchaseDue = (AppState.purchaseHistory || [])
+            .filter(p => (p.due || p.payment?.due) > 0)
+            .reduce((sum, p) => sum + (p.due || p.payment?.due || 0), 0);
+        const saleDue = [...(AppState.salesHistory || []), ...(AppState.retailSalesHistory || [])]
+            .filter(s => (s.due || s.payment?.due) > 0)
+            .reduce((sum, s) => sum + (s.due || s.payment?.due || 0), 0);
+
+        // Generate suggestions
+        if (saleDue > 50000) {
+            suggestions.push({
+                icon: '💳',
+                text: `Collect ${formatCurrency(saleDue)} in pending dues from customers to improve cash flow`
+            });
         }
+
+        if (purchaseDue > saleDue * 1.5 && purchaseDue > 30000) {
+            suggestions.push({
+                icon: '⚠️',
+                text: `You owe ${formatCurrency(purchaseDue)} to suppliers - prioritize clearing high-interest dues`
+            });
+        }
+
+        if (profit < 0) {
+            suggestions.push({
+                icon: '📉',
+                text: `This month is in loss by ${formatCurrency(Math.abs(profit))} - Review expenses and margins`
+            });
+        } else if (profit > 0 && dayOfMonth > 15) {
+            const projectedProfit = (profit / dayOfMonth) * 30;
+            suggestions.push({
+                icon: '📈',
+                text: `On track for ${formatCurrency(projectedProfit)} profit this month - Keep it up!`
+            });
+        }
+
+        if (totalExpenses > totalRevenue * 0.1) {
+            suggestions.push({
+                icon: '💡',
+                text: `Expenses are ${((totalExpenses / totalRevenue) * 100).toFixed(0)}% of revenue - Look for cost savings`
+            });
+        }
+
+        const avgDailySales = totalRevenue / dayOfMonth;
+        if (avgDailySales < 10000 && dayOfMonth > 7) {
+            suggestions.push({
+                icon: '🎯',
+                text: `Average daily sales: ${formatCurrency(avgDailySales)} - Consider promotions to boost sales`
+            });
+        }
+
+        // Stock suggestions
+        const lowStockItems = Object.entries(AppState.stock || {})
+            .filter(([_, data]) => (data.quantity || 0) < 10)
+            .map(([item]) => item);
         
-        let html = '<div style="display: flex; flex-direction: column; gap: 16px;">';
-        
-        sortedSuppliers.forEach(([name, data], index) => {
-            const colors = ['#ee0979', '#2193b0', '#834d9b', '#11998e', '#667eea', '#fa709a', '#4facfe', '#f093fb', '#ff6a00', '#38ef7d'];
-            const color = colors[index % colors.length];
-            
-            html += `
-                <div style="background: linear-gradient(135deg, ${color}22, ${color}11); border-left: 4px solid ${color}; padding: 16px; border-radius: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-weight: 600; font-size: 15px;">${index + 1}. ${name}</span>
-                        <span style="font-weight: 700; font-size: 18px; color: ${color};">₹${Math.round(data.volume)}</span>
-                    </div>
-                    <div style="display: flex; gap: 20px; font-size: 13px; color: #666;">
-                        <span>Orders: <strong>${data.count}</strong></span>
-                        <span>Avg: <strong>₹${Math.round(data.avgPurchase)}</strong></span>
-                    </div>
-                </div>
-            `;
-        });
-        
-        html += '</div>';
-        container.innerHTML = html;
+        if (lowStockItems.length > 0) {
+            suggestions.push({
+                icon: '📦',
+                text: `Low stock alert: ${lowStockItems.slice(0, 3).join(', ')}${lowStockItems.length > 3 ? ` +${lowStockItems.length - 3} more` : ''}`
+            });
+        }
+
+        if (suggestions.length === 0) {
+            suggestions.push({
+                icon: '✨',
+                text: 'Your business is running smoothly! Keep maintaining good practices.'
+            });
+        }
+
+        container.innerHTML = suggestions.map(s => `
+            <div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.2);">
+                <div style="font-size: 20px;">${s.icon}</div>
+                <div style="font-size: 14px; line-height: 1.4;">${s.text}</div>
+            </div>
+        `).join('');
     }
 
-    static renderCustomerPaymentBehavior(sales, bills) {
-        const container = document.getElementById('customerPaymentBehavior');
-        if (!container) return;
-        
-        const paymentStats = {
-            promptPayers: 0,
-            delayedPayers: 0,
-            defaulters: 0
-        };
-        
-        [...sales, ...bills].forEach(txn => {
-            if (txn.cleared) {
-                paymentStats.promptPayers++;
-            } else if (txn.payment && txn.payment.due > 0) {
-                const daysSince = (new Date() - new Date(txn.date)) / (1000 * 60 * 60 * 24);
-                if (daysSince > 30) {
-                    paymentStats.defaulters++;
-                } else {
-                    paymentStats.delayedPayers++;
-                }
-            }
-        });
-        
-        const total = paymentStats.promptPayers + paymentStats.delayedPayers + paymentStats.defaulters;
-        
-        container.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-                <div class="stats-card" style="background: linear-gradient(135deg, #11998e, #38ef7d); color: white;">
-                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Prompt Payers</div>
-                    <div style="font-size: 32px; font-weight: 700;">${paymentStats.promptPayers}</div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">${total > 0 ? ((paymentStats.promptPayers / total) * 100).toFixed(0) : 0}% of customers</div>
-                </div>
-                <div class="stats-card" style="background: linear-gradient(135deg, #fa709a, #fee140); color: white;">
-                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Delayed Payers</div>
-                    <div style="font-size: 32px; font-weight: 700;">${paymentStats.delayedPayers}</div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">${total > 0 ? ((paymentStats.delayedPayers / total) * 100).toFixed(0) : 0}% of customers</div>
-                </div>
-                <div class="stats-card" style="background: linear-gradient(135deg, #ee0979, #ff6a00); color: white;">
-                    <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Defaulters (30+ days)</div>
-                    <div style="font-size: 32px; font-weight: 700;">${paymentStats.defaulters}</div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">${total > 0 ? ((paymentStats.defaulters / total) * 100).toFixed(0) : 0}% of customers</div>
-                </div>
-            </div>
-        `;
+    /**
+     * Render Outstanding Dues
+     */
+    static renderOutstandingDues() {
+        // Purchase dues (you owe)
+        const purchaseDues = (AppState.purchaseHistory || [])
+            .filter(p => (p.due || p.payment?.due) > 0);
+        const totalPayable = purchaseDues.reduce((sum, p) => sum + (p.due || p.payment?.due || 0), 0);
+
+        // Sale dues (you'll receive)
+        const saleDues = [...(AppState.salesHistory || []), ...(AppState.retailSalesHistory || [])]
+            .filter(s => (s.due || s.payment?.due) > 0);
+        const totalReceivable = saleDues.reduce((sum, s) => sum + (s.due || s.payment?.due || 0), 0);
+
+        this.updateElement('totalPayable', formatCurrency(totalPayable));
+        this.updateElement('payableCount', `${purchaseDues.length} bills`);
+        this.updateElement('totalReceivable', formatCurrency(totalReceivable));
+        this.updateElement('receivableCount', `${saleDues.length} bills`);
     }
 
-    static renderCustomerActivity(sales, bills) {
-        const container = document.getElementById('customerActivity');
-        if (!container) return;
-        
-        const uniqueCustomers = new Set();
-        const uniqueSuppliers = new Set();
-        
-        sales.forEach(sale => {
-            if (sale.customerName) uniqueCustomers.add(sale.customerName);
-        });
-        
-        bills.forEach(bill => {
-            if (bill.customerName) uniqueSuppliers.add(bill.customerName);
-        });
-        
-        const repeatCustomers = sales.filter(sale => {
-            const customerSales = sales.filter(s => s.customerName === sale.customerName);
-            return customerSales.length > 1;
-        }).length;
-        
-        const repeatSuppliers = bills.filter(bill => {
-            const supplierBills = bills.filter(b => b.customerName === bill.customerName);
-            return supplierBills.length > 1;
-        }).length;
-        
-        container.innerHTML = `
-            <div class="stats-card" style="background: #e3f2fd; border-left: 4px solid #2196f3;">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Unique Customers</div>
-                <div style="font-size: 24px; font-weight: 700; color: #2196f3;">${uniqueCustomers.size}</div>
-            </div>
-            <div class="stats-card" style="background: #fce4ec; border-left: 4px solid #e91e63;">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Unique Suppliers</div>
-                <div style="font-size: 24px; font-weight: 700; color: #e91e63;">${uniqueSuppliers.size}</div>
-            </div>
-            <div class="stats-card" style="background: #f3e5f5; border-left: 4px solid #9c27b0;">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Repeat Customers</div>
-                <div style="font-size: 24px; font-weight: 700; color: #9c27b0;">${repeatCustomers}</div>
-            </div>
-            <div class="stats-card" style="background: #fff3e0; border-left: 4px solid #ff9800;">
-                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Repeat Suppliers</div>
-                <div style="font-size: 24px; font-weight: 700; color: #ff9800;">${repeatSuppliers}</div>
-            </div>
-        `;
+    /**
+     * Render Monthly Projection
+     */
+    static renderMonthlyProjection() {
+        const { monthStart, daysInMonth, dayOfMonth, daysRemaining } = this.getDateHelpers();
+
+        const sales = [
+            ...this.filterByDateRange(AppState.salesHistory, monthStart),
+            ...this.filterByDateRange(AppState.retailSalesHistory, monthStart)
+        ];
+        const purchases = this.filterByDateRange(AppState.purchaseHistory, monthStart);
+        const expenses = this.filterByDateRange(AppState.expensesHistory, monthStart)
+            .filter(e => e.category !== 'personal');
+
+        const currentRevenue = sales.reduce((sum, s) => sum + this.getTotal(s), 0);
+        const currentPurchases = purchases.reduce((sum, p) => sum + this.getTotal(p), 0);
+        const currentExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+        const currentProfit = currentRevenue - currentPurchases - currentExpenses;
+
+        // Project based on daily average
+        const dailyAvgRevenue = dayOfMonth > 0 ? currentRevenue / dayOfMonth : 0;
+        const dailyAvgPurchases = dayOfMonth > 0 ? currentPurchases / dayOfMonth : 0;
+        const dailyAvgExpenses = dayOfMonth > 0 ? currentExpenses / dayOfMonth : 0;
+
+        const projectedRevenue = currentRevenue + (dailyAvgRevenue * daysRemaining);
+        const projectedPurchases = currentPurchases + (dailyAvgPurchases * daysRemaining);
+        const projectedExpenses = currentExpenses + (dailyAvgExpenses * daysRemaining);
+        const projectedProfit = projectedRevenue - projectedPurchases - projectedExpenses;
+
+        // Cash required = remaining purchases + expenses - expected cash from sales
+        const projectedCashRequired = Math.max(0, (dailyAvgPurchases * daysRemaining) + (dailyAvgExpenses * daysRemaining));
+
+        this.updateElement('projectedRevenue', formatCurrency(projectedRevenue));
+        this.updateElement('projectedProfit', formatCurrency(projectedProfit));
+        this.updateElement('projectedCashRequired', formatCurrency(projectedCashRequired));
+        this.updateElement('daysRemaining', daysRemaining);
     }
 
-    static init() {
-        this.currentView = 'overview';
-        this.currentPeriod = AppState.analyticsPeriod || '30days';
-        this.renderAnalytics();
+    /**
+     * Helper to update element text
+     */
+    static updateElement(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
     }
 }
+
+// Legacy export for window.app.analytics
+export const Analytics = AnalyticsManager;
