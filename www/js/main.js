@@ -515,10 +515,13 @@ window.app = {
     
     // Reports
     reports: {
+        filterTab: (view, evt) => ReportsManager.filterTab(view, evt),
+        setDateFilter: (filter, evt) => ReportsManager.setDateFilter(filter, evt),
+        applyCustomDateFilter: () => ReportsManager.applyCustomDateFilter(),
         renderReports: () => ReportsManager.renderReports(),
         applyFilters: () => ReportsManager.applyFilters(),
-        exportCSV: () => ReportsManager.exportToCSV(),
-        exportPDF: () => ReportsManager.exportToPDF()
+        exportCSV: () => ReportsManager.exportCSV(),
+        exportPDF: () => ReportsManager.exportPDF()
     },
     
     // Expenses
