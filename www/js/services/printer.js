@@ -933,7 +933,7 @@ const PrinterService = {
                 cursor: pointer;
                 min-width: 140px;
             `;
-            downloadBtn.onclick = () => {
+            downloadBtn.onclick = async () => {
                 // Create a new canvas with padding
                 const padding = 20;
                 const paddedCanvas = document.createElement('canvas');
@@ -946,10 +946,42 @@ const PrinterService = {
                 paddedCtx.drawImage(canvas, padding, padding);
                 
                 const billType = billData.isPurchase ? 'purchase' : 'sale';
-                const link = document.createElement('a');
-                link.download = `${billType}_bill_${billData.id || Date.now()}.png`;
-                link.href = paddedCanvas.toDataURL('image/png');
-                link.click();
+                const filename = `${billType}_bill_${billData.id || Date.now()}.png`;
+                
+                // Convert canvas to blob for better mobile support
+                paddedCanvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        UIManager.showToast('Failed to generate image', 'error');
+                        return;
+                    }
+                    
+                    // Try Web Share API for mobile (allows saving to gallery)
+                    if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: 'image/png' })] })) {
+                        try {
+                            const file = new File([blob], filename, { type: 'image/png' });
+                            await navigator.share({
+                                files: [file],
+                                title: 'Bill'
+                            });
+                            return;
+                        } catch (e) {
+                            // User cancelled or share failed, fall through to download
+                            if (e.name !== 'AbortError') {
+                                console.log('Share failed, trying download:', e);
+                            }
+                        }
+                    }
+                    
+                    // Fallback: Create blob URL and download
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 'image/png');
             };
             
             const closeBtn = document.createElement('button');
@@ -1056,7 +1088,7 @@ const PrinterService = {
                 cursor: pointer;
                 min-width: 140px;
             `;
-            downloadBtn.onclick = () => {
+            downloadBtn.onclick = async () => {
                 // Create a new canvas with padding
                 const padding = 20;
                 const paddedCanvas = document.createElement('canvas');
@@ -1068,10 +1100,42 @@ const PrinterService = {
                 paddedCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
                 paddedCtx.drawImage(canvas, padding, padding);
                 
-                const link = document.createElement('a');
-                link.download = `expense_${expense.id || Date.now()}.png`;
-                link.href = paddedCanvas.toDataURL('image/png');
-                link.click();
+                const filename = `expense_${expense.id || Date.now()}.png`;
+                
+                // Convert canvas to blob for better mobile support
+                paddedCanvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        UIManager.showToast('Failed to generate image', 'error');
+                        return;
+                    }
+                    
+                    // Try Web Share API for mobile (allows saving to gallery)
+                    if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: 'image/png' })] })) {
+                        try {
+                            const file = new File([blob], filename, { type: 'image/png' });
+                            await navigator.share({
+                                files: [file],
+                                title: 'Expense'
+                            });
+                            return;
+                        } catch (e) {
+                            // User cancelled or share failed, fall through to download
+                            if (e.name !== 'AbortError') {
+                                console.log('Share failed, trying download:', e);
+                            }
+                        }
+                    }
+                    
+                    // Fallback: Create blob URL and download
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 'image/png');
             };
             
             const closeBtn = document.createElement('button');

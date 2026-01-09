@@ -342,6 +342,7 @@ const ItemsManager = {
             const data = AppState.items.map(item => ({
                 'Item Name': item.name,
                 'Hindi Name': item.hindiName || '',
+                'Contact Person': item.contactPerson || '',
                 'Purchase Rates': (item.rates || []).join(', '),
                 'Retail-Sale Rates': (item.saleRates || []).join(', '),
                 'Wholesale Rates': (item.wholesaleRates || []).join(', ')
@@ -427,6 +428,7 @@ const ItemsManager = {
                 const itemData = {
                     name: itemName,
                     hindiName: row['Hindi Name'] || '',
+                    contactPerson: row['Contact Person'] || '',
                     rates: purchaseRates,
                     saleRates: saleRates,
                     wholesaleRates: wholesaleRates
