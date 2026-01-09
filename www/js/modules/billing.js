@@ -155,15 +155,13 @@ const BillingManager = {
     // -------------------- ITEM FREQUENCY --------------------
 
     /**
-     * Load item frequency data from Firebase
+     * Load item frequency data from Firebase (global, shared across all users)
      * @async
      */
     async loadItemFrequency() {
         try {
-            const userId = AppState.currentUser?.uid;
-            if (!userId) return;
-            
-            const doc = await db.collection(window.getCollection ? window.getCollection('itemFrequency') : 'itemFrequency').doc(userId).get();
+            // Use a global document instead of per-user to ensure all users see same order
+            const doc = await db.collection(window.getCollection ? window.getCollection('itemFrequency') : 'itemFrequency').doc('global').get();
             if (doc.exists) {
                 this.itemFrequency = doc.data();
             } else {
@@ -176,16 +174,13 @@ const BillingManager = {
     },
 
     /**
-     * Update item frequency after a transaction
+     * Update item frequency after a transaction (global, shared across all users)
      * @async
      * @param {Array<Object>} items - Items used in the transaction
      * @param {'purchase'|'sale'} [mode='purchase'] - The transaction mode
      */
     async updateItemFrequency(items, mode = 'purchase') {
         try {
-            const userId = AppState.currentUser?.uid;
-            if (!userId) return;
-            
             const now = Date.now();
             
             items.forEach(item => {
@@ -215,7 +210,8 @@ const BillingManager = {
                 itemData.effectiveScore = itemData.score * decayFactor;
             });
             
-            await db.collection(window.getCollection ? window.getCollection('itemFrequency') : 'itemFrequency').doc(userId).set(this.itemFrequency);
+            // Save to global document instead of per-user
+            await db.collection(window.getCollection ? window.getCollection('itemFrequency') : 'itemFrequency').doc('global').set(this.itemFrequency);
         } catch (error) {
             console.error('Failed to update item frequency:', error);
         }

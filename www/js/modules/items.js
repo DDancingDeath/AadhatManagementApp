@@ -194,11 +194,17 @@ const ItemsManager = {
     // Update purchase rate (AUTO-SAVE with debounce)
     updateRate(itemIndex, rateIndex, value) {
         clearTimeout(this.updateTimers[`rate_${itemIndex}_${rateIndex}`]);
-        AppState.items[itemIndex].rates[rateIndex] = Number(value);
+        const oldRate = AppState.items[itemIndex].rates[rateIndex] || 0;
+        const newRate = Number(value);
+        AppState.items[itemIndex].rates[rateIndex] = newRate;
         
         this.updateTimers[`rate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
             try {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
+                // Notify all users about rate change
+                if (oldRate !== newRate && newRate > 0) {
+                    await FirebaseService.notifyRateChange(AppState.items[itemIndex], 'purchase', oldRate, newRate);
+                }
             } catch (error) {
                 console.error('Error updating rate:', error);
             }
@@ -228,11 +234,17 @@ const ItemsManager = {
         if (!AppState.items[itemIndex].saleRates) {
             AppState.items[itemIndex].saleRates = [];
         }
-        AppState.items[itemIndex].saleRates[rateIndex] = Number(value);
+        const oldRate = AppState.items[itemIndex].saleRates[rateIndex] || 0;
+        const newRate = Number(value);
+        AppState.items[itemIndex].saleRates[rateIndex] = newRate;
         
         this.updateTimers[`salerate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
             try {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
+                // Notify all users about rate change
+                if (oldRate !== newRate && newRate > 0) {
+                    await FirebaseService.notifyRateChange(AppState.items[itemIndex], 'sale', oldRate, newRate);
+                }
             } catch (error) {
                 console.error('Error updating sale rate:', error);
             }
@@ -264,11 +276,17 @@ const ItemsManager = {
         if (!AppState.items[itemIndex].wholesaleRates) {
             AppState.items[itemIndex].wholesaleRates = [];
         }
-        AppState.items[itemIndex].wholesaleRates[rateIndex] = Number(value);
+        const oldRate = AppState.items[itemIndex].wholesaleRates[rateIndex] || 0;
+        const newRate = Number(value);
+        AppState.items[itemIndex].wholesaleRates[rateIndex] = newRate;
         
         this.updateTimers[`wholesalerate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
             try {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
+                // Notify all users about rate change
+                if (oldRate !== newRate && newRate > 0) {
+                    await FirebaseService.notifyRateChange(AppState.items[itemIndex], 'wholesale', oldRate, newRate);
+                }
             } catch (error) {
                 console.error('Error updating wholesale rate:', error);
             }

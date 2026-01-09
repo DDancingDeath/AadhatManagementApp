@@ -935,6 +935,57 @@ const FirebaseService = {
             console.error('Users listener error:', error);
         });
         unsubscribeFunctions.push(unsubUsers);
+        
+        // Listen to notifications for current user (rate changes, etc.)
+        if (AppState.currentUser?.uid) {
+            // Listen to global item frequency changes to update dropdown order in real-time
+            const unsubItemFrequency = getDb().collection(col('itemFrequency')).doc('global').onSnapshot(doc => {
+                if (doc.exists && window.app?.billing) {
+                    // Update the billing manager's item frequency data
+                    window.app.billing.billingManager?.itemFrequency && 
+                        Object.assign(window.app.billing.billingManager.itemFrequency, doc.data());
+                    
+                    // Reload dropdowns to reflect new order
+                    if (window.app.billing.loadItemsDropdown) {
+                        window.app.billing.loadItemsDropdown();
+                    }
+                    if (window.app.billing.loadSaleItemsDropdown) {
+                        window.app.billing.loadSaleItemsDropdown();
+                    }
+                    if (window.app.sales?.loadItemsDropdown) {
+                        window.app.sales.loadItemsDropdown();
+                    }
+                }
+            }, error => {
+                console.error('Item frequency listener error:', error);
+            });
+            unsubscribeFunctions.push(unsubItemFrequency);
+            
+            const unsubNotifications = getDb().collection(col('notifications'))
+                .where('userId', '==', AppState.currentUser.uid)
+                .where('read', '==', false)
+                .orderBy('timestamp', 'desc')
+                .limit(10)
+                .onSnapshot(snapshot => {
+                    snapshot.docChanges().forEach(change => {
+                        if (change.type === 'added') {
+                            const notification = change.doc.data();
+                            // Show toast for rate change notifications
+                            if (notification.type === 'rate_change') {
+                                const itemName = notification.itemHindiName || notification.itemName;
+                                const message = `${itemName} ${notification.rateTypeLabel} rate: ₹${notification.oldRate} → ₹${notification.newRate} (by ${notification.changedBy})`;
+                                UIManager.showToast(message, 5000);
+                                
+                                // Mark as read after showing
+                                getDb().collection(col('notifications')).doc(change.doc.id).update({ read: true });
+                            }
+                        }
+                    });
+                }, error => {
+                    console.error('Notifications listener error:', error);
+                });
+            unsubscribeFunctions.push(unsubNotifications);
+        }
     },
 
     /**
@@ -972,6 +1023,75 @@ const FirebaseService = {
             }
         } catch (error) {
             console.error('Error notifying owners:', error);
+        }
+    },
+
+    /**
+     * Notifies all users when an item rate is changed.
+     * Creates notification documents for all users in the notifications collection.
+     * Note: Wholesale rate changes only notify owners/managers (staff can't see wholesale rates)
+     * @async
+     * @param {Object} item - The item with changed rate
+     * @param {string} rateType - Type of rate ('purchase', 'sale', 'wholesale')
+     * @param {number} oldRate - Previous rate value
+     * @param {number} newRate - New rate value
+     * @returns {Promise<void>}
+     */
+    async notifyRateChange(item, rateType, oldRate, newRate) {
+        try {
+            // Get users based on rate type
+            // Wholesale rates are only visible to owners/managers, so don't notify staff
+            let usersQuery;
+            if (rateType === 'wholesale') {
+                // Only notify owners and managers for wholesale rate changes
+                const ownersSnapshot = await getDb().collection(col('users')).where('role', '==', 'owner').get();
+                const managersSnapshot = await getDb().collection(col('users')).where('role', '==', 'manager').get();
+                const userIds = [
+                    ...ownersSnapshot.docs.map(doc => doc.id),
+                    ...managersSnapshot.docs.map(doc => doc.id)
+                ];
+                usersQuery = { docs: userIds.map(id => ({ id })) };
+            } else {
+                // Notify all users for purchase and sale rate changes
+                usersQuery = await getDb().collection(col('users')).get();
+            }
+            
+            const userIds = usersQuery.docs ? usersQuery.docs.map(doc => doc.id) : [];
+            
+            const rateTypeLabels = {
+                'purchase': 'Purchase',
+                'sale': 'Sale', 
+                'wholesale': 'Wholesale'
+            };
+            
+            const notification = {
+                type: 'rate_change',
+                itemId: item.id,
+                itemName: item.name,
+                itemHindiName: item.hindiName || '',
+                rateType: rateType,
+                rateTypeLabel: rateTypeLabels[rateType] || rateType,
+                oldRate: oldRate,
+                newRate: newRate,
+                changedBy: AppState.userName || 'Unknown',
+                changedByUserId: AppState.currentUser?.uid,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                read: false
+            };
+            
+            // Notify all relevant users except the one who made the change
+            for (const userId of userIds) {
+                if (userId !== AppState.currentUser?.uid) {
+                    await getDb().collection(col('notifications')).add({
+                        ...notification,
+                        userId: userId
+                    });
+                }
+            }
+            
+            console.log(`Rate change notification sent: ${item.name} ${rateType} rate: ₹${oldRate} → ₹${newRate}`);
+        } catch (error) {
+            console.error('Error notifying rate change:', error);
         }
     },
 

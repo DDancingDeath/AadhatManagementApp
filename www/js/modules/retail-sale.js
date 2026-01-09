@@ -542,7 +542,7 @@ const RetailSaleManager = {
             if (el) el.value = '';
         });
         
-        ['saleOnlineCheckbox', 'saleCashCheckbox', 'saleDueCheckbox'].forEach(id => {
+        ['saleOnlineCheckbox', 'saleCashCheckbox', 'saleDueCheckbox', 'salePrintComments'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.checked = false;
         });

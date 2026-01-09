@@ -574,7 +574,7 @@ const PurchaseManager = {
             if (el) el.value = id === 'manualLaborCharges' ? '0' : '';
         });
         
-        ['onlineCheckbox', 'cashCheckbox', 'dueCheckbox'].forEach(id => {
+        ['onlineCheckbox', 'cashCheckbox', 'dueCheckbox', 'billPrintComments'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.checked = false;
         });

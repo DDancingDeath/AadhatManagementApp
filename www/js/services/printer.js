@@ -367,32 +367,57 @@ class BluetoothPrinterManager {
             y += config.spacing.line;
         }
         
-        // Comments (टिप्पणी) - Only print if printComments flag is true and comments exist
+        // Comments - Only print if printComments flag is true and comments exist
         if (billData.printComments && billData.comments && billData.comments.trim()) {
             y += 8; // Gap before comments
             ctx.font = `${config.fonts.body.size}px Arial`;
-            ctx.fillText('नोट:', config.padding.left, y);
-            y += config.spacing.line;
             
-            // Word wrap comments to fit width
-            const maxWidth = config.width - (config.padding.left * 2) - 10;
-            const words = billData.comments.trim().split(' ');
-            let line = '';
+            // Print "Note: <comment>" on the same line, with word wrap if needed
+            const noteLabel = 'Note: ';
+            const labelWidth = ctx.measureText(noteLabel).width;
+            const maxWidth = config.width - config.padding.left - 10;
+            const commentText = billData.comments.trim();
             
-            for (const word of words) {
-                const testLine = line + (line ? ' ' : '') + word;
-                const testWidth = ctx.measureText(testLine).width;
-                if (testWidth > maxWidth && line) {
-                    ctx.fillText(line, config.padding.left + 5, y);
-                    y += config.spacing.line - 4;
-                    line = word;
-                } else {
-                    line = testLine;
-                }
-            }
-            if (line) {
-                ctx.fillText(line, config.padding.left + 5, y);
+            // Check if it fits on one line
+            const fullText = noteLabel + commentText;
+            if (ctx.measureText(fullText).width <= maxWidth) {
+                // Fits on one line
+                ctx.fillText(fullText, config.padding.left, y);
                 y += config.spacing.line;
+            } else {
+                // Need word wrap - print label first, then wrap remaining text
+                ctx.fillText(noteLabel, config.padding.left, y);
+                const remainingWidth = maxWidth - labelWidth;
+                const words = commentText.split(' ');
+                let line = '';
+                let firstLine = true;
+                
+                for (const word of words) {
+                    const testLine = line + (line ? ' ' : '') + word;
+                    const currentMaxWidth = firstLine ? remainingWidth : maxWidth;
+                    const testWidth = ctx.measureText(testLine).width;
+                    
+                    if (testWidth > currentMaxWidth && line) {
+                        if (firstLine) {
+                            ctx.fillText(line, config.padding.left + labelWidth, y);
+                            firstLine = false;
+                        } else {
+                            ctx.fillText(line, config.padding.left, y);
+                        }
+                        y += config.spacing.line - 4;
+                        line = word;
+                    } else {
+                        line = testLine;
+                    }
+                }
+                if (line) {
+                    if (firstLine) {
+                        ctx.fillText(line, config.padding.left + labelWidth, y);
+                    } else {
+                        ctx.fillText(line, config.padding.left, y);
+                    }
+                    y += config.spacing.line;
+                }
             }
         }
         
