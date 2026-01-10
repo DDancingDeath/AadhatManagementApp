@@ -584,7 +584,7 @@ const ItemsManager = {
                 row.onclick = () => this.openEditModal(itemIndex);
             }
             
-            // Staff view: show item name, sale rates, and avg rate
+            // Staff view: show item name, purchase rates, and retail sale rates
             // Non-staff view: show item name, purchase rates, sale rates, wholesale rates
             if (isStaff) {
                 row.innerHTML = `
@@ -592,8 +592,8 @@ const ItemsManager = {
                         ${displayName || item.name || '-'}
                         ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
                     </td>
-                    <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${saleRates}</td>
-                    <td style="padding: 16px; color: #6366f1; font-size: 14px; font-weight: 600;">${avgRate}</td>
+                    <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${purchaseRates}</td>
+                    <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600;">${saleRates}</td>
                 `;
             } else {
                 row.innerHTML = `
