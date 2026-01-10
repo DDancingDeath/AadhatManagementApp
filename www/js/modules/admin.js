@@ -269,22 +269,37 @@ const AdminManager = {
             return;
         }
 
-        container.innerHTML = users.map(user => `
+        const currentUserId = AppState.currentUser?.uid;
+
+        container.innerHTML = users.map(user => {
+            const isCurrentUser = user.id === currentUserId;
+            const safeName = (user.name || '').replace(/'/g, "\\'");
+            const safeEmail = (user.email || '').replace(/'/g, "\\'");
+            
+            return `
             <div class="active-user-card">
                 <div class="user-card-header">
                     <div>
-                        <div class="user-name">${user.name || 'Unknown'}</div>
+                        <div class="user-name">${user.name || 'Unknown'} ${isCurrentUser ? '<span style="color: #999; font-size: 12px;">(You)</span>' : ''}</div>
                         <div class="user-email">${user.email}</div>
                     </div>
                     <span class="user-role-badge ${user.role}">${user.role}</span>
                 </div>
-                <div class="user-actions">
-                    <button class="btn-change-role" onclick="window.app.admin.showChangeRole('${user.id}', '${user.name}', '${user.role}')">
-                        Change Role
+                ${!isCurrentUser ? `
+                <div class="user-actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+                    <button onclick="window.app.admin.showChangeRole('${user.id}', '${safeName}', '${user.role}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #f7fafc; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; font-size: 13px;">
+                        ✏️ Edit Role
+                    </button>
+                    <button onclick="window.app.admin.resetUserPassword('${user.id}', '${safeEmail}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; cursor: pointer; font-size: 13px; color: #92400e;">
+                        🔑 Reset Password
+                    </button>
+                    <button onclick="window.app.admin.deleteUser('${user.id}', '${safeName}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; cursor: pointer; font-size: 13px; color: #991b1b;">
+                        🗑️ Delete
                     </button>
                 </div>
+                ` : ''}
             </div>
-        `).join('');
+        `}).join('');
     },
 
     /**
@@ -377,6 +392,64 @@ const AdminManager = {
         } catch (error) {
             console.error('Error changing role:', error);
             UIManager.showToast('Failed to change role', 'error');
+        } finally {
+            UIManager.hideLoading();
+        }
+    },
+
+    /**
+     * Send password reset email to a user
+     * @param {string} userId - User document ID
+     * @param {string} email - User's email address
+     */
+    async resetUserPassword(userId, email) {
+        const confirmed = await UIManager.showModal(
+            `Send password reset email to:\n${email}`,
+            'Reset Password',
+            true
+        );
+        
+        if (!confirmed) return;
+        
+        try {
+            UIManager.showLoading();
+            await firebase.auth().sendPasswordResetEmail(email);
+            UIManager.showToast(`Password reset email sent to ${email}`);
+        } catch (error) {
+            console.error('Error sending reset email:', error);
+            UIManager.showToast('Failed to send reset email: ' + error.message, 'error');
+        } finally {
+            UIManager.hideLoading();
+        }
+    },
+
+    /**
+     * Delete a user from the system
+     * @param {string} userId - User document ID
+     * @param {string} userName - User's display name
+     */
+    async deleteUser(userId, userName) {
+        const confirmed = await UIManager.showModal(
+            `Are you sure you want to delete user "${userName}"?\n\nThis will remove their account from the system. This action cannot be undone.`,
+            'Delete User',
+            true
+        );
+        
+        if (!confirmed) return;
+        
+        try {
+            UIManager.showLoading();
+            const db = firebase.firestore();
+            const col = window.getCollection ? window.getCollection('users') : 'users';
+            
+            // Delete user document from Firestore
+            await db.collection(col).doc(userId).delete();
+            
+            UIManager.showToast(`User "${userName}" has been deleted`);
+            await this.loadUsers();
+        } catch (error) {
+            console.error('Error deleting user:', error);
+            UIManager.showToast('Failed to delete user: ' + error.message, 'error');
         } finally {
             UIManager.hideLoading();
         }
