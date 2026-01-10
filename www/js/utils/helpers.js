@@ -72,6 +72,45 @@ export class Helpers {
     }
 
     /**
+     * Parse date from various formats (Firestore timestamp, ISO string, or Indian locale string)
+     * @param {*} dateValue - Date value to parse
+     * @returns {Date|null} Parsed Date object or null
+     */
+    static parseDate(dateValue) {
+        if (!dateValue) return null;
+        // Firestore timestamp
+        if (dateValue.toDate) return dateValue.toDate();
+        // Already a Date object
+        if (dateValue instanceof Date) return dateValue;
+        // Try parsing Indian locale format: "28/12/2025, 7:55:07 pm" (d/m/yyyy)
+        if (typeof dateValue === 'string' && dateValue.includes('/')) {
+            const [datePart, timePart] = dateValue.split(', ');
+            if (datePart) {
+                const [day, month, year] = datePart.split('/');
+                if (day && month && year) {
+                    let hours = 0, minutes = 0, seconds = 0;
+                    if (timePart) {
+                        const timeMatch = timePart.match(/(\d+):(\d+):?(\d*)?\s*(am|pm)?/i);
+                        if (timeMatch) {
+                            hours = parseInt(timeMatch[1]);
+                            minutes = parseInt(timeMatch[2]);
+                            seconds = parseInt(timeMatch[3]) || 0;
+                            const period = timeMatch[4];
+                            if (period?.toLowerCase() === 'pm' && hours !== 12) hours += 12;
+                            if (period?.toLowerCase() === 'am' && hours === 12) hours = 0;
+                        }
+                    }
+                    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hours, minutes, seconds);
+                }
+            }
+        }
+        // Try standard Date parsing
+        const parsed = new Date(dateValue);
+        if (!isNaN(parsed.getTime())) return parsed;
+        return null;
+    }
+
+    /**
      * Format amount as Indian Rupee currency
      * @param {number} amount - Amount to format
      * @returns {string} Formatted currency string

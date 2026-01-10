@@ -365,7 +365,6 @@ const AuthManager = {
         const restrictedTabs = {
             'financeTab': isOwnerOrManager,
             'analyticsTab': isOwnerOrManager,
-            'stockTab': !isStaff,
             'salesTab': !isStaff
         };
         
@@ -406,15 +405,21 @@ const AuthManager = {
                     item.style.display = 'block';
                 }
                 
-                if (tabId === 'stock' && isStaff) {
-                    item.style.display = 'none';
-                } else if (tabId === 'stock' && !isStaff) {
-                    item.style.display = 'block';
-                }
-                
                 if (tabId === 'sales' && isStaff) {
                     item.style.display = 'none';
                 } else if (tabId === 'sales' && !isStaff) {
+                    item.style.display = 'block';
+                }
+                
+                if (tabId === 'wholesale-sales' && isStaff) {
+                    item.style.display = 'none';
+                } else if (tabId === 'wholesale-sales' && !isStaff) {
+                    item.style.display = 'block';
+                }
+                
+                if (tabId === 'reports' && isStaff) {
+                    item.style.display = 'none';
+                } else if (tabId === 'reports' && !isStaff) {
                     item.style.display = 'block';
                 }
             }

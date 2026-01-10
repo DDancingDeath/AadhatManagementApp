@@ -195,7 +195,9 @@ export class ExpensesManager {
      */
     static renderBusinessExpenseHistory() {
         const container = document.getElementById('businessExpenseHistoryList');
-        const businessExpenses = AppState.expensesHistory.filter(p => p.category === 'business' && p.id);
+        const businessExpenses = AppState.expensesHistory
+            .filter(p => p.category === 'business' && p.id)
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
         
         if (businessExpenses.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>';
@@ -224,7 +226,9 @@ export class ExpensesManager {
 
     static renderPersonalExpenseHistory() {
         const container = document.getElementById('personalExpenseHistoryList');
-        const personalExpenses = AppState.expensesHistory.filter(p => p.category === 'personal' && p.id);
+        const personalExpenses = AppState.expensesHistory
+            .filter(p => p.category === 'personal' && p.id)
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
         
         if (personalExpenses.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>';

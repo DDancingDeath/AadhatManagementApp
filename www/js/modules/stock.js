@@ -97,10 +97,19 @@ export class StockManager {
             return;
         }
         
+        // Check if user is staff (show limited quantity info for items > 100kg)
+        const isStaff = AppState.userRole === 'staff';
+        
         stockWithDetails.forEach(item => {
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
             const div = document.createElement("div");
             div.className = "stock-item";
+            
+            // For staff: show "Available" if quantity > 100, otherwise show actual quantity
+            // Rate is always shown, value is hidden when showing "Available"
+            const showLimitedQty = isStaff && item.quantity > 100;
+            const quantityDisplay = showLimitedQty ? 'Available' : `${item.quantity.toFixed(1)} kg`;
+            const valueDisplay = showLimitedQty ? '' : `<div style="color: #666; font-size: 12px; margin-top: 4px;">≈ ₹${Math.round(item.quantity * (item.rate || 0))}</div>`;
             
             div.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -112,11 +121,9 @@ export class StockManager {
                     </div>
                     <div style="text-align: right;">
                         <div style="font-size: 18px; font-weight: 700; color: #28a745;">
-                            ${item.quantity.toFixed(1)} kg
+                            ${quantityDisplay}
                         </div>
-                        <div style="color: #666; font-size: 12px; margin-top: 4px;">
-                            ≈ ₹${Math.round(item.quantity * (item.rate || 0))}
-                        </div>
+                        ${valueDisplay}
                     </div>
                 </div>
             `;

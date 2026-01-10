@@ -14,75 +14,83 @@
         <!-- Today's Summary Sub-Tab -->
         <div id="dayTodayContent" class="day-content">
 
-            <!-- Quick Stats Cards -->
-            <div class="stats-grid stats-grid-2">
-                <div class="stat-card stat-card-success">
-                    <div class="stat-label">Total Purchases</div>
-                    <div class="stat-value stat-value-success" id="todayTotalPurchases">₹0</div>
-                    <div class="stat-subtitle" id="todayPurchaseCount">0 bills</div>
+            <!-- 1. MONEY FLOW - Most Important -->
+            <div class="modern-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-bottom: 16px;">
+                <h3 class="section-title" style="color: white; margin-bottom: 12px;">💸 Today's Money Flow</h3>
+                <!-- Net Outflow on single line -->
+                <div style="display: flex; justify-content: center; align-items: center; gap: 10px; background: rgba(255,255,255,0.15); padding: 14px 20px; border-radius: 12px; margin-bottom: 12px;">
+                    <span style="font-size: 15px; opacity: 0.95;" id="todayCashFlowLabel">Net Outflow:</span>
+                    <span style="font-size: 28px; font-weight: 700;" id="todayNetCashFlow">₹0</span>
                 </div>
-                <div class="stat-card stat-card-info">
-                    <div class="stat-label">Total Sales</div>
-                    <div class="stat-value stat-value-info" id="todayTotalSales">₹0</div>
-                    <div class="stat-subtitle" id="todaySaleCount">0 bills</div>
-                </div>
-                <div class="stat-card stat-card-warning">
-                    <div class="stat-label">Expenses</div>
-                    <div class="stat-value stat-value-warning" id="todayTotalExpenses">₹0</div>
-                    <div class="stat-subtitle" id="todayExpenseCount">0 entries</div>
-                </div>
-                <div class="stat-card stat-card-danger">
-                    <div class="stat-label">Labor Cost</div>
-                    <div class="stat-value stat-value-danger" id="todayLaborCost">₹0</div>
-                    <div class="stat-subtitle">From purchases</div>
+                <div class="stats-grid stats-grid-2" style="margin-bottom: 0;">
+                    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">Total Out</div>
+                        <div style="font-size: 18px; font-weight: 600;" id="todayTotalOut">₹0</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">Total In</div>
+                        <div style="font-size: 18px; font-weight: 600;" id="todayTotalIn">₹0</div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Quantity & Cash Flow Row -->
-            <div class="stats-grid stats-grid-3">
-                <div class="stat-card stat-card-success-light">
-                    <div class="stat-label">Qty Purchased</div>
-                    <div class="stat-value-sm stat-value-success" id="todayQtyPurchased">0 kg</div>
-                </div>
-                <div class="stat-card stat-card-info-light">
-                    <div class="stat-label">Qty Sold</div>
-                    <div class="stat-value-sm stat-value-info" id="todayQtySold">0 kg</div>
-                </div>
-                <div class="stat-card stat-card-purple">
-                    <div class="stat-label" id="todayCashFlowLabel">Net Cash Flow</div>
-                    <div class="stat-value-sm stat-value-purple" id="todayNetCashFlow">₹0</div>
-                </div>
+            <!-- LABOR - Single line -->
+            <div style="display: flex; justify-content: center; align-items: center; gap: 10px; background: #fef2f2; border: 1px solid #fecaca; padding: 12px 20px; border-radius: 12px; margin-bottom: 16px;">
+                <span style="font-size: 14px; color: #991b1b;">👷 Labor:</span>
+                <span style="font-size: 18px; font-weight: 600; color: #991b1b;" id="todayLaborCost">₹0</span>
             </div>
 
-            <!-- Payment Summary -->
+            <!-- 2. PAYMENT BREAKDOWN -->
             <div class="modern-card">
-                <h3 class="section-title">💳 Payment Summary</h3>
+                <h3 class="section-title">💳 Payment Breakdown</h3>
                 <div class="summary-grid">
-                    <div class="summary-item summary-item-success">
-                        <span>Cash Received:</span>
-                        <strong id="todayCashReceived">₹0</strong>
-                    </div>
-                    <div class="summary-item summary-item-info">
-                        <span>Online Received:</span>
-                        <strong id="todayOnlineReceived">₹0</strong>
-                    </div>
                     <div class="summary-item summary-item-danger">
-                        <span>Cash Paid:</span>
+                        <span>Cash Out:</span>
                         <strong id="todayCashPaid">₹0</strong>
                     </div>
+                    <div class="summary-item summary-item-success">
+                        <span>Cash In:</span>
+                        <strong id="todayCashReceived">₹0</strong>
+                    </div>
                     <div class="summary-item summary-item-warning">
-                        <span>Online Paid:</span>
+                        <span>Online Out:</span>
                         <strong id="todayOnlinePaid">₹0</strong>
                     </div>
-                </div>
-                <!-- Total Cash Flow -->
-                <div class="summary-total">
-                    <span>Total Cash Flow:</span>
-                    <strong id="todayTotalCashFlow">₹0</strong>
+                    <div class="summary-item summary-item-info">
+                        <span>Online In:</span>
+                        <strong id="todayOnlineReceived">₹0</strong>
+                    </div>
                 </div>
             </div>
 
-            <!-- Due Summary -->
+            <!-- 3. TRANSACTIONS -->
+            <div class="modern-card">
+                <h3 class="section-title">📦 Transactions</h3>
+                <div class="stats-grid stats-grid-2" style="margin-bottom: 0;">
+                    <div class="stat-card stat-card-success">
+                        <div class="stat-label">Purchases</div>
+                        <div class="stat-value stat-value-success" id="todayTotalPurchases">₹0</div>
+                        <div class="stat-subtitle" id="todayPurchaseCount">0 bills</div>
+                    </div>
+                    <div class="stat-card stat-card-info">
+                        <div class="stat-label">Sales</div>
+                        <div class="stat-value stat-value-info" id="todayTotalSales">₹0</div>
+                        <div class="stat-subtitle" id="todaySaleCount">0 bills</div>
+                    </div>
+                    <div class="stat-card stat-card-warning">
+                        <div class="stat-label">Business Exp.</div>
+                        <div class="stat-value stat-value-warning" id="todayBusinessExpenses">₹0</div>
+                        <div class="stat-subtitle" id="todayBusinessExpenseCount">0 entries</div>
+                    </div>
+                    <div class="stat-card stat-card-purple">
+                        <div class="stat-label">Personal Exp.</div>
+                        <div class="stat-value stat-value-purple" id="todayPersonalExpenses">₹0</div>
+                        <div class="stat-subtitle" id="todayPersonalExpenseCount">0 entries</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. DUE SUMMARY -->
             <div class="modern-card">
                 <h3 class="section-title">📋 Due Summary</h3>
                 <div class="summary-grid">
@@ -95,27 +103,41 @@
                         <strong id="todayDuePaid">₹0</strong>
                     </div>
                     <div class="summary-item summary-item-info">
-                        <span>Today's Due to Receive:</span>
+                        <span>Due to Receive:</span>
                         <strong id="todayDueToReceive">₹0</strong>
                     </div>
                     <div class="summary-item summary-item-warning">
-                        <span>Today's Due to Pay:</span>
+                        <span>Due to Pay:</span>
                         <strong id="todayDueToPay">₹0</strong>
                     </div>
                 </div>
             </div>
 
-            <!-- Item-wise Purchase Details -->
+            <!-- 5. INVENTORY MOVEMENT -->
+            <div class="modern-card" style="background: #f8fafc; border: 1px dashed #cbd5e1;">
+                <h3 class="section-title" style="color: #64748b;">📦 Inventory Movement</h3>
+                <div class="stats-grid stats-grid-2" style="margin-bottom: 0;">
+                    <div class="stat-card" style="background: #ecfdf5; border: 1px solid #a7f3d0;">
+                        <div class="stat-label" style="color: #065f46;">Qty In</div>
+                        <div class="stat-value-sm stat-value-success" id="todayQtyPurchased">0 kg</div>
+                    </div>
+                    <div class="stat-card" style="background: #eff6ff; border: 1px solid #bfdbfe;">
+                        <div class="stat-label" style="color: #1e40af;">Qty Out</div>
+                        <div class="stat-value-sm stat-value-info" id="todayQtySold">0 kg</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. ITEM DETAILS (Scrollable) -->
             <div class="modern-card">
-                <h3 class="section-title">🛒 Item-wise Purchase Details</h3>
+                <h3 class="section-title">🛒 Purchase Details</h3>
                 <div id="todayPurchaseItems" class="items-grid">
                     <p class="empty-state">No purchases today</p>
                 </div>
             </div>
 
-            <!-- Item-wise Sale Details -->
             <div class="modern-card">
-                <h3 class="section-title">💰 Item-wise Sale Details</h3>
+                <h3 class="section-title">💰 Sale Details</h3>
                 <div id="todaySaleItems" class="items-grid">
                     <p class="empty-state">No sales today</p>
                 </div>

@@ -12,18 +12,17 @@
 }
 
 .stats-grid-2 {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .stats-grid-3 {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .stats-grid-3 .stat-value-sm {
   font-size: 15px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .stats-grid-3 .stat-card-purple .stat-value-sm {
@@ -36,6 +35,8 @@
   border-radius: var(--radius-md);
   text-align: center;
   transition: all var(--transition);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stat-card:hover {
@@ -47,21 +48,27 @@
   font-size: 13px;
   margin-bottom: 4px;
   font-weight: 500;
+  word-wrap: break-word;
 }
 
 .stat-value {
   font-size: 22px;
   font-weight: 700;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .stat-value-sm {
   font-size: 18px;
   font-weight: 700;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .stat-subtitle {
   font-size: 12px;
   margin-top: 4px;
+  word-wrap: break-word;
 }
 
 /* Stat Card Variants */
@@ -147,26 +154,29 @@
 /* Summary Grid */
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   font-size: 14px;
 }
 
 .summary-item {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   padding: 10px 12px;
   border-radius: var(--radius);
-  align-items: center;
+  min-width: 0;
 }
 
 .summary-item span {
   color: var(--text-secondary);
   font-weight: 500;
+  font-size: 13px;
 }
 
 .summary-item strong {
   font-weight: 700;
+  font-size: 16px;
+  margin-top: 4px;
 }
 
 .summary-item-success {

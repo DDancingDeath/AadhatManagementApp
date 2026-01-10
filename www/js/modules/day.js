@@ -76,26 +76,26 @@ export const DayManager = {
 
         // Filter today's purchases
         const todayPurchases = (AppState.purchaseHistory || []).filter(p => {
-            const date = p.date?.toDate ? p.date.toDate() : new Date(p.date);
-            return date >= today && date < tomorrow;
+            const date = Helpers.parseDate(p.date);
+            return date && date >= today && date < tomorrow;
         });
 
         // Filter today's wholesale sales
         const todayWholesaleSales = (AppState.salesHistory || []).filter(s => {
-            const date = s.date?.toDate ? s.date.toDate() : new Date(s.date);
-            return date >= today && date < tomorrow;
+            const date = Helpers.parseDate(s.date);
+            return date && date >= today && date < tomorrow;
         });
 
         // Filter today's retail sales
         const todayRetailSales = (AppState.retailSalesHistory || []).filter(s => {
-            const date = s.date?.toDate ? s.date.toDate() : new Date(s.date);
-            return date >= today && date < tomorrow;
+            const date = Helpers.parseDate(s.date);
+            return date && date >= today && date < tomorrow;
         });
 
         // Filter today's expenses
         const todayExpenses = (AppState.expensesHistory || []).filter(e => {
-            const date = e.date?.toDate ? e.date.toDate() : new Date(e.date);
-            return date >= today && date < tomorrow;
+            const date = Helpers.parseDate(e.date);
+            return date && date >= today && date < tomorrow;
         });
 
         // Calculate totals
@@ -113,11 +113,18 @@ export const DayManager = {
             return sum + amount;
         }, 0);
         const totalSales = totalWholesaleSales + totalRetailSales;
-        // Expenses use 'amount' property
-        const totalExpenses = todayExpenses.reduce((sum, e) => {
-            const amount = Number(e.amount) || Number(e.total) || 0;
-            return sum + amount;
+        
+        // Expenses split by category
+        const businessExpenses = todayExpenses.filter(e => e.category === 'business');
+        const personalExpenses = todayExpenses.filter(e => e.category === 'personal');
+        
+        const totalBusinessExpenses = businessExpenses.reduce((sum, e) => {
+            return sum + (Number(e.amount) || Number(e.total) || 0);
         }, 0);
+        const totalPersonalExpenses = personalExpenses.reduce((sum, e) => {
+            return sum + (Number(e.amount) || Number(e.total) || 0);
+        }, 0);
+        const totalExpenses = totalBusinessExpenses + totalPersonalExpenses;
 
         // Calculate labor cost from purchases
         const totalLaborCost = todayPurchases.reduce((sum, p) => sum + (p.laborCharges || p.labour || 0), 0);
@@ -158,8 +165,8 @@ export const DayManager = {
         // Calculate due paid and due received from cash management transactions
         let duePaid = 0, dueReceived = 0;
         const todayCashTransactions = (AppState.cashManagement || []).filter(t => {
-            const date = t.date?.toDate ? t.date.toDate() : new Date(t.date);
-            return date >= today && date < tomorrow;
+            const date = Helpers.parseDate(t.date);
+            return date && date >= today && date < tomorrow;
         });
         
         todayCashTransactions.forEach(t => {
@@ -175,32 +182,40 @@ export const DayManager = {
         const totalCashOut = cashPaid + onlinePaid + totalExpenses + duePaid;
         const totalCashFlow = totalCashIn - totalCashOut;
 
-        // Net cash flow (simpler view)
-        const netCashFlow = (cashReceived + onlineReceived) - (cashPaid + onlinePaid + totalExpenses);
+        // Net outflow (Out - In): positive means money went out, negative means money came in
+        const netOutflow = (cashPaid + onlinePaid + totalExpenses) - (cashReceived + onlineReceived);
 
         // Update UI - Main Stats
         this.updateElement('todayTotalPurchases', formatCurrency(totalPurchases));
         this.updateElement('todayPurchaseCount', `${todayPurchases.length} bills`);
         this.updateElement('todayTotalSales', formatCurrency(totalSales));
         this.updateElement('todaySaleCount', `${todayWholesaleSales.length + todayRetailSales.length} bills`);
-        this.updateElement('todayTotalExpenses', formatCurrency(totalExpenses));
-        this.updateElement('todayExpenseCount', `${todayExpenses.length} entries`);
         this.updateElement('todayLaborCost', formatCurrency(totalLaborCost));
+        
+        // Expenses breakdown
+        this.updateElement('todayBusinessExpenses', formatCurrency(totalBusinessExpenses));
+        this.updateElement('todayBusinessExpenseCount', `${businessExpenses.length} entries`);
+        this.updateElement('todayPersonalExpenses', formatCurrency(totalPersonalExpenses));
+        this.updateElement('todayPersonalExpenseCount', `${personalExpenses.length} entries`);
         
         // Quantity metrics
         this.updateElement('todayQtyPurchased', `${qtyPurchased.toFixed(1)} kg`);
         this.updateElement('todayQtySold', `${qtySold.toFixed(1)} kg`);
         
-        // Net cash flow with color coding
+        // Total In and Total Out for hero card
+        this.updateElement('todayTotalIn', formatCurrency(cashReceived + onlineReceived));
+        this.updateElement('todayTotalOut', formatCurrency(cashPaid + onlinePaid + totalExpenses));
+        
+        // Net outflow with color coding
         const cashFlowLabel = document.getElementById('todayCashFlowLabel');
         if (cashFlowLabel) {
-            cashFlowLabel.textContent = netCashFlow >= 0 ? 'Net Inflow' : 'Net Outflow';
+            cashFlowLabel.textContent = netOutflow >= 0 ? 'Net Outflow:' : 'Net Inflow:';
         }
         
         const netCashFlowEl = document.getElementById('todayNetCashFlow');
         if (netCashFlowEl) {
-            netCashFlowEl.style.color = netCashFlow >= 0 ? '#16a34a' : '#dc2626';
-            netCashFlowEl.textContent = (netCashFlow >= 0 ? '+' : '-') + formatCurrency(Math.abs(netCashFlow));
+            netCashFlowEl.style.color = netOutflow >= 0 ? 'white' : '#a5f3fc';
+            netCashFlowEl.textContent = formatCurrency(Math.abs(netOutflow));
         }
 
         // Payment summary

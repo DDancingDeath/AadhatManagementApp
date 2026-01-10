@@ -551,6 +551,16 @@ const ItemsManager = {
                 ? item.saleRates.map(r => `${r}`).join(', ') 
                 : '-';
             
+            // Calculate average rate from stock for staff view
+            let avgRate = '-';
+            if (isStaff && AppState.stock) {
+                // Try to find stock by item id or name
+                const stockEntry = AppState.stock[item.id] || AppState.stock[item.name];
+                if (stockEntry && stockEntry.rate) {
+                    avgRate = `₹${stockEntry.rate.toFixed(2)}`;
+                }
+            }
+            
             const itemFrequency = frequency[item.name] || 0;
             
             const itemIndex = AppState.items.findIndex(i => i.id === item.id);
@@ -573,15 +583,29 @@ const ItemsManager = {
                 };
                 row.onclick = () => this.openEditModal(itemIndex);
             }
-            row.innerHTML = `
-                <td style="padding: 16px; font-weight: 600; color: #1f2937; font-size: 15px; border-right: 1px solid #f3f4f6;">
-                    ${displayName || item.name || '-'}
-                    ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
-                </td>
-                <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${purchaseRates}</td>
-                <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${saleRates}</td>
-                <td class="wholesale-column" style="padding: 16px; color: #9333ea; font-size: 14px; font-weight: 600; display: ${isStaff ? 'none' : 'table-cell'};">${wholesaleRates}</td>
-            `;
+            
+            // Staff view: show item name, sale rates, and avg rate
+            // Non-staff view: show item name, purchase rates, sale rates, wholesale rates
+            if (isStaff) {
+                row.innerHTML = `
+                    <td style="padding: 16px; font-weight: 600; color: #1f2937; font-size: 15px; border-right: 1px solid #f3f4f6;">
+                        ${displayName || item.name || '-'}
+                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
+                    </td>
+                    <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${saleRates}</td>
+                    <td style="padding: 16px; color: #6366f1; font-size: 14px; font-weight: 600;">${avgRate}</td>
+                `;
+            } else {
+                row.innerHTML = `
+                    <td style="padding: 16px; font-weight: 600; color: #1f2937; font-size: 15px; border-right: 1px solid #f3f4f6;">
+                        ${displayName || item.name || '-'}
+                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
+                    </td>
+                    <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${purchaseRates}</td>
+                    <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${saleRates}</td>
+                    <td class="wholesale-column" style="padding: 16px; color: #9333ea; font-size: 14px; font-weight: 600;">${wholesaleRates}</td>
+                `;
+            }
             tbody.appendChild(row);
         });
         
