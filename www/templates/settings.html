@@ -52,56 +52,6 @@
             <p><strong>App:</strong> Aadhat Billing System</p>
             <p><strong>Developer:</strong> Your Company Name</p>
         </div>
-
-        <div class="settings-card" id="storageSection" style="display: none;">
-            <h3>📊 Storage Usage</h3>
-            <p class="setting-description">View database storage statistics</p>
-            <button class="add-item-btn" onclick="window.app.settings.loadStorageStats()" style="padding: 8px 16px; margin-bottom: 12px;">🔄 Calculate Storage</button>
-            <div id="storageStats" style="display: none;">
-                <div style="background: #f5f5f5; border-radius: 8px; padding: 16px;">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <div style="text-align: center; padding: 12px; background: white; border-radius: 8px;">
-                            <div style="font-size: 24px; font-weight: bold; color: #3498db;" id="totalDocuments">-</div>
-                            <div style="font-size: 12px; color: #666;">Total Documents</div>
-                        </div>
-                        <div style="text-align: center; padding: 12px; background: white; border-radius: 8px;">
-                            <div style="font-size: 24px; font-weight: bold; color: #27ae60;" id="estimatedSize">-</div>
-                            <div style="font-size: 12px; color: #666;">Estimated Size</div>
-                        </div>
-                    </div>
-                    <div id="collectionBreakdown" style="margin-top: 16px;"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="settings-card" id="dataManagementSection" style="display: none;">
-            <h3>Data Management</h3>
-            <button class="danger-btn" onclick="window.app.settings.clearAllData()">Clear All Data</button>
-            <p class="setting-description">This will delete all items, bills, and history. This action cannot be undone.</p>
-        </div>
-
-        <div class="settings-card" id="auditLogsSection" style="display: none;">
-            <h3>📋 Audit Logs</h3>
-            <p class="setting-description">View all critical actions performed in the app</p>
-            
-            <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-                <select id="auditFilterAction" onchange="window.app.settings.filterAuditLogs()" style="padding: 8px; border-radius: 4px; border: 1px solid #ddd;">
-                    <option value="">All Actions</option>
-                    <option value="CREATE_BILL">Create Bill</option>
-                    <option value="DELETE_BILL">Delete Bill</option>
-                    <option value="CREATE_SALE">Create Sale</option>
-                    <option value="DELETE_SALE">Delete Sale</option>
-                    <option value="DELETE_ITEM">Delete Item</option>
-                    <option value="UPDATE_PAYMENT">Update Payment</option>
-                    <option value="CLEAR_DATA">Clear Data</option>
-                </select>
-                <button class="add-item-btn" onclick="window.app.settings.loadAuditLogs()" style="padding: 8px 16px;">🔄 Refresh</button>
-            </div>
-            
-            <div id="auditLogsList" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px;">
-                <p style="padding: 16px; text-align: center; color: #888;">Click Refresh to load logs</p>
-            </div>
-        </div>
         
         <div class="settings-card">
             <h3>Account</h3>

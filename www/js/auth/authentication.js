@@ -365,7 +365,6 @@ const AuthManager = {
         const restrictedTabs = {
             'financeTab': isOwnerOrManager,
             'analyticsTab': isOwnerOrManager,
-            'usersTab': isOwner,
             'stockTab': !isStaff,
             'salesTab': !isStaff
         };
@@ -395,9 +394,15 @@ const AuthManager = {
                     item.style.display = 'block';
                 }
                 
-                if (tabId === 'users' && !isOwner) {
+                if (tabId === 'diagnostics' && !isOwner) {
                     item.style.display = 'none';
-                } else if (tabId === 'users' && isOwner) {
+                } else if (tabId === 'diagnostics' && isOwner) {
+                    item.style.display = 'block';
+                }
+                
+                if (tabId === 'admin' && !isOwner) {
+                    item.style.display = 'none';
+                } else if (tabId === 'admin' && isOwner) {
                     item.style.display = 'block';
                 }
                 

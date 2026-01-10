@@ -133,6 +133,16 @@ const NavigationManager = {
         if (tabId === 'settings' && window.app?.settings) {
             setTimeout(() => window.app.settings.load(), 100);
         }
+        
+        // Initialize diagnostics when Diagnostics tab is shown (owner only)
+        if (tabId === 'diagnostics' && window.app?.diagnostics) {
+            setTimeout(() => window.app.diagnostics.init(), 100);
+        }
+        
+        // Initialize admin when Admin tab is shown (owner only)
+        if (tabId === 'admin' && window.app?.admin) {
+            setTimeout(() => window.app.admin.init(), 100);
+        }
     },
 
     // Show tab

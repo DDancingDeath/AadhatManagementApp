@@ -35,7 +35,9 @@ export class TemplateLoader {
             'day',
             'cash-management',
             'users',
-            'chat'
+            'chat',
+            'diagnostics',
+            'admin'
         ];
 
         const results = {};
@@ -79,6 +81,8 @@ export class TemplateLoader {
         appContent.insertAdjacentHTML('beforeend', templates['cash-management']);
         appContent.insertAdjacentHTML('beforeend', templates.users);
         appContent.insertAdjacentHTML('beforeend', templates.chat);
+        appContent.insertAdjacentHTML('beforeend', templates.diagnostics);
+        appContent.insertAdjacentHTML('beforeend', templates.admin);
         
         // Inject modals at the end
         document.body.insertAdjacentHTML('beforeend', templates.modals);

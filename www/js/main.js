@@ -22,6 +22,9 @@ import { AnalyticsManager } from './modules/analytics.js';
 import { CashManagementManager } from './modules/cash-management.js';
 import { DayManager } from './modules/day.js';
 import { AuditService } from './services/audit.js';
+import { TelemetryService } from './services/telemetry.js';
+import { DiagnosticsManager } from './modules/diagnostics.js';
+import { AdminManager } from './modules/admin.js';
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
@@ -37,11 +40,28 @@ window.addEventListener('error', function(event) {
     const errorMsg = event.error?.message || event.message || 'Unknown error';
     console.error('Global error:', event.error);
     UIManager.showToast('An error occurred: ' + errorMsg);
+    
+    // Log to telemetry
+    TelemetryService.captureError({
+        type: 'uncaught',
+        message: errorMsg,
+        stack: event.error?.stack,
+        source: event.filename,
+        line: event.lineno,
+        column: event.colno
+    });
 });
 
 window.addEventListener('unhandledrejection', function(event) {
     const errorMsg = event.reason?.message || event.reason || 'Unknown rejection';
     console.error('Unhandled promise rejection:', event.reason);
+    
+    // Log to telemetry
+    TelemetryService.captureError({
+        type: 'unhandledrejection',
+        message: errorMsg,
+        stack: event.reason?.stack
+    });
 });
 
 // Setup event listeners
@@ -627,6 +647,30 @@ window.app = {
         approveUser: (userId, role) => UsersManager.approveUser(userId, role),
         rejectUser: (userId) => UsersManager.rejectUser(userId),
         showChangeRoleDialog: (userId, userName, currentRole) => UsersManager.showChangeRoleDialog(userId, userName, currentRole)
+    },
+    
+    // Diagnostics (owner only)
+    diagnostics: {
+        init: () => DiagnosticsManager.init(),
+        showTab: (tab) => DiagnosticsManager.showTab(tab),
+        loadData: () => DiagnosticsManager.loadData(),
+        loadAuditLogs: () => DiagnosticsManager.loadAuditLogs(),
+        filterByType: (type) => DiagnosticsManager.filterByType(type),
+        filterAuditLogs: (action) => DiagnosticsManager.filterAuditLogs(action),
+        deleteError: (errorId) => DiagnosticsManager.deleteError(errorId),
+        clearAll: () => DiagnosticsManager.clearAll()
+    },
+    
+    // Admin (owner only)
+    admin: {
+        init: () => AdminManager.init(),
+        showTab: (tab) => AdminManager.showTab(tab),
+        saveConfigure: () => AdminManager.saveConfigure(),
+        approveUser: (userId) => AdminManager.approveUser(userId),
+        rejectUser: (userId) => AdminManager.rejectUser(userId),
+        showChangeRole: (userId, userName, currentRole) => AdminManager.showChangeRole(userId, userName, currentRole),
+        loadStorageStats: () => AdminManager.loadStorageStats(),
+        clearAllData: () => AdminManager.clearAllData()
     },
     
     // UI

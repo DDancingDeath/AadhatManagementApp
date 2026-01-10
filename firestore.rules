@@ -109,6 +109,12 @@ service cloud.firestore {
       allow update, delete: if false; // Never allow modification or deletion
     }
     
+    // Telemetry - all can write (for error logging), only owners can read/delete
+    match /telemetry/{docId} {
+      allow create, update: if isSignedIn();
+      allow read, delete: if isSignedIn() && isAdmin();
+    }
+    
     // ============================================
     // DEVELOPMENT ENVIRONMENT COLLECTIONS (dev_ prefix)
     // Mirror all production rules for dev collections
@@ -160,6 +166,9 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     match /dev_settings/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /dev_telemetry/{docId} {
       allow read, write: if isSignedIn();
     }
   }

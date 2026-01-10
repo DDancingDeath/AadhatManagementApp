@@ -114,7 +114,9 @@ export class ReportsManager {
     // ==================== FILTER MANAGEMENT ====================
     static populateFilters() {
         const purchaseHistory = AppState.purchaseHistory || [];
-        const salesHistory = AppState.salesHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const wholesaleSalesHistory = AppState.salesHistory || [];
+        const allSalesHistory = [...retailSalesHistory, ...wholesaleSalesHistory];
 
         // Purchase Item Filter
         const purchaseItemFilter = document.getElementById('purchaseItemFilter');
@@ -151,7 +153,7 @@ export class ReportsManager {
         if (salesItemFilter) {
             const currentValue = salesItemFilter.value;
             salesItemFilter.innerHTML = '<option value="all">All Items</option>';
-            const uniqueItems = [...new Set(salesHistory.flatMap(s => s.items?.map(i => i.name) || []))];
+            const uniqueItems = [...new Set(allSalesHistory.flatMap(s => s.items?.map(i => i.name) || []))];
             uniqueItems.forEach(item => {
                 const opt = document.createElement('option');
                 opt.value = item;
@@ -166,7 +168,7 @@ export class ReportsManager {
         if (salesCustomerFilter) {
             const currentValue = salesCustomerFilter.value;
             salesCustomerFilter.innerHTML = '<option value="all">All Customers</option>';
-            const uniqueCustomers = [...new Set(salesHistory.map(s => s.customerName).filter(c => c))];
+            const uniqueCustomers = [...new Set(allSalesHistory.map(s => s.customerName).filter(c => c))];
             uniqueCustomers.forEach(customer => {
                 const opt = document.createElement('option');
                 opt.value = customer;
@@ -236,14 +238,17 @@ export class ReportsManager {
     // ==================== OVERVIEW TAB ====================
     static renderOverview() {
         const purchaseHistory = AppState.purchaseHistory || [];
-        const salesHistory = AppState.salesHistory || [];
+        // Combine retailSalesHistory and salesHistory (wholesale) for total sales
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const wholesaleSalesHistory = AppState.salesHistory || [];
+        const allSalesHistory = [...retailSalesHistory, ...wholesaleSalesHistory];
 
         let filteredPurchases = this.filterByDate(purchaseHistory);
-        let filteredSales = this.filterByDate(salesHistory);
+        let filteredSales = this.filterByDate(allSalesHistory);
 
-        // Calculate metrics
-        const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.total || 0), 0);
-        const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || 0), 0);
+        // Calculate metrics - purchases use billTotal, sales use total
+        const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.billTotal || p.grandTotal || p.total || 0), 0);
+        const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || s.grandTotal || 0), 0);
         const totalVolume = totalPurchases + totalSales;
         const grossProfit = totalSales - totalPurchases;
         const profitMargin = totalSales > 0 ? ((grossProfit / totalSales) * 100).toFixed(1) : 0;
@@ -266,7 +271,7 @@ export class ReportsManager {
         });
 
         let dueToReceive = 0;
-        salesHistory.forEach(s => {
+        allSalesHistory.forEach(s => {
             const outstanding = s.payment?.due || 0;
             if (outstanding > 0) dueToReceive += outstanding;
         });
@@ -288,6 +293,7 @@ export class ReportsManager {
         // Render chart
         this.renderTrendChart(filteredPurchases, filteredSales);
 
+
         // Render top items
         this.renderTopItems(filteredPurchases, filteredSales);
     }
@@ -308,13 +314,13 @@ export class ReportsManager {
         purchases.forEach(p => {
             const date = new Date(p.date).toLocaleDateString('en-IN');
             if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
-            dailyData[date].purchases += p.total || 0;
+            dailyData[date].purchases += p.billTotal || p.grandTotal || p.total || 0;
         });
 
         sales.forEach(s => {
             const date = new Date(s.date).toLocaleDateString('en-IN');
             if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
-            dailyData[date].sales += s.total || 0;
+            dailyData[date].sales += s.total || s.grandTotal || 0;
         });
 
         const dates = Object.keys(dailyData).sort((a, b) => new Date(a) - new Date(b)).slice(-7);
@@ -413,8 +419,8 @@ export class ReportsManager {
         let filteredPurchases = this.filterByDate(purchaseHistory);
         filteredPurchases = this.filterPurchases(filteredPurchases);
 
-        // Calculate metrics
-        const totalAmount = filteredPurchases.reduce((sum, p) => sum + (p.total || 0), 0);
+        // Calculate metrics - purchases use billTotal
+        const totalAmount = filteredPurchases.reduce((sum, p) => sum + (p.billTotal || p.grandTotal || p.total || 0), 0);
         const billCount = filteredPurchases.length;
         const avgBill = billCount > 0 ? totalAmount / billCount : 0;
         const totalLabor = filteredPurchases.reduce((sum, p) => sum + (p.laborCharges || 0), 0);
@@ -446,12 +452,14 @@ export class ReportsManager {
 
     // ==================== SALES TAB ====================
     static renderSales() {
-        const salesHistory = AppState.salesHistory || [];
-        let filteredSales = this.filterByDate(salesHistory);
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const wholesaleSalesHistory = AppState.salesHistory || [];
+        const allSalesHistory = [...retailSalesHistory, ...wholesaleSalesHistory];
+        let filteredSales = this.filterByDate(allSalesHistory);
         filteredSales = this.filterSales(filteredSales);
 
         // Calculate metrics
-        const totalAmount = filteredSales.reduce((sum, s) => sum + (s.total || 0), 0);
+        const totalAmount = filteredSales.reduce((sum, s) => sum + (s.total || s.grandTotal || 0), 0);
         const billCount = filteredSales.length;
         const avgBill = billCount > 0 ? totalAmount / billCount : 0;
         const totalLabor = filteredSales.reduce((sum, s) => sum + (s.laborCharges || 0), 0);
@@ -459,7 +467,7 @@ export class ReportsManager {
         const onlineReceived = filteredSales.reduce((sum, s) => sum + (s.payment?.online || 0), 0);
 
         let outstanding = 0;
-        salesHistory.forEach(s => {
+        allSalesHistory.forEach(s => {
             const due = s.payment?.due || 0;
             if (due > 0) outstanding += due;
         });
@@ -484,14 +492,16 @@ export class ReportsManager {
     // ==================== COMPARE TAB ====================
     static renderCompare() {
         const purchaseHistory = AppState.purchaseHistory || [];
-        const salesHistory = AppState.salesHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const wholesaleSalesHistory = AppState.salesHistory || [];
+        const allSalesHistory = [...retailSalesHistory, ...wholesaleSalesHistory];
 
         const filteredPurchases = this.filterByDate(purchaseHistory);
-        const filteredSales = this.filterByDate(salesHistory);
+        const filteredSales = this.filterByDate(allSalesHistory);
 
         // Calculate metrics
-        const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.total || 0), 0);
-        const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || 0), 0);
+        const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.billTotal || p.grandTotal || p.total || 0), 0);
+        const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || s.grandTotal || 0), 0);
         const netResult = totalSales - totalPurchases;
 
         const purchaseBills = filteredPurchases.length;
@@ -514,7 +524,7 @@ export class ReportsManager {
         });
 
         let salesOutstanding = 0;
-        salesHistory.forEach(s => {
+        allSalesHistory.forEach(s => {
             const due = s.payment?.due || 0;
             if (due > 0) salesOutstanding += due;
         });
@@ -574,13 +584,13 @@ export class ReportsManager {
         purchases.forEach(p => {
             const date = new Date(p.date).toLocaleDateString('en-IN');
             if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
-            dailyData[date].purchases += p.total || 0;
+            dailyData[date].purchases += p.billTotal || p.grandTotal || p.total || 0;
         });
 
         sales.forEach(s => {
             const date = new Date(s.date).toLocaleDateString('en-IN');
             if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
-            dailyData[date].sales += s.total || 0;
+            dailyData[date].sales += s.total || s.grandTotal || 0;
         });
 
         const dates = Object.keys(dailyData).sort((a, b) => new Date(a) - new Date(b)).slice(-7);
@@ -778,7 +788,7 @@ export class ReportsManager {
                     <div class="transaction-date">${new Date(bill.date).toLocaleDateString('en-IN')}</div>
                     <div class="transaction-items">${(bill.items || []).map(i => i.name).join(', ')}</div>
                 </div>
-                <span class="transaction-amount">₹${this.formatNumber(bill.total || 0)}</span>
+                <span class="transaction-amount">₹${this.formatNumber(bill.billTotal || bill.grandTotal || bill.total || 0)}</span>
             </div>
         `).join('');
     }
@@ -786,10 +796,12 @@ export class ReportsManager {
     // ==================== EXPORT FUNCTIONS ====================
     static exportCSV() {
         const purchaseHistory = AppState.purchaseHistory || [];
-        const salesHistory = AppState.salesHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const wholesaleSalesHistory = AppState.salesHistory || [];
+        const allSalesHistory = [...retailSalesHistory, ...wholesaleSalesHistory];
         
         let filteredPurchases = this.filterByDate(purchaseHistory);
-        let filteredSales = this.filterByDate(salesHistory);
+        let filteredSales = this.filterByDate(allSalesHistory);
 
         if (filteredPurchases.length === 0 && filteredSales.length === 0) {
             UIManager.showToast('No data to export for the selected period');
@@ -803,9 +815,10 @@ export class ReportsManager {
             const dateStr = date.toLocaleDateString('en-IN');
             const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
             const customer = bill.customerName || '-';
+            const billTotal = bill.billTotal || bill.grandTotal || bill.total || 0;
 
             (bill.items || []).forEach(item => {
-                csv += `${bill.id},"${dateStr}","${timeStr}","${type}","${customer}","${item.name}",${item.qty || 0},${item.rate || 0},${item.total || 0},${bill.laborCharges || 0},${bill.total || 0},${bill.payment?.cash || 0},${bill.payment?.online || 0},${bill.payment?.due || 0}\n`;
+                csv += `${bill.id},"${dateStr}","${timeStr}","${type}","${customer}","${item.name}",${item.qty || 0},${item.rate || 0},${item.total || 0},${bill.laborCharges || 0},${billTotal},${bill.payment?.cash || 0},${bill.payment?.online || 0},${bill.payment?.due || 0}\n`;
             });
         };
 
@@ -813,8 +826,8 @@ export class ReportsManager {
         filteredSales.forEach(s => processTransaction(s, 'Sale'));
 
         // Summary
-        const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.total || 0), 0);
-        const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || 0), 0);
+        const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.billTotal || p.grandTotal || p.total || 0), 0);
+        const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || s.grandTotal || 0), 0);
 
         csv += `\n"SUMMARY",,,,,,,,,,,,\n`;
         csv += `"Total Purchases:",₹${totalPurchases},,,,,,,,,,\n`;
@@ -839,10 +852,12 @@ export class ReportsManager {
 
     static exportPDF() {
         const purchaseHistory = AppState.purchaseHistory || [];
-        const salesHistory = AppState.salesHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
+        const wholesaleSalesHistory = AppState.salesHistory || [];
+        const allSalesHistory = [...retailSalesHistory, ...wholesaleSalesHistory];
         
         let filteredPurchases = this.filterByDate(purchaseHistory);
-        let filteredSales = this.filterByDate(salesHistory);
+        let filteredSales = this.filterByDate(allSalesHistory);
 
         if (filteredPurchases.length === 0 && filteredSales.length === 0) {
             UIManager.showToast('No data to export for the selected period');
@@ -850,8 +865,8 @@ export class ReportsManager {
         }
 
         // Calculate summary data
-        const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.total || 0), 0);
-        const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || 0), 0);
+        const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.billTotal || p.grandTotal || p.total || 0), 0);
+        const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || s.grandTotal || 0), 0);
         const netProfit = totalSales - totalPurchases;
 
         const dateRange = this.getDateRangeText();
