@@ -108,7 +108,7 @@ export class CashManagementManager {
 
     /**
      * Auto sign-out any previous day sessions that weren't closed
-     * Sets closing balance to 0 for unclosed sessions
+     * Calculates transactions for that day, sets closing balance (actual cash) to 0
      * @param {Array} sessions - Cached sessions array
      * @async
      * @returns {Promise<void>}
@@ -122,15 +122,30 @@ export class CashManagementManager {
             
             // Update all unclosed sessions in parallel
             const updatePromises = unclosedSessions.map(async (session) => {
+                // Calculate transactions for that specific date
+                const transactions = this.calculateTransactionsForDate(session.date, session);
+                
+                // Calculate expected balance
+                const opening = session.openingBalance || 0;
+                const expectedBalance = opening 
+                    + transactions.cashSales 
+                    + transactions.dueReceived 
+                    + transactions.cashDeposits
+                    - transactions.cashPurchases 
+                    - transactions.businessExpenses 
+                    - transactions.personalExpenses 
+                    - transactions.duePaid;
+                
                 const updatedSession = {
                     ...session,
-                    closingBalance: 0,
-                    expectedBalance: 0,
-                    difference: 0,
+                    closingBalance: 0, // Actual cash in hand = 0 (no one counted)
+                    expectedBalance: expectedBalance,
+                    difference: 0 - expectedBalance, // Difference = actual - expected
                     signOutTime: new Date(session.date + 'T23:59:59').toISOString(),
                     signedOut: true,
                     autoSignedOut: true,
-                    autoSignOutReason: 'Session not closed by end of day'
+                    autoSignOutReason: 'Session not closed by end of day',
+                    transactions: transactions
                 };
                 
                 await FirebaseService.updateCashSession(updatedSession);
@@ -138,17 +153,112 @@ export class CashManagementManager {
                 const idx = sessions.findIndex(s => s.id === session.id);
                 if (idx !== -1) sessions[idx] = updatedSession;
                 
-                console.log(`Auto signed-out session for ${session.date} with ₹0`);
+                console.log(`Auto signed-out session for ${session.date} with expected ₹${expectedBalance}`);
             });
             
             await Promise.all(updatePromises);
             
             if (unclosedSessions.length > 0) {
-                UIManager.showToast(`Auto-closed ${unclosedSessions.length} previous session(s) with ₹0`);
+                UIManager.showToast(`Auto-closed ${unclosedSessions.length} previous session(s)`);
             }
         } catch (error) {
             console.error('Error auto signing out previous sessions:', error);
         }
+    }
+
+    /**
+     * Calculate transactions for a specific date
+     * Used for auto-closing sessions and historical data
+     * @param {string} dateStr - Date in YYYY-MM-DD format
+     * @param {Object} session - The cash session for that date
+     * @returns {Object} Transaction totals
+     */
+    static calculateTransactionsForDate(dateStr, session) {
+        const dateStart = new Date(dateStr).getTime();
+        const dateEnd = dateStart + (24 * 60 * 60 * 1000);
+
+        const transactions = {
+            cashSales: 0,
+            cashPurchases: 0,
+            businessExpenses: 0,
+            personalExpenses: 0,
+            dueReceived: 0,
+            duePaid: 0,
+            cashDeposits: 0
+        };
+
+        // Calculate cash sales from wholesale and retail
+        const sales = AppState.salesHistory || [];
+        const retailSales = AppState.retailSalesHistory || [];
+        
+        sales.forEach(sale => {
+            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
+            const saleTime = saleDate.getTime();
+            if (saleTime >= dateStart && saleTime < dateEnd) {
+                const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
+                if (cashAmount > 0) transactions.cashSales += cashAmount;
+            }
+        });
+        
+        retailSales.forEach(sale => {
+            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
+            const saleTime = saleDate.getTime();
+            if (saleTime >= dateStart && saleTime < dateEnd) {
+                const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
+                if (cashAmount > 0) transactions.cashSales += cashAmount;
+            }
+        });
+
+        // Calculate cash purchases
+        const purchases = AppState.purchaseHistory || [];
+        purchases.forEach(purchase => {
+            const purchaseDate = purchase.date?.toDate ? purchase.date.toDate() : new Date(purchase.date);
+            const purchaseTime = purchaseDate.getTime();
+            if (purchaseTime >= dateStart && purchaseTime < dateEnd) {
+                const cashAmount = Number(purchase.cashPayment) || Number(purchase.payment?.cash) || 0;
+                if (cashAmount > 0) transactions.cashPurchases += cashAmount;
+            }
+        });
+
+        // Calculate cash expenses
+        const payments = AppState.expensesHistory || [];
+        payments.forEach(payment => {
+            const paymentDate = Helpers.parseDate(payment.date);
+            if (!paymentDate) return;
+            
+            const paymentTime = paymentDate.getTime();
+            if (paymentTime >= dateStart && paymentTime < dateEnd) {
+                const amount = Number(payment.amount) || 0;
+                const category = (payment.category || payment.type || '').toLowerCase();
+                if (category === 'personal') {
+                    transactions.personalExpenses += amount;
+                } else {
+                    transactions.businessExpenses += amount;
+                }
+            }
+        });
+
+        // Get due payments from session
+        if (session && session.duePayments) {
+            session.duePayments.forEach(payment => {
+                if (payment.method === 'cash') {
+                    if (payment.type === 'paid') {
+                        transactions.duePaid += payment.amount;
+                    } else {
+                        transactions.dueReceived += payment.amount;
+                    }
+                }
+            });
+        }
+
+        // Get cash deposits from session
+        if (session && session.cashDeposits) {
+            session.cashDeposits.forEach(deposit => {
+                transactions.cashDeposits += deposit.amount;
+            });
+        }
+
+        return transactions;
     }
 
     /**
@@ -318,8 +428,8 @@ export class CashManagementManager {
         if (this.todaySession) {
             // Session exists
             if (this.todaySession.signedOut) {
-                // Already signed out - show sign in for dev (normally would hide)
-                signInSection.style.display = 'block'; // Dev: always show sign in
+                // Already signed out for today - hide all action sections
+                signInSection.style.display = 'none';
                 signOutSection.style.display = 'none';
                 cashDepositSection.style.display = 'none';
                 if (cashStatusCard) cashStatusCard.style.display = 'block';
@@ -806,6 +916,7 @@ export class CashManagementManager {
                 diffColor = '#ef4444';
             }
             const diffText = absDiff < 1 ? 'Matched' : (diff > 0 ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`);
+            const cashAdded = session.transactions?.cashDeposits || 0;
 
             return `
                 <div onclick="window.app.cashManagement.showDetails('${session.date}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
@@ -817,6 +928,7 @@ export class CashManagementManager {
                         <div>Opening: <strong>₹${session.openingBalance}</strong></div>
                         ${session.signedOut ? `
                             <div>Closing: <strong>₹${session.closingBalance}</strong></div>
+                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${cashAdded}</strong></div>` : ''}
                             <div>Expected: <strong>₹${session.expectedBalance || 0}</strong></div>
                             <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
                             ` : '<div>In Progress...</div>'}
@@ -869,6 +981,7 @@ export class CashManagementManager {
                 diffColor = '#ef4444'; // Red for large differences
             }
             const diffText = absDiff < 1 ? 'Matched' : (diff > 0 ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`);
+            const cashAdded = session.transactions?.cashDeposits || 0;
 
             return `
                 <div onclick="window.app.cashManagement.showDetails('${session.date}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
@@ -880,6 +993,7 @@ export class CashManagementManager {
                         <div>Opening: <strong>₹${session.openingBalance}</strong></div>
                         ${session.signedOut ? `
                             <div>Closing: <strong>₹${session.closingBalance}</strong></div>
+                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${cashAdded}</strong></div>` : ''}
                             <div>Expected: <strong>₹${session.expectedBalance || 0}</strong></div>
                             <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
                             ` : '<div>In Progress...</div>'}
@@ -939,62 +1053,62 @@ export class CashManagementManager {
             <div style="padding: 0;">
                 <!-- Summary Card -->
                 ${session.signedOut ? `
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px;">
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
                     <!-- Expenses & Others -->
-                    <div style="background: rgba(139, 92, 246, 0.1); padding: 16px; border-radius: 10px;">
-                        <div style="font-size: 13px; color: #7c3aed; margin-bottom: 8px; font-weight: 600;">Expenses & Others</div>
-                        <div style="font-size: 24px; font-weight: 700; color: #6d28d9;">₹${totalCashOut}</div>
+                    <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expenses & Others</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashOut}</div>
                     </div>
                     
                     <!-- Expected Balance -->
-                    <div style="background: rgba(139, 92, 246, 0.1); padding: 16px; border-radius: 10px;">
-                        <div style="font-size: 13px; color: #7c3aed; margin-bottom: 8px; font-weight: 600;">Expected Balance</div>
-                        <div style="font-size: 24px; font-weight: 700; color: #6d28d9;">₹${session.expectedBalance || 0}</div>
+                    <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Balance</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.expectedBalance || 0}</div>
                     </div>
                     
                     <!-- Actual Balance -->
-                    <div style="background: rgba(139, 92, 246, 0.1); padding: 16px; border-radius: 10px;">
-                        <div style="font-size: 13px; color: #7c3aed; margin-bottom: 8px; font-weight: 600;">Actual Balance</div>
-                        <div style="font-size: 24px; font-weight: 700; color: #6d28d9;">₹${session.closingBalance}</div>
+                    <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Actual Balance</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.closingBalance}</div>
                     </div>
                     
                     <!-- Difference -->
-                    <div style="background: ${diffBgColor}; padding: 16px; border-radius: 10px;">
-                        <div style="font-size: 13px; color: ${diffTextColor}; margin-bottom: 8px; font-weight: 600;">Difference</div>
-                        <div style="font-size: 24px; font-weight: 700; color: ${diffTextColor};">${diffText}</div>
+                    <div style="background: ${diffBgColor}; padding: 10px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: ${diffTextColor}; margin-bottom: 4px; font-weight: 600;">Difference</div>
+                        <div style="font-size: 20px; font-weight: 700; color: ${diffTextColor};">${diffText}</div>
                     </div>
                 </div>
                 ` : `
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px;">
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
                     <!-- Opening Balance -->
-                    <div style="background: rgba(139, 92, 246, 0.1); padding: 16px; border-radius: 10px;">
-                        <div style="font-size: 13px; color: #7c3aed; margin-bottom: 8px; font-weight: 600;">Opening Balance</div>
-                        <div style="font-size: 24px; font-weight: 700; color: #6d28d9;">₹${session.openingBalance || 0}</div>
+                    <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Opening Balance</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.openingBalance || 0}</div>
                     </div>
                     
                     <!-- Cash In -->
-                    <div style="background: rgba(139, 92, 246, 0.1); padding: 16px; border-radius: 10px;">
-                        <div style="font-size: 13px; color: #7c3aed; margin-bottom: 8px; font-weight: 600;">Cash In</div>
-                        <div style="font-size: 24px; font-weight: 700; color: #6d28d9;">₹${totalCashIn - (session.openingBalance || 0)}</div>
+                    <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Cash In</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashIn - (session.openingBalance || 0)}</div>
                     </div>
                     
                     <!-- Cash Out -->
-                    <div style="background: rgba(139, 92, 246, 0.1); padding: 16px; border-radius: 10px;">
-                        <div style="font-size: 13px; color: #7c3aed; margin-bottom: 8px; font-weight: 600;">Cash Out</div>
-                        <div style="font-size: 24px; font-weight: 700; color: #6d28d9;">₹${totalCashOut}</div>
+                    <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Cash Out</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashOut}</div>
                     </div>
                     
                     <!-- Expected Cash -->
-                    <div style="background: rgba(139, 92, 246, 0.1); padding: 16px; border-radius: 10px;">
-                        <div style="font-size: 13px; color: #7c3aed; margin-bottom: 8px; font-weight: 600;">Expected Cash</div>
-                        <div style="font-size: 24px; font-weight: 700; color: #6d28d9;">₹${session.expectedBalance || 0}</div>
+                    <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Cash</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.expectedBalance || 0}</div>
                     </div>
                 </div>
                 `}
                 
                 <!-- Cash In Group -->
-                <div style="background: #d1fae5; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
-                    <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #166534;">Cash In</h3>
+                <div style="background: #d1fae5; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
+                    <h3 style="margin: 0 0 6px 0; font-size: 13px; color: #166534;">Cash In</h3>
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
                             <span>Opening Balance:</span>
@@ -1020,8 +1134,8 @@ export class CashManagementManager {
                 </div>
                 
                 <!-- Cash Out Group -->
-                <div style="background: #fee2e2; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
-                    <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #991b1b;">Cash Out</h3>
+                <div style="background: #fee2e2; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
+                    <h3 style="margin: 0 0 6px 0; font-size: 13px; color: #991b1b;">Cash Out</h3>
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Purchases:</span>
@@ -1101,7 +1215,7 @@ export class CashManagementManager {
             </div>
         `;
 
-            UIManager.showModal(modalContent, 'Cash Session Details', false);
+            UIManager.showModalWithHtml(modalContent, 'Cash Session Details', false);
         } catch (error) {
             console.error('Error loading session details:', error);
             UIManager.showToast('Failed to load session details');

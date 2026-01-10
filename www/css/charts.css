@@ -173,8 +173,8 @@ html {
   background: var(--card-bg);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
-  max-width: 90vw;
-  width: 100%;
+  max-width: 450px;
+  width: 90vw;
   max-height: 90vh;
   overflow: hidden;
   transform: scale(0.9);
@@ -190,7 +190,7 @@ html {
 .modal-header {
   background: var(--primary-gradient);
   color: white;
-  padding: 20px 24px;
+  padding: 14px 20px;
   text-align: center;
 }
 
@@ -209,18 +209,21 @@ body:has(.tab.sale-theme.active) .modal-overlay .modal-header {
 }
 
 .modal-body {
-  padding: 24px;
-  text-align: center;
+  padding: 12px;
+  text-align: left;
   color: var(--text-primary);
-  line-height: 1.6;
-  font-size: 15px;
+  line-height: 1.5;
+  font-size: 14px;
   overflow-y: auto;
   flex: 1;
 }
 
 #modalMessage {
   margin: 0;
-  white-space: pre-line;
+}
+
+#modalMessage > div {
+  text-align: left;
 }
 
 .modal-footer {
