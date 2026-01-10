@@ -42,6 +42,9 @@ export class StockManager {
         const container = document.getElementById("stockList");
         if (!container) return;
 
+        // Hide adjustment tab for staff
+        this.hideAdjustmentTabForStaff();
+
         try {
             // Use withLoading for the Firebase operation
             const stock = await UIManager.withLoading(async () => {
@@ -185,10 +188,17 @@ export class StockManager {
 
     /**
      * Filter between stock view tabs (current stock vs adjustments)
+     * Staff cannot access adjustment section
      * @param {'current'|'adjustment'} section - Section to display
      * @param {Event} [event] - Optional click event for button styling
      */
     static filterStockTab(section, event) {
+        // Staff cannot access adjustment section
+        if (section === 'adjustment' && AppState.userRole === 'staff') {
+            UIManager.showToast('You do not have permission to access stock adjustments');
+            return;
+        }
+        
         const sections = {
             current: document.getElementById("currentStockSection"),
             adjustment: document.getElementById("stockAdjustmentSection")
@@ -212,6 +222,20 @@ export class StockManager {
         } else if (section === 'adjustment') {
             this.loadAdjustItemsDropdown();
             this.renderAdjustmentHistory();
+        }
+    }
+
+    /**
+     * Hide stock adjustment tab for staff users
+     * Called when stock page is loaded
+     */
+    static hideAdjustmentTabForStaff() {
+        if (AppState.userRole === 'staff') {
+            // Hide the Stock Adjustment button
+            const filterButtons = document.querySelectorAll('#stock .filter-btn');
+            if (filterButtons.length > 1) {
+                filterButtons[1].style.display = 'none';
+            }
         }
     }
 
