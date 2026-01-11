@@ -198,10 +198,6 @@ export const DayManager = {
         this.updateElement('todayPersonalExpenses', formatCurrency(totalPersonalExpenses));
         this.updateElement('todayPersonalExpenseCount', `${personalExpenses.length} entries`);
         
-        // Quantity metrics
-        this.updateElement('todayQtyPurchased', `${qtyPurchased.toFixed(1)} kg`);
-        this.updateElement('todayQtySold', `${qtySold.toFixed(1)} kg`);
-        
         // Total In and Total Out for hero card
         this.updateElement('todayTotalIn', formatCurrency(cashReceived + onlineReceived));
         this.updateElement('todayTotalOut', formatCurrency(cashPaid + onlinePaid + totalExpenses));

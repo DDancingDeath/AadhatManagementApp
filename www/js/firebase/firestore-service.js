@@ -961,19 +961,24 @@ const FirebaseService = {
             });
             unsubscribeFunctions.push(unsubItemFrequency);
             
+            console.log('Setting up notifications listener for user:', AppState.currentUser.uid);
+            
             const unsubNotifications = getDb().collection(col('notifications'))
                 .where('userId', '==', AppState.currentUser.uid)
                 .where('read', '==', false)
                 .orderBy('timestamp', 'desc')
                 .limit(10)
                 .onSnapshot(snapshot => {
+                    console.log('Notifications snapshot received, changes:', snapshot.docChanges().length);
                     snapshot.docChanges().forEach(change => {
+                        console.log('Notification change type:', change.type, change.doc.data());
                         if (change.type === 'added') {
                             const notification = change.doc.data();
                             // Show toast for rate change notifications
                             if (notification.type === 'rate_change') {
                                 const itemName = notification.itemHindiName || notification.itemName;
                                 const message = `${itemName} ${notification.rateTypeLabel} rate: ₹${notification.oldRate} → ₹${notification.newRate} (by ${notification.changedBy})`;
+                                console.log('Showing rate change toast:', message);
                                 UIManager.showToast(message, 5000);
                                 
                                 // Mark as read after showing
@@ -985,6 +990,8 @@ const FirebaseService = {
                     console.error('Notifications listener error:', error);
                 });
             unsubscribeFunctions.push(unsubNotifications);
+        } else {
+            console.warn('No currentUser.uid, skipping notifications listener');
         }
     },
 
@@ -1079,17 +1086,22 @@ const FirebaseService = {
                 read: false
             };
             
+            console.log(`Notifying ${userIds.length} users about rate change, excluding current user: ${AppState.currentUser?.uid}`);
+            
             // Notify all relevant users except the one who made the change
+            let notifiedCount = 0;
             for (const userId of userIds) {
                 if (userId !== AppState.currentUser?.uid) {
                     await getDb().collection(col('notifications')).add({
                         ...notification,
                         userId: userId
                     });
+                    notifiedCount++;
+                    console.log(`Notification saved for user: ${userId}`);
                 }
             }
             
-            console.log(`Rate change notification sent: ${item.name} ${rateType} rate: ₹${oldRate} → ₹${newRate}`);
+            console.log(`Rate change notification sent to ${notifiedCount} users: ${item.name} ${rateType} rate: ₹${oldRate} → ₹${newRate}`);
         } catch (error) {
             console.error('Error notifying rate change:', error);
         }
