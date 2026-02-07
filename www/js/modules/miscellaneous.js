@@ -197,7 +197,11 @@ export class ExpensesManager {
         const container = document.getElementById('businessExpenseHistoryList');
         const businessExpenses = AppState.expensesHistory
             .filter(p => p.category === 'business' && p.id)
-            .sort((a, b) => new Date(b.date) - new Date(a.date));
+            .sort((a, b) => {
+                const dateA = Helpers.parseDate(a.date);
+                const dateB = Helpers.parseDate(b.date);
+                return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
+            });
         
         if (businessExpenses.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>';
@@ -228,7 +232,11 @@ export class ExpensesManager {
         const container = document.getElementById('personalExpenseHistoryList');
         const personalExpenses = AppState.expensesHistory
             .filter(p => p.category === 'personal' && p.id)
-            .sort((a, b) => new Date(b.date) - new Date(a.date));
+            .sort((a, b) => {
+                const dateA = Helpers.parseDate(a.date);
+                const dateB = Helpers.parseDate(b.date);
+                return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
+            });
         
         if (personalExpenses.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>';
