@@ -284,8 +284,8 @@ export const DayManager = {
         const labelClass = type === 'purchase' ? 'stat-value-info' : 'stat-value-success';
 
         container.innerHTML = itemsArray.map(item => {
-            const avgRate = item.rates.length > 0 
-                ? (item.rates.reduce((a, b) => a + b, 0) / item.rates.length).toFixed(2)
+            const avgRate = item.quantity > 0 
+                ? (item.totalValue / item.quantity).toFixed(2)
                 : 0;
             
             return `
