@@ -5,6 +5,17 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
+    // Staging clone uses one dedicated, throw-away Auth account
+    // (`staging-readonly@aadhat.local`). Every write rule below
+    // ANDs in `!isStagingReadOnly()` so that account is server-side
+    // read-only even if all client-side guards in the staging app fail.
+    // NOTE: this rule is server-side ONLY — production users are
+    // unaffected. Do not delete this helper unless the staging clone
+    // and its dedicated account have been retired.
+    function isStagingReadOnly() {
+      return request.auth != null
+        && request.auth.token.email == 'staging-readonly@aadhat.local';
+    }
     
     // Helper function to check user role from their user document
     function getUserRole() {
@@ -23,52 +34,62 @@ service cloud.firestore {
     
     // Purchases collection (renamed from bills) - all authenticated users can read/write
     match /purchases/{purchaseId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Retail Sales collection - all authenticated users can read/write
     match /retailSales/{saleId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Wholesale Sales collection - all authenticated users can read/write
     match /wholesaleSales/{saleId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Items collection - all authenticated users can read/write
     match /items/{itemId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Expenses collection - all authenticated users can read/write
     match /expenses/{expenseId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Stock adjustments - all authenticated users can read/write
     match /stockAdjustments/{adjustmentId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Withdrawals collection - all authenticated users can read/write
     match /withdrawals/{withdrawalId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Cash management - all authenticated users can read/write
     match /cashManagement/{sessionId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Cash sessions - all authenticated users can read/write
     match /cashSessions/{sessionId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Settings collection - all authenticated users can read/write
     match /settings/{settingId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // ============================================
@@ -78,41 +99,46 @@ service cloud.firestore {
     // Users collection - all can read (for user lists), but only admins can modify others
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update, delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId && !isStagingReadOnly();
+      allow update, delete: if isSignedIn() && (request.auth.uid == userId || isAdmin()) && !isStagingReadOnly();
     }
     
     // Item frequency collection - all authenticated users can read/write (shared data)
     match /itemFrequency/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Notifications collection - all authenticated users can read/write
     match /notifications/{notificationId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Auto-save drafts - users can only access their own
     match /autoSaves/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Bill drafts - users can only access their own  
     match /drafts/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     
     // Audit logs - all can write (for logging), only owners can read
     match /auditLogs/{logId} {
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && !isStagingReadOnly();
       allow read: if isSignedIn() && isAdmin();
       allow update, delete: if false; // Never allow modification or deletion
     }
     
     // Telemetry - all can write (for error logging), only owners can read/delete
     match /telemetry/{docId} {
-      allow create, update: if isSignedIn();
-      allow read, delete: if isSignedIn() && isAdmin();
+      allow create, update: if isSignedIn() && !isStagingReadOnly();
+      allow read: if isSignedIn() && isAdmin();
+      allow delete: if isSignedIn() && isAdmin() && !isStagingReadOnly();
     }
     
     // ============================================
@@ -121,55 +147,72 @@ service cloud.firestore {
     // ============================================
     
     match /dev_purchases/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_retailSales/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_wholesaleSales/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_items/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_expenses/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_stockAdjustments/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_withdrawals/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_cashManagement/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_cashSessions/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_users/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_itemFrequency/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_notifications/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_autoSaves/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_drafts/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_auditLogs/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_settings/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
     match /dev_telemetry/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !isStagingReadOnly();
     }
   }
 }
