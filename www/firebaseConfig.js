@@ -95,12 +95,27 @@ if (APP_ENV !== 'production') {
 }
 
 // Initialize Firebase
-let app;
+//
+// IMPORTANT: variable is intentionally NOT named `app`. A `let app`
+// declared at the top level of a classic <script> creates a binding in
+// the global lexical environment that SHADOWS `window.app` for inline
+// event handlers (`onclick="app.x()"`) — even though it is not visible
+// as a `window.app` property in DevTools. That broke every
+// `onclick="app.chat.X()"` button in www/templates/chat.html: the AI
+// Assistant Send button silently threw `Cannot read properties of
+// undefined (reading 'sendFromInput')` because inline handlers
+// resolved `app` to *this* Firebase App instance instead of the
+// application's `window.app` object.
+//
+// Found via Playwright interaction-driver in the staging clone repo
+// (DDancingDeath/AadhatManagementApp-staging). Full RCA in that repo's
+// docs/REVIEW_ISSUES.md → STG-WALK-5.
+let firebaseApp;
 try {
-  app = firebase.initializeApp(firebaseConfig);
+  firebaseApp = firebase.initializeApp(firebaseConfig);
 } catch (error) {
   if (error.code === 'app/duplicate-app') {
-    app = firebase.app();
+    firebaseApp = firebase.app();
   } else {
     console.error('Firebase initialization error:', error);
     throw error;
