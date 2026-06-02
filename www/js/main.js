@@ -28,6 +28,7 @@ import { AdminManager } from './modules/admin.js';
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
+import { Helpers } from './utils/helpers.js';
 
 // Load and inject HTML templates from separate .html files
 async function injectTemplates() {
@@ -266,8 +267,255 @@ document.addEventListener('DOMContentLoaded', async function() {
 // Expose loadUserDataAndInitialize for manual login trigger
 window.initializeApp = loadUserDataAndInitialize;
 
+/**
+ * Diagnostic helper: replay every event touching items whose name/hindiName/id
+ * matches `query` (case-insensitive substring) and dump the chronological
+ * timeline plus running totals to console. Compares against the value that
+ * FirebaseService.calculateStock() returns so any divergence is obvious.
+ *
+ * Usage from browser console:  await app.debug.stock('piyar dana')
+ */
+async function debugStockForName(query) {
+    if (!query || typeof query !== 'string') {
+        console.warn('debugStock: pass an item name, e.g. app.debug.stock("piyar dana")');
+        return;
+    }
+    const q = query.trim().toLowerCase();
+    const matches = (AppState.items || []).filter(it => {
+        const name = (it.name || '').toLowerCase();
+        const hindi = (it.hindiName || '').toLowerCase();
+        const id = (it.id || '').toLowerCase();
+        return name.includes(q) || hindi.includes(q) || id === q;
+    });
+
+    if (matches.length === 0) {
+        console.warn(`debugStock: no items matched "${query}". Items loaded:`, (AppState.items || []).map(i => i.name));
+        return;
+    }
+
+    const eventTime = (record) => {
+        if (typeof record.timestamp === 'number') return record.timestamp;
+        if (record.timestamp && typeof record.timestamp.toMillis === 'function') {
+            return record.timestamp.toMillis();
+        }
+        const parsed = Helpers.parseDate(record.date);
+        return parsed ? parsed.getTime() : Number.MAX_SAFE_INTEGER;
+    };
+
+    const lineMatchesItem = (lineItem, item) => {
+        if (lineItem.itemId && item.id) return lineItem.itemId === item.id;
+        const n = (lineItem.name || '').toLowerCase();
+        return n === (item.name || '').toLowerCase() || n === (item.hindiName || '').toLowerCase();
+    };
+
+    const computed = await FirebaseService.calculateStock();
+
+    for (const item of matches) {
+        const events = [];
+        (AppState.purchaseHistory || []).forEach(p => {
+            (p.items || []).forEach(li => {
+                if (lineMatchesItem(li, item)) {
+                    events.push({ t: eventTime(p), kind: 'purchase', date: p.date, doc: p.id, qty: parseFloat(li.qty || li.quantity) || 0, rate: parseFloat(li.rate) || 0, lineItem: li });
+                }
+            });
+        });
+        (AppState.salesHistory || []).forEach(s => {
+            (s.items || []).forEach(li => {
+                if (lineMatchesItem(li, item)) {
+                    events.push({ t: eventTime(s), kind: 'wholesale-sale', date: s.date, doc: s.id, qty: parseFloat(li.qty || li.quantity) || 0, rate: parseFloat(li.rate) || 0, lineItem: li });
+                }
+            });
+        });
+        (AppState.retailSalesHistory || []).forEach(s => {
+            (s.items || []).forEach(li => {
+                if (lineMatchesItem(li, item)) {
+                    events.push({ t: eventTime(s), kind: 'retail-sale', date: s.date, doc: s.id, qty: parseFloat(li.qty || li.quantity) || 0, rate: parseFloat(li.rate) || 0, lineItem: li });
+                }
+            });
+        });
+        (AppState.stockAdjustments || []).forEach(adj => {
+            const key = adj.itemId || adj.itemName;
+            const matchesById = item.id && adj.itemId === item.id;
+            const matchesByName = (adj.itemName || '').toLowerCase() === (item.name || '').toLowerCase()
+                || (adj.itemName || '').toLowerCase() === (item.hindiName || '').toLowerCase();
+            if (key && (matchesById || matchesByName)) {
+                events.push({ t: eventTime(adj), kind: `adjust:${adj.adjustType}`, date: adj.date, doc: adj.id, qty: parseFloat(adj.quantity) || 0, rate: parseFloat(adj.rate) || 0, newStockSnapshot: adj.newStock, reason: adj.reason, adj });
+            }
+        });
+        events.sort((a, b) => a.t - b.t);
+
+        let runningQty = 0;
+        let runningValue = 0;
+        const timeline = events.map((ev, idx) => {
+            let delta = 0;
+            let note = '';
+            if (ev.kind === 'purchase') {
+                delta = ev.qty;
+                runningQty += ev.qty;
+                runningValue += ev.qty * ev.rate;
+            } else if (ev.kind === 'wholesale-sale' || ev.kind === 'retail-sale') {
+                delta = -ev.qty;
+                const avg = runningQty > 0 ? runningValue / runningQty : 0;
+                runningQty -= ev.qty;
+                runningValue -= ev.qty * avg;
+                note = `avg-rate-used=${avg.toFixed(2)}`;
+            } else if (ev.kind === 'adjust:add') {
+                delta = ev.qty;
+                runningQty += ev.qty;
+                if (ev.rate > 0) runningValue += ev.qty * ev.rate;
+            } else if (ev.kind === 'adjust:remove') {
+                delta = -ev.qty;
+                const ratio = runningQty > 0 ? ev.qty / runningQty : 0;
+                runningQty -= ev.qty;
+                runningValue -= runningValue * ratio;
+            } else if (ev.kind === 'adjust:set') {
+                const prev = runningQty;
+                delta = ev.qty - prev;
+                if (ev.rate > 0) {
+                    runningQty = ev.qty;
+                    runningValue = ev.qty * ev.rate;
+                } else {
+                    const avg = runningQty > 0 ? runningValue / runningQty : 0;
+                    runningQty = ev.qty;
+                    runningValue = ev.qty * avg;
+                }
+                note = `was ${prev}, snapshot=${ev.newStockSnapshot}`;
+            }
+            return {
+                '#': idx + 1,
+                when: new Date(ev.t).toLocaleString('en-IN'),
+                kind: ev.kind,
+                date_field: ev.date,
+                qty: ev.qty,
+                rate: ev.rate,
+                delta,
+                runningQty: Number(runningQty.toFixed(3)),
+                runningRate: runningQty > 0 ? Number((runningValue / runningQty).toFixed(2)) : 0,
+                doc: ev.doc,
+                note
+            };
+        });
+
+        const key = item.id;
+        const displayed = computed[key] || computed[item.name] || computed[item.hindiName];
+
+        console.groupCollapsed(`%cStock debug — ${item.name}${item.hindiName ? ' / ' + item.hindiName : ''}  (id=${item.id})`, 'font-weight:bold;color:#0a7');
+        console.log('Events found:', events.length);
+        console.table(timeline);
+        console.log('Expected final  :', { quantity: Number(runningQty.toFixed(3)), rate: runningQty > 0 ? Number((runningValue / runningQty).toFixed(2)) : 0 });
+        console.log('calculateStock() :', displayed || '(not present in output — quantity is 0 or key mismatch)');
+        if (displayed && Math.abs((displayed.quantity || 0) - runningQty) > 1e-6) {
+            console.warn('⚠ MISMATCH between replay and calculateStock — please share this dump.');
+        }
+        console.groupEnd();
+    }
+    console.log(`debugStock: dumped ${matches.length} item(s) matching "${query}". Expand the groups above.`);
+}
+
+/**
+ * Diagnostic helper: summarise the raw AppState collections for an item and
+ * list every distinct (name, itemId) tuple that appears in sales/retail lines
+ * even *loosely* related to `query`. This is the tool to reach for when
+ * debugStock returns "no sales" but you know there must be some — it shows
+ * whether the sales arrays are empty, whether sales line items reference the
+ * item by a different name spelling, or whether they reference no itemId at
+ * all.
+ *
+ * Usage from browser console:  await app.debug.item('piyar dana')
+ *                              or:  await debugItemForName('piyar')
+ */
+async function debugItemForName(query) {
+    if (!query || typeof query !== 'string') {
+        console.warn('debugItem: pass an item name, e.g. app.debug.item("piyar dana")');
+        return;
+    }
+    const q = query.trim().toLowerCase();
+    const matchedItems = (AppState.items || []).filter(it => {
+        const name = (it.name || '').toLowerCase();
+        const hindi = (it.hindiName || '').toLowerCase();
+        const id = (it.id || '').toLowerCase();
+        return name.includes(q) || hindi.includes(q) || id === q;
+    });
+
+    const counts = {
+        items: (AppState.items || []).length,
+        purchaseHistory: (AppState.purchaseHistory || []).length,
+        salesHistory: (AppState.salesHistory || []).length,
+        retailSalesHistory: (AppState.retailSalesHistory || []).length,
+        stockAdjustments: (AppState.stockAdjustments || []).length,
+    };
+
+    console.groupCollapsed(`%cItem debug — query "${query}"`, 'font-weight:bold;color:#06c');
+    console.log('AppState counts:', counts);
+    console.log('Items matched in AppState.items:', matchedItems);
+    if (matchedItems.length === 0) {
+        console.warn('No items matched. The catalogue may be on a different env, or the spelling differs.');
+    }
+
+    // Walk every sale line and collect distinct (name, itemId, hindiName?) tuples
+    // that loosely contain the query string. This catches the case where sales
+    // were entered under "Piyar Dana" or "पियर दाना" but the catalogue entry is
+    // "piyar dana", which would silently key the sale to a separate stock bucket.
+    const lineFingerprints = new Map();
+    const recordLine = (li, source) => {
+        const name = li.name || '';
+        const itemId = li.itemId || '';
+        const lname = name.toLowerCase();
+        const isLooseHit = q && lname.includes(q);
+        const isExactToMatched = matchedItems.some(m => {
+            if (itemId && m.id === itemId) return true;
+            return lname === (m.name || '').toLowerCase() || lname === (m.hindiName || '').toLowerCase();
+        });
+        if (!isLooseHit && !isExactToMatched) return;
+        const key = `${name}|${itemId}`;
+        if (!lineFingerprints.has(key)) {
+            lineFingerprints.set(key, { name, itemId, count: 0, sources: new Set(), matchedToCatalogue: isExactToMatched });
+        }
+        const entry = lineFingerprints.get(key);
+        entry.count += 1;
+        entry.sources.add(source);
+    };
+
+    (AppState.purchaseHistory || []).forEach(p => (p.items || []).forEach(li => recordLine(li, 'purchase')));
+    (AppState.salesHistory || []).forEach(s => (s.items || []).forEach(li => recordLine(li, 'wholesale-sale')));
+    (AppState.retailSalesHistory || []).forEach(s => (s.items || []).forEach(li => recordLine(li, 'retail-sale')));
+
+    const fingerprintRows = Array.from(lineFingerprints.values()).map(f => ({
+        name: f.name,
+        itemId: f.itemId || '(none)',
+        sources: Array.from(f.sources).join(', '),
+        lineCount: f.count,
+        matchesCatalogueEntry: f.matchedToCatalogue,
+    }));
+
+    if (fingerprintRows.length === 0) {
+        console.warn(`No line items across purchases/sales contain "${query}" in their name. Sales for this item may not exist, OR may be keyed entirely by itemId with a different name.`);
+    } else {
+        console.log('Distinct (name, itemId) tuples that touch this query:');
+        console.table(fingerprintRows);
+        const orphans = fingerprintRows.filter(r => !r.matchesCatalogueEntry);
+        if (orphans.length > 0) {
+            console.warn(`⚠ ${orphans.length} fingerprint(s) above do NOT match any catalogue entry exactly. Those lines will be keyed by their raw name and produce a SEPARATE stock bucket from the catalogue item.`);
+        }
+    }
+
+    console.groupEnd();
+}
+
 // Expose clean API to window for HTML event handlers
+// Note: `app` is also defined as a top-level `let` in firebaseConfig.js (Firebase instance),
+// which shadows `window.app` when referenced by bare name in the DevTools console.
+// Use `window.app.debug.stock(...)` or the dedicated `debugStock(...)` global below.
+window.debugStock = debugStockForName;
+window.debugItem = debugItemForName;
 window.app = {
+    // Diagnostics
+    debug: {
+        stock: debugStockForName,
+        item: debugItemForName
+    },
+
+
     // Authentication
     auth: {
         showTab: (tab) => AuthManager.showAuthTab(tab),

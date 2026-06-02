@@ -9,6 +9,7 @@
 
 import { AppState } from '../utils/state.js';
 import { APP_CONFIG } from '../utils/constants.js';
+import { Helpers } from '../utils/helpers.js';
 
 /**
  * Gets the Firestore database reference.
@@ -443,122 +444,172 @@ const FirebaseService = {
     },
 
     /**
-     * Calculates current stock levels from all bills, sales, and adjustments.
-     * Uses purchase bills to add stock, sales to subtract stock.
-     * Applies stock adjustments (add, remove, set) to final values.
+     * Calculates current stock levels from all purchases, sales, and adjustments.
+     *
+     * Events from every source (purchases, wholesale sales, retail sales, stock
+     * adjustments) are merged into a single timeline and applied in strict
+     * chronological order. This is critical because:
+     *   1. Stock adjustments are loaded `orderBy('date','desc')`, so iterating
+     *      them in array order applies the newest first — which inverts the
+     *      meaning of any `set` adjustment whenever older `add`/`remove`
+     *      adjustments exist.
+     *   2. A `set` adjustment is a calibration point at a moment in time. If we
+     *      re-apply *all* purchases/sales and then overwrite with `adj.newStock`
+     *      (a stale snapshot of stock at the moment the adjustment was saved),
+     *      every purchase/sale recorded after the adjustment is silently lost.
+     *
+     * Sorting all events chronologically and applying them in order resolves
+     * both problems: a `set` becomes the running stock at its timestamp, and
+     * later events adjust from that point.
+     *
      * @async
      * @returns {Promise<Object.<string, {quantity: number, rate: number}>>} Stock object keyed by item ID
      */
     async calculateStock() {
         const stock = {};
-        
+
         /**
-         * Helper function to get item key (use itemId if available, otherwise name)
+         * Helper function to get item key. Resolves to a canonical catalogue id
+         * whenever possible. Falls back to a case-insensitive, whitespace-trimmed
+         * comparison against `name` and `hindiName` so legacy records that don't
+         * carry an `itemId` (or whose stored name differs only in casing or
+         * surrounding whitespace) still collapse to the same bucket as their
+         * canonical counterpart.
+         *
          * @param {Object} item - Item from bill/sale
          * @returns {string} Item key for stock lookup
          */
+        const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
         const getItemKey = (item) => {
             if (item.itemId) {
                 const foundItem = AppState.items.find(i => i.id === item.itemId);
-                return foundItem ? foundItem.id : item.name;
+                if (foundItem) return foundItem.id;
+                // itemId points to a deleted catalogue entry — fall through to
+                // name matching rather than orphaning the bucket under a stale id.
             }
-            // For old data without itemId, find by name
-            const foundItem = AppState.items.find(i => i.name === item.name || i.hindiName === item.name);
-            return foundItem ? foundItem.id : item.name;
+            const target = normalize(item.name);
+            if (target) {
+                const foundItem = AppState.items.find(i =>
+                    normalize(i.name) === target || normalize(i.hindiName) === target
+                );
+                if (foundItem) return foundItem.id;
+            }
+            // Last resort: bucket under a normalized name so different casings
+            // of the same legacy item still merge together.
+            return target || (item.itemId || '__unknown__');
         };
-        
-        // Add from purchases
+
+        /**
+         * Resolve a sortable timestamp (ms since epoch) for a record. Prefers
+         * the numeric `timestamp` field when present, then a Firestore Timestamp
+         * with `.toMillis()`, then the human-readable `date` string parsed via
+         * Helpers.parseDate. Records with no resolvable time are pushed to the
+         * end of the timeline so they don't corrupt the ordering of dated events.
+         */
+        const eventTime = (record) => {
+            if (typeof record.timestamp === 'number') return record.timestamp;
+            if (record.timestamp && typeof record.timestamp.toMillis === 'function') {
+                return record.timestamp.toMillis();
+            }
+            const parsed = Helpers.parseDate(record.date);
+            return parsed ? parsed.getTime() : Number.MAX_SAFE_INTEGER;
+        };
+
+        // Build a single chronological event timeline. Each purchase/sale doc
+        // may contain multiple line items; the parent doc's timestamp applies
+        // to all of them.
+        const events = [];
+
         AppState.purchaseHistory.forEach(purchase => {
-            if (purchase.items && Array.isArray(purchase.items)) {
-                purchase.items.forEach(item => {
-                    const key = getItemKey(item);
-                    if (!stock[key]) {
-                        stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
-                    }
-                    const qty = parseFloat(item.qty || item.quantity) || 0;
-                    const rate = parseFloat(item.rate) || 0;
-                    stock[key].quantity += qty;
-                    stock[key].totalValue += qty * rate;
-                });
-            }
+            if (!Array.isArray(purchase.items)) return;
+            const t = eventTime(purchase);
+            purchase.items.forEach(item => events.push({ t, kind: 'purchase', item }));
         });
-        
-        // Subtract from wholesale sales
+
         AppState.salesHistory.forEach(sale => {
-            if (sale.items && Array.isArray(sale.items)) {
-                sale.items.forEach(item => {
-                    const key = getItemKey(item);
-                    if (stock[key]) {
-                        const qty = parseFloat(item.qty || item.quantity) || 0;
-                        // Calculate the value to subtract based on average rate
-                        const avgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
-                        stock[key].quantity -= qty;
-                        stock[key].totalValue -= qty * avgRate;
-                    }
-                });
-            }
+            if (!Array.isArray(sale.items)) return;
+            const t = eventTime(sale);
+            sale.items.forEach(item => events.push({ t, kind: 'sale', item }));
         });
-        
-        // Subtract from retail sales
+
         AppState.retailSalesHistory.forEach(sale => {
-            if (sale.items && Array.isArray(sale.items)) {
-                sale.items.forEach(item => {
-                    const key = getItemKey(item);
-                    if (stock[key]) {
-                        const qty = parseFloat(item.qty || item.quantity) || 0;
-                        const avgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
-                        stock[key].quantity -= qty;
-                        stock[key].totalValue -= qty * avgRate;
-                    }
-                });
-            }
+            if (!Array.isArray(sale.items)) return;
+            const t = eventTime(sale);
+            sale.items.forEach(item => events.push({ t, kind: 'sale', item }));
         });
-        
-        // Apply stock adjustments
+
         AppState.stockAdjustments.forEach(adj => {
-            // Use itemId if available, otherwise fallback to itemName
-            const key = adj.itemId || adj.itemName;
-            if (key) {
-                if (!stock[key]) {
-                    stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
-                }
-                
+            events.push({ t: eventTime(adj), kind: 'adjustment', adj });
+        });
+
+        // Ascending chronological order. Array.prototype.sort is stable in
+        // modern JS engines, so ties keep their original insertion order.
+        events.sort((a, b) => a.t - b.t);
+
+        for (const ev of events) {
+            if (ev.kind === 'purchase') {
+                const key = getItemKey(ev.item);
+                if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
+                const qty = parseFloat(ev.item.qty || ev.item.quantity) || 0;
+                const rate = parseFloat(ev.item.rate) || 0;
+                stock[key].quantity += qty;
+                stock[key].totalValue += qty * rate;
+            } else if (ev.kind === 'sale') {
+                const key = getItemKey(ev.item);
+                // Create the entry on demand so a sale of an item that was
+                // only ever introduced via a stock adjustment (or whose key
+                // mismatched a purchase) is still reflected, instead of being
+                // silently dropped and inflating displayed stock elsewhere.
+                if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
+                const qty = parseFloat(ev.item.qty || ev.item.quantity) || 0;
+                const avgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
+                stock[key].quantity -= qty;
+                stock[key].totalValue -= qty * avgRate;
+            } else if (ev.kind === 'adjustment') {
+                const adj = ev.adj;
+                const key = adj.itemId || adj.itemName;
+                if (!key) continue;
+                if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
+
                 const adjQty = parseFloat(adj.quantity) || 0;
                 const adjRate = parseFloat(adj.rate) || 0;
-                
-                // Apply the adjustment based on type
+
                 switch (adj.adjustType) {
                     case 'add':
                         stock[key].quantity += adjQty;
-                        // Add the value of added stock to totalValue
                         if (adjRate > 0) {
                             stock[key].totalValue += adjQty * adjRate;
                         }
                         break;
-                    case 'remove':
-                        // When removing stock, reduce quantity but keep totalValue proportional
+                    case 'remove': {
+                        // Reduce quantity but keep total value proportional so
+                        // the weighted average rate is preserved.
                         const removalRatio = stock[key].quantity > 0 ? adjQty / stock[key].quantity : 0;
                         stock[key].quantity -= adjQty;
                         stock[key].totalValue -= stock[key].totalValue * removalRatio;
                         break;
-                    case 'set':
-                        // For 'set' type, we need to set to the newStock value if available
-                        const newQty = adj.newStock !== undefined ? parseFloat(adj.newStock) : adjQty;
+                    }
+                    case 'set': {
+                        // For chronological replay we use the user-entered
+                        // target quantity (adj.quantity) rather than the
+                        // historical `newStock` snapshot — the snapshot was
+                        // computed against the stock state at save time and is
+                        // unreliable when later events have shifted things.
+                        const newQty = adjQty;
                         if (adjRate > 0) {
-                            // If rate is provided, recalculate totalValue
                             stock[key].quantity = newQty;
                             stock[key].totalValue = newQty * adjRate;
                         } else {
-                            // If no rate, maintain the same average rate
                             const currentAvgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
                             stock[key].quantity = newQty;
                             stock[key].totalValue = newQty * currentAvgRate;
                         }
                         break;
+                    }
                 }
             }
-        });
-        
+        }
+
         // Calculate average rates and clean up
         Object.keys(stock).forEach(itemName => {
             const s = stock[itemName];
@@ -570,7 +621,7 @@ const FirebaseService = {
             // Remove totalValue as it's not needed in the final result
             delete s.totalValue;
         });
-        
+
         return stock;
     },
 

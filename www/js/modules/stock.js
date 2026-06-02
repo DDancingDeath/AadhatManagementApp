@@ -58,29 +58,72 @@ export class StockManager {
             }
 
             container.innerHTML = "";
-            
-            // Consolidate stock by itemId to prevent duplicates
+
+            // Consolidate stock by itemId to prevent duplicates.
+            //
+            // Buckets may be keyed by either a real catalogue id or a legacy
+            // name-based fallback (now normalized lower-case/trimmed by
+            // FirebaseService.getItemKey). We match each bucket back to the
+            // catalogue using the same normalization so that "Piyar Dana" and
+            // "piyar dana" collapse to one row.
+            //
+            // Buckets with no catalogue match are NOT silently dropped — they
+            // surface as their own row tagged "Unmatched" so the user can spot
+            // data discrepancies (e.g. a sale stored under a deleted item, or
+            // a name typo) instead of seeing wrong totals.
+            const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
             const consolidatedStock = {};
+            const orphanKeys = [];
             Object.keys(stock).forEach(key => {
-            // Key could be itemId or old name-based key
-            const item = AppState.items.find(i => i.id === key || i.name === key || i.hindiName === key);
-            if (!item) return;
-            
-            const itemId = item.id;
-            if (!consolidatedStock[itemId]) {
-                consolidatedStock[itemId] = {
-                    itemId: item.id,
-                    name: item.name,
-                    hindiName: item.hindiName,
-                    quantity: 0,
-                    totalValue: 0,
-                    rate: 0
-                };
+                const normalizedKey = normalize(key);
+                const item = AppState.items.find(i =>
+                    i.id === key ||
+                    normalize(i.name) === normalizedKey ||
+                    normalize(i.hindiName) === normalizedKey
+                );
+
+                if (!item) {
+                    // Orphan: render under its raw key so the data stays visible.
+                    if (!consolidatedStock[`__orphan__${key}`]) {
+                        consolidatedStock[`__orphan__${key}`] = {
+                            itemId: `__orphan__${key}`,
+                            name: key,
+                            hindiName: '',
+                            quantity: 0,
+                            totalValue: 0,
+                            rate: 0,
+                            isOrphan: true
+                        };
+                    }
+                    consolidatedStock[`__orphan__${key}`].quantity += stock[key].quantity || 0;
+                    consolidatedStock[`__orphan__${key}`].totalValue += (stock[key].quantity || 0) * (stock[key].rate || 0);
+                    orphanKeys.push(key);
+                    return;
+                }
+
+                const itemId = item.id;
+                if (!consolidatedStock[itemId]) {
+                    consolidatedStock[itemId] = {
+                        itemId: item.id,
+                        name: item.name,
+                        hindiName: item.hindiName,
+                        quantity: 0,
+                        totalValue: 0,
+                        rate: 0
+                    };
+                }
+
+                consolidatedStock[itemId].quantity += stock[key].quantity || 0;
+                consolidatedStock[itemId].totalValue += (stock[key].quantity || 0) * (stock[key].rate || 0);
+            });
+
+            if (orphanKeys.length > 0) {
+                console.warn(
+                    `[StockManager] ${orphanKeys.length} stock bucket(s) had no matching catalogue item ` +
+                    `and were rendered as "Unmatched" rows:`,
+                    orphanKeys
+                );
             }
-            
-            consolidatedStock[itemId].quantity += stock[key].quantity || 0;
-            consolidatedStock[itemId].totalValue += (stock[key].quantity || 0) * (stock[key].rate || 0);
-        });
         
         // Calculate weighted average rates
         Object.values(consolidatedStock).forEach(item => {
@@ -89,11 +132,20 @@ export class StockManager {
             }
             delete item.totalValue;
         });
-        
-        // Filter and sort
+
+        // Filter and sort.
+        //
+        // Real catalogue rows are hidden when quantity rounds to 0 kg (the
+        // historical behavior). Orphan rows are kept whenever they carry any
+        // non-zero quantity — including negative ones — because that's exactly
+        // the case the user needs to see: a sale recorded under a different
+        // name/id than the catalogue knows about.
         const stockWithDetails = Object.values(consolidatedStock)
-            .filter(item => item.quantity > 0)
-            .sort((a, b) => a.name.localeCompare(b.name));
+            .filter(item => item.isOrphan ? Math.abs(item.quantity) > 0.001 : item.quantity > 0)
+            .sort((a, b) => {
+                if (a.isOrphan !== b.isOrphan) return a.isOrphan ? 1 : -1;
+                return a.name.localeCompare(b.name);
+            });
         
         if (stockWithDetails.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No stock available</p>';
@@ -107,7 +159,34 @@ export class StockManager {
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
             const div = document.createElement("div");
             div.className = "stock-item";
-            
+
+            if (item.isOrphan) {
+                // Orphan rows: highlight in red so the user can spot the
+                // discrepancy. Always shown to all users (including staff)
+                // because they signal a data integrity issue.
+                const qtyColor = item.quantity < 0 ? '#dc3545' : '#f0ad4e';
+                div.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${qtyColor}; padding-left: 8px;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 15px;">${displayName}</div>
+                            <div style="color: ${qtyColor}; font-size: 12px; margin-top: 4px;">
+                                ⚠ Unmatched — no catalogue item with this id/name
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 18px; font-weight: 700; color: ${qtyColor};">
+                                ${item.quantity.toFixed(1)} kg
+                            </div>
+                            <div style="color: #666; font-size: 12px; margin-top: 4px;">
+                                Rate: ₹${item.rate ? item.rate.toFixed(2) : '0.00'}/kg
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+                return;
+            }
+
             // For staff: show "Available" if quantity > 100, otherwise show actual quantity
             // Rate is always shown, value is hidden when showing "Available"
             const showLimitedQty = isStaff && item.quantity > 100;
