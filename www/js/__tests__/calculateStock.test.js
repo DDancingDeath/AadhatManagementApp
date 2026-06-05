@@ -239,4 +239,103 @@ describe('FirebaseService.calculateStock - chronological replay', () => {
         const stock = await FirebaseService.calculateStock();
         expect(stock[ITEM.id].quantity).toBe(40);
     });
+
+    // ---------- Bug #5: adjustment bucket fragmentation -------------------
+    //
+    // Purchases and sales go through `getItemKey()` which collapses to the
+    // canonical catalogue id (case-insensitive name match, fallback for
+    // deleted itemIds). Pre-fix, the adjustment branch used the raw
+    // `adj.itemId || adj.itemName` as the bucket key. When an adjustment's
+    // itemId pointed to a removed catalogue entry, or its itemName casing
+    // differed from the canonical version, the adjustment landed in its own
+    // bucket. Later sales subtracted from the purchase bucket while the
+    // adjustment sat untouched in its own bucket — `renderStock` re-summed
+    // the two buckets for display, over-stating stock by the size of the
+    // adjustment.
+    it('merges adjustments with stale itemId into the canonical bucket', async () => {
+        // Adjustment carries a stale itemId that no longer exists in the
+        // catalogue but its itemName matches the canonical item.
+        AppState.purchaseHistory = [purchase(1000, 100, 200)];
+        AppState.stockAdjustments = [
+            {
+                id: 'adj_stale',
+                timestamp: 2000,
+                date: new Date(2000).toLocaleString('en-IN'),
+                itemId: 'old_deleted_item_id',
+                itemName: ITEM.name,
+                adjustType: 'set',
+                quantity: 50,
+                rate: 200
+            }
+        ];
+        AppState.salesHistory = [sale(3000, 10, 250)];
+
+        const stock = await FirebaseService.calculateStock();
+
+        // Expected:
+        //   t=1000  purchase 100 @ 200  -> qty=100
+        //   t=2000  set      50  @ 200  -> qty=50
+        //   t=3000  sale     10         -> qty=40
+        expect(stock[ITEM.id]).toBeDefined();
+        expect(stock[ITEM.id].quantity).toBe(40);
+        // No fragment bucket should exist under the stale id.
+        expect(stock.old_deleted_item_id).toBeUndefined();
+    });
+
+    it('merges adjustments with mismatched-casing itemName into the canonical bucket', async () => {
+        // Adjustment has no itemId and its itemName casing differs from the
+        // catalogue's canonical "piyar dana".
+        AppState.purchaseHistory = [purchase(1000, 100, 200)];
+        AppState.stockAdjustments = [
+            {
+                id: 'adj_case',
+                timestamp: 2000,
+                date: new Date(2000).toLocaleString('en-IN'),
+                itemId: null,
+                itemName: '  Piyar Dana  ',
+                adjustType: 'add',
+                quantity: 25,
+                rate: 200
+            }
+        ];
+
+        const stock = await FirebaseService.calculateStock();
+
+        // Single canonical bucket, summed: 100 + 25 = 125
+        expect(stock[ITEM.id].quantity).toBe(125);
+        // No fragment under the raw stored name
+        expect(stock['  Piyar Dana  ']).toBeUndefined();
+        expect(stock['Piyar Dana']).toBeUndefined();
+    });
+
+    it('subtracts later sales from the same bucket a `set` adjustment writes to', async () => {
+        // The original reported failure mode: adjustment fragmenting into
+        // its own bucket so later sales don't reduce it. After the fix the
+        // sale and the set adjustment share one bucket, and the displayed
+        // stock reflects the sale.
+        AppState.purchaseHistory = [purchase(1000, 100, 200)];
+        AppState.stockAdjustments = [
+            {
+                id: 'adj_set',
+                timestamp: 2000,
+                date: new Date(2000).toLocaleString('en-IN'),
+                itemId: null,                  // missing itemId
+                itemName: 'PIYAR DANA',        // upper-case stored name
+                adjustType: 'set',
+                quantity: 50,
+                rate: 200
+            }
+        ];
+        AppState.salesHistory = [sale(3000, 20, 250)];
+
+        const stock = await FirebaseService.calculateStock();
+
+        // Expected chronologically:
+        //   t=1000  purchase 100  -> qty=100
+        //   t=2000  set     50    -> qty=50
+        //   t=3000  sale    20    -> qty=30
+        // Pre-fix this was 100 (purchase bucket: 100-20=80) + 50 (adjustment
+        // bucket untouched) = 130 after renderStock merged them.
+        expect(stock[ITEM.id].quantity).toBe(30);
+    });
 });

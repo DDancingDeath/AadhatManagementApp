@@ -567,7 +567,18 @@ const FirebaseService = {
                 stock[key].totalValue -= qty * avgRate;
             } else if (ev.kind === 'adjustment') {
                 const adj = ev.adj;
-                const key = adj.itemId || adj.itemName;
+                // Route the adjustment through the same canonical-id
+                // resolution as purchases/sales. Using the raw `itemId`
+                // or `itemName` here causes the adjustment to fragment into
+                // its own bucket when the itemId points to a deleted
+                // catalogue entry or when the stored itemName casing/
+                // whitespace differs from the canonical version. Once
+                // fragmented, later sales subtract from the purchase
+                // bucket while the adjustment sits in its own bucket —
+                // the displayed quantity (which renderStock re-merges by
+                // catalogue match) is then over-stated by the size of the
+                // adjustment.
+                const key = getItemKey({ itemId: adj.itemId, name: adj.itemName });
                 if (!key) continue;
                 if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
 

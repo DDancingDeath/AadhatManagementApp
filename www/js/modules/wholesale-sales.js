@@ -178,8 +178,8 @@ export class WholesaleSalesManager {
         let totalBuyAmount = 0;
         wholesaleSaleItems.forEach(item => {
             const stockData = AppState.stock[item.itemId];
-            if (stockData && stockData.avgRate) {
-                totalBuyAmount += stockData.avgRate * item.qty;
+            if (stockData && stockData.rate) {
+                totalBuyAmount += stockData.rate * item.qty;
             }
         });
         
@@ -203,8 +203,8 @@ export class WholesaleSalesManager {
             buyAmount = 0;
             wholesaleSaleItems.forEach(item => {
                 const stockData = AppState.stock[item.itemId];
-                if (stockData && stockData.avgRate) {
-                    buyAmount += stockData.avgRate * item.qty;
+                if (stockData && stockData.rate) {
+                    buyAmount += stockData.rate * item.qty;
                 }
             });
         }
