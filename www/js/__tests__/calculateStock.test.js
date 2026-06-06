@@ -338,4 +338,146 @@ describe('FirebaseService.calculateStock - chronological replay', () => {
         // bucket untouched) = 130 after renderStock merged them.
         expect(stock[ITEM.id].quantity).toBe(30);
     });
+
+    // ---------- Bug #6: negative-stock cost basis corruption --------------
+    //
+    // When a sale exceeded the on-hand stock, the running quantity went
+    // negative and `avgRate` was clamped to 0 (the conditional in the sale
+    // branch). That clamp left `totalValue` accumulating new-purchase costs
+    // without ever being decremented by sales — so when later purchases
+    // brought the quantity back above zero, the displayed rate was many
+    // multiples of the actual cost per kg.
+    //
+    // The fix treats a negative running quantity as zero cost basis: a
+    // purchase that lifts the position back into positive territory uses
+    // the purchase rate for the *excess* portion, and sales beyond on-hand
+    // stock simply clamp totalValue to 0. The deficit portion is sunk cost.
+
+    it('resets cost basis to 0 when a sale drives quantity below zero', async () => {
+        AppState.purchaseHistory = [purchase(1000, 10, 20)];        // qty=10, val=200
+        AppState.salesHistory    = [sale(2000, 25, 30)];            // oversold by 15
+        AppState.purchaseHistory.push(purchase(3000, 5, 22));       // still in deficit
+
+        const stock = await FirebaseService.calculateStock();
+
+        // After the oversale: qty=-15, totalValue=0 (clamped).
+        // Subsequent purchase of 5 keeps qty negative (-10) so cost basis
+        // stays at 0 — rate must be 0, not inflated by the new purchase.
+        expect(stock[ITEM.id].quantity).toBe(-10);
+        expect(stock[ITEM.id].rate).toBe(0);
+    });
+
+    it('rebases cost basis on the purchase that brings stock back from negative', async () => {
+        // Reproduces the Gehu pattern: oversell, dribble of small purchases
+        // while still negative, then a large purchase that brings the
+        // position back into positive territory. Pre-fix the running rate
+        // was distorted to ~4× the actual purchase rate.
+        AppState.purchaseHistory = [
+            purchase(1000, 10, 24),    // qty=10
+            purchase(3000, 5, 24),     // still negative after the sale below
+            purchase(5000, 100, 23.5)  // brings position back positive
+        ];
+        AppState.salesHistory = [sale(2000, 60, 26)]; // oversell — qty=-50
+
+        const stock = await FirebaseService.calculateStock();
+
+        // Chronological replay:
+        //   t=1000 purchase 10 @ 24 -> qty=10,  val=240
+        //   t=2000 sale     60 @avg -> qty=-50, val=0      (clamped)
+        //   t=3000 purchase  5 @ 24 -> qty=-45, val=0      (still in deficit)
+        //   t=5000 purchase 100 @ 23.5 -> prevQty=-45, newQty=55
+        //                                 -> val = 55 * 23.5 = 1292.5
+        // The on-hand 55 kg's cost basis = the rate of the purchase that
+        // brought it positive (23.5), NOT the polluted historical average.
+        expect(stock[ITEM.id].quantity).toBe(55);
+        expect(stock[ITEM.id].rate).toBeCloseTo(23.5, 5);
+    });
+
+    it('preserves the new cost basis as further normal purchases are added on top', async () => {
+        // After the deficit-fill rebase, normal weighted-average accumulation
+        // resumes — the next purchase must blend with the rebased basis,
+        // not the historical pre-deficit cost.
+        AppState.purchaseHistory = [
+            purchase(1000, 10, 20),
+            purchase(3000, 50, 30),    // brings stock from -40 to 10 @ basis 30
+            purchase(4000, 10, 40)     // normal accumulation: (10*30 + 10*40) / 20 = 35
+        ];
+        AppState.salesHistory = [sale(2000, 50, 25)]; // oversell
+
+        const stock = await FirebaseService.calculateStock();
+
+        // Replay:
+        //   t=1000 +10 @ 20   -> qty=10,  val=200
+        //   t=2000 -50 @avg=20 -> qty=-40, val=0   (clamped)
+        //   t=3000 +50 @ 30   -> qty=10,  val=300  (rebased: 10*30)
+        //   t=4000 +10 @ 40   -> qty=20,  val=700  (normal: 300+400)
+        // Rate = 700 / 20 = 35.
+        expect(stock[ITEM.id].quantity).toBe(20);
+        expect(stock[ITEM.id].rate).toBeCloseTo(35, 5);
+    });
+
+    it('clamps cost basis to 0 when a sale exactly equals the on-hand stock', async () => {
+        // Edge case: sale brings stock to exactly 0. totalValue should also
+        // be 0, and a follow-up purchase must establish a fresh basis.
+        AppState.purchaseHistory = [purchase(1000, 10, 24), purchase(3000, 5, 30)];
+        AppState.salesHistory    = [sale(2000, 10, 26)];
+
+        const stock = await FirebaseService.calculateStock();
+
+        // t=1000 +10 @ 24 -> qty=10, val=240
+        // t=2000 -10 @ 24 -> qty=0,  val=0
+        // t=3000 +5  @ 30 -> qty=5,  val=150 (rebased)
+        expect(stock[ITEM.id].quantity).toBe(5);
+        expect(stock[ITEM.id].rate).toBeCloseTo(30, 5);
+    });
+
+    it('does not let multiple consecutive oversales corrupt the cost basis', async () => {
+        // Mirrors the user's data: many oversales in succession while in
+        // deficit, then a large purchase that recovers. The final rate must
+        // equal the recovery purchase rate, regardless of how many oversales
+        // accumulated in between.
+        AppState.purchaseHistory = [
+            purchase(1000, 50, 24),
+            purchase(8000, 200, 23.5)   // recovery
+        ];
+        AppState.salesHistory = [
+            sale(2000, 100, 28),         // oversell #1
+            sale(3000, 50, 28),          // oversell #2 (still negative)
+            sale(4000, 80, 28),          // oversell #3
+            sale(5000, 20, 28)           // oversell #4 — qty deeply negative
+        ];
+
+        const stock = await FirebaseService.calculateStock();
+
+        // Net quantity: 50 + 200 - (100+50+80+20) = 250 - 250 = 0.
+        // Stock is exactly 0 — totalValue=0, rate=0.
+        expect(stock[ITEM.id].quantity).toBe(0);
+        expect(stock[ITEM.id].rate).toBe(0);
+    });
+
+    it('handles a positive add-adjustment that fills a deficit', async () => {
+        // An `add` adjustment that lifts a negative position into the
+        // positive should rebase like a purchase does.
+        AppState.purchaseHistory = [purchase(1000, 10, 20)];
+        AppState.salesHistory    = [sale(2000, 30, 25)]; // qty=-20
+        AppState.stockAdjustments = [
+            {
+                id: 'adj_lift',
+                timestamp: 3000,
+                date: new Date(3000).toLocaleString('en-IN'),
+                itemId: ITEM.id,
+                itemName: ITEM.name,
+                adjustType: 'add',
+                quantity: 50,           // -20 + 50 = 30 net
+                rate: 22
+            }
+        ];
+
+        const stock = await FirebaseService.calculateStock();
+
+        // Replay: qty=10 -> -20 (oversell, val=0) -> +50 @ 22 lifts to 30.
+        // Excess (30) carries cost basis of 30*22 = 660 -> rate 22.
+        expect(stock[ITEM.id].quantity).toBe(30);
+        expect(stock[ITEM.id].rate).toBeCloseTo(22, 5);
+    });
 });

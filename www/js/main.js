@@ -349,34 +349,67 @@ async function debugStockForName(query) {
         const timeline = events.map((ev, idx) => {
             let delta = 0;
             let note = '';
+            // Mirror the cost-basis discipline in firestore-service.js
+            // calculateStock(): totalValue is clamped to 0 whenever
+            // runningQty drops to <= 0, and a purchase that lifts a
+            // negative position back into positive territory contributes
+            // only the excess to the new cost basis at the purchase rate.
             if (ev.kind === 'purchase') {
                 delta = ev.qty;
-                runningQty += ev.qty;
-                runningValue += ev.qty * ev.rate;
+                const prevQty = runningQty;
+                runningQty = prevQty + ev.qty;
+                if (runningQty <= 0) {
+                    runningValue = 0;
+                } else if (prevQty < 0) {
+                    runningValue = runningQty * ev.rate;
+                    note = `filled deficit ${(-prevQty).toFixed(3)}kg; ${runningQty.toFixed(3)}kg new stock @ ${ev.rate}`;
+                } else {
+                    runningValue += ev.qty * ev.rate;
+                }
             } else if (ev.kind === 'wholesale-sale' || ev.kind === 'retail-sale') {
                 delta = -ev.qty;
-                const avg = runningQty > 0 ? runningValue / runningQty : 0;
-                runningQty -= ev.qty;
-                runningValue -= ev.qty * avg;
-                note = `avg-rate-used=${avg.toFixed(2)}`;
+                const prevQty = runningQty;
+                const avg = prevQty > 0 ? runningValue / prevQty : 0;
+                runningQty = prevQty - ev.qty;
+                if (runningQty <= 0) {
+                    runningValue = 0;
+                    note = `avg-rate-used=${avg.toFixed(2)} (clamped: oversold by ${Math.abs(runningQty).toFixed(3)}kg)`;
+                } else {
+                    runningValue -= ev.qty * avg;
+                    note = `avg-rate-used=${avg.toFixed(2)}`;
+                }
             } else if (ev.kind === 'adjust:add') {
                 delta = ev.qty;
-                runningQty += ev.qty;
-                if (ev.rate > 0) runningValue += ev.qty * ev.rate;
+                const prevQty = runningQty;
+                runningQty = prevQty + ev.qty;
+                if (runningQty <= 0) {
+                    runningValue = 0;
+                } else if (prevQty < 0) {
+                    runningValue = ev.rate > 0 ? runningQty * ev.rate : 0;
+                } else if (ev.rate > 0) {
+                    runningValue += ev.qty * ev.rate;
+                }
             } else if (ev.kind === 'adjust:remove') {
                 delta = -ev.qty;
-                const ratio = runningQty > 0 ? ev.qty / runningQty : 0;
-                runningQty -= ev.qty;
-                runningValue -= runningValue * ratio;
+                const prevQty = runningQty;
+                runningQty = prevQty - ev.qty;
+                if (runningQty <= 0 || prevQty <= 0) {
+                    runningValue = 0;
+                } else {
+                    const ratio = ev.qty / prevQty;
+                    runningValue -= runningValue * ratio;
+                }
             } else if (ev.kind === 'adjust:set') {
                 const prev = runningQty;
+                const prevValue = runningValue;
                 delta = ev.qty - prev;
-                if (ev.rate > 0) {
-                    runningQty = ev.qty;
+                runningQty = ev.qty;
+                if (runningQty <= 0) {
+                    runningValue = 0;
+                } else if (ev.rate > 0) {
                     runningValue = ev.qty * ev.rate;
                 } else {
-                    const avg = runningQty > 0 ? runningValue / runningQty : 0;
-                    runningQty = ev.qty;
+                    const avg = prev > 0 && prevValue > 0 ? prevValue / prev : 0;
                     runningValue = ev.qty * avg;
                 }
                 note = `was ${prev}, snapshot=${ev.newStockSnapshot}`;

@@ -546,14 +546,43 @@ const FirebaseService = {
         // modern JS engines, so ties keep their original insertion order.
         events.sort((a, b) => a.t - b.t);
 
+        // `totalValue` represents the cost basis of the stock *currently on
+        // hand*. When the running quantity drops to zero or below, the cost
+        // basis of "on-hand" stock is zero by definition — we don't own any
+        // of the goods, so there is no carrying cost to track. Without this
+        // discipline, the running average rate becomes nonsensical: a sale
+        // that exceeds available stock leaves `totalValue` artificially high
+        // (because `avgRate` is clamped to 0 once `quantity <= 0`, so the
+        // sale subtracts nothing), and subsequent purchases pile their full
+        // cost on top — yielding rates many times the actual purchase price.
+        //
+        // The rules below clamp `totalValue` to 0 whenever the running
+        // quantity is at or below zero, and treat a purchase that lifts a
+        // negative position back into positive territory as "filling the
+        // deficit" first (sunk cost honoring an oversale) and contributing
+        // only the *excess* portion to the new cost basis at the purchase
+        // rate.
         for (const ev of events) {
             if (ev.kind === 'purchase') {
                 const key = getItemKey(ev.item);
                 if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
                 const qty = parseFloat(ev.item.qty || ev.item.quantity) || 0;
                 const rate = parseFloat(ev.item.rate) || 0;
-                stock[key].quantity += qty;
-                stock[key].totalValue += qty * rate;
+                const prevQty = stock[key].quantity;
+                const newQty = prevQty + qty;
+                stock[key].quantity = newQty;
+                if (newQty <= 0) {
+                    // Still in deficit (or back to exactly zero) after the
+                    // purchase — no on-hand value to carry.
+                    stock[key].totalValue = 0;
+                } else if (prevQty < 0) {
+                    // Purchase fills the deficit and adds new stock; only
+                    // the excess (newQty) is on-hand inventory.
+                    stock[key].totalValue = newQty * rate;
+                } else {
+                    // Normal: stock was already non-negative; accumulate.
+                    stock[key].totalValue += qty * rate;
+                }
             } else if (ev.kind === 'sale') {
                 const key = getItemKey(ev.item);
                 // Create the entry on demand so a sale of an item that was
@@ -562,9 +591,17 @@ const FirebaseService = {
                 // silently dropped and inflating displayed stock elsewhere.
                 if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
                 const qty = parseFloat(ev.item.qty || ev.item.quantity) || 0;
-                const avgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
-                stock[key].quantity -= qty;
-                stock[key].totalValue -= qty * avgRate;
+                const prevQty = stock[key].quantity;
+                const avgRate = prevQty > 0 ? stock[key].totalValue / prevQty : 0;
+                const newQty = prevQty - qty;
+                stock[key].quantity = newQty;
+                if (newQty <= 0) {
+                    // Sale equals or exceeds on-hand stock — no remaining
+                    // cost basis to carry forward.
+                    stock[key].totalValue = 0;
+                } else {
+                    stock[key].totalValue -= qty * avgRate;
+                }
             } else if (ev.kind === 'adjustment') {
                 const adj = ev.adj;
                 // Route the adjustment through the same canonical-id
@@ -586,18 +623,39 @@ const FirebaseService = {
                 const adjRate = parseFloat(adj.rate) || 0;
 
                 switch (adj.adjustType) {
-                    case 'add':
-                        stock[key].quantity += adjQty;
-                        if (adjRate > 0) {
+                    case 'add': {
+                        const prevQty = stock[key].quantity;
+                        const newQty = prevQty + adjQty;
+                        stock[key].quantity = newQty;
+                        if (newQty <= 0) {
+                            stock[key].totalValue = 0;
+                        } else if (prevQty < 0) {
+                            // Adjustment fills a deficit. If a rate was
+                            // supplied, use it for the on-hand excess;
+                            // otherwise we have no basis and the rate
+                            // falls to 0.
+                            stock[key].totalValue = adjRate > 0 ? newQty * adjRate : 0;
+                        } else if (adjRate > 0) {
                             stock[key].totalValue += adjQty * adjRate;
                         }
+                        // adjRate==0 with prevQty>=0: leave totalValue
+                        // alone — the existing average rate is diluted
+                        // across the larger quantity (preserves the
+                        // historical behavior for rate-less add adjustments).
                         break;
+                    }
                     case 'remove': {
                         // Reduce quantity but keep total value proportional so
                         // the weighted average rate is preserved.
-                        const removalRatio = stock[key].quantity > 0 ? adjQty / stock[key].quantity : 0;
-                        stock[key].quantity -= adjQty;
-                        stock[key].totalValue -= stock[key].totalValue * removalRatio;
+                        const prevQty = stock[key].quantity;
+                        const newQty = prevQty - adjQty;
+                        stock[key].quantity = newQty;
+                        if (newQty <= 0 || prevQty <= 0) {
+                            stock[key].totalValue = 0;
+                        } else {
+                            const removalRatio = adjQty / prevQty;
+                            stock[key].totalValue -= stock[key].totalValue * removalRatio;
+                        }
                         break;
                     }
                     case 'set': {
@@ -607,12 +665,21 @@ const FirebaseService = {
                         // computed against the stock state at save time and is
                         // unreliable when later events have shifted things.
                         const newQty = adjQty;
-                        if (adjRate > 0) {
-                            stock[key].quantity = newQty;
+                        const prevQty = stock[key].quantity;
+                        const prevTotal = stock[key].totalValue;
+                        stock[key].quantity = newQty;
+                        if (newQty <= 0) {
+                            stock[key].totalValue = 0;
+                        } else if (adjRate > 0) {
                             stock[key].totalValue = newQty * adjRate;
                         } else {
-                            const currentAvgRate = stock[key].quantity > 0 ? stock[key].totalValue / stock[key].quantity : 0;
-                            stock[key].quantity = newQty;
+                            // No rate supplied — carry the previous average
+                            // rate over to the new quantity. If we had no
+                            // valid prior basis (negative or zero stock),
+                            // the resulting rate is 0.
+                            const currentAvgRate = prevQty > 0 && prevTotal > 0
+                                ? prevTotal / prevQty
+                                : 0;
                             stock[key].totalValue = newQty * currentAvgRate;
                         }
                         break;
