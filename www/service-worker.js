@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v4';
+const CACHE_NAME = 'aadhat-v5';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -114,7 +114,14 @@ self.addEventListener('activate', (event) => {
 
 /**
  * Fetch event - serve from cache, fallback to network
- * Network-first for API calls, cache-first for static assets
+ * Strategy:
+ *   - index.html (the navigation document) is fetched NETWORK-FIRST so the
+ *     latest cache-buster query strings in <script> / <link> tags reach the
+ *     browser on first reload after a deploy. Without this, the user has to
+ *     reload twice to see new code (the SW serves a stale index.html on the
+ *     first reload, which references the stale main.js URL).
+ *   - All other static assets are cache-first with background refresh.
+ *   - Firebase/external API calls bypass the SW entirely.
  */
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
@@ -128,6 +135,26 @@ self.addEventListener('fetch', (event) => {
     if (url.hostname.includes('firebase') || 
         url.hostname.includes('googleapis') ||
         url.hostname.includes('gstatic')) {
+        return;
+    }
+
+    // Treat navigation requests and explicit index.html requests as
+    // network-first so post-deploy cache-busters take effect immediately.
+    const isNavigation = event.request.mode === 'navigate'
+        || url.pathname === '/'
+        || url.pathname === '/index.html';
+    if (isNavigation) {
+        event.respondWith(
+            fetch(event.request)
+                .then((response) => {
+                    if (response && response.ok) {
+                        const clone = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)).catch(() => {});
+                    }
+                    return response;
+                })
+                .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/index.html')))
+        );
         return;
     }
     

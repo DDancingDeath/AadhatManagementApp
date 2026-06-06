@@ -30,6 +30,19 @@ import { AdminManager } from './modules/admin.js';
 import { TemplateLoader } from './utils/template-loader.js';
 import { Helpers } from './utils/helpers.js';
 
+// Build stamp — bumped on every deploy that ships new JS so you can verify
+// in the browser console whether the latest code is actually running. If
+// your console shows an OLDER BUILD_ID after a deploy + reload, the service
+// worker / browser is still serving stale assets (reload twice, or hard
+// refresh / unregister the service worker).
+const BUILD_ID = '20260606-negstock-rate-fix';
+console.log(
+    `%c[Aadhat] BUILD ${BUILD_ID}`,
+    'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
+);
+// Expose on window so the user can copy/paste it back to us when debugging.
+window.__AADHAT_BUILD__ = BUILD_ID;
+
 // Load and inject HTML templates from separate .html files
 async function injectTemplates() {
     const templates = await TemplateLoader.loadAllTemplates();
