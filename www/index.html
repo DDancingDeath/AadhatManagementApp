@@ -11,7 +11,7 @@
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23667eea' width='100' height='100' rx='20'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-weight='bold'>A</text></svg>">
     
-    <link rel="stylesheet" href="styles.css?v=20260606c">
+    <link rel="stylesheet" href="styles.css?v=20260606d">
     
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -31,18 +31,50 @@
     <!-- Chart.js for reports -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <!-- Service Worker Registration -->
+    <!-- Service Worker Registration + auto-reload on new version.
+         When a new SW takes control (after deploy), reload the page so the
+         user immediately sees the new code without a manual hard-refresh. -->
     <script>
         if ('serviceWorker' in navigator) {
+            let __reloading = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (__reloading) return;
+                __reloading = true;
+                console.log('[SW] New service worker took control — reloading for fresh code.');
+                window.location.reload();
+            });
+
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/service-worker.js')
+                    .then((registration) => {
+                        // Check for updates every time the page becomes visible.
+                        document.addEventListener('visibilitychange', () => {
+                            if (document.visibilityState === 'visible') {
+                                registration.update().catch(() => {});
+                            }
+                        });
+
+                        // When a new SW is found, tell it to skip waiting so
+                        // it activates immediately (instead of waiting for all
+                        // tabs to close).
+                        registration.addEventListener('updatefound', () => {
+                            const sw = registration.installing;
+                            if (!sw) return;
+                            sw.addEventListener('statechange', () => {
+                                if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                                    console.log('[SW] Update installed; activating new version.');
+                                    try { sw.postMessage({ type: 'SKIP_WAITING' }); } catch (_) {}
+                                }
+                            });
+                        });
+                    })
                     .catch(err => console.error('[SW] Registration failed:', err));
             });
         }
     </script>
     
     <!-- ES6 Modular Architecture (loads and injects all templates) -->
-    <script type="module" src="js/main.js?v=20260606c"></script>
+    <script type="module" src="js/main.js?v=20260606d"></script>
 
 </body>
 </html>

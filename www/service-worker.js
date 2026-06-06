@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v6';
+const CACHE_NAME = 'aadhat-v7';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -90,6 +90,17 @@ self.addEventListener('install', (event) => {
                 console.error('[SW] Failed to cache:', error);
             })
     );
+});
+
+/**
+ * Allow the page to ask us to take over immediately, so a freshly-installed
+ * SW does not have to wait for all tabs to close before activating. Paired
+ * with the controllerchange auto-reload in index.html.
+ */
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });
 
 /**
