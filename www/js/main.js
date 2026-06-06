@@ -35,7 +35,7 @@ import { Helpers } from './utils/helpers.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20260606-negstock-rate-fix';
+const BUILD_ID = '20260606c-automation';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -554,6 +554,8 @@ async function debugItemForName(query) {
 // Use `window.app.debug.stock(...)` or the dedicated `debugStock(...)` global below.
 window.debugStock = debugStockForName;
 window.debugItem = debugItemForName;
+window.calculateStock = () => FirebaseService.calculateStock();
+window.FirebaseService = FirebaseService;
 window.app = {
     // Diagnostics
     debug: {
