@@ -28,12 +28,13 @@ function colorize(s) {
 async function main() {
     if (!fs.existsSync(STATE_PATH)) {
         console.error(`[inspect] no auth state at ${STATE_PATH}.`);
-        console.error('[inspect] run:   node scripts/save-login.js   first.');
-        process.exit(2);
+        console.error('[inspect] continuing anonymously — BUILD_ID will be reported but live data will not be available.');
+        console.error('[inspect] for full data inspection run:   node scripts/save-login.js   first.');
     }
 
     const browser = await chromium.launch({ headless: true });
-    const ctx = await browser.newContext({ storageState: STATE_PATH });
+    const ctxOpts = fs.existsSync(STATE_PATH) ? { storageState: STATE_PATH } : {};
+    const ctx = await browser.newContext(ctxOpts);
     const page = await ctx.newPage();
 
     const pageErrors = [];
