@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v7';
+const CACHE_NAME = 'aadhat-v8';
 const STATIC_ASSETS = [
     '/',
     '/index.html',

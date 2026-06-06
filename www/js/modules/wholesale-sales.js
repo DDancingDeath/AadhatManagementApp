@@ -5,6 +5,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
+import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
 
 let wholesaleSaleItems = [];
 
@@ -230,7 +231,19 @@ export class WholesaleSalesManager {
             UIManager.showToast('Please add items to the bill');
             return;
         }
-        
+
+        // Warn (but don't hard-block) when a sale exceeds recorded stock.
+        // Mirrors retail-sale.completeSale — wholesale lines use { itemId,
+        // name, qty } so the shared helper resolves them the same way.
+        const shortfalls = computeStockShortfalls(wholesaleSaleItems);
+        if (shortfalls.length > 0) {
+            const message = formatShortfallMessage(shortfalls);
+            const proceed = await UIManager.showModal(message, 'Stock Shortfall', true);
+            if (!proceed) {
+                return;
+            }
+        }
+
         const customerName = Helpers.getInputText('wholesaleCustomerName');
         const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
         const comments = Helpers.getInputText('salesComments');

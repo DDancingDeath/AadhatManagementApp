@@ -10,6 +10,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
+import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
 
 /**
  * @type {Array<Object>} Current items for sale mode
@@ -446,7 +447,20 @@ const RetailSaleManager = {
             UIManager.showToast('No items in sale');
             return;
         }
-        
+
+        // Warn (but don't hard-block) when a sale exceeds recorded stock.
+        // An oversell pushes running stock into negative, which the cost-
+        // basis logic in calculateStock() handles correctly but which the
+        // user almost always wants to know about before saving.
+        const shortfalls = computeStockShortfalls(saleItems);
+        if (shortfalls.length > 0) {
+            const message = formatShortfallMessage(shortfalls);
+            const proceed = await UIManager.showModal(message, 'Stock Shortfall', true);
+            if (!proceed) {
+                return;
+            }
+        }
+
         const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
         const saleOnline = Helpers.getInputInt('saleOnlinePayment');
         const saleCash = Helpers.getInputInt('saleCashPayment');
