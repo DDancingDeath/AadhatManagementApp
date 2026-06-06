@@ -103,5 +103,4 @@ build/
 
 # Firebase sensitive config (if you have API keys)
 # www/firebaseConfig.js
-scripts/
-auth-state.json
+scripts/auth-state.json
