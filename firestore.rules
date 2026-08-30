@@ -81,6 +81,16 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow update, delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
+
+    // User preferences subcollection - per-user settings (e.g. Finance custom
+    // accounts read/written by `firestore-service.js#loadFinanceCustomAccounts`
+    // and `#saveFinanceCustomAccounts`). Without this rule the parent
+    // `/users/{userId}` block does NOT propagate, so the default-deny applies
+    // and every user's custom-finance-accounts feature silently breaks
+    // (loader catches the permission error and returns []).
+    match /users/{userId}/preferences/{prefId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
     
     // Item frequency collection - all authenticated users can read/write (shared data)
     match /itemFrequency/{docId} {
