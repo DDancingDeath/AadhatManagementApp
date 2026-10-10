@@ -3,7 +3,7 @@
  * @module __tests__/helpers.test
  */
 
-import { Helpers } from '../utils/helpers.js';
+import { Helpers, getAndroidMajorVersion } from '../utils/helpers.js';
 
 describe('Helpers.escapeHtml', () => {
     test('should escape HTML special characters', () => {
@@ -194,5 +194,20 @@ describe('Helpers.getInputText', () => {
         document.body.innerHTML = '';
         const result = Helpers.getInputText('nonExistent');
         expect(result).toBe('');
+    });
+});
+
+describe('getAndroidMajorVersion', () => {
+    test('parses Android 11 WebView user agent', () => {
+        expect(getAndroidMajorVersion('Mozilla/5.0 (Linux; Android 11; Pixel 3) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36')).toBe(11);
+    });
+
+    test('parses Android 14 user agent', () => {
+        expect(getAndroidMajorVersion('Mozilla/5.0 (Linux; Android 14; SM-S918B; wv)')).toBe(14);
+    });
+
+    test('returns Infinity when version is unknown', () => {
+        expect(getAndroidMajorVersion('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe(Infinity);
+        expect(getAndroidMajorVersion('')).toBe(Infinity);
     });
 });

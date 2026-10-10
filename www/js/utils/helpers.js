@@ -272,3 +272,10 @@ export class Helpers {
         }
     }
 }
+
+// Returns the Android major version from the WebView user agent, or Infinity if unknown
+// (so newer-OS permissions are requested when detection fails).
+export function getAndroidMajorVersion(userAgent = (typeof navigator !== 'undefined' ? navigator.userAgent : '')) {
+    const match = /Android\s+(\d+)/i.exec(userAgent || '');
+    return match ? parseInt(match[1], 10) : Infinity;
+}

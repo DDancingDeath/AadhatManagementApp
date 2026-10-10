@@ -107,6 +107,21 @@ npx cap sync android
 npx cap open android
 ```
 
+**Supported Android versions:** Android 11 (API 30) and newer (`minSdkVersion = 30` in `android/variables.gradle`).
+
+Build an APK from the command line (requires JDK 21 and the Android SDK):
+```bash
+npm ci
+npx cap sync android
+cd android
+./gradlew assembleDebug     # -> app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease   # signed only if a keystore is configured (see below)
+```
+
+Release signing: create `android/keystore.properties` (git-ignored) with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`,
+or set `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+
+
 ## Testing
 
 The project uses Jest for unit testing with Babel for ES6 module transformation.

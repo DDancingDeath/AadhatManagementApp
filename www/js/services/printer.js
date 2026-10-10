@@ -3,6 +3,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { DEFAULT_SETTINGS } from '../utils/constants.js';
+import { getAndroidMajorVersion } from '../utils/helpers.js';
 
 class BluetoothPrinterManager {
     constructor() {
@@ -17,14 +18,20 @@ class BluetoothPrinterManager {
             throw new Error(errorMsg);
         }
         
-        // Request Bluetooth permissions on Android 12+
+        // Request Bluetooth runtime permissions. BLUETOOTH_SCAN/CONNECT only exist on
+        // Android 12+ (API 31); requesting them on Android 11 always reports "denied".
         if (window.cordova && window.cordova.plugins && window.cordova.plugins.permissions) {
             const permissions = window.cordova.plugins.permissions;
-            const permissionsToRequest = [
-                permissions.BLUETOOTH_SCAN || 'android.permission.BLUETOOTH_SCAN',
-                permissions.BLUETOOTH_CONNECT || 'android.permission.BLUETOOTH_CONNECT',
+            const permissionsToRequest = [];
+            if (getAndroidMajorVersion() >= 12) {
+                permissionsToRequest.push(
+                    permissions.BLUETOOTH_SCAN || 'android.permission.BLUETOOTH_SCAN',
+                    permissions.BLUETOOTH_CONNECT || 'android.permission.BLUETOOTH_CONNECT'
+                );
+            }
+            permissionsToRequest.push(
                 permissions.ACCESS_FINE_LOCATION || 'android.permission.ACCESS_FINE_LOCATION'
-            ];
+            );
             
             try {
                 // Check each permission individually
