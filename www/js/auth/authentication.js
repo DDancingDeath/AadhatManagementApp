@@ -3,7 +3,41 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 
+const usersCollection = () => (window.getCollection ? window.getCollection('users') : 'users');
+
 const AuthManager = {
+    // Creates the pending Firestore profile for an auth user that doesn't have one yet.
+    async createPendingProfile(user, name, email) {
+        await firebase.firestore().collection(usersCollection()).doc(user.uid).set({
+            name: name || email.split('@')[0],
+            email: email,
+            role: 'staff', // Default role for new registrations - can be changed by admin
+            status: 'pending',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    },
+
+    // An auth account can exist without a Firestore profile if an earlier registration was
+    // interrupted. Sign in with the supplied password and finish creating the profile.
+    async recoverExistingRegistration(name, email, password) {
+        let credential;
+        try {
+            credential = await firebase.auth().signInWithEmailAndPassword(email, password);
+        } catch (e) {
+            return 'This email is already registered. Please login, or use Forgot Password.';
+        }
+        try {
+            const userDoc = await firebase.firestore().collection(usersCollection()).doc(credential.user.uid).get();
+            if (userDoc.exists) {
+                return 'This email is already registered. Please login.';
+            }
+            await this.createPendingProfile(credential.user, name, email);
+            return null;
+        } finally {
+            await firebase.auth().signOut();
+        }
+    },
+
     // Show/Hide authentication tabs
     showAuthTab(tab) {
         const tabs = document.querySelectorAll('.auth-tab');
@@ -88,12 +122,15 @@ const AuthManager = {
             const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
             
             const userId = userCredential.user.uid;
-            const userDoc = await firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).get();
+            const userDoc = await firebase.firestore().collection(usersCollection()).doc(userId).get();
             
             if (!userDoc.exists) {
+                // Orphaned auth account (interrupted registration): create the pending profile
+                // so the user isn't stuck between "please register" and "email already in use".
+                await this.createPendingProfile(userCredential.user, '', email);
                 await firebase.auth().signOut();
                 UIManager.hideLoading();
-                UIManager.showToast('User account not found. Please register.');
+                UIManager.showToast('Your account is pending approval. Please wait for admin approval.');
                 return;
             }
             
@@ -174,7 +211,6 @@ const AuthManager = {
         const email = document.getElementById('registerEmail').value.trim();
         const password = document.getElementById('registerPassword').value;
         const confirmPassword = document.getElementById('registerConfirmPassword')?.value;
-        const role = 'staff'; // Default role for new registrations - can be changed by admin
         
         if (!name || !email || !password) {
             UIManager.showToast('Please fill all fields');
@@ -195,15 +231,14 @@ const AuthManager = {
         
         try {
             const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
-            const userId = userCredential.user.uid;
             
-            await firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).set({
-                name: name,
-                email: email,
-                role: role,
-                status: 'pending',
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
+            try {
+                await this.createPendingProfile(userCredential.user, name, email);
+            } catch (profileError) {
+                // Roll back so a retry doesn't fail with "email already in use"
+                await userCredential.user.delete().catch(() => {});
+                throw profileError;
+            }
             
             await firebase.auth().signOut();
             
@@ -214,6 +249,24 @@ const AuthManager = {
             
         } catch (error) {
             console.error('Registration error:', error);
+            
+            if (error.code === 'auth/email-already-in-use') {
+                try {
+                    const message = await this.recoverExistingRegistration(name, email, password);
+                    UIManager.hideLoading();
+                    if (message) {
+                        UIManager.showToast(message, 4000);
+                    } else {
+                        UIManager.showToast('Registration successful! Please wait for admin approval.');
+                    }
+                    this.showAuthTab('login');
+                    return;
+                } catch (recoveryError) {
+                    console.error('Registration recovery error:', recoveryError);
+                    error = recoveryError;
+                }
+            }
+            
             UIManager.hideLoading();
             
             let errorMessage = 'Registration failed. ';
