@@ -31,6 +31,9 @@ android {
                 storePassword keystoreProps['storePassword'] ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
                 keyAlias keystoreProps['keyAlias'] ?: System.getenv('ANDROID_KEY_ALIAS')
                 keyPassword keystoreProps['keyPassword'] ?: System.getenv('ANDROID_KEY_PASSWORD')
+                // v1 is not required on API 30+, but some OEM installers/scanners still expect it
+                enableV1Signing true
+                enableV2Signing true
             }
         }
     }
