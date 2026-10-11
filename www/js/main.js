@@ -35,7 +35,7 @@ import { Helpers } from './utils/helpers.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261011b-visible-toasts';
+const BUILD_ID = '20261011c-no-profile-overwrite';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -133,7 +133,12 @@ async function loadUserDataAndInitialize() {
         // Fetch user data
         const userId = AppState.currentUser?.uid || firebase.auth().currentUser?.uid;
         if (userId) {
-            const userDoc = await firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).get();
+            const userRef = firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId);
+            let userDoc = await userRef.get();
+            // A stale offline-cache copy must not lock out a user who has since been approved
+            if (!userDoc.exists || userDoc.data().status === 'pending') {
+                userDoc = await userRef.get({ source: 'server' }).catch(() => userDoc);
+            }
             if (userDoc.exists) {
                 const userData = userDoc.data();
                 
@@ -252,6 +257,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (typeof firebase !== 'undefined' && firebase.auth) {
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
+                // Registration signs in temporarily to create/recover the profile and then signs
+                // out; don't start loading the app (and showing its errors) for that sign-in.
+                if (AuthManager.authFlowInProgress) return;
                 // Set current user in AppState
                 AppState.currentUser = user;
                 const authScreen = document.getElementById('authScreen');

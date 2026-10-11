@@ -6,14 +6,28 @@ import { UIManager } from '../ui/ui-manager.js';
 const usersCollection = () => (window.getCollection ? window.getCollection('users') : 'users');
 
 const AuthManager = {
+    authFlowInProgress: false,
+
     // Creates the pending Firestore profile for an auth user that doesn't have one yet.
+    // Runs in a transaction (which always reads from the server, never the offline cache)
+    // so an existing - possibly already approved - profile is never overwritten.
+    // Returns true if a profile was created, false if one already existed.
     async createPendingProfile(user, name, email) {
-        await firebase.firestore().collection(usersCollection()).doc(user.uid).set({
-            name: name || email.split('@')[0],
-            email: email,
-            role: 'staff', // Default role for new registrations - can be changed by admin
-            status: 'pending',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        const db = firebase.firestore();
+        const ref = db.collection(usersCollection()).doc(user.uid);
+        return db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            if (snap.exists) {
+                return false;
+            }
+            tx.set(ref, {
+                name: name || email.split('@')[0],
+                email: email,
+                role: 'staff', // Default role for new registrations - can be changed by admin
+                status: 'pending',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            return true;
         });
     },
 
@@ -27,12 +41,8 @@ const AuthManager = {
             return 'This email is already registered. Please login, or use Forgot Password.';
         }
         try {
-            const userDoc = await firebase.firestore().collection(usersCollection()).doc(credential.user.uid).get();
-            if (userDoc.exists) {
-                return 'This email is already registered. Please login.';
-            }
-            await this.createPendingProfile(credential.user, name, email);
-            return null;
+            const created = await this.createPendingProfile(credential.user, name, email);
+            return created ? null : 'This email is already registered. Please login.';
         } finally {
             await firebase.auth().signOut();
         }
@@ -122,16 +132,26 @@ const AuthManager = {
             const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
             
             const userId = userCredential.user.uid;
-            const userDoc = await firebase.firestore().collection(usersCollection()).doc(userId).get();
+            const userRef = firebase.firestore().collection(usersCollection()).doc(userId);
+            let userDoc = await userRef.get();
             
             if (!userDoc.exists) {
                 // Orphaned auth account (interrupted registration): create the pending profile
                 // so the user isn't stuck between "please register" and "email already in use".
-                await this.createPendingProfile(userCredential.user, '', email);
-                await firebase.auth().signOut();
-                UIManager.hideLoading();
-                UIManager.showToast('Your account is pending approval. Please wait for admin approval.');
-                return;
+                const created = await this.createPendingProfile(userCredential.user, '', email);
+                if (created) {
+                    await firebase.auth().signOut();
+                    UIManager.hideLoading();
+                    UIManager.showToast('Your account is pending approval. Please wait for admin approval.');
+                    return;
+                }
+                // The profile exists on the server; the first read came from a stale cache.
+                userDoc = await userRef.get({ source: 'server' });
+            }
+            
+            if (userDoc.data().status === 'pending') {
+                // Re-check the server so a stale cached copy can't hide a recent approval
+                userDoc = await userRef.get({ source: 'server' }).catch(() => userDoc);
             }
             
             const userData = userDoc.data();
@@ -228,6 +248,8 @@ const AuthManager = {
         }
         
         UIManager.showLoading();
+        // Suppresses the app's onAuthStateChanged initialization for the temporary sign-ins below
+        this.authFlowInProgress = true;
         
         try {
             const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
@@ -285,6 +307,8 @@ const AuthManager = {
             }
             
             UIManager.showToast(errorMessage, 4000);
+        } finally {
+            this.authFlowInProgress = false;
         }
     },
 
