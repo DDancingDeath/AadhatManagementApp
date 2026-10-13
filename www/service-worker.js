@@ -4,44 +4,20 @@
  */
 
 const CACHE_NAME = 'aadhat-v11';
+// Generated/verified by scripts/check-sw-assets.js (npm run check:sw).
+// Every entry must exist: a 404 here used to make the whole precache fail.
 const STATIC_ASSETS = [
     '/',
     '/index.html',
-    '/styles.css',
-    '/js/main.js',
-    '/js/auth/authentication.js',
-    '/js/firebase/firestore-service.js',
-    '/js/ui/ui-manager.js',
-    '/js/ui/navigation.js',
-    '/js/utils/state.js',
-    '/js/utils/helpers.js',
-    '/js/utils/constants.js',
-    '/js/utils/template-loader.js',
-    '/js/modules/billing.js',
-    '/js/modules/items.js',
-    '/js/modules/stock.js',
-    '/js/modules/history.js',
-    '/js/modules/wholesale-sales.js',
-    '/js/modules/miscellaneous.js',
-    '/js/modules/reports.js',
-    '/js/modules/settings.js',
-    '/js/modules/finance.js',
-    '/js/modules/analytics.js',
-    '/js/modules/cash-management.js',
-    '/js/modules/outstanding.js',
-    '/js/modules/users.js',
-    '/js/modules/datefilter.js',
-    '/js/modules/configure.js',
-    '/js/modules/day.js',
-    '/js/services/printer.js',
-    '/js/services/audit.js',
-    '/css/variables.css',
+    '/firebaseConfig.js',
+    '/css/analytics.css',
     '/css/auth.css',
     '/css/billing.css',
     '/css/buttons.css',
-    '/css/day.css',
     '/css/charts.css',
     '/css/datefilter.css',
+    '/css/day.css',
+    '/css/finance.css',
     '/css/hamburger.css',
     '/css/history.css',
     '/css/items.css',
@@ -55,24 +31,62 @@ const STATIC_ASSETS = [
     '/css/tabs.css',
     '/css/toast.css',
     '/css/totals.css',
+    '/css/variables.css',
+    '/js/auth/authentication.js',
+    '/js/firebase/firestore-service.js',
+    '/js/main.js',
+    '/js/modules/admin.js',
+    '/js/modules/analytics.js',
+    '/js/modules/billing.js',
+    '/js/modules/cash-management.js',
+    '/js/modules/datefilter.js',
+    '/js/modules/day.js',
+    '/js/modules/diagnostics.js',
+    '/js/modules/finance.js',
+    '/js/modules/history.js',
+    '/js/modules/items.js',
+    '/js/modules/miscellaneous.js',
+    '/js/modules/outstanding.js',
+    '/js/modules/purchase.js',
+    '/js/modules/reports.js',
+    '/js/modules/retail-sale.js',
+    '/js/modules/settings.js',
+    '/js/modules/stock.js',
+    '/js/modules/users.js',
+    '/js/modules/wholesale-sales.js',
+    '/js/services/audit.js',
+    '/js/services/printer.js',
+    '/js/services/telemetry.js',
+    '/js/ui/navigation.js',
+    '/js/ui/ui-manager.js',
+    '/js/utils/constants.js',
+    '/js/utils/helpers.js',
+    '/js/utils/lazy-scripts.js',
+    '/js/utils/state.js',
+    '/js/utils/stock-check.js',
+    '/js/utils/template-loader.js',
+    '/js/utils/validator.js',
+    '/templates/admin.html',
+    '/templates/analytics.html',
     '/templates/auth.html',
-    '/templates/navigation.html',
     '/templates/billing.html',
-    '/templates/items.html',
-    '/templates/stock.html',
-    '/templates/history.html',
-    '/templates/wholesale-sales.html',
+    '/templates/cash-management.html',
+    '/templates/chat.html',
+    '/templates/configure.html',
+    '/templates/day.html',
+    '/templates/diagnostics.html',
+    '/templates/due.html',
     '/templates/expenses.html',
+    '/templates/finance.html',
+    '/templates/history.html',
+    '/templates/items.html',
+    '/templates/modals.html',
+    '/templates/navigation.html',
     '/templates/reports.html',
     '/templates/settings.html',
-    '/templates/finance.html',
-    '/templates/analytics.html',
-    '/templates/cash-management.html',
-    '/templates/due.html',
+    '/templates/stock.html',
     '/templates/users.html',
-    '/templates/configure.html',
-    '/templates/modals.html',
-    '/templates/chat.html'
+    '/templates/wholesale-sales.html'
 ];
 
 /**
@@ -83,7 +97,14 @@ self.addEventListener('install', (event) => {
         caches.open(CACHE_NAME)
             .then((cache) => {
                 console.log('[SW] Caching static assets');
-                return cache.addAll(STATIC_ASSETS);
+                // Cache each asset individually so one failing URL can't abort
+                // the whole precache (cache.addAll is all-or-nothing).
+                // cache:'reload' bypasses the HTTP cache so a new SW version
+                // doesn't precache stale copies.
+                return Promise.all(STATIC_ASSETS.map((url) =>
+                    cache.add(new Request(url, { cache: 'reload' }))
+                        .catch((error) => console.warn('[SW] Failed to precache', url, error))
+                ));
             })
             .then(() => self.skipWaiting())
             .catch((error) => {
@@ -204,8 +225,10 @@ self.addEventListener('fetch', (event) => {
                         if (event.request.headers.get('accept')?.includes('text/html')) {
                             return caches.match('/index.html');
                         }
-                        // Return empty response for other failed requests
-                        return new Response('', { status: 404, statusText: 'Not Found' });
+                        // Offline: assets are requested with ?v= cache-busters but
+                        // precached without them, so retry ignoring the query.
+                        return caches.match(event.request, { ignoreSearch: true })
+                            .then((cached) => cached || new Response('', { status: 404, statusText: 'Not Found' }));
                     });
             })
             .catch(() => {

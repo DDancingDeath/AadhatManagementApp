@@ -1,4 +1,8 @@
 /* ==================== AADHAT BILLING APP - MAIN STYLES ==================== */
+/* LEGACY: index.html now links each css/*.css file directly (in this same
+   order) so they download in parallel instead of via a serial @import chain.
+   This file is no longer referenced by index.html; it is kept only so an old
+   cached index.html still renders. Add new stylesheets to index.html, not here. */
 /* Modular CSS Architecture - Import all component styles */
 
 /* Core Variables & Theme */

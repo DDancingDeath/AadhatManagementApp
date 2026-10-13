@@ -9,6 +9,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
+import { ensureXLSX } from '../utils/lazy-scripts.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -337,6 +338,7 @@ const ItemsManager = {
     // Export items to Excel
     async exportToExcel() {
         try {
+            await ensureXLSX();
             const workbook = XLSX.utils.book_new();
             
             const data = AppState.items.map(item => ({
@@ -378,6 +380,7 @@ const ItemsManager = {
         UIManager.showLoading();
         
         try {
+            await ensureXLSX();
             const data = await file.arrayBuffer();
             const workbook = XLSX.read(data);
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
