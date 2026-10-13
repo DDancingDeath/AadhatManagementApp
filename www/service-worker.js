@@ -159,7 +159,7 @@ self.addEventListener('activate', (event) => {
  *     reload twice to see new code (the SW serves a stale index.html on the
  *     first reload, which references the stale main.js URL).
  *   - All other static assets are cache-first with background refresh.
- *   - Firebase/external API calls bypass the SW entirely.
+ *   - Cross-origin requests (CDNs, Firebase/external APIs) bypass the SW entirely.
  */
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
@@ -169,6 +169,13 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
+    // Only handle (and cache) same-origin requests. Third-party responses
+    // (CDN libraries, Firebase/Google APIs) always go to the network so the SW
+    // never stores or replays cross-origin content.
+    if (url.origin !== self.location.origin) {
+        return;
+    }
+
     // Skip Firebase/external API requests - always go to network
     if (url.hostname.includes('firebase') || 
         url.hostname.includes('googleapis') ||

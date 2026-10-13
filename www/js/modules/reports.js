@@ -469,7 +469,7 @@ export class ReportsManager {
                 <span class="top-item-rank">${index + 1}</span>
                 <div class="top-item-info">
                     <div class="top-item-name">${Helpers.escapeHtml(name)}</div>
-                    <div class="top-item-stats">${data.count} transactions • ${data.qty.toFixed(1)} kg</div>
+                    <div class="top-item-stats">${Helpers.escapeHtml(data.count)} transactions • ${data.qty.toFixed(1)} kg</div>
                 </div>
                 <span class="top-item-value">₹${this.formatNumber(data.value)}</span>
             </div>
@@ -827,7 +827,7 @@ export class ReportsManager {
             <div class="item-breakdown-row">
                 <div class="item-breakdown-info">
                     <div class="item-breakdown-name">${Helpers.escapeHtml(name)}</div>
-                    <div class="item-breakdown-stats">${data.count} times • ${data.qty.toFixed(1)} kg</div>
+                    <div class="item-breakdown-stats">${Helpers.escapeHtml(data.count)} times • ${data.qty.toFixed(1)} kg</div>
                 </div>
                 <div class="item-breakdown-value">
                     <div class="item-breakdown-amount">₹${this.formatNumber(data.value)}</div>
@@ -995,11 +995,11 @@ export class ReportsManager {
     <div class="summary-grid">
         <div class="summary-card">
             <h4>Total Purchases</h4>
-            <div class="value">₹${totalPurchases.toLocaleString('en-IN')}</div>
+            <div class="value">₹${Helpers.escapeHtml(totalPurchases.toLocaleString('en-IN'))}</div>
         </div>
         <div class="summary-card success">
             <h4>Total Sales</h4>
-            <div class="value">₹${totalSales.toLocaleString('en-IN')}</div>
+            <div class="value">₹${Helpers.escapeHtml(totalSales.toLocaleString('en-IN'))}</div>
         </div>
         <div class="summary-card ${netProfit >= 0 ? 'success' : 'danger'}">
             <h4>Net ${netProfit >= 0 ? 'Profit' : 'Loss'}</h4>
@@ -1029,9 +1029,9 @@ export class ReportsManager {
                     .map(([name, data]) => `
                         <tr>
                             <td>${Helpers.escapeHtml(name)}</td>
-                            <td class="text-right">${data.count}</td>
+                            <td class="text-right">${Helpers.escapeHtml(data.count)}</td>
                             <td class="text-right">${data.qty.toFixed(2)}</td>
-                            <td class="text-right">₹${data.value.toLocaleString('en-IN')}</td>
+                            <td class="text-right">₹${Helpers.escapeHtml(data.value.toLocaleString('en-IN'))}</td>
                             <td class="text-right">₹${(data.value / data.qty).toFixed(2)}</td>
                         </tr>
                     `).join('')}
@@ -1061,7 +1061,7 @@ export class ReportsManager {
                             <td>${bill.type}</td>
                             <td>${Helpers.escapeHtml(bill.customerName || '-')}</td>
                             <td>${Helpers.escapeHtml((bill.items || []).map(i => i.name).join(', '))}</td>
-                            <td class="text-right">₹${(bill.total || 0).toLocaleString('en-IN')}</td>
+                            <td class="text-right">₹${Helpers.escapeHtml((bill.total || 0).toLocaleString('en-IN'))}</td>
                         </tr>
                     `).join('')}
             </tbody>

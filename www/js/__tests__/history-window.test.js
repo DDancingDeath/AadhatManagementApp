@@ -147,6 +147,51 @@ describe('loadOlderHistory', () => {
         await hw.loadOlderHistory(1);
         expect(svc.loadOlderHistory).toHaveBeenCalledTimes(2);
     });
+
+    test('reaching the end does not stick across logout/login without a reload', async () => {
+        AppState.currentUser = { uid: 'u1' };
+        const svc = createHistoryServiceMock({ loadedFrom: FEB_1, earliest: JAN_1 });
+        window.FirebaseService = svc;
+        await hw.loadOlderHistory(1);
+        expect(hw.historyReachedEnd()).toBe(true);
+
+        // Same user signs in again: a fresh session restarts at the recent window
+        window.FirebaseService = createHistoryServiceMock({ loadedFrom: MAR_1, earliest: 0 });
+        expect(hw.historyReachedEnd()).toBe(false);
+        await expect(hw.loadOlderHistory(1)).resolves.toEqual({ loadedFrom: FEB_1, reachedEnd: false });
+        expect(window.FirebaseService.loadOlderHistory).toHaveBeenCalledTimes(1);
+    });
+
+    test('end flag reported by the service is reset when the user changes', async () => {
+        AppState.currentUser = { uid: 'u1' };
+        const svc = createHistoryServiceMock({ loadedFrom: MAR_1 });
+        svc.loadOlderHistory = jest.fn(async () => ({ loadedFrom: MAR_1, reachedEnd: true }));
+        window.FirebaseService = svc;
+        await hw.loadOlderHistory(1);
+        expect(hw.historyReachedEnd()).toBe(true);
+
+        AppState.currentUser = { uid: 'u2' };
+        expect(hw.historyReachedEnd()).toBe(false);
+        AppState.currentUser = null;
+    });
+
+    test('a failed range gate is retried in a new session', async () => {
+        AppState.currentUser = { uid: 'u1' };
+        const svc = createHistoryServiceMock({ loadedFrom: MAR_1 });
+        svc.ensureHistoryFrom = jest.fn(async () => { throw new Error('offline'); });
+        window.FirebaseService = svc;
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        expect(hw.rangeStatus('reports', JAN_1)).toBe('loading');
+        await flush(); await flush();
+        expect(hw.rangeStatus('reports', JAN_1)).toBe('error');
+
+        AppState.currentUser = { uid: 'u2' };
+        svc.ensureHistoryFrom = jest.fn(async () => {});
+        expect(hw.rangeStatus('reports', JAN_1)).toBe('loading');
+        await flush();
+        expect(svc.ensureHistoryFrom).toHaveBeenCalledTimes(1);
+        AppState.currentUser = null;
+    });
 });
 
 describe('findBillIndex', () => {

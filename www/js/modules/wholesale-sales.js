@@ -8,6 +8,10 @@ import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
+import { OutstandingManager } from './outstanding.js';
+import { readPayment, round2 } from '../utils/money.js';
+
+const PAYMENT_TOLERANCE = 0.01;
 
 /** Buttons disabled while a wholesale save/print is in flight */
 const WHOLESALE_BUTTONS = '[onclick*="wholesaleSales.completeSale"], [onclick*="wholesaleSales.printWholesaleSale"]';
@@ -448,45 +452,52 @@ export class WholesaleSalesManager {
         }
         
         const paymentInput = document.getElementById(`payment_${saleId}`);
-        const paymentAmount = Number(paymentInput.value) || 0;
+        const paymentAmount = round2(Number(paymentInput?.value) || 0);
         
         if (paymentAmount <= 0) {
             UIManager.showToast('Please enter a valid payment amount');
             return;
         }
         
-        const currentReceived = (sale.payment.online || 0) + (sale.payment.cash || 0);
-        const outstanding = sale.payment.due || 0;
+        const outstanding = readPayment(sale).due;
         
-        if (paymentAmount > outstanding) {
+        if (paymentAmount > outstanding + PAYMENT_TOLERANCE) {
             UIManager.showToast('Payment amount exceeds outstanding amount');
             return;
         }
         
-        if (!sale.payments) sale.payments = [];
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            UIManager.showToast('Internet required to record payment');
+            return;
+        }
         
         const payment = {
             amount: paymentAmount,
-            date: new Date().toLocaleString(),
+            date: Helpers.getCurrentDateTime(),
             recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
         
-        sale.payments.push(payment);
-        sale.payment.cash = (sale.payment.cash || 0) + paymentAmount;
-        sale.payment.total = (sale.payment.online || 0) + sale.payment.cash;
-        sale.payment.due = sale.total - sale.payment.total;
-        
         try {
-            await FirebaseService.updateWholesaleSale(sale);
+            // Same server-side transaction as the Due screen, so a payment recorded
+            // concurrently on another device is never overwritten by a full-document write
+            const written = await OutstandingManager.applyPaymentTransaction('wholesale', sale, paymentAmount, payment);
+            Object.assign(sale, written);
             
-            paymentInput.value = '';
+            if (paymentInput) paymentInput.value = '';
             this.renderSalesOutstanding();
             this.renderSalesHistory();
-            window.app.outstanding.renderDue();
+            window.app?.outstanding?.renderDue?.();
             UIManager.showToast(`✓ Payment of ₹${paymentAmount} recorded`);
         } catch (error) {
             console.error('Error recording payment:', error);
-            UIManager.showToast('Error: ' + error.message);
+            if (error && error.code === 'exceeds-due') {
+                UIManager.showToast(`Payment amount exceeds outstanding amount (₹${error.due})`);
+                this.renderSalesOutstanding();
+            } else if (OutstandingManager.isOfflineError(error)) {
+                UIManager.showToast('Internet required to record payment');
+            } else {
+                UIManager.showToast('Error: ' + error.message);
+            }
         }
     }
 
@@ -560,7 +571,7 @@ export class WholesaleSalesManager {
                 const billNumber = sale.billNumber || sale.id;
                 div.innerHTML = `
                     <div class="history-header">
-                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${billNumber}</span>${sale.customerName ? `  <strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}</span>
+                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${Helpers.escapeHtml(billNumber)}</span>${sale.customerName ? `  <strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}</span>
                         <span style="color: #dc3545; font-weight: 700;">Due: ₹${Math.round(sale.outstanding)}</span>
                     </div>
                     <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
@@ -580,12 +591,12 @@ export class WholesaleSalesManager {
                         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #17a2b8;">
                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                                 <label style="font-weight: 500;">Payment (₹):</label>
-                                <input type="number" inputmode="decimal" id="payment_${sale.id}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
-                                <button onclick="window.app.wholesaleSales.recordPayment('${sale.id}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
+                                <input type="number" inputmode="decimal" id="payment_${Helpers.escapeHtml(sale.id)}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
+                                <button onclick="window.app.wholesaleSales.recordPayment('${Helpers.escapeJsAttr(sale.id)}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
                             </div>
                             <div style="display: flex; align-items: center;">
-                                <input type="checkbox" id="clear_${sale.id}" onchange="window.app.wholesaleSales.markSaleAsCleared('${sale.id}')" style="margin-right: 8px; transform: scale(1.2);" />
-                                <label for="clear_${sale.id}" style="cursor: pointer; font-weight: 500;">Mark as Cleared</label>
+                                <input type="checkbox" id="clear_${Helpers.escapeHtml(sale.id)}" onchange="window.app.wholesaleSales.markSaleAsCleared('${Helpers.escapeJsAttr(sale.id)}')" style="margin-right: 8px; transform: scale(1.2);" />
+                                <label for="clear_${Helpers.escapeHtml(sale.id)}" style="cursor: pointer; font-weight: 500;">Mark as Cleared</label>
                             </div>
                         </div>
                     </div>
@@ -634,7 +645,7 @@ export class WholesaleSalesManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${sale.billNumber || sale.id}</span>${sale.customerName ? `<strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}
+                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${Helpers.escapeHtml(sale.billNumber || sale.id)}</span>${sale.customerName ? `<strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}
                     <span style="color: #28a745; font-weight: 700;">₹ ${Math.round(sale.total)}</span>
                 </div>
                 <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
@@ -666,8 +677,8 @@ export class WholesaleSalesManager {
             return `
                 <tr>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${Helpers.escapeHtml(item.name)}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${qty}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Helpers.escapeHtml(item.rate)}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Helpers.escapeHtml(qty)}</td>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${Math.round(item.total)}</strong></td>
                 </tr>
             `;
@@ -717,7 +728,7 @@ export class WholesaleSalesManager {
                 <div class="bill-info-section">
                     <div class="bill-info-row">
                         <div class="bill-info-label">Bill No:</div>
-                        <div class="bill-info-value"><strong style="color: #28a745;">#${billNumber}</strong></div>
+                        <div class="bill-info-value"><strong style="color: #28a745;">#${Helpers.escapeHtml(billNumber)}</strong></div>
                     </div>
                     <div class="bill-info-row">
                         <div class="bill-info-label">Date:</div>

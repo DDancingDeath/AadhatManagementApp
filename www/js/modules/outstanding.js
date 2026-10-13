@@ -176,7 +176,7 @@ export class OutstandingManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${transaction.id}', '${transaction.transactionType}')">#${billNumber}</span>${transaction.customerName ? `  <strong>${Helpers.escapeHtml(transaction.customerName)}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')">#${Helpers.escapeHtml(billNumber)}</span>${transaction.customerName ? `  <strong>${Helpers.escapeHtml(transaction.customerName)}</strong>` : ''}
                     <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
                 </div>
                 <div class="history-date">${Helpers.formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${Helpers.escapeHtml(transaction.createdByName)}</strong>` : ''}</div>
@@ -195,12 +195,12 @@ export class OutstandingManager {
                     </div>
                     <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; align-items: center; gap: 8px;">
                         <label style="flex-shrink: 0;">Payment (₹):</label>
-                        <input type="number" id="payment_${transaction.id}" placeholder="Enter amount" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
-                        <button onclick="window.app.outstanding.recordPayment('${transaction.id}', '${transaction.transactionType}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">Record</button>
+                        <input type="number" id="payment_${Helpers.escapeHtml(transaction.id)}" placeholder="Enter amount" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
+                        <button onclick="window.app.outstanding.recordPayment('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">Record</button>
                     </div>
                     <div style="margin-top: 8px;">
                         <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" ${transaction.cleared ? 'checked' : ''} onchange="window.app.outstanding.markAsCleared('${transaction.id}', '${transaction.transactionType}')" style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;" />
+                            <input type="checkbox" ${transaction.cleared ? 'checked' : ''} onchange="window.app.outstanding.markAsCleared('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;" />
                             <span style="font-size: 14px; color: #333; font-weight: 600;">Mark as Cleared</span>
                         </label>
                     </div>

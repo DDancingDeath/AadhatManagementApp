@@ -137,15 +137,15 @@ const DiagnosticsManager = {
             <!-- Stats Cards -->
             <div class="diagnostics-stats">
                 <div class="diag-stat-card">
-                    <div class="diag-stat-value">${stats.total}</div>
+                    <div class="diag-stat-value">${Helpers.escapeHtml(stats.total)}</div>
                     <div class="diag-stat-label">Unique Errors</div>
                 </div>
                 <div class="diag-stat-card">
-                    <div class="diag-stat-value">${stats.totalOccurrences}</div>
+                    <div class="diag-stat-value">${Helpers.escapeHtml(stats.totalOccurrences)}</div>
                     <div class="diag-stat-label">Total Occurrences</div>
                 </div>
                 <div class="diag-stat-card">
-                    <div class="diag-stat-value">${stats.byType['uncaught'] || 0}</div>
+                    <div class="diag-stat-value">${Helpers.escapeHtml(stats.byType['uncaught'] || 0)}</div>
                     <div class="diag-stat-label">Uncaught Errors</div>
                 </div>
                 <div class="diag-stat-card">

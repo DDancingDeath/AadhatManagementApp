@@ -92,6 +92,30 @@ export function ensureHistoryFrom(rangeStart) {
 
 let olderInflight = null;
 let reachedEndFlag = false;
+const gates = new Map();
+
+// The window state above outlives a logout/login (no page reload), so reset it
+// whenever the signed-in user changes or the window start moves forward (a new
+// session starts from the default recent window; within a session it only
+// ever moves back).
+let sessionUid;
+let sessionLoadedFrom = null;
+
+function syncSession() {
+    const uid = AppState.currentUser?.uid ?? null;
+    const from = historyLoadedFrom();
+    const isFull = from === 0;
+    const changed = sessionLoadedFrom !== null && (
+        uid !== sessionUid ||
+        (sessionLoadedFrom === 0 ? !isFull : (!isFull && from > sessionLoadedFrom))
+    );
+    if (changed) {
+        reachedEndFlag = false;
+        gates.clear();
+    }
+    sessionUid = uid;
+    sessionLoadedFrom = from;
+}
 
 /**
  * Extend the window back by `months` calendar months (one request at a time
@@ -100,6 +124,7 @@ let reachedEndFlag = false;
  * @returns {Promise<{loadedFrom: number, reachedEnd: boolean}>}
  */
 export function loadOlderHistory(months = 1) {
+    syncSession();
     if (olderInflight) return olderInflight;
     const s = service();
     if (isFullHistoryLoaded() || typeof s?.loadOlderHistory !== 'function') {
@@ -119,6 +144,7 @@ export function loadOlderHistory(months = 1) {
 
 /** @returns {boolean} true when there is nothing older to load */
 export function historyReachedEnd() {
+    syncSession();
     return reachedEndFlag || isFullHistoryLoaded();
 }
 
@@ -126,8 +152,6 @@ export function historyReachedEnd() {
 export function isLoadingOlderHistory() {
     return !!olderInflight;
 }
-
-const gates = new Map();
 
 /**
  * Range gate for renderers. Returns 'ready' when the range is loaded.
@@ -140,6 +164,7 @@ const gates = new Map();
  * @returns {'ready'|'loading'|'error'}
  */
 export function rangeStatus(owner, rangeStart, rerender) {
+    syncSession();
     if (!needsHistoryFrom(rangeStart)) {
         gates.delete(owner);
         return 'ready';

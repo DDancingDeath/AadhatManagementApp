@@ -65,6 +65,88 @@ function defineSuite(prefix) {
         await assertSucceeds(as('staff1').collection(purchases).orderBy('total').get());
     });
 
+    // ---- bill deletion: owner, or the approved user who created the bill ----
+
+    const seedBill = (coll, id, data) => env.withSecurityRulesDisabled((ctx) =>
+        ctx.firestore().collection(coll).doc(id).set(data));
+    const bills = ['purchases', 'retailSales', 'wholesaleSales'].map(c => `${prefix}${c}`);
+
+    t('creator can delete own bill; other staff/manager cannot (all bill collections)', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'mine', { userId: 'staff1', total: 5 });
+            await seedBill(coll, 'theirs', { userId: 'staff1', total: 5 });
+            await assertFails(as('manager1').collection(coll).doc('theirs').delete());
+            await assertSucceeds(as('staff1').collection(coll).doc('mine').delete());
+        }
+    });
+
+    t('owner can delete any bill, including legacy bills without userId', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'b', { userId: 'staff1', total: 5 });
+            await seedBill(coll, 'legacy', { total: 5 });
+            await assertSucceeds(as('legacyOwner').collection(coll).doc('b').delete());
+            await assertSucceeds(as('legacyOwner').collection(coll).doc('legacy').delete());
+        }
+    });
+
+    t('non-owner cannot delete a legacy bill without userId', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'legacy', { total: 5 });
+            await assertFails(as('staff1').collection(coll).doc('legacy').delete());
+        }
+    });
+
+    t('pending creator cannot delete own bill', async () => {
+        await seedBill(purchases, 'p', { userId: 'pending1', total: 5 });
+        await assertFails(as('pending1').collection(purchases).doc('p').delete());
+    });
+
+    t('staff can still record a payment on another user\'s bill', async () => {
+        await seedBill(`${prefix}wholesaleSales`, 'w', { userId: 'manager1', total: 100, payment: { cash: 0, due: 100 } });
+        await assertSucceeds(as('staff1').collection(`${prefix}wholesaleSales`).doc('w')
+            .update({ 'payment.cash': 40, 'payment.due': 60 }));
+    });
+
+    t('non-bill business docs stay deletable by approved staff', async () => {
+        await seedBill(`${prefix}drafts`, 'd', { userId: 'manager1' });
+        await assertSucceeds(as('staff1').collection(`${prefix}drafts`).doc('d').delete());
+    });
+
+    t('staff cannot change userId on another user\'s bill (update or full set)', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
+            await assertFails(as('staff1').collection(coll).doc('b').update({ userId: 'staff1' }));
+            await assertFails(as('staff1').collection(coll).doc('b').set({ total: 5, userId: 'staff1' }));
+            await assertFails(as('staff1').collection(coll).doc('b').set({ total: 5 }));
+        }
+    });
+
+    t('staff cannot claim a legacy bill without userId', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'legacy', { total: 5 });
+            await assertFails(as('staff1').collection(coll).doc('legacy').update({ userId: 'staff1' }));
+            // a full rewrite that still has no userId is fine (both null)
+            await assertSucceeds(as('staff1').collection(coll).doc('legacy').set({ total: 6 }));
+        }
+    });
+
+    t('owner can change userId on any bill', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
+            await seedBill(coll, 'legacy', { total: 5 });
+            await assertSucceeds(as('legacyOwner').collection(coll).doc('b').update({ userId: 'staff1' }));
+            await assertSucceeds(as('legacyOwner').collection(coll).doc('legacy').update({ userId: 'staff1' }));
+        }
+    });
+
+    t('staff edit that keeps userId (full set) is allowed on another user\'s bill', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
+            await assertSucceeds(as('staff1').collection(coll).doc('b').set({ userId: 'manager1', total: 7, editedBy: 'staff1' }));
+            await assertSucceeds(as('staff1').collection(coll).doc('b').update({ payments: [{ amount: 1 }], 'payment.cash': 1 }));
+        }
+    });
+
     t('approved manager can write counters', () =>
         assertSucceeds(as('manager1').collection(counters).doc('retail-20261013').set({ next: 2 })));
 
