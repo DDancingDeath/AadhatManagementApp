@@ -26,12 +26,14 @@ export class UsersManager {
         
         try {
             const db = firebase.firestore();
-            const usersSnapshot = await db.collection(window.getCollection ? window.getCollection('users') : 'users').orderBy('createdAt', 'desc').get();
+            const usersSnapshot = await db.collection(window.getCollection ? window.getCollection('users') : 'users').get();
             
             const pendingUsers = [];
             const activeUsers = [];
             
-            usersSnapshot.forEach(doc => {
+            // Sorted client-side: orderBy('createdAt') would drop legacy profiles without createdAt
+            const createdMs = (d) => { const c = d.data().createdAt; return c?.toMillis ? c.toMillis() : (c ? new Date(c).getTime() || 0 : 0); };
+            [...usersSnapshot.docs].sort((a, b) => createdMs(b) - createdMs(a)).forEach(doc => {
                 const userData = { id: doc.id, ...doc.data() };
                 if (userData.status === 'pending' || !userData.role) {
                     pendingUsers.push(userData);

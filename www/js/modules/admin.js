@@ -186,12 +186,14 @@ const AdminManager = {
         try {
             const db = firebase.firestore();
             const col = window.getCollection ? window.getCollection('users') : 'users';
-            const snapshot = await db.collection(col).orderBy('createdAt', 'desc').get();
+            const snapshot = await db.collection(col).get();
             
             const pendingUsers = [];
             const activeUsers = [];
             
-            snapshot.forEach(doc => {
+            // Sorted client-side: orderBy('createdAt') would drop legacy profiles without createdAt
+            const createdMs = (d) => { const c = d.data().createdAt; return c?.toMillis ? c.toMillis() : (c ? new Date(c).getTime() || 0 : 0); };
+            [...snapshot.docs].sort((a, b) => createdMs(b) - createdMs(a)).forEach(doc => {
                 const user = { id: doc.id, ...doc.data() };
                 // Match logic from users.js: pending if status is pending OR no role assigned
                 if (user.status === 'pending' || !user.role) {

@@ -186,7 +186,7 @@ export class ExpensesManager {
         // Refresh cash management if available
         if (window.app.cashManagement) {
             window.app.cashManagement.calculateTodayTransactions();
-            window.app.cashManagement.render();
+            window.app.cashManagement.updateUI();
         }
     }
 
@@ -248,7 +248,7 @@ export class ExpensesManager {
         // Refresh cash management if available
         if (window.app.cashManagement) {
             window.app.cashManagement.calculateTodayTransactions();
-            window.app.cashManagement.render();
+            window.app.cashManagement.updateUI();
         }
     }
 
