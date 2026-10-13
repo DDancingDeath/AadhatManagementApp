@@ -102,9 +102,9 @@ function defineSuite(prefix) {
     });
 
     t('staff can still record a payment on another user\'s bill', async () => {
-        await seedBill(`${prefix}wholesaleSales`, 'w', { userId: 'manager1', total: 100, payment: { cash: 0, due: 100 } });
+        await seedBill(`${prefix}wholesaleSales`, 'w', { userId: 'manager1', total: 100, payment: { cash: 0, due: 100 }, clientVersion: 3 });
         await assertSucceeds(as('staff1').collection(`${prefix}wholesaleSales`).doc('w')
-            .update({ 'payment.cash': 40, 'payment.due': 60 }));
+            .update({ 'payment.cash': 40, 'payment.due': 60, openDue: true, clientVersion: 3 }));
     });
 
     t('non-bill business docs stay deletable by approved staff', async () => {
@@ -114,26 +114,26 @@ function defineSuite(prefix) {
 
     t('staff cannot change userId on another user\'s bill (update or full set)', async () => {
         for (const coll of bills) {
-            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
-            await assertFails(as('staff1').collection(coll).doc('b').update({ userId: 'staff1' }));
-            await assertFails(as('staff1').collection(coll).doc('b').set({ total: 5, userId: 'staff1' }));
-            await assertFails(as('staff1').collection(coll).doc('b').set({ total: 5 }));
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5, clientVersion: 3 });
+            await assertFails(as('staff1').collection(coll).doc('b').update({ userId: 'staff1', clientVersion: 3 }));
+            await assertFails(as('staff1').collection(coll).doc('b').set({ total: 5, userId: 'staff1', clientVersion: 3 }));
+            await assertFails(as('staff1').collection(coll).doc('b').set({ total: 5, clientVersion: 3 }));
         }
     });
 
     t('staff cannot claim a legacy bill without userId', async () => {
         for (const coll of bills) {
-            await seedBill(coll, 'legacy', { total: 5 });
-            await assertFails(as('staff1').collection(coll).doc('legacy').update({ userId: 'staff1' }));
+            await seedBill(coll, 'legacy', { total: 5, clientVersion: 3 });
+            await assertFails(as('staff1').collection(coll).doc('legacy').update({ userId: 'staff1', clientVersion: 3 }));
             // a full rewrite that still has no userId is fine (both null)
-            await assertSucceeds(as('staff1').collection(coll).doc('legacy').set({ total: 6 }));
+            await assertSucceeds(as('staff1').collection(coll).doc('legacy').set({ total: 6, clientVersion: 3 }));
         }
     });
 
     t('owner can change userId on any bill', async () => {
         for (const coll of bills) {
-            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
-            await seedBill(coll, 'legacy', { total: 5 });
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5, clientVersion: 3 });
+            await seedBill(coll, 'legacy', { total: 5, clientVersion: 3 });
             await assertSucceeds(as('legacyOwner').collection(coll).doc('b').update({ userId: 'staff1' }));
             await assertSucceeds(as('legacyOwner').collection(coll).doc('legacy').update({ userId: 'staff1' }));
         }
@@ -141,9 +141,9 @@ function defineSuite(prefix) {
 
     t('staff edit that keeps userId (full set) is allowed on another user\'s bill', async () => {
         for (const coll of bills) {
-            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
-            await assertSucceeds(as('staff1').collection(coll).doc('b').set({ userId: 'manager1', total: 7, editedBy: 'staff1' }));
-            await assertSucceeds(as('staff1').collection(coll).doc('b').update({ payments: [{ amount: 1 }], 'payment.cash': 1 }));
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5, clientVersion: 3 });
+            await assertSucceeds(as('staff1').collection(coll).doc('b').set({ userId: 'manager1', total: 7, editedBy: 'staff1', clientVersion: 3 }));
+            await assertSucceeds(as('staff1').collection(coll).doc('b').update({ payments: [{ amount: 1 }], 'payment.cash': 1, clientVersion: 3 }));
         }
     });
 
@@ -208,7 +208,7 @@ function defineSuite(prefix) {
 
     t('payment updates on current bills pass; overwriting with an old-app full set() fails; deletes pass', async () => {
         const coll = as('staff1').collection(purchases);
-        await assertSucceeds(coll.doc('pay1').set({ total: 100, payment: { due: 100 }, clientVersion: 3 }));
+        await assertSucceeds(coll.doc('pay1').set({ total: 100, payment: { due: 100 }, userId: 'staff1', clientVersion: 3 }));
         await assertSucceeds(coll.doc('pay1').update({ payment: { due: 0, cash: 100 }, payments: [{ amount: 100 }], openDue: false, clientVersion: 3 }));
         await assertSucceeds(coll.doc('pay1').update({ cleared: true, openDue: false }));
         await assertFails(coll.doc('pay1').set({ total: 100, payment: { due: 0 } }));

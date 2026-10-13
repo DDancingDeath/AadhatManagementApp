@@ -67,8 +67,10 @@ service cloud.firestore {
     }
 
     function canDeleteBill(usersCol) {
+      // resource is null when deleting a doc that is already gone (no-op).
       return isOwnerIn(usersCol)
-        || (isApprovedIn(usersCol) && resource.data.get('userId', null) == request.auth.uid);
+        || (isApprovedIn(usersCol)
+            && (resource == null || resource.data.get('userId', null) == request.auth.uid));
     }
 
     function keepsBillOwner(usersCol) {

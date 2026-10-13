@@ -5,7 +5,12 @@
  */
 
 jest.mock('../firebase/firestore-service.js', () => ({
-    FirebaseService: { updateWholesaleSale: jest.fn(async () => {}), db: null }
+    FirebaseService: {
+        updateWholesaleSale: jest.fn(async () => {}),
+        db: null,
+        CLIENT_VERSION: 3,
+        billHasOpenDue: jest.fn((coll, bill) => !bill.cleared && (bill.payment?.due || 0) > 0)
+    }
 }));
 jest.mock('../services/printer.js', () => ({ PrinterService: {} }));
 jest.mock('../services/audit.js', () => ({ AuditService: { log: jest.fn(), ACTIONS: {} } }));
@@ -64,6 +69,7 @@ describe('wholesale recordPayment uses the payment transaction', () => {
         expect(FirebaseService.updateWholesaleSale).not.toHaveBeenCalled();
         const written = tx.update.mock.calls[0][1];
         expect(written.payment).toEqual({ online: 0, cash: 70, due: 30, total: 70 });
+        expect(written).toMatchObject({ clientVersion: 3, openDue: true });
         expect(written.payments).toHaveLength(3);
         expect(written.payments[2]).toMatchObject({ amount: 30, recordedBy: 'Owner' });
         expect(local.payment.due).toBe(30);
