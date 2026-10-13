@@ -109,9 +109,9 @@ export class UsersManager {
             const isCurrentUser = user.id === (AppState.currentUser ? AppState.currentUser.uid : null);
             
             // Escape for use in onclick attributes
-            const safeId = user.id;
-            const safeName = (user.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            const safeEmail = (user.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const safeId = Helpers.escapeJsAttr(user.id);
+            const safeName = Helpers.escapeJsAttr(user.name || '');
+            const safeEmail = Helpers.escapeJsAttr(user.email || '');
             
             return `
                 <div style="background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px;">

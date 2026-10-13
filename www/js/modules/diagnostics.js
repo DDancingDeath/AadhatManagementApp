@@ -8,6 +8,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { TelemetryService } from '../services/telemetry.js';
 import { AuditService } from '../services/audit.js';
+import { Helpers } from '../utils/helpers.js';
 
 /**
  * Diagnostics Manager - View and manage application telemetry and audit logs
@@ -207,12 +208,12 @@ const DiagnosticsManager = {
         return `
             <div class="diag-error-card" style="border-left: 4px solid ${typeColors[error.type] || '#666'};">
                 <div class="diag-error-header">
-                    <span class="diag-error-type">${typeLabels[error.type] || error.type}</span>
-                    <span class="diag-error-count">${error.count || 1}x</span>
-                    <button onclick="window.app.diagnostics.deleteError('${error.id}')" class="diag-delete-btn">×</button>
+                    <span class="diag-error-type">${typeLabels[error.type] || Helpers.escapeHtml(error.type)}</span>
+                    <span class="diag-error-count">${Helpers.escapeHtml(error.count || 1)}x</span>
+                    <button onclick="window.app.diagnostics.deleteError('${Helpers.escapeJsAttr(error.id)}')" class="diag-delete-btn">×</button>
                 </div>
                 <div class="diag-error-message">${this.escapeHtml(error.message || 'No message')}</div>
-                ${error.source ? `<div class="diag-error-source">📍 ${error.source}:${error.line || '?'}</div>` : ''}
+                ${error.source ? `<div class="diag-error-source">📍 ${Helpers.escapeHtml(error.source)}:${Helpers.escapeHtml(error.line || '?')}</div>` : ''}
                 <div class="diag-error-meta">
                     <span>First: ${firstSeen}</span>
                     <span>Last: ${lastSeen}</span>
@@ -228,7 +229,7 @@ const DiagnosticsManager = {
                         <summary>Recent Occurrences (${error.occurrences.length})</summary>
                         <ul>
                             ${error.occurrences.slice(-5).map(o => `
-                                <li>${new Date(o.timestamp).toLocaleString('en-IN')} - ${o.userName || 'Unknown'}</li>
+                                <li>${new Date(o.timestamp).toLocaleString('en-IN')} - ${Helpers.escapeHtml(o.userName || 'Unknown')}</li>
                             `).join('')}
                         </ul>
                     </details>
@@ -321,13 +322,13 @@ const DiagnosticsManager = {
             <div class="diag-audit-card" style="border-left: 4px solid ${actionColor};">
                 <div class="diag-audit-header">
                     <span class="diag-audit-icon">${actionIcon}</span>
-                    <span class="diag-audit-action" style="color: ${actionColor};">${log.action.replace(/_/g, ' ')}</span>
+                    <span class="diag-audit-action" style="color: ${actionColor};">${Helpers.escapeHtml(log.action.replace(/_/g, ' '))}</span>
                     <span class="diag-audit-time">${formattedDate}</span>
                 </div>
                 <div class="diag-audit-user">
-                    <strong>${log.userName}</strong> (${log.userRole})
+                    <strong>${Helpers.escapeHtml(log.userName)}</strong> (${Helpers.escapeHtml(log.userRole)})
                 </div>
-                ${details ? `<div class="diag-audit-details">${details}</div>` : ''}
+                ${details ? `<div class="diag-audit-details">${Helpers.escapeHtml(details)}</div>` : ''}
             </div>
         `;
     },

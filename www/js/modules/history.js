@@ -138,7 +138,7 @@ export class HistoryManager {
         
         const datalist = document.getElementById('customerOptions');
         if (datalist) {
-            datalist.innerHTML = uniqueCustomers.map(name => `<option value="${name}">`).join('');
+            datalist.innerHTML = uniqueCustomers.map(name => `<option value="${Helpers.escapeHtml(name)}">`).join('');
         }
     }
 
@@ -251,12 +251,12 @@ export class HistoryManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill(${billIndex}, '${bill.type}')">#${billNumber}</span>${bill.customerName ? ` <strong>${bill.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill(${billIndex}, '${bill.type}')">#${billNumber}</span>${bill.customerName ? ` <strong>${Helpers.escapeHtml(bill.customerName)}</strong>` : ''}
                     <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
-                <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
+                <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${Helpers.escapeHtml(bill.createdByName || bill.userName)}</strong>` : ''}</div>
                 <div class="history-summary">
-                    ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets
+                    ${Helpers.escapeHtml(bill.items.map(item => item.name).join(', '))} • ${totalPackets} packets
                 </div>
                 ${paymentHTML}
             `;
@@ -277,7 +277,7 @@ export class HistoryManager {
         const itemsHTML = sale.items.map(item => {
             return `
                 <tr>
-                    <td>${item.name}</td>
+                    <td>${Helpers.escapeHtml(item.name)}</td>
                     <td style="text-align: center;">${item.weights?.length || 1}</td>
                     <td>${item.qty || 0} kg</td>
                     <td>₹${item.rate}</td>
@@ -301,17 +301,17 @@ export class HistoryManager {
                 ${sale.customerName ? `
                     <div class="bill-info-row">
                         <div class="bill-info-label">Customer:</div>
-                        <div class="bill-info-value"><strong>${sale.customerName}</strong></div>
+                        <div class="bill-info-value"><strong>${Helpers.escapeHtml(sale.customerName)}</strong></div>
                     </div>
                 ` : ''}
                 <div class="bill-info-row">
                     <div class="bill-info-label">Date:</div>
-                    <div class="bill-info-value" style="display: inline;">${sale.date}</div>
+                    <div class="bill-info-value" style="display: inline;">${Helpers.escapeHtml(sale.date)}</div>
                 </div>
                 ${sale.userName ? `
                     <div class="bill-info-row">
                         <div class="bill-info-label">Created By:</div>
-                        <div class="bill-info-value" style="display: inline;">${sale.userName}</div>
+                        <div class="bill-info-value" style="display: inline;">${Helpers.escapeHtml(sale.userName)}</div>
                     </div>
                 ` : ''}
             </div>
@@ -382,7 +382,7 @@ export class HistoryManager {
                 const weightsDisplay = item.weights.map(w => parseFloat(w).toFixed(1)).join('&nbsp;&nbsp;');
                 weightBreakdownHTML += `
                     <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid ${billColor};">
-                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
+                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${Helpers.escapeHtml(item.name)} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
                         <div style="color: #6c757d; font-size: 14px; white-space: pre;">${weightsDisplay}</div>
                     </div>
                 `;
@@ -392,7 +392,7 @@ export class HistoryManager {
         // Build items table
         const itemsHTML = bill.items.map(item => `
             <tr>
-                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${Helpers.escapeHtml(item.name)}</td>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)}</td>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${item.total}</strong></td>
@@ -442,13 +442,13 @@ export class HistoryManager {
                     ${bill.createdByName || bill.userName ? `
                         <div class="bill-info-row">
                             <div class="bill-info-label">Created By:</div>
-                            <div class="bill-info-value">${bill.createdByName || bill.userName}</div>
+                            <div class="bill-info-value">${Helpers.escapeHtml(bill.createdByName || bill.userName)}</div>
                         </div>
                     ` : ''}
                     ${bill.customerName ? `
                         <div class="bill-info-row">
                             <div class="bill-info-label">Customer:</div>
-                            <div class="bill-info-value"><strong>${bill.customerName}</strong></div>
+                            <div class="bill-info-value"><strong>${Helpers.escapeHtml(bill.customerName)}</strong></div>
                         </div>
                     ` : ''}
                 </div>
@@ -456,7 +456,7 @@ export class HistoryManager {
                 ${bill.comments ? `
                     <div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
                         <span style="color: #6c757d; font-size: 14px;">Comments:</span>
-                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.comments}</div>
+                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${Helpers.escapeHtml(bill.comments)}</div>
                     </div>
                 ` : ''}
                 
@@ -760,10 +760,10 @@ export class HistoryManager {
                         onclick="window.app.history.viewBill(${billIndex}, '${bill.type}')">
                         ${isFirstRow ? `
                             <td rowspan="${rowspan}" style="padding: 12px 8px; border-right: 1px solid #e5e7eb; font-weight: 500;">
-                                ${bill.customerName || '-'}
+                                ${Helpers.escapeHtml(bill.customerName || '-')}
                             </td>
                         ` : ''}
-                        <td style="padding: 12px 8px;">${item.name}</td>
+                        <td style="padding: 12px 8px;">${Helpers.escapeHtml(item.name)}</td>
                         <td style="padding: 12px 8px; text-align: right;">₹${item.rate}</td>
                         <td style="padding: 12px 8px; text-align: right;">${(item.qty || 0).toFixed(1)}</td>
                         ${isFirstRow ? `

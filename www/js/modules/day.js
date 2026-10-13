@@ -290,7 +290,7 @@ export const DayManager = {
             
             return `
                 <div class="stat-card ${cardClass}" style="text-align: left; padding: 14px;">
-                    <div style="font-weight: 600; color: var(--text-primary); font-size: 15px; margin-bottom: 8px;">${item.name}</div>
+                    <div style="font-weight: 600; color: var(--text-primary); font-size: 15px; margin-bottom: 8px;">${Helpers.escapeHtml(item.name)}</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 13px;">
                         <div><span style="color: var(--text-secondary);">${type === 'purchase' ? 'Purchases:' : 'Sales:'}</span> <strong>${item.count}x</strong></div>
                         <div><span style="color: var(--text-secondary);">Qty:</span> <strong>${item.quantity.toFixed(2)} kg</strong></div>
@@ -396,8 +396,8 @@ export const DayManager = {
                         ${t.icon}
                     </div>
                     <div style="flex: 1; min-width: 0;">
-                        <div style="font-weight: 600; color: #374151; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${t.party}</div>
-                        <div style="font-size: 12px; color: #9ca3af;">${t.label} • ${timeStr}</div>
+                        <div style="font-weight: 600; color: #374151; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${Helpers.escapeHtml(t.party)}</div>
+                        <div style="font-size: 12px; color: #9ca3af;">${Helpers.escapeHtml(t.label)} • ${timeStr}</div>
                     </div>
                     <div style="font-weight: 700; color: ${t.color}; font-size: 15px;">
                         ${t.type === 'expense' || t.type === 'purchase' ? '-' : '+'}${formatCurrency(t.amount)}

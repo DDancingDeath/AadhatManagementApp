@@ -478,13 +478,13 @@ const BillingManager = {
                             <span style="font-weight: 600;">${draft.mode === 'purchase' ? '🔵 Purchase' : '🟢 Sale'} Draft</span>
                             <span style="color: #666; font-size: 14px;">${draft.items?.length || 0} items${draft.weights?.length > 0 ? ` + ${draft.weights.length} weights` : ''}</span>
                         </div>
-                        <div class="history-date">${draft.date}</div>
-                        ${draft.customerName ? `<div style="color: #666; font-size: 13px; margin-top: 4px;">Customer: ${draft.customerName}</div>` : ''}
+                        <div class="history-date">${Helpers.escapeHtml(draft.date)}</div>
+                        ${draft.customerName ? `<div style="color: #666; font-size: 13px; margin-top: 4px;">Customer: ${Helpers.escapeHtml(draft.customerName)}</div>` : ''}
                         <div style="display: flex; gap: 8px; margin-top: 8px;">
-                            <button onclick="window.app.billing.loadDraft('${draft.id}')" style="flex: 1; padding: 8px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                            <button onclick="window.app.billing.loadDraft('${Helpers.escapeJsAttr(draft.id)}')" style="flex: 1; padding: 8px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                 Load
                             </button>
-                            <button onclick="window.app.billing.deleteDraft('${draft.id}')" style="flex: 1; padding: 8px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                            <button onclick="window.app.billing.deleteDraft('${Helpers.escapeJsAttr(draft.id)}')" style="flex: 1; padding: 8px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                 Delete
                             </button>
                         </div>

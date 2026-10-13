@@ -162,7 +162,7 @@ export class WholesaleSalesManager {
         tbody.innerHTML = wholesaleSaleItems.map((item, index) => {
             return `
                 <tr>
-                    <td>${item.name}</td>
+                    <td>${Helpers.escapeHtml(item.name)}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
                     <td>₹${Math.round(item.total)}</td>
@@ -433,7 +433,7 @@ export class WholesaleSalesManager {
         
         const datalist = document.getElementById('wholesaleCustomerOptions');
         if (datalist) {
-            datalist.innerHTML = uniqueCustomers.map(name => `<option value="${name}">`).join('');
+            datalist.innerHTML = uniqueCustomers.map(name => `<option value="${Helpers.escapeHtml(name)}">`).join('');
         }
     }
 
@@ -558,10 +558,10 @@ export class WholesaleSalesManager {
                 const billNumber = sale.billNumber || sale.id;
                 div.innerHTML = `
                     <div class="history-header">
-                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${sale.id}')">#${billNumber}</span>${sale.customerName ? `  <strong>${sale.customerName}</strong>` : ''}</span>
+                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${billNumber}</span>${sale.customerName ? `  <strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}</span>
                         <span style="color: #dc3545; font-weight: 700;">Due: ₹${Math.round(sale.outstanding)}</span>
                     </div>
-                    <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
+                    <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
                     <div style="background: #d1ecf1; border-left: 4px solid #22c55e; padding: 12px; margin: 12px 0; border-radius: 4px;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                             <span>Total Receivable:</span>
@@ -628,12 +628,12 @@ export class WholesaleSalesManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSale(${saleIndex})">#${sale.billNumber || sale.id}</span>${sale.customerName ? `<strong>${sale.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSale(${saleIndex})">#${sale.billNumber || sale.id}</span>${sale.customerName ? `<strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}
                     <span style="color: #28a745; font-weight: 700;">₹ ${Math.round(sale.total)}</span>
                 </div>
-                <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
+                <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
                 <div class="history-summary">
-                    ${sale.items.map(item => item.name).join(', ')}
+                    ${Helpers.escapeHtml(sale.items.map(item => item.name).join(', '))}
                 </div>
                 ${paymentHTML}
             `;
@@ -658,7 +658,7 @@ export class WholesaleSalesManager {
             const qty = item.qty || item.quantity || 0;
             return `
                 <tr>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${Helpers.escapeHtml(item.name)}</td>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${qty}</td>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${Math.round(item.total)}</strong></td>
@@ -696,7 +696,7 @@ export class WholesaleSalesManager {
                 <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #155724;">Payment History</h4>
                 ${sale.payments.map(p => `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                        <span>• ${p.date}${p.recordedBy ? ` by ${p.recordedBy}` : ''}</span>
+                        <span>• ${Helpers.escapeHtml(p.date)}${p.recordedBy ? ` by ${Helpers.escapeHtml(p.recordedBy)}` : ''}</span>
                         <strong>₹${Math.round(p.amount)}</strong>
                     </div>
                 `).join('')}
@@ -714,18 +714,18 @@ export class WholesaleSalesManager {
                     </div>
                     <div class="bill-info-row">
                         <div class="bill-info-label">Date:</div>
-                        <div class="bill-info-value">${sale.date}</div>
+                        <div class="bill-info-value">${Helpers.escapeHtml(sale.date)}</div>
                     </div>
                     ${sale.createdByName ? `
                         <div class="bill-info-row">
                             <div class="bill-info-label">Created By:</div>
-                            <div class="bill-info-value">${sale.createdByName}</div>
+                            <div class="bill-info-value">${Helpers.escapeHtml(sale.createdByName)}</div>
                         </div>
                     ` : ''}
                     ${sale.customerName ? `
                         <div class="bill-info-row">
                             <div class="bill-info-label">Customer:</div>
-                            <div class="bill-info-value"><strong>${sale.customerName}</strong></div>
+                            <div class="bill-info-value"><strong>${Helpers.escapeHtml(sale.customerName)}</strong></div>
                         </div>
                     ` : ''}
                 </div>
@@ -733,7 +733,7 @@ export class WholesaleSalesManager {
                 ${sale.comments ? `
                     <div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
                         <span style="color: #6c757d; font-size: 14px;">Comments:</span>
-                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${sale.comments}</div>
+                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${Helpers.escapeHtml(sale.comments)}</div>
                     </div>
                 ` : ''}
                 

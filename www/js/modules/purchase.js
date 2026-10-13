@@ -239,7 +239,7 @@ const PurchaseManager = {
                     return `
                         <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #007bff;">
                             <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
-                                ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
+                                ${Helpers.escapeHtml(item.name)} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
                             </div>
                             <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
                                 ${weightLines.join('<br>')}
@@ -256,7 +256,7 @@ const PurchaseManager = {
         tbody.innerHTML = billItems.map((item, index) => {
             return `
                 <tr style="cursor: pointer;" onclick="window.app.purchase.editBillItem(${index})">
-                    <td>${item.name}</td>
+                    <td>${Helpers.escapeHtml(item.name)}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
                     <td>₹${Math.round(item.total)}</td>

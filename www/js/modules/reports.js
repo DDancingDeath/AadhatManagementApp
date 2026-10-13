@@ -1,6 +1,7 @@
 // Reports Module - Comprehensive Business Reports
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
+import { Helpers } from '../utils/helpers.js';
 
 export class ReportsManager {
     static currentTab = 'overview';
@@ -405,7 +406,7 @@ export class ReportsManager {
             <div class="top-item">
                 <span class="top-item-rank">${index + 1}</span>
                 <div class="top-item-info">
-                    <div class="top-item-name">${name}</div>
+                    <div class="top-item-name">${Helpers.escapeHtml(name)}</div>
                     <div class="top-item-stats">${data.count} transactions • ${data.qty.toFixed(1)} kg</div>
                 </div>
                 <span class="top-item-value">₹${this.formatNumber(data.value)}</span>
@@ -711,7 +712,7 @@ export class ReportsManager {
 
         container.innerHTML = items.map(([name, data]) => `
             <div class="item-comparison-row">
-                <div class="item-comparison-name">${name}</div>
+                <div class="item-comparison-name">${Helpers.escapeHtml(name)}</div>
                 <div class="item-comparison-bars">
                     <div class="comparison-bar">
                         <span class="bar-label">Purchases</span>
@@ -759,7 +760,7 @@ export class ReportsManager {
         container.innerHTML = items.map(([name, data]) => `
             <div class="item-breakdown-row">
                 <div class="item-breakdown-info">
-                    <div class="item-breakdown-name">${name}</div>
+                    <div class="item-breakdown-name">${Helpers.escapeHtml(name)}</div>
                     <div class="item-breakdown-stats">${data.count} times • ${data.qty.toFixed(1)} kg</div>
                 </div>
                 <div class="item-breakdown-value">
@@ -784,9 +785,9 @@ export class ReportsManager {
         container.innerHTML = recentBills.map(bill => `
             <div class="transaction-item">
                 <div class="transaction-info">
-                    <div class="transaction-customer">${bill.customerName || 'Unknown'}</div>
+                    <div class="transaction-customer">${Helpers.escapeHtml(bill.customerName || 'Unknown')}</div>
                     <div class="transaction-date">${new Date(bill.date).toLocaleDateString('en-IN')}</div>
-                    <div class="transaction-items">${(bill.items || []).map(i => i.name).join(', ')}</div>
+                    <div class="transaction-items">${Helpers.escapeHtml((bill.items || []).map(i => i.name).join(', '))}</div>
                 </div>
                 <span class="transaction-amount">₹${this.formatNumber(bill.billTotal || bill.grandTotal || bill.total || 0)}</span>
             </div>
@@ -958,7 +959,7 @@ export class ReportsManager {
                     .sort((a, b) => b[1].value - a[1].value)
                     .map(([name, data]) => `
                         <tr>
-                            <td>${name}</td>
+                            <td>${Helpers.escapeHtml(name)}</td>
                             <td class="text-right">${data.count}</td>
                             <td class="text-right">${data.qty.toFixed(2)}</td>
                             <td class="text-right">₹${data.value.toLocaleString('en-IN')}</td>
@@ -989,8 +990,8 @@ export class ReportsManager {
                         <tr>
                             <td>${new Date(bill.date).toLocaleDateString('en-IN')}</td>
                             <td>${bill.type}</td>
-                            <td>${bill.customerName || '-'}</td>
-                            <td>${(bill.items || []).map(i => i.name).join(', ')}</td>
+                            <td>${Helpers.escapeHtml(bill.customerName || '-')}</td>
+                            <td>${Helpers.escapeHtml((bill.items || []).map(i => i.name).join(', '))}</td>
                             <td class="text-right">₹${(bill.total || 0).toLocaleString('en-IN')}</td>
                         </tr>
                     `).join('')}

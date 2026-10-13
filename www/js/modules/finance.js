@@ -558,9 +558,9 @@ export class FinanceManager {
             html += `
                 <div class="asset-item" onclick="window.app.finance.editAccount(${index})">
                     <div class="asset-info">
-                        <span class="asset-icon">${acc.icon}</span>
+                        <span class="asset-icon">${Helpers.escapeHtml(acc.icon)}</span>
                         <div>
-                            <div class="asset-name">${acc.name}</div>
+                            <div class="asset-name">${Helpers.escapeHtml(acc.name)}</div>
                             <div class="asset-desc">${isAsset ? 'Asset' : 'Liability'}</div>
                         </div>
                     </div>
@@ -741,7 +741,7 @@ export class FinanceManager {
         
         const datalist = document.getElementById('withdrawalPersonOptions');
         if (datalist) {
-            datalist.innerHTML = persons.map(p => `<option value="${p}">`).join('');
+            datalist.innerHTML = persons.map(p => `<option value="${Helpers.escapeHtml(p)}">`).join('');
         }
     }
 
@@ -834,8 +834,8 @@ export class FinanceManager {
             html += `
                 <div class="withdrawal-item">
                     <div class="withdrawal-info">
-                        <div class="withdrawal-person">💸 ${w.person}</div>
-                        <div class="withdrawal-purpose">${w.purpose}</div>
+                        <div class="withdrawal-person">💸 ${Helpers.escapeHtml(w.person)}</div>
+                        <div class="withdrawal-purpose">${Helpers.escapeHtml(w.purpose)}</div>
                         <div class="withdrawal-date">${date}</div>
                     </div>
                     <div class="withdrawal-amount">-₹${Math.round(w.amount).toLocaleString('en-IN')}</div>
