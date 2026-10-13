@@ -178,6 +178,15 @@ describe('Validator', () => {
 - **Jest Config**: `jest.config.js` - Test environment, patterns, coverage settings
 - **Babel Config**: `babel.config.js` - ES6 module transformation for Node.js
 
+### Firestore Security Rules Tests
+
+`firestore.rules` only lets *approved* users (profile in `users`/`dev_users` with role owner/manager/staff and status not `pending`/`rejected`; a missing status counts as approved) touch business data, and stops users from changing their own `role`/`status`/`approvedAt`/`approvedBy`. The rules are tested against the Firestore emulator (needs Java 11+ on `PATH`/`JAVA_HOME`):
+
+```bash
+cd rules-tests && npm install && cd ..   # one-time: separate deps for the rules tests
+npm run test:rules                       # starts the emulator (demo-aadhat project, port 8181) and runs rules-tests/test.js
+```
+
 ## Validation
 
 The app includes a comprehensive validation utility (`www/js/utils/validator.js`) for client-side form validation:
