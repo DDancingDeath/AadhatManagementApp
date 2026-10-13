@@ -71,6 +71,11 @@ service cloud.firestore {
         || (isApprovedIn(usersCol) && resource.data.get('userId', null) == request.auth.uid);
     }
 
+    function keepsBillOwner(usersCol) {
+      return isOwnerIn(usersCol)
+        || request.resource.data.get('userId', null) == resource.data.get('userId', null);
+    }
+
     // --- user profile rules (shared by users and dev_users) ---
 
     function canReadProfile(usersCol, userId) {
@@ -100,8 +105,14 @@ service cloud.firestore {
 
     // Business collections (production and dev_ mirrors) live under one wildcard match.
     match /{collection}/{docId} {
-      allow read, create, update: if (collection in businessCollections() && isApproved())
+      allow read, create: if (collection in businessCollections() && isApproved())
         || (collection in devBusinessCollections() && isApprovedIn('dev_users'));
+      // Anyone approved may update a bill (e.g. record payments on others' bills),
+      // but only an owner may change who created it (it gates deletion below).
+      allow update: if (collection in businessCollections() && isApproved()
+            && (!(collection in billCollections()) || keepsBillOwner('users')))
+        || (collection in devBusinessCollections() && isApprovedIn('dev_users')
+            && (!(collection in devBillCollections()) || keepsBillOwner('dev_users')));
       // Bills can only be deleted by an owner or by the user who created them
       // (matches the client check in history.js deleteBill).
       allow delete: if (collection in businessCollections() && !(collection in billCollections()) && isApproved())

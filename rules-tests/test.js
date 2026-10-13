@@ -112,6 +112,41 @@ function defineSuite(prefix) {
         await assertSucceeds(as('staff1').collection(`${prefix}drafts`).doc('d').delete());
     });
 
+    t('staff cannot change userId on another user\'s bill (update or full set)', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
+            await assertFails(as('staff1').collection(coll).doc('b').update({ userId: 'staff1' }));
+            await assertFails(as('staff1').collection(coll).doc('b').set({ total: 5, userId: 'staff1' }));
+            await assertFails(as('staff1').collection(coll).doc('b').set({ total: 5 }));
+        }
+    });
+
+    t('staff cannot claim a legacy bill without userId', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'legacy', { total: 5 });
+            await assertFails(as('staff1').collection(coll).doc('legacy').update({ userId: 'staff1' }));
+            // a full rewrite that still has no userId is fine (both null)
+            await assertSucceeds(as('staff1').collection(coll).doc('legacy').set({ total: 6 }));
+        }
+    });
+
+    t('owner can change userId on any bill', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
+            await seedBill(coll, 'legacy', { total: 5 });
+            await assertSucceeds(as('legacyOwner').collection(coll).doc('b').update({ userId: 'staff1' }));
+            await assertSucceeds(as('legacyOwner').collection(coll).doc('legacy').update({ userId: 'staff1' }));
+        }
+    });
+
+    t('staff edit that keeps userId (full set) is allowed on another user\'s bill', async () => {
+        for (const coll of bills) {
+            await seedBill(coll, 'b', { userId: 'manager1', total: 5 });
+            await assertSucceeds(as('staff1').collection(coll).doc('b').set({ userId: 'manager1', total: 7, editedBy: 'staff1' }));
+            await assertSucceeds(as('staff1').collection(coll).doc('b').update({ payments: [{ amount: 1 }], 'payment.cash': 1 }));
+        }
+    });
+
     t('approved manager can write counters', () =>
         assertSucceeds(as('manager1').collection(counters).doc('retail-20261013').set({ next: 2 })));
 
