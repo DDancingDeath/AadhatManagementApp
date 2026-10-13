@@ -78,6 +78,40 @@ service cloud.firestore {
         || request.resource.data.get('userId', null) == resource.data.get('userId', null);
     }
 
+    // Full edits: owner/manager, or the bill's creator (legacy bills without
+    // userId: owner/manager only).
+    function canFullyEditBill(usersCol) {
+      return isManagerIn(usersCol)
+        || (resource.data.get('userId', null) != null
+            && resource.data.get('userId', null) == request.auth.uid);
+    }
+
+    // Everyone else may only touch payment/due bookkeeping written by the app:
+    // payments (outstanding.js applyPaymentTransaction), clearing (markAsCleared,
+    // wholesale markSaleAsCleared) and the legacy backfill (openDue, clientVersion,
+    // a missing numeric timestamp). `timestamp` and `id` may only be filled in,
+    // never changed.
+    function bookkeepingOnly(docId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly([
+          'payment', 'payments', 'dueAmount', 'openDue', 'clientVersion',
+          'cleared', 'clearedAt', 'clearedBy', 'clearedByName',
+          'timestamp', 'id'
+        ])
+        && (!changed.hasAny(['timestamp']) || !(resource.data.get('timestamp', null) is number))
+        && (!changed.hasAny(['id']) || (!('id' in resource.data) && request.resource.data.id == docId));
+    }
+
+    function canUpdateBill(usersCol, docId) {
+      return keepsBillOwner(usersCol) && (canFullyEditBill(usersCol) || bookkeepingOnly(docId));
+    }
+
+    // settings/app (minClientVersion) can lock every outdated phone out: owner only.
+    function appSettingsGuard(collection, docId) {
+      return !(docId == 'app' && collection in ['settings', 'dev_settings'])
+        || isOwnerIn(collection == 'settings' ? 'users' : 'dev_users');
+    }
+
     // Stock records: writes must come from an app version that maintains the stock
     // checkpoint (sets clientVersion >= 3). Blocks outdated apps from creating or
     // overwriting bills/adjustments. DEPLOY ONLY AFTER every phone runs the new app.
@@ -113,7 +147,9 @@ service cloud.firestore {
     function checkpointRules(usersCol, docId) {
       return docId == 'current'
         ? (isManagerIn(usersCol) || (isApprovedIn(usersCol) && staleMarkOnly()))
-        : isApprovedIn(usersCol);
+        : docId == 'legacyScan'
+          ? isManagerIn(usersCol)
+          : isApprovedIn(usersCol);
     }
 
     // --- user profile rules (shared by users and dev_users) ---
@@ -148,23 +184,28 @@ service cloud.firestore {
       allow read: if businessAccess(collection);
       // Stock records need an up-to-date app (clientVersion >= 3) on create/update.
       allow create: if businessAccess(collection)
+        && appSettingsGuard(collection, docId)
         && (!(collection in stockCollections()) || writesCurrentClient());
-      // Anyone approved may update a bill (e.g. record payments on others' bills),
-      // but only an owner may change who created it (it gates deletion below).
+      // Bills: full edits by owner/manager/creator; anyone else approved may only
+      // record payment/due bookkeeping. Only an owner may change userId.
       allow update: if businessAccess(collection)
+        && appSettingsGuard(collection, docId)
         && (!(collection in stockCollections()) || writesCurrentClient())
-        && ((collection in businessCollections() && (!(collection in billCollections()) || keepsBillOwner('users')))
-            || (collection in devBusinessCollections() && (!(collection in devBillCollections()) || keepsBillOwner('dev_users'))));
+        && ((collection in businessCollections() && (!(collection in billCollections()) || canUpdateBill('users', docId)))
+            || (collection in devBusinessCollections() && (!(collection in devBillCollections()) || canUpdateBill('dev_users', docId))));
       // Bills can only be deleted by an owner or by the user who created them
       // (matches the client check in history.js deleteBill).
-      allow delete: if (collection in businessCollections() && !(collection in billCollections()) && isApproved())
+      allow delete: if appSettingsGuard(collection, docId) && (
+           (collection in businessCollections() && !(collection in billCollections()) && isApproved())
         || (collection in devBusinessCollections() && !(collection in devBillCollections()) && isApprovedIn('dev_users'))
         || (collection in billCollections() && canDeleteBill('users'))
-        || (collection in devBillCollections() && canDeleteBill('dev_users'));
+        || (collection in devBillCollections() && canDeleteBill('dev_users')));
     }
 
     // State/lease writes: owner or manager only; anyone approved may mark it stale.
-    // Other docs (legacyScan): any approved user.
+    // legacyScan (backfill completion state): owner/manager only, so staff can't
+    // switch the backfill off; staff devices still backfill and ignore the denied
+    // state write. Other docs: any approved user.
     match /stockCheckpoints/{docId} {
       allow read: if isApproved();
       allow create, update: if checkpointRules('users', docId);
