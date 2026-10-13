@@ -50,9 +50,17 @@ export class StockManager {
         try {
             // Reuse the stock computed by the data listeners when it is still
             // current; only recalculate when the underlying data changed.
-            const stock = await UIManager.withLoading(async () => {
-                return await FirebaseService.getStock();
-            });
+            // While stock is computed from full history in the background, show a
+            // placeholder instead of blocking the whole app.
+            let stock;
+            if (AppState.stockReady === false) {
+                container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">Stock updating…</p>';
+                stock = await FirebaseService.getStock();
+            } else {
+                stock = await UIManager.withLoading(async () => {
+                    return await FirebaseService.getStock();
+                });
+            }
             AppState.stock = stock;
 
             if (Object.keys(stock).length === 0) {

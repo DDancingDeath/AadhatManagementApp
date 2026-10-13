@@ -184,6 +184,9 @@ async function initializeUserData() {
             }
         }
         
+        // Outdated app check (settings/app.minClientVersion), read alongside the listeners.
+        const versionCheck = FirebaseService.isClientVersionSupported();
+
         // Attach real-time listeners. Their first snapshots populate AppState,
         // so every document is read once per app open (a separate .get() of
         // each collection would read everything a second time).
@@ -197,8 +200,17 @@ async function initializeUserData() {
             throw loadError;
         }
         
-        // Calculate stock
-        await FirebaseService.getStock();
+        if (!(await versionCheck)) {
+            FirebaseService.cleanup();
+            UIManager.hideLoading();
+            UIManager.showModal('This app version is outdated. Please update the app to continue.');
+            return;
+        }
+
+        // Stock: immediate when the checkpoint covers it, otherwise computed in
+        // the background (screens show "Stock updating…") so startup never waits
+        // on a full-history read.
+        await FirebaseService.prepareStock();
         
         // Initialize billing manager (connects purchase and retail-sale modules)
         BillingManager.init();

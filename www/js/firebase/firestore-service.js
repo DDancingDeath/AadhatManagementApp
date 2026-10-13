@@ -230,6 +230,13 @@ if (typeof window !== 'undefined') {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CHECKPOINT_COLLECTION = 'stockCheckpoints';
 const CHECKPOINT_DOC_ID = 'current';
+const LEGACY_SCAN_DOC_ID = 'legacyScan';
+/** Keep scanning a collection for timestamp-less docs this long after old clients last wrote one. */
+const LEGACY_RESCAN_MS = 14 * DAY_MS;
+/** Bump when the legacy backfill learns a new field (2: openDue). */
+const LEGACY_SCAN_VERSION = 2;
+/** Owner/manager devices fully rebuild a checkpoint older than this (bounds drift from deletes by outdated apps). */
+const FORCED_REBUILD_AGE_MS = 7 * DAY_MS;
 /** Roll the checkpoint forward once it is this far behind the window start. */
 const ROLL_FORWARD_SLACK_MS = 7 * DAY_MS;
 /** How long a device may hold the rebuild lease. */
@@ -244,7 +251,6 @@ const GET_TIMEOUT_MS = 15000;
 const RETRY_LIMIT_BASE = 1000000;
 /** Retry delay after the full-history read for stock failed. */
 const FULL_LOAD_RETRY_MS = 30000;
-const DUE_FIELDS = ['payment.due', 'dueAmount'];
 /** Max pinned (due-but-not-queryable) bills per collection; listened to in chunks of 30. */
 const PINNED_MAX = 300;
 const PINNED_CHUNK = 30;
@@ -268,11 +274,39 @@ const ALL_HISTORY_VIEWS = [...new Set(HISTORY_COLLECTIONS.flatMap(s => s.views))
 
 /** Firestore document id of each mapped record (the data may carry its own `id`). */
 const docIds = new WeakMap();
+
+/**
+ * Payment state of a bill as loaded from Firestore. Stored under a symbol key
+ * so it survives `{...bill}` copies made by edit screens (and is never written
+ * back: Firestore and JSON ignore symbol keys). update*() compare it with the
+ * server copy to refuse overwriting payments recorded on another device.
+ */
+const LOADED_PAYMENT = Symbol('aadhatLoadedPayment');
+const paymentSignature = (d) => {
+    if (!d) return null;
+    const p = d.payment && typeof d.payment === 'object' ? d.payment : {};
+    const payments = Array.isArray(d.payments) ? d.payments : [];
+    return JSON.stringify([
+        p.due ?? null, p.cash ?? null, p.online ?? null, p.total ?? null,
+        payments.length, payments.length ? payments[payments.length - 1] : null,
+        d.dueAmount ?? null, !!d.cleared
+    ]);
+};
+
 const mapDoc = (doc) => {
-    const rec = { id: doc.id, ...doc.data() };
+    const data = doc.data();
+    const rec = { id: doc.id, ...data };
     docIds.set(rec, doc.id);
+    rec[LOADED_PAYMENT] = paymentSignature(data);
     return rec;
 };
+
+/** Written on every stock-record write; firestore.rules rejects writes without it (blocks outdated apps). */
+const CLIENT_VERSION = 3;
+const STOCK_COLLECTION_KEYS = ['purchases', 'retailSales', 'wholesaleSales', 'stockAdjustments'];
+/** Only owners/managers write checkpoint state (firestore.rules); staff devices never rebuild/roll forward. */
+const canManageCheckpoint = () => ['owner', 'manager'].includes(AppState.userRole);
+const isPermissionDenied = (e) => e?.code === 'permission-denied' || /insufficient permissions/i.test(String(e?.message || ''));
 const docIdOf = (rec) => (docIds.has(rec) ? docIds.get(rec) : String(rec?.id));
 const byDateDesc = dateDescComparator(docIdOf);
 
@@ -286,6 +320,10 @@ let activeCheckpoint = null;
 let checkpointItemsCheck = { items: null, checkpoint: null, ok: false };
 let rebuildPromise = null;
 let rebuildRequestedAgain = false;
+/** Bumped on every change to a stock collection in memory (roll-forward conflict detection). */
+let stockChangeGen = 0;
+/** stockCheckpoints/legacyScan: per collection {complete, foundAt} of the timestamp backfill. */
+let legacyScanDoc = null;
 let oldestTimestampPromise = null;
 let extendQueue = Promise.resolve();
 const pendingExtends = new Map();
@@ -362,6 +400,34 @@ function publishCollection(c) {
     });
     AppState[c.spec.stateKey] = list;
     dataVersion++;
+    if (c.spec.stock) stockChangeGen++;
+}
+
+/**
+ * Keeps the in-memory copy of a record written by this device in step with the
+ * write: one-shot (extended) records are not live, so without this the next
+ * publish would resurrect the pre-edit version. Live records are left to their
+ * listener. record = null for deletes.
+ * @private
+ */
+function noteLocalRecordWrite(collKey, docId, record) {
+    const c = windowState?.colls[collKey];
+    if (!c) return;
+    const id = String(docId);
+    if (record) {
+        if (!liveIdSet(c).has(id)) {
+            const rec = { ...record, id: record.id ?? id };
+            rec[LOADED_PAYMENT] = paymentSignature(record);
+            docIds.set(rec, id);
+            c.extended.set(id, rec);
+        }
+    } else {
+        c.extended.delete(id);
+        c.extended.forEach((rec, key) => {
+            if (String(rec.id) === id) c.extended.delete(key);
+        });
+    }
+    publishCollection(c);
 }
 
 /** Parses a checkpoint doc; null if missing, stale or incompatible. */
@@ -443,7 +509,7 @@ function invalidateCheckpoint(reason, affectsLocal) {
     }
     // Rebuild once the stale mark has reached the server (otherwise the
     // rebuild's own conflict check would discard it).
-    requestRebuild(write);
+    if (canManageCheckpoint()) requestRebuild(write);
 }
 
 /** Safety net for changes seen by listeners (other devices, direct writes). */
@@ -482,16 +548,9 @@ function findRecord(collKey, id) {
     return arr.find(r => docIdOf(r) === sid) || arr.find(r => String(r?.id) === sid) || null;
 }
 
-/** Drops a deleted record from the one-shot set so it is not resurrected. */
+/** Drops a deleted record from memory so it is not resurrected. */
 function forgetRecord(collKey, id) {
-    const c = windowState?.colls[collKey];
-    if (!c) return;
-    const sid = String(id);
-    let removed = c.extended.delete(sid);
-    c.extended.forEach((rec, docId) => {
-        if (String(rec.id) === sid) removed = c.extended.delete(docId) || removed;
-    });
-    if (removed) publishCollection(c);
+    noteLocalRecordWrite(collKey, id, null);
 }
 
 /**
@@ -506,8 +565,69 @@ function ensureTimestamp(record, isNew) {
     record.timestamp = t === Number.MAX_SAFE_INTEGER && isNew ? Date.now() : t;
 }
 
+/**
+ * Fields every FirebaseService bill/adjustment write carries: numeric timestamp,
+ * clientVersion (required by firestore.rules) and, for bills, `openDue`
+ * (the dues listener's filter).
+ * @private
+ */
+function prepareStockRecord(collKey, record, isNew) {
+    ensureTimestamp(record, isNew);
+    record.clientVersion = CLIENT_VERSION;
+    if (HISTORY_SPEC[collKey].dues) record.openDue = hasDue(collKey, record);
+}
+
+/** Creates (or overwrites by id) a bill and keeps memory/checkpoint in step. @private */
+async function saveBill(collKey, record, label) {
+    if (!record.userId && AppState.currentUser) record.userId = AppState.currentUser.uid;
+    if (!record.userName && AppState.userName) record.userName = AppState.userName;
+    const previous = record.id ? findRecord(collKey, record.id) : null;
+    prepareStockRecord(collKey, record, !previous);
+    if (!record.id) record.id = getDb().collection(col(collKey)).doc().id;
+    const write = getDb().collection(col(collKey)).doc(String(record.id)).set(record);
+    noteStockWrite(collKey, previous, record);
+    noteLocalRecordWrite(collKey, String(record.id), record);
+    await settleWrite(write, label);
+    return record;
+}
+
+/**
+ * Overwrites an existing bill only if its payments did not change on the
+ * server since this device loaded it (a full set() would otherwise erase a
+ * payment recorded elsewhere). Runs in a transaction, so it needs a connection.
+ * @private
+ */
+async function updateBillChecked(collKey, record) {
+    if (!record.id) throw new Error('Bill ID is required for update');
+    const previous = findRecord(collKey, record.id);
+    prepareStockRecord(collKey, record, false);
+    const base = record[LOADED_PAYMENT] ?? previous?.[LOADED_PAYMENT] ?? null;
+    const ref = getDb().collection(col(collKey)).doc(String(record.id));
+    await getDb().runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (base !== null && (!snap.exists || paymentSignature(snap.data()) !== base)) {
+            throw Object.assign(
+                new Error('This bill was changed on another device — reopen it and try again'),
+                { code: 'conflict' }
+            );
+        }
+        tx.set(ref, record);
+    });
+    noteStockWrite(collKey, previous, record, { oldUnknown: true });
+    noteLocalRecordWrite(collKey, String(record.id), record);
+    return record;
+}
+
+async function deleteBill(collKey, id) {
+    const previous = findRecord(collKey, id);
+    const write = getDb().collection(col(collKey)).doc(String(id)).delete();
+    noteStockWrite(collKey, previous, null, { oldUnknown: true });
+    await write;
+    forgetRecord(collKey, id);
+}
+
 function requestRebuild(after = Promise.resolve()) {
-    if (!windowState) return;
+    if (!windowState || !canManageCheckpoint()) return;
     const gen = sessionGen;
     Promise.resolve(after).catch(() => {}).then(() => {
         if (gen !== sessionGen || !windowState) return null;
@@ -583,11 +703,16 @@ async function extendHistory(target) {
     snaps.forEach((snap, i) => {
         if (!snap) return;
         const c = ws.colls[HISTORY_COLLECTIONS[i].key];
-        if (snap.metadata?.fromCache) fromServer = false;
+        const fresh = !snap.metadata?.fromCache;
+        if (!fresh) fromServer = false;
         const live = liveIdSet(c);
+        // A fresh full read is authoritative: replace the one-shot set so
+        // records deleted or edited elsewhere don't linger.
+        if (full && fresh) c.extended = new Map();
         snap.docs.forEach(doc => {
             if (!live.has(doc.id)) c.extended.set(doc.id, mapDoc(doc));
         });
+        if (full && fresh) ws.backfills[c.spec.key] = backfillLegacyTimestamps(c.spec, snap.docs);
         publishCollection(c);
     });
     if (fromServer) {
@@ -606,12 +731,14 @@ async function extendHistory(target) {
     }
 }
 
-function queueExtend(target, raw = false) {
-    const covered = () => !windowState || (raw
+let forcedExtends = 0;
+/** force: always do a fresh read (checkpoint rebuild must not reuse in-session data). */
+function queueExtend(target, raw = false, force = false) {
+    const covered = () => !windowState || (!force && (raw
         ? windowState.rawFull
-        : AppState.historyLoadedFrom === 0 || (target > 0 && target >= AppState.historyLoadedFrom));
+        : AppState.historyLoadedFrom === 0 || (target > 0 && target >= AppState.historyLoadedFrom)));
     if (covered()) return Promise.resolve();
-    const key = `${raw ? 'raw' : 'w'}:${target}`;
+    const key = force ? `force:${++forcedExtends}` : `${raw ? 'raw' : 'w'}:${target}`;
     if (pendingExtends.has(key)) return pendingExtends.get(key);
     const gen = sessionGen;
     const p = extendQueue.then(() => (gen === sessionGen && !covered() ? extendHistory(target) : undefined));
@@ -651,7 +778,9 @@ function refetchAfterDueRemoval(c, docId, prev) {
         if (gen !== sessionGen || !windowState || liveIdSet(c).has(docId)) return;
         if (snap.exists) {
             const rec = mapDoc(snap);
-            c.extended.set(docId, rec);
+            // Paid off: keep it only if it is inside the loaded history range.
+            if (AppState.historyLoadedFrom === 0 || eventTime(rec) >= AppState.historyLoadedFrom) c.extended.set(docId, rec);
+            else c.extended.delete(docId);
             if (c.spec.stock && prev) noteObservedChange(c, prev, rec, 'modified');
         } else {
             c.extended.delete(docId);
@@ -675,51 +804,67 @@ function hasDue(collKey, rec) {
     return (p.due || ((rec.total || 0) - received)) > 0;
 }
 
-/** Whether the `payment.due > 0` / `dueAmount > 0` listeners return this bill. */
-const dueVisibleToQueries = (rec) => {
-    const p = rec.payment && typeof rec.payment === 'object' ? rec.payment : {};
-    return (typeof p.due === 'number' && p.due > 0) || (typeof rec.dueAmount === 'number' && rec.dueAmount > 0);
+/** Whether the dues listener (openDue == true, numeric timestamp) returns this bill. */
+const dueVisibleToQueries = (rec) => rec.openDue === true && typeof rec.timestamp === 'number';
+
+const legacyScanRef = () => getDb().collection(col(CHECKPOINT_COLLECTION)).doc(LEGACY_SCAN_DOC_ID);
+
+/** Whether a collection may still hold documents without a numeric timestamp (old clients). */
+const needsLegacyScan = (key) => {
+    const e = legacyScanDoc?.[key];
+    return !e || e.v !== LEGACY_SCAN_VERSION || e.complete !== true || Date.now() - (e.foundAt || 0) < LEGACY_RESCAN_MS;
 };
 
 /**
- * Backfills a numeric `timestamp` (= the time the replay already used) into
- * legacy documents so the window queries see them, and collects the ids of
- * bills that are due but invisible to the dues queries (legacy derived dues,
- * wholesale `total - received`); those are stored in the checkpoint as
- * `pinned` and listened to by id. Writes needed for stock correctness
- * (records at/after the new checkpoint) come first and must succeed; the rest
- * are best effort and capped.
+ * Gives documents without a numeric `timestamp` (legacy data, old app versions)
+ * the time the app already uses for them, so the window queries see them, and
+ * records the outcome in stockCheckpoints/legacyScan. Records at/after the
+ * loaded window start are always written (uncapped); older ones are capped per
+ * pass and finished on later scans. Any approved user may do this.
+ * @param {Object} spec collection spec
+ * @param {Array} docs Firestore document snapshots from an unfiltered server read
+ * @returns {Promise<{ok: boolean, complete: boolean, writes: number}>} ok = all recent ones written
  * @private
  */
-async function runBackfill(asOf) {
-    const ws = windowState;
+function backfillLegacyTimestamps(spec, docs) {
+    // Never rejects (callers keep the promise around).
+    return backfillLegacyTimestampsNow(spec, docs, sessionGen).catch(e => {
+        console.warn(`${spec.label}: timestamp backfill failed:`, e?.code || e);
+        return { ok: false, complete: false, writes: 0 };
+    });
+}
+
+async function backfillLegacyTimestampsNow(spec, docs, gen) {
     const db = getDb();
+    const from = Math.min(windowState?.liveFrom ?? Infinity, defaultWindowStart(Date.now()));
     const critical = [];
     const optional = [];
-    const pinned = {};
-    HISTORY_COLLECTIONS.forEach(spec => { if (spec.dues) pinned[spec.key] = []; });
-    HISTORY_COLLECTIONS.forEach(spec => {
-        const c = ws.colls[spec.key];
-        const all = new Map();
-        c.extended.forEach((rec, id) => all.set(id, rec));
-        [c.live, ...c.dues].forEach(l => l.docs.forEach(rec => all.set(docIdOf(rec), rec)));
-        all.forEach((rec, docId) => {
-            if (rec.date === undefined) return;
-            const update = {};
-            let isCritical = false;
-            if (typeof rec.timestamp !== 'number') {
-                const t = eventTime(rec);
-                if (spec.stock || t !== Number.MAX_SAFE_INTEGER) {
-                    update.timestamp = t;
-                    isCritical = !!spec.stock && t >= asOf;
-                }
+    let lastLegacyEvent = 0;
+    docs.forEach(doc => {
+        const data = doc.data();
+        if (data.date === undefined) return;
+        const update = {};
+        let isCritical = false;
+        if (typeof data.timestamp !== 'number') {
+            const t = eventTime(data);
+            if (spec.stock || t !== Number.MAX_SAFE_INTEGER) {
+                update.timestamp = t;
+                isCritical = t >= from;
+                if (t !== Number.MAX_SAFE_INTEGER && t <= Date.now()) lastLegacyEvent = Math.max(lastLegacyEvent, t);
             }
-            if (Object.keys(update).length) {
-                (isCritical ? critical : optional).push({ ref: db.collection(col(spec.key)).doc(docId), update });
+        }
+        if (spec.dues) {
+            const due = hasDue(spec.key, data);
+            if (data.openDue !== due) {
+                update.openDue = due;
+                if (due) isCritical = true;
             }
-            if (spec.dues && hasDue(spec.key, rec) && !dueVisibleToQueries(rec)) pinned[spec.key].push(docId);
-        });
+        }
+        if (!Object.keys(update).length) return;
+        if (spec.stock) update.clientVersion = CLIENT_VERSION;
+        (isCritical ? critical : optional).push({ id: doc.id, ref: db.collection(col(spec.key)).doc(doc.id), update });
     });
+    const written = new Set();
     const commit = async (writes) => {
         for (let i = 0; i < writes.length; i += BACKFILL_BATCH_SIZE) {
             const chunk = writes.slice(i, i + BACKFILL_BATCH_SIZE);
@@ -727,34 +872,107 @@ async function runBackfill(asOf) {
             chunk.forEach(w => batch.update(w.ref, w.update));
             try {
                 await batch.commit();
+                chunk.forEach(w => written.add(w.id));
             } catch (e) {
                 // e.g. a security-rules access-call limit on large batches: retry one by one.
                 console.warn('Backfill batch failed, retrying documents individually:', e?.code || e);
-                for (const w of chunk) await w.ref.update(w.update);
+                for (const w of chunk) {
+                    await w.ref.update(w.update).then(() => written.add(w.id), err => console.warn('Backfill write failed:', err?.code || err));
+                }
             }
         }
     };
+    let ok = true;
+    let complete = true;
     try {
         await commit(critical);
     } catch (e) {
-        console.error('Stock checkpoint backfill (required part) failed:', e);
-        return { ok: false };
+        console.error(`${spec.label}: timestamp backfill failed:`, e);
+        ok = false;
+        complete = false;
     }
-    const allowed = optional.slice(0, Math.max(0, BACKFILL_MAX_WRITES - critical.length));
-    let complete = allowed.length === optional.length;
+    const allowed = optional.slice(0, BACKFILL_MAX_WRITES);
+    if (allowed.length < optional.length) complete = false;
     try {
         await commit(allowed);
     } catch (e) {
-        console.error('Stock checkpoint backfill (best-effort part) failed:', e);
+        console.error(`${spec.label}: timestamp backfill (older records) failed:`, e);
         complete = false;
     }
-    Object.keys(pinned).forEach(k => {
-        if (pinned[k].length > PINNED_MAX) {
-            console.warn(`${pinned[k].length} ${k} bills have a due only derivable from totals; listening to the first ${PINNED_MAX}.`);
-            pinned[k] = pinned[k].slice(0, PINNED_MAX);
+    if (windowState) (windowState.backfillWritten ||= {})[spec.key] = written;
+    if (critical.some(w => !written.has(w.id))) ok = false;
+    if (gen !== sessionGen) return { ok, complete, writes: critical.length + allowed.length };
+    const prev = legacyScanDoc?.[spec.key] || {};
+    // foundAt ~ when an outdated app last wrote such a document (its event time).
+    const entry = { v: LEGACY_SCAN_VERSION, complete, foundAt: Math.max(prev.foundAt || 0, lastLegacyEvent), at: Date.now() };
+    legacyScanDoc = { ...(legacyScanDoc || {}), [spec.key]: entry };
+    legacyScanRef().set({ [spec.key]: entry }, { merge: true })
+        .catch(e => console.warn('Saving legacy scan state failed:', e?.code || e));
+    if (critical.length || allowed.length) console.info(`${spec.label}: backfilled timestamp on ${critical.length + allowed.length} documents`);
+    return { ok, complete, writes: critical.length + allowed.length };
+}
+
+/**
+ * Startup safety net while a collection may hold documents without a numeric
+ * timestamp: one unfiltered read of it, merging the recent ones (they are
+ * invisible to the window query) and backfilling them.
+ * @private
+ */
+async function scanLegacyCollections(ws, gen) {
+    for (const spec of HISTORY_COLLECTIONS) {
+        if (!needsLegacyScan(spec.key)) continue;
+        const db = getDb();
+        let snap;
+        try {
+            snap = await getWithRetry(a => (a ? db.collection(col(spec.key)).limit(RETRY_LIMIT_BASE + a) : db.collection(col(spec.key))), `${spec.label} legacy scan`);
+        } catch (e) {
+            console.warn(`${spec.label}: legacy timestamp scan failed:`, e?.code || e);
+            continue;
+        }
+        if (gen !== sessionGen || windowState !== ws) return;
+        const c = ws.colls[spec.key];
+        const live = liveIdSet(c);
+        snap.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.date !== undefined && !live.has(doc.id) &&
+                ((typeof data.timestamp !== 'number' && eventTime(data) >= ws.liveFrom) ||
+                 (spec.dues && hasDue(spec.key, data) && !dueVisibleToQueries(data)))) {
+                c.extended.set(doc.id, mapDoc(doc));
+            }
+        });
+        publishCollection(c);
+        if (!snap.metadata?.fromCache) ws.backfills[spec.key] = backfillLegacyTimestamps(spec, snap.docs);
+    }
+}
+
+/**
+ * Ids of bills that are due but invisible to the dues queries (legacy derived
+ * dues, wholesale `total - received`); stored in the checkpoint as `pinned`
+ * and listened to by id.
+ * @private
+ */
+function computePinned() {
+    const ws = windowState;
+    const pinned = {};
+    HISTORY_COLLECTIONS.forEach(spec => {
+        if (!spec.dues) return;
+        pinned[spec.key] = [];
+        const c = ws.colls[spec.key];
+        const all = new Map();
+        c.extended.forEach((rec, id) => all.set(id, rec));
+        [c.live, ...c.dues].forEach(l => l.docs.forEach(rec => all.set(docIdOf(rec), rec)));
+        const written = ws.backfillWritten?.[spec.key] || new Set();
+        all.forEach((rec, docId) => {
+            if (rec.date !== undefined && hasDue(spec.key, rec) && !dueVisibleToQueries(rec) && !written.has(docId)) {
+                pinned[spec.key].push(docId);
+            }
+        });
+        if (pinned[spec.key].length > PINNED_MAX) {
+            console.warn(`${pinned[spec.key].length} ${spec.key} bills have a due only derivable from totals; listening to the first ${PINNED_MAX}.`);
+            pinned[spec.key] = pinned[spec.key].slice(0, PINNED_MAX);
         }
     });
-    return { ok: true, complete, writes: critical.length + allowed.length, pinned };
+    return pinned;
 }
 
 const RESOLUTION_TAG = (r) => `${typeof r[0]}\u0000${r[0]}\u0000${r[1]}`;
@@ -808,6 +1026,14 @@ function listenCheckpoint(gen) {
                 if (ready) {
                     if (checkpointDoc && !checkpointDoc.stale && adoptCheckpoint(checkpointDoc)) {
                         markDirty(['stockView'], true);
+                    } else if (checkpointDoc?.stale && activeCheckpoint &&
+                        (checkpointDoc.staleCount || 0) > activeCheckpoint.staleCount) {
+                        // Another device changed history before the checkpoint: stop using it
+                        // (full replay) until a rebuilt one arrives.
+                        activeCheckpoint = null;
+                        dataVersion++;
+                        markDirty(['stockView'], true);
+                        requestRebuild();
                     }
                     return;
                 }
@@ -839,36 +1065,52 @@ function listenCheckpoint(gen) {
 async function rollForwardCheckpoint(cp, newAsOf) {
     const ws = windowState;
     const gen = sessionGen;
+    if (!canManageCheckpoint()) return 'not-allowed';
     if (!ws || ws.liveFrom > cp.asOf) return 'uncovered';
     if (HISTORY_COLLECTIONS.some(s => s.stock && !ws.colls[s.key].live.server)) return 'waiting';
     const items = AppState.items || [];
+    // Any stock change seen after this point (e.g. another device editing a record in
+    // [asOf, newAsOf)) may be missing from the state below: then the payload is discarded.
+    const changeGen = stockChangeGen;
     const { state, resolutions } = buildCheckpointState(currentSources(), newAsOf, items, { state: cp.state, from: cp.asOf });
     const allResolutions = new Map();
     [...cp.resolutions, ...resolutions].forEach(r => allResolutions.set(RESOLUTION_TAG(r), r));
     const ref = checkpointRef();
     let payload = null;
-    const ok = await getDb().runTransaction(async tx => {
-        const snap = await tx.get(ref);
-        const d = snap.exists ? snap.data() : null;
-        if (!d || d.formatVersion !== STOCK_REPLAY_FORMAT || d.stale || d.asOf !== cp.asOf ||
-            (d.staleCount || 0) !== cp.staleCount || (d.builtAt || 0) !== cp.builtAt ||
-            (d.rebuildingUntil || 0) > Date.now()) {
-            return false;
-        }
-        payload = checkpointPayload({
-            asOf: newAsOf,
-            state,
-            resolutions: [...allResolutions.values()],
-            items,
-            staleCount: cp.staleCount,
-            backfill: d.backfill || null,
-            extra: { rolledForwardFrom: cp.asOf, pinned: d.pinned || null }
+    let ok;
+    try {
+        ok = await getDb().runTransaction(async tx => {
+            const snap = await tx.get(ref);
+            const d = snap.exists ? snap.data() : null;
+            if (stockChangeGen !== changeGen) return 'changed';
+            if (!d || d.formatVersion !== STOCK_REPLAY_FORMAT || d.stale || d.asOf !== cp.asOf ||
+                (d.staleCount || 0) !== cp.staleCount || (d.builtAt || 0) !== cp.builtAt ||
+                (d.rebuildingUntil || 0) > Date.now()) {
+                return 'conflict';
+            }
+            payload = checkpointPayload({
+                asOf: newAsOf,
+                state,
+                resolutions: [...allResolutions.values()],
+                items,
+                staleCount: cp.staleCount,
+                backfill: d.backfill || null,
+                extra: { rolledForwardFrom: cp.asOf, pinned: d.pinned || null, fullBuiltAt: d.fullBuiltAt || d.builtAt || 0 }
+            });
+            if (JSON.stringify(payload).length > CHECKPOINT_MAX_BYTES) return 'too-large';
+            tx.set(ref, payload);
+            return 'rolled';
         });
-        if (JSON.stringify(payload).length > CHECKPOINT_MAX_BYTES) return false;
-        tx.set(ref, payload);
-        return true;
-    });
-    if (!ok) return 'conflict';
+    } catch (e) {
+        if (isPermissionDenied(e)) return 'not-allowed';
+        throw e;
+    }
+    if (ok !== 'rolled') return ok;
+    if (stockChangeGen !== changeGen) {
+        // A change landed between the check and the commit: the stored state may miss it.
+        invalidateCheckpoint('roll-forward raced with a stock change', true);
+        return 'changed';
+    }
     if (gen === sessionGen) adoptCheckpoint(payload);
     console.info(`Stock checkpoint rolled forward to ${new Date(newAsOf).toISOString()}`);
     return 'rolled';
@@ -876,43 +1118,61 @@ async function rollForwardCheckpoint(cp, newAsOf) {
 
 /** See FirebaseService.rebuildStockCheckpoint(). @private */
 async function rebuildCheckpointNow(gen) {
+    if (!canManageCheckpoint()) return { status: 'not-allowed' };
     const db = getDb();
     const ref = checkpointRef();
     const token = `${AppState.currentUser?.uid || 'anon'}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
     let baseStaleCount = 0;
-    const lease = await db.runTransaction(async tx => {
-        const snap = await tx.get(ref);
-        const d = snap.exists ? snap.data() : null;
-        const parsed = parseCheckpoint(d);
-        if (parsed && checkpointMatchesItems(parsed)) return 'fresh';
-        if (d && (d.rebuildingUntil || 0) > Date.now()) return 'leased';
-        baseStaleCount = d?.staleCount || 0;
-        tx.set(ref, { rebuildingUntil: Date.now() + REBUILD_LEASE_MS, rebuildingBy: token }, { merge: true });
-        return 'acquired';
-    });
+    let lease;
+    try {
+        lease = await db.runTransaction(async tx => {
+            const snap = await tx.get(ref);
+            const d = snap.exists ? snap.data() : null;
+            const parsed = parseCheckpoint(d);
+            const aged = Date.now() - ((d && (d.fullBuiltAt || d.builtAt)) || 0) > FORCED_REBUILD_AGE_MS;
+            if (parsed && checkpointMatchesItems(parsed) && !aged) return 'fresh';
+            if (d && (d.rebuildingUntil || 0) > Date.now()) return 'leased';
+            baseStaleCount = d?.staleCount || 0;
+            tx.set(ref, { rebuildingUntil: Date.now() + REBUILD_LEASE_MS, rebuildingBy: token }, { merge: true });
+            return 'acquired';
+        });
+    } catch (e) {
+        if (isPermissionDenied(e)) {
+            console.warn('Stock checkpoint: not allowed to rebuild (role); using full history.');
+            return { status: 'not-allowed' };
+        }
+        throw e;
+    }
     if (lease !== 'acquired') return { status: lease };
     let result = { status: 'failed' };
     try {
-        await queueExtend(0, true);
+        // Always a fresh full server read: in-session copies may be stale.
+        await queueExtend(0, true, true);
         const ws = windowState;
         if (gen !== sessionGen || !ws) return (result = { status: 'cancelled' });
         if (!ws.rawFull || HISTORY_COLLECTIONS.some(s => s.stock && !ws.colls[s.key].live.server)) {
             return (result = { status: 'offline' });
         }
         const asOf = Math.max(defaultWindowStart(Date.now()), ws.liveFrom);
-        const backfill = await runBackfill(asOf);
+        const backfills = await Promise.all(HISTORY_COLLECTIONS.map(spec => ws.backfills[spec.key] || { ok: true, complete: true, writes: 0 }));
         if (gen !== sessionGen) return (result = { status: 'cancelled' });
-        if (!backfill.ok) return (result = { status: 'backfill-failed' });
+        if (HISTORY_COLLECTIONS.some((spec, i) => spec.stock && !backfills[i].ok)) return (result = { status: 'backfill-failed' });
+        const backfill = {
+            complete: backfills.every(b => b.complete),
+            writes: backfills.reduce((n, b) => n + b.writes, 0),
+            at: Date.now()
+        };
         const items = AppState.items || [];
         const { state, resolutions } = buildCheckpointState(currentSources(), asOf, items);
+        const now = Date.now();
         const payload = checkpointPayload({
             asOf,
             state,
             resolutions,
             items,
             staleCount: baseStaleCount,
-            backfill: { complete: backfill.complete, writes: backfill.writes, at: Date.now() },
-            extra: { pinned: backfill.pinned }
+            backfill,
+            extra: { pinned: computePinned(), fullBuiltAt: now }
         });
         if (JSON.stringify(payload).length > CHECKPOINT_MAX_BYTES) {
             console.error('Stock checkpoint too large to store; stock keeps using full history.');
@@ -929,6 +1189,12 @@ async function rebuildCheckpointNow(gen) {
         if (gen === sessionGen && adoptCheckpoint(payload)) markDirty(['stockView'], true);
         console.info(`Stock checkpoint rebuilt as of ${new Date(asOf).toISOString()} (${backfill.writes} backfill writes)`);
         return (result = { status: 'built', asOf, backfill });
+    } catch (e) {
+        if (isPermissionDenied(e)) {
+            console.warn('Stock checkpoint: not allowed to rebuild (role); using full history.');
+            return (result = { status: 'not-allowed' });
+        }
+        throw e;
     } finally {
         if (result.status !== 'built') {
             db.runTransaction(async tx => {
@@ -940,6 +1206,7 @@ async function rebuildCheckpointNow(gen) {
         }
     }
 }
+
 
 /** Max time a bill save waits for the server to acknowledge a write. */
 const WRITE_ACK_TIMEOUT_MS = 1500;
@@ -1145,22 +1412,7 @@ const FirebaseService = {
      * @returns {Promise<Object>} The saved purchase with ID
      */
     async savePurchase(purchase) {
-        if (!purchase.userId && AppState.currentUser) {
-            purchase.userId = AppState.currentUser.uid;
-        }
-        if (!purchase.userName && AppState.userName) {
-            purchase.userName = AppState.userName;
-        }
-        
-        const previous = purchase.id ? findRecord('purchases', purchase.id) : null;
-        ensureTimestamp(purchase, !previous);
-        if (!purchase.id) {
-            purchase.id = getDb().collection(col('purchases')).doc().id;
-        }
-        const write = getDb().collection(col('purchases')).doc(purchase.id).set(purchase);
-        noteStockWrite('purchases', previous, purchase);
-        await settleWrite(write, 'savePurchase');
-        return purchase;
+        return saveBill('purchases', purchase, 'savePurchase');
     },
 
     /**
@@ -1172,15 +1424,7 @@ const FirebaseService = {
      * @throws {Error} If purchase.id is not provided
      */
     async updatePurchase(purchase) {
-        if (!purchase.id) {
-            throw new Error('Purchase ID is required for update');
-        }
-        const previous = findRecord('purchases', purchase.id);
-        ensureTimestamp(purchase, false);
-        const write = getDb().collection(col('purchases')).doc(purchase.id).set(purchase);
-        noteStockWrite('purchases', previous, purchase, { oldUnknown: true });
-        await write;
-        return purchase;
+        return updateBillChecked('purchases', purchase);
     },
 
     /**
@@ -1190,11 +1434,7 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deletePurchase(purchaseId) {
-        const previous = findRecord('purchases', purchaseId);
-        const write = getDb().collection(col('purchases')).doc(purchaseId).delete();
-        noteStockWrite('purchases', previous, null, { oldUnknown: true });
-        await write;
-        forgetRecord('purchases', purchaseId);
+        await deleteBill('purchases', purchaseId);
     },
 
     /**
@@ -1219,22 +1459,7 @@ const FirebaseService = {
      * @returns {Promise<Object>} The saved sale with ID
      */
     async saveWholesaleSale(sale) {
-        if (!sale.userId && AppState.currentUser) {
-            sale.userId = AppState.currentUser.uid;
-        }
-        if (!sale.userName && AppState.userName) {
-            sale.userName = AppState.userName;
-        }
-        
-        const previous = sale.id ? findRecord('wholesaleSales', sale.id) : null;
-        ensureTimestamp(sale, !previous);
-        if (!sale.id) {
-            sale.id = getDb().collection(col('wholesaleSales')).doc().id;
-        }
-        const write = getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale);
-        noteStockWrite('wholesaleSales', previous, sale);
-        await settleWrite(write, 'saveWholesaleSale');
-        return sale;
+        return saveBill('wholesaleSales', sale, 'saveWholesaleSale');
     },
 
     /**
@@ -1246,15 +1471,7 @@ const FirebaseService = {
      * @throws {Error} If sale.id is not provided
      */
     async updateWholesaleSale(sale) {
-        if (!sale.id) {
-            throw new Error('Sale ID is required for update');
-        }
-        const previous = findRecord('wholesaleSales', sale.id);
-        ensureTimestamp(sale, false);
-        const write = getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale);
-        noteStockWrite('wholesaleSales', previous, sale, { oldUnknown: true });
-        await write;
-        return sale;
+        return updateBillChecked('wholesaleSales', sale);
     },
 
     /**
@@ -1269,22 +1486,7 @@ const FirebaseService = {
      * @returns {Promise<Object>} The saved sale with ID
      */
     async saveRetailSale(sale) {
-        if (!sale.userId && AppState.currentUser) {
-            sale.userId = AppState.currentUser.uid;
-        }
-        if (!sale.userName && AppState.userName) {
-            sale.userName = AppState.userName;
-        }
-        
-        const previous = sale.id ? findRecord('retailSales', sale.id) : null;
-        ensureTimestamp(sale, !previous);
-        if (!sale.id) {
-            sale.id = getDb().collection(col('retailSales')).doc().id;
-        }
-        const write = getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale);
-        noteStockWrite('retailSales', previous, sale);
-        await settleWrite(write, 'saveRetailSale');
-        return sale;
+        return saveBill('retailSales', sale, 'saveRetailSale');
     },
 
     /**
@@ -1306,15 +1508,7 @@ const FirebaseService = {
      * @throws {Error} If sale.id is not provided
      */
     async updateRetailSale(sale) {
-        if (!sale.id) {
-            throw new Error('Sale ID is required for update');
-        }
-        const previous = findRecord('retailSales', sale.id);
-        ensureTimestamp(sale, false);
-        const write = getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale);
-        noteStockWrite('retailSales', previous, sale, { oldUnknown: true });
-        await write;
-        return sale;
+        return updateBillChecked('retailSales', sale);
     },
 
     /**
@@ -1324,11 +1518,7 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deleteRetailSale(saleId) {
-        const previous = findRecord('retailSales', saleId);
-        const write = getDb().collection(col('retailSales')).doc(String(saleId)).delete();
-        noteStockWrite('retailSales', previous, null, { oldUnknown: true });
-        await write;
-        forgetRecord('retailSales', saleId);
+        await deleteBill('retailSales', saleId);
     },
 
     /**
@@ -1338,11 +1528,7 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deleteWholesaleSale(saleId) {
-        const previous = findRecord('wholesaleSales', saleId);
-        const write = getDb().collection(col('wholesaleSales')).doc(String(saleId)).delete();
-        noteStockWrite('wholesaleSales', previous, null, { oldUnknown: true });
-        await write;
-        forgetRecord('wholesaleSales', saleId);
+        await deleteBill('wholesaleSales', saleId);
     },
 
     /**
@@ -1421,6 +1607,78 @@ const FirebaseService = {
     },
 
     /**
+     * Updates fields of an existing expense in place (numeric ids are legacy
+     * `id` fields, others document ids) and keeps the in-memory copy in step.
+     * @param {string|number} expenseId
+     * @param {Object} fields
+     * @returns {Promise<void>}
+     */
+    async updateExpense(expenseId, fields) {
+        const coll = getDb().collection(col('expenses'));
+        let refs;
+        if (typeof expenseId === 'number' || !isNaN(Number(expenseId))) {
+            const snapshot = await getWithRetry(coll.where('id', '==', Number(expenseId)), 'Expense lookup');
+            refs = snapshot.docs.map(doc => doc.ref);
+        } else {
+            refs = [coll.doc(String(expenseId))];
+        }
+        if (refs.length === 0) throw new Error('Expense not found');
+        await Promise.all(refs.map(ref => ref.update(fields)));
+        refs.forEach(ref => {
+            const prev = findRecord('expenses', ref.id) || findRecord('expenses', expenseId);
+            if (prev) noteLocalRecordWrite('expenses', ref.id, { ...prev, ...fields });
+        });
+    },
+
+    /**
+     * Whether a bill has money due as the screens compute it (Due tab rule, plus
+     * the wholesale `total - received` rule). Stored as `openDue` on bills.
+     * @param {'purchases'|'retailSales'|'wholesaleSales'} collKey
+     * @param {Object} bill
+     * @returns {boolean}
+     */
+    billHasOpenDue(collKey, bill) {
+        return hasDue(collKey, bill);
+    },
+
+    /** Version written as `clientVersion` on stock records (see firestore.rules). */
+    CLIENT_VERSION,
+
+    /**
+     * Startup check against settings/app.minClientVersion. Resolves false when
+     * this app is older than the minimum (caller shows an update message).
+     * Unreadable/missing settings never block.
+     * @returns {Promise<boolean>}
+     */
+    async isClientVersionSupported() {
+        try {
+            const snap = await getWithRetry(getDb().collection(col('settings')).doc('app'), 'App settings', { attempts: 2, timeoutMs: 8000 });
+            const min = snap.exists ? Number(snap.data().minClientVersion) : NaN;
+            return !(Number.isFinite(min) && min > CLIENT_VERSION);
+        } catch (e) {
+            console.warn('Reading minClientVersion failed:', e?.code || e);
+            return true;
+        }
+    },
+
+    /**
+     * Startup: computes stock if that needs no full-history read; otherwise
+     * starts it in the background (AppState.stockReady stays false until the
+     * exact stock is available; screens show "Stock updating…").
+     * @returns {Promise<void>}
+     */
+    async prepareStock() {
+        if (!windowState || usableCheckpoint() || AppState.historyLoadedFrom === 0) {
+            await this.getStock();
+            return;
+        }
+        AppState.stockReady = false;
+        this.getStock()
+            .then(() => markDirty(['stockView', 'itemsList', 'billingDropdown', 'salesDropdown'], false))
+            .catch(e => console.error('Background stock calculation failed:', e));
+    },
+
+    /**
      * Loads all stock adjustments from Firestore, ordered by date descending.
      * @async
      * @returns {Promise<Array<Object>>} Array of stock adjustment objects
@@ -1450,7 +1708,7 @@ const FirebaseService = {
             adjustment.userName = AppState.userName;
         }
         
-        ensureTimestamp(adjustment, true);
+        prepareStockRecord('stockAdjustments', adjustment, true);
         const write = getDb().collection(col('stockAdjustments')).add(adjustment);
         noteStockWrite('stockAdjustments', null, adjustment);
         const docRef = await write;
@@ -1566,6 +1824,7 @@ const FirebaseService = {
         const version = dataVersion;
         const stock = await this.calculateStock();
         AppState.stock = stock;
+        AppState.stockReady = true;
         stockCache = { stock, version };
         return stock;
     },
@@ -1648,6 +1907,7 @@ const FirebaseService = {
      */
     rebuildStockCheckpoint() {
         if (!windowState) return Promise.resolve({ status: 'inactive' });
+        if (!canManageCheckpoint()) return Promise.resolve({ status: 'not-allowed' });
         if (rebuildPromise) {
             rebuildRequestedAgain = true;
             return rebuildPromise;
@@ -1679,10 +1939,17 @@ const FirebaseService = {
         const cp = usableCheckpoint();
         // Without a usable checkpoint calculateStock() loads full history and then requests the rebuild.
         if (!cp) return 'rebuild';
+        if (!canManageCheckpoint()) return 'not-allowed';
+        const d = checkpointDoc || {};
+        if (Date.now() - (d.fullBuiltAt || d.builtAt || 0) > FORCED_REBUILD_AGE_MS) {
+            // Deletes by outdated apps can't be detected: bound the drift with a weekly full rebuild.
+            requestRebuild();
+            return 'rebuild-aged';
+        }
         const W = defaultWindowStart(Date.now());
         if (cp.asOf >= W - ROLL_FORWARD_SLACK_MS) return 'current';
         const result = await rollForwardCheckpoint(cp, W);
-        if (result === 'waiting' && attempt < 5) {
+        if ((result === 'waiting' || result === 'changed') && attempt < 5) {
             const gen = sessionGen;
             setTimeout(() => {
                 if (gen === sessionGen) this.maintainStockCheckpoint(attempt + 1).catch(e => console.error('Stock checkpoint roll-forward failed:', e));
@@ -1779,12 +2046,15 @@ const FirebaseService = {
             markDirty([], true);
         }, { mapFn: defaultMapDoc })];
 
-        const historyReady = listenCheckpoint(gen).then(() => {
+        const legacyScanRead = getWithRetry(legacyScanRef(), 'Legacy scan state', { attempts: 2 })
+            .then(snap => { legacyScanDoc = snap.exists ? snap.data() : {}; })
+            .catch(e => { console.warn('Reading legacy scan state failed:', e?.code || e); legacyScanDoc = null; });
+        const historyReady = Promise.all([listenCheckpoint(gen), legacyScanRead]).then(() => {
             if (gen !== sessionGen) return undefined;
             const W = defaultWindowStart(Date.now());
             const cp = parseCheckpoint(checkpointDoc);
             const liveFrom = cp ? Math.min(W, cp.asOf) : W;
-            windowState = { gen, liveFrom, rawFull: false, colls: {} };
+            windowState = { gen, liveFrom, rawFull: false, colls: {}, backfills: {} };
             AppState.historyLoadedFrom = liveFrom;
             if (cp) adoptCheckpoint(checkpointDoc);
 
@@ -1807,7 +2077,8 @@ const FirebaseService = {
                 }, { optional: !!spec.optional }));
 
                 if (!spec.dues) return;
-                const dueQueries = DUE_FIELDS.map(field => [field, db.collection(col(spec.key)).where(field, '>', 0)]);
+                // Older bills with money due (in-window bills come from the window query).
+                const dueQueries = [['openDue', db.collection(col(spec.key)).where('openDue', '==', true).where('timestamp', '<', liveFrom)]];
                 const pinnedIds = Array.isArray(checkpointDoc?.pinned?.[spec.key]) ? checkpointDoc.pinned[spec.key].slice(0, PINNED_MAX) : [];
                 const docIdPath = typeof firebase !== 'undefined' && firebase.firestore?.FieldPath?.documentId
                     ? firebase.firestore.FieldPath.documentId() : null;
@@ -1833,7 +2104,9 @@ const FirebaseService = {
                     }, { optional: true }));
                 });
             });
-            return Promise.all(waits);
+            const ws = windowState;
+            // Without a usable checkpoint calculateStock() reads everything anyway (and backfills).
+            return Promise.all(waits).then(() => (cp ? scanLegacyCollections(ws, gen) : undefined));
         });
         firstSnapshots.push(historyReady);
 

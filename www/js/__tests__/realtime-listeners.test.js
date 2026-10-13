@@ -22,9 +22,10 @@ function install(options) {
     global.firebase = fake.firebase;
     fake.seed('items', ITEMS);
     fake.seed('stockCheckpoints', [{
-        id: 'current', formatVersion: 1, asOf: defaultWindowStart(NOW), state: [], resolutions: [],
-        itemsSignature: itemsSignature(ITEMS), stale: false, staleCount: 0, builtAt: 1
+        id: 'current', formatVersion: 2, asOf: defaultWindowStart(NOW), state: [], resolutions: [],
+        itemsSignature: itemsSignature(ITEMS), stale: false, staleCount: 0, builtAt: Date.now(), fullBuiltAt: Date.now()
     }]);
+    fake.seed('stockCheckpoints', [{ id: 'legacyScan', ...Object.fromEntries(['purchases', 'retailSales', 'wholesaleSales', 'expenses', 'stockAdjustments', 'withdrawals'].map(c => [c, { v: 2, complete: true, foundAt: 0 }])) }]);
 }
 
 const bill = (id, t, extra = {}) => ({ id, timestamp: t, date: new Date(t).toISOString(), ...extra });

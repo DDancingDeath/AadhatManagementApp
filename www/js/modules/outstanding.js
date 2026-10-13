@@ -336,6 +336,8 @@ export class OutstandingManager {
                 if (Object.prototype.hasOwnProperty.call(fresh, 'dueAmount')) {
                     update.dueAmount = newDue;
                 }
+                update.openDue = FirebaseService.billHasOpenDue(COLLECTION_BY_TYPE[transactionType] || 'wholesaleSales', { ...fresh, ...update });
+                update.clientVersion = FirebaseService.CLIENT_VERSION;
                 tx.update(ref, update);
                 return update;
             });
@@ -364,6 +366,8 @@ export class OutstandingManager {
             
             await db.collection(colName(collection)).doc(String(transactionId)).update({
                 cleared: true,
+                openDue: false,
+                clientVersion: FirebaseService.CLIENT_VERSION,
                 clearedAt: Helpers.getCurrentDateTime(),
                 clearedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
                 clearedByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')

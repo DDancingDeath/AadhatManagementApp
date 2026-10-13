@@ -47,6 +47,8 @@ export const AppState = {
     currentWeights: [],
     /** @type {Object<string, {quantity: number, rate: number}>} Stock by item ID */
     stock: {},
+    /** @type {boolean} false while stock is being (re)computed from full history; AppState.stock is not final then */
+    stockReady: true,
     /** @type {Array<Object>} Current sale items (temporary) */
     salesItems: [],
     /** @type {Array<Object>} Wholesale sales history */
