@@ -9,6 +9,17 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
+import { todayLocalISO, localISODaysAgo, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+
+const sessionRef = (sessionId) => {
+    const name = window.getCollection ? window.getCollection('cashManagement') : 'cashManagement';
+    return FirebaseService.db.collection(name).doc(String(sessionId));
+};
+
+const billTime = (value) => {
+    const d = parseAnyBillDate(value);
+    return d ? d.getTime() : NaN;
+};
 
 /**
  * Cash Management Manager - Manages daily cash operations
@@ -115,51 +126,70 @@ export class CashManagementManager {
      */
     static async autoSignOutPreviousDays(sessions) {
         try {
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const today = todayLocalISO(); // YYYY-MM-DD (local day, not UTC)
             
-            // Find any sessions that are not today and not signed out
-            const unclosedSessions = sessions.filter(s => s.date !== today && !s.signedOut);
+            // Find any sessions from earlier days that are not signed out
+            const unclosedSessions = sessions.filter(s => s.date && s.date < today && !s.signedOut);
             
             // Update all unclosed sessions in parallel
             const updatePromises = unclosedSessions.map(async (session) => {
-                // Calculate transactions for that specific date
-                const transactions = this.calculateTransactionsForDate(session.date, session);
-                
-                // Calculate expected balance
-                const opening = session.openingBalance || 0;
-                const expectedBalance = opening 
-                    + transactions.cashSales 
-                    + transactions.dueReceived 
-                    + transactions.cashDeposits
-                    - transactions.cashPurchases 
-                    - transactions.businessExpenses 
-                    - transactions.personalExpenses 
-                    - transactions.duePaid;
-                
-                const updatedSession = {
-                    ...session,
-                    closingBalance: 0, // Actual cash in hand = 0 (no one counted)
-                    expectedBalance: expectedBalance,
-                    difference: 0 - expectedBalance, // Difference = actual - expected
-                    signOutTime: new Date(session.date + 'T23:59:59').toISOString(),
-                    signedOut: true,
-                    autoSignedOut: true,
-                    autoSignOutReason: 'Session not closed by end of day',
-                    transactions: transactions
-                };
-                
-                await FirebaseService.updateCashSession(updatedSession);
-                // Update in cache too
-                const idx = sessions.findIndex(s => s.id === session.id);
-                if (idx !== -1) sessions[idx] = updatedSession;
-                
-                console.log(`Auto signed-out session for ${session.date} with expected ₹${expectedBalance}`);
+                try {
+                    const ref = sessionRef(session.id);
+                    // Re-read inside a transaction so we never clobber a session that was
+                    // signed out (or otherwise changed) on another device after we loaded it.
+                    const updatedSession = await FirebaseService.db.runTransaction(async (tx) => {
+                        const snap = await tx.get(ref);
+                        if (!snap.exists) return null;
+                        const fresh = { id: snap.id, ...snap.data() };
+                        if (fresh.signedOut || fresh.date !== session.date) return null;
+
+                        // Calculate transactions for that specific date
+                        const transactions = this.calculateTransactionsForDate(fresh.date, fresh);
+                        
+                        // Calculate expected balance
+                        const opening = fresh.openingBalance || 0;
+                        const expectedBalance = opening 
+                            + transactions.cashSales 
+                            + transactions.dueReceived 
+                            + transactions.cashDeposits
+                            - transactions.cashPurchases 
+                            - transactions.businessExpenses 
+                            - transactions.personalExpenses 
+                            - transactions.duePaid;
+                        
+                        const closingFields = {
+                            closingBalance: 0, // Actual cash in hand = 0 (no one counted)
+                            expectedBalance: expectedBalance,
+                            difference: 0 - expectedBalance, // Difference = actual - expected
+                            signOutTime: new Date(fresh.date + 'T23:59:59').toISOString(),
+                            signedOut: true,
+                            autoSignedOut: true,
+                            autoSignOutReason: 'Session not closed by end of day',
+                            transactions: transactions
+                        };
+                        tx.update(ref, closingFields);
+                        return { ...fresh, ...closingFields };
+                    });
+                    if (!updatedSession) return false;
+
+                    // Update in cache too
+                    const idx = sessions.findIndex(s => s.id === session.id);
+                    if (idx !== -1) sessions[idx] = updatedSession;
+                    
+                    console.log(`Auto signed-out session for ${session.date} with expected ₹${updatedSession.expectedBalance}`);
+                    return true;
+                } catch (err) {
+                    // Transactions need the server; offline we simply retry on next load
+                    console.warn(`Auto sign-out skipped for ${session.date}:`, err?.message || err);
+                    return false;
+                }
             });
             
-            await Promise.all(updatePromises);
+            const results = await Promise.all(updatePromises);
+            const closedCount = results.filter(Boolean).length;
             
-            if (unclosedSessions.length > 0) {
-                UIManager.showToast(`Auto-closed ${unclosedSessions.length} previous session(s)`);
+            if (closedCount > 0) {
+                UIManager.showToast(`Auto-closed ${closedCount} previous session(s)`);
             }
         } catch (error) {
             console.error('Error auto signing out previous sessions:', error);
@@ -174,8 +204,9 @@ export class CashManagementManager {
      * @returns {Object} Transaction totals
      */
     static calculateTransactionsForDate(dateStr, session) {
-        const dateStart = new Date(dateStr).getTime();
-        const dateEnd = dateStart + (24 * 60 * 60 * 1000);
+        const dayStart = parseLocalDate(dateStr);
+        const dateStart = dayStart ? dayStart.getTime() : NaN;
+        const dateEnd = dayStart ? new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1).getTime() : NaN;
 
         const transactions = {
             cashSales: 0,
@@ -192,8 +223,7 @@ export class CashManagementManager {
         const retailSales = AppState.retailSalesHistory || [];
         
         sales.forEach(sale => {
-            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
-            const saleTime = saleDate.getTime();
+            const saleTime = billTime(sale.date);
             if (saleTime >= dateStart && saleTime < dateEnd) {
                 const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
                 if (cashAmount > 0) transactions.cashSales += cashAmount;
@@ -201,8 +231,7 @@ export class CashManagementManager {
         });
         
         retailSales.forEach(sale => {
-            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
-            const saleTime = saleDate.getTime();
+            const saleTime = billTime(sale.date);
             if (saleTime >= dateStart && saleTime < dateEnd) {
                 const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
                 if (cashAmount > 0) transactions.cashSales += cashAmount;
@@ -212,8 +241,7 @@ export class CashManagementManager {
         // Calculate cash purchases
         const purchases = AppState.purchaseHistory || [];
         purchases.forEach(purchase => {
-            const purchaseDate = purchase.date?.toDate ? purchase.date.toDate() : new Date(purchase.date);
-            const purchaseTime = purchaseDate.getTime();
+            const purchaseTime = billTime(purchase.date);
             if (purchaseTime >= dateStart && purchaseTime < dateEnd) {
                 const cashAmount = Number(purchase.cashPayment) || Number(purchase.payment?.cash) || 0;
                 if (cashAmount > 0) transactions.cashPurchases += cashAmount;
@@ -266,7 +294,7 @@ export class CashManagementManager {
      * @param {Array} sessions - Cached sessions array
      */
     static loadTodaySessionFromCache(sessions) {
-        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const today = todayLocalISO(); // YYYY-MM-DD (local day)
         this.todaySession = sessions.find(s => s.date === today) || null;
     }
 
@@ -278,7 +306,7 @@ export class CashManagementManager {
      */
     static async loadTodaySession() {
         try {
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const today = todayLocalISO(); // YYYY-MM-DD (local day)
             const sessions = await FirebaseService.loadCashSessions();
             
             this.todaySession = sessions.find(s => s.date === today);
@@ -299,9 +327,9 @@ export class CashManagementManager {
      * @returns {Promise<void>}
      */
     static async calculateTodayTransactions() {
-        const today = new Date().toISOString().split('T')[0];
-        const todayStart = new Date(today).getTime();
-        const todayEnd = todayStart + (24 * 60 * 60 * 1000);
+        const today = todayLocalISO();
+        const todayStart = parseLocalDate(today).getTime();
+        const todayEnd = parseLocalDate(localISODaysAgo(-1)).getTime();
 
         // Reset transactions
         this.todayTransactions = {
@@ -320,8 +348,7 @@ export class CashManagementManager {
         
         // Process wholesale sales
         sales.forEach(sale => {
-            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
-            const saleTime = saleDate.getTime();
+            const saleTime = billTime(sale.date);
             if (saleTime >= todayStart && saleTime < todayEnd) {
                 const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
                 if (cashAmount > 0) {
@@ -332,8 +359,7 @@ export class CashManagementManager {
         
         // Process retail sales
         retailSales.forEach(sale => {
-            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
-            const saleTime = saleDate.getTime();
+            const saleTime = billTime(sale.date);
             if (saleTime >= todayStart && saleTime < todayEnd) {
                 const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
                 if (cashAmount > 0) {
@@ -345,8 +371,7 @@ export class CashManagementManager {
         // Calculate cash purchases
         const purchases = AppState.purchaseHistory || [];
         purchases.forEach(purchase => {
-            const purchaseDate = purchase.date?.toDate ? purchase.date.toDate() : new Date(purchase.date);
-            const purchaseTime = purchaseDate.getTime();
+            const purchaseTime = billTime(purchase.date);
             if (purchaseTime >= todayStart && purchaseTime < todayEnd) {
                 const cashAmount = Number(purchase.cashPayment) || Number(purchase.payment?.cash) || 0;
                 if (cashAmount > 0) {
@@ -379,7 +404,7 @@ export class CashManagementManager {
                     paymentTime = NaN;
                 }
             } else {
-                paymentTime = new Date(payment.date).getTime();
+                paymentTime = billTime(payment.date);
             }
             
             // Separate business and personal expenses
@@ -667,9 +692,7 @@ export class CashManagementManager {
 
         try {
             // Check if yesterday's closing matches today's opening
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayDate = yesterday.toISOString().split('T')[0];
+            const yesterdayDate = localISODaysAgo(1);
             
             const sessions = await FirebaseService.loadCashSessions();
             const yesterdaySession = sessions.find(s => s.date === yesterdayDate);
@@ -688,7 +711,7 @@ export class CashManagementManager {
 
             const session = {
                 id: Helpers.generateId(),
-                date: new Date().toISOString().split('T')[0],
+                date: todayLocalISO(),
                 openingBalance: amount,
                 signInTime: new Date().toISOString(),
                 userId: AppState.currentUser?.uid || 'unknown',
@@ -734,8 +757,7 @@ export class CashManagementManager {
             if (!confirmed) return;
         }
 
-        const updatedSession = {
-            ...this.todaySession,
+        const closingFields = {
             closingBalance: actualAmount,
             expectedBalance: expected,
             difference: difference,
@@ -751,9 +773,11 @@ export class CashManagementManager {
                 cashDeposits: this.todayTransactions.cashDeposits
             }
         };
+        const updatedSession = { ...this.todaySession, ...closingFields };
 
         try {
-            await FirebaseService.updateCashSession(updatedSession);
+            // Field-level update: never overwrite deposits/due payments added on another device
+            await sessionRef(this.todaySession.id).update(closingFields);
             this.todaySession = updatedSession;
             this.updateUI();
             this.renderHistory();
@@ -799,7 +823,9 @@ export class CashManagementManager {
             };
 
             try {
-                await FirebaseService.updateCashSession(updatedSession);
+                await sessionRef(this.todaySession.id).update({
+                    cashDeposits: firebase.firestore.FieldValue.arrayUnion(deposit)
+                });
                 this.todaySession = updatedSession;
                 await this.calculateTodayTransactions();
                 this.updateUI();
@@ -835,7 +861,9 @@ export class CashManagementManager {
             };
 
             try {
-                await FirebaseService.updateCashSession(updatedSession);
+                await sessionRef(this.todaySession.id).update({
+                    duePayments: firebase.firestore.FieldValue.arrayUnion(payment)
+                });
                 this.todaySession = updatedSession;
                 await this.calculateTodayTransactions();
                 this.updateUI();
@@ -895,7 +923,7 @@ export class CashManagementManager {
         }
 
         container.innerHTML = sessions.map(session => {
-            const date = new Date(session.date).toLocaleDateString('en-IN', { 
+            const date = (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', { 
                 weekday: 'short', 
                 day: 'numeric', 
                 month: 'short' 
@@ -960,7 +988,7 @@ export class CashManagementManager {
         }
 
         container.innerHTML = sessions.map(session => {
-            const date = new Date(session.date).toLocaleDateString('en-IN', { 
+            const date = (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', { 
                 weekday: 'short', 
                 day: 'numeric', 
                 month: 'short' 
@@ -1022,7 +1050,7 @@ export class CashManagementManager {
                 return;
             }
 
-        const date = new Date(session.date).toLocaleDateString('en-IN', { 
+        const date = (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', { 
             weekday: 'long', 
             day: 'numeric', 
             month: 'long',
