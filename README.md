@@ -83,11 +83,11 @@ Each app open reads only recent data (see the section comment above `HISTORY_COL
 - Every stock-record write sets `clientVersion: 3`, bills also `openDue`, `timestamp`. Documents written by older app versions without `timestamp` are found by an unfiltered scan and backfilled (`stockCheckpoints/legacyScan`: until complete, then by one device at most every 6 h for 14 days after an outdated app last wrote one).
 - Optional: set `settings/app.minClientVersion` to make older apps show "Please update the app".
 
-**Deployment order (CI never deploys rules/indexes):**
+**Deployment order (CI deploys hosting only, never rules/indexes):**
 
-1. Deploy `firestore.indexes.json` (`firebase deploy --only firestore:indexes`) — the dues listener needs the `openDue + timestamp` composite indexes.
-2. Ship the new app (APK + web) and make sure **every phone runs it**.
-3. Only then deploy `firestore.rules` (`firebase deploy --only firestore:rules`): it rejects bill/adjustment writes without `clientVersion >= 3` (blocks outdated apps, whose edits/deletes of old bills would otherwise not invalidate the stock checkpoint) and limits checkpoint state writes to owner/manager.
+1. Deploy indexes and rules **before** the new web app goes live: `firebase deploy --only firestore:indexes,firestore:rules`. The dues listener needs the `openDue + timestamp` composite indexes, and the stock checkpoint (`stockCheckpoints`) is only writable under the new rules. Wait until the indexes show "Enabled" in the Firebase console.
+2. Merge / deploy hosting, then install the new APK on every phone.
+3. Once **every phone runs the new app**, the owner sets `settings/app.enforceClientVersion = true` in the Firebase console (no redeploy). From then on bill/adjustment writes without `clientVersion >= 3` are rejected — outdated apps' edits/deletes of old bills would otherwise not invalidate the stock checkpoint. Until then, owner/manager devices rebuild the checkpoint from full history at least weekly to bound any drift. Optionally also set `settings/app.minClientVersion = 3` so outdated apps show "Please update the app".
 
 ## Getting Started
 

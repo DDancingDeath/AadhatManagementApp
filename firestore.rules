@@ -120,8 +120,16 @@ service cloud.firestore {
               'dev_purchases', 'dev_retailSales', 'dev_wholesaleSales', 'dev_stockAdjustments'];
     }
 
-    function writesCurrentClient() {
-      return request.resource.data.get('clientVersion', 0) >= 3;
+    // The clientVersion gate is switched on by the owner (settings/app.enforceClientVersion
+    // = true, dev_settings/app for dev_) once every phone runs the new app, so these rules
+    // can be deployed before the old APK is retired.
+    function clientGateOn(collection) {
+      let settingsPath = /databases/$(database)/documents/$(collection.matches('dev_.*') ? 'dev_settings' : 'settings')/app;
+      return exists(settingsPath) && get(settingsPath).data.get('enforceClientVersion', false) == true;
+    }
+
+    function writesCurrentClient(collection) {
+      return !clientGateOn(collection) || request.resource.data.get('clientVersion', 0) >= 3;
     }
 
     function businessAccess(collection) {
@@ -185,12 +193,12 @@ service cloud.firestore {
       // Stock records need an up-to-date app (clientVersion >= 3) on create/update.
       allow create: if businessAccess(collection)
         && appSettingsGuard(collection, docId)
-        && (!(collection in stockCollections()) || writesCurrentClient());
+        && (!(collection in stockCollections()) || writesCurrentClient(collection));
       // Bills: full edits by owner/manager/creator; anyone else approved may only
       // record payment/due bookkeeping. Only an owner may change userId.
       allow update: if businessAccess(collection)
         && appSettingsGuard(collection, docId)
-        && (!(collection in stockCollections()) || writesCurrentClient())
+        && (!(collection in stockCollections()) || writesCurrentClient(collection))
         && ((collection in businessCollections() && (!(collection in billCollections()) || canUpdateBill('users', docId)))
             || (collection in devBusinessCollections() && (!(collection in devBillCollections()) || canUpdateBill('dev_users', docId))));
       // Bills can only be deleted by an owner or by the user who created them

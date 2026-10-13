@@ -271,7 +271,18 @@ function defineSuite(prefix) {
         await assertFails(anon().collection(checkpoints).doc('current').get());
     });
 
-    t('stock records need clientVersion >= 3 (blocks outdated apps)', async () => {
+    const setClientGate = (on) => env.withSecurityRulesDisabled(ctx =>
+        ctx.firestore().collection(`${prefix}settings`).doc('app').set({ enforceClientVersion: on }, { merge: true }));
+
+    t('clientVersion gate is off until the owner enables it (old apps keep working)', async () => {
+        await setClientGate(false);
+        const coll = as('staff1').collection(`${prefix}purchases`);
+        await assertSucceeds(coll.doc('legacyApp1').set({ total: 1, userId: 'staff1' }));
+        await assertSucceeds(coll.doc('legacyApp1').update({ total: 2 }));
+    });
+
+    t('stock records need clientVersion >= 3 once the gate is on (blocks outdated apps)', async () => {
+        await setClientGate(true);
         const db = as('staff1');
         for (const c of ['purchases', 'retailSales', 'wholesaleSales', 'stockAdjustments']) {
             const coll = db.collection(`${prefix}${c}`);
@@ -284,6 +295,7 @@ function defineSuite(prefix) {
     });
 
     t('payment updates on current bills pass; overwriting with an old-app full set() fails; deletes pass', async () => {
+        await setClientGate(true);
         const coll = as('staff1').collection(purchases);
         await assertSucceeds(coll.doc('pay1').set({ total: 100, payment: { due: 100 }, userId: 'staff1', clientVersion: 3 }));
         await assertSucceeds(coll.doc('pay1').update({ payment: { due: 0, cash: 100 }, payments: [{ amount: 100 }], openDue: false, clientVersion: 3 }));
