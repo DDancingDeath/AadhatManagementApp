@@ -6,8 +6,11 @@
 
 import { AppState } from '../utils/state.js';
 import { Helpers } from '../utils/helpers.js';
+import { rangeStatus, retryRange, applyRangeState } from '../utils/history-window.js';
 
 const formatCurrency = (amount) => Helpers.formatCurrency(amount);
+
+const PROFIT_PERIOD_DAYS = { '7days': 7, '30days': 30, '90days': 90 };
 
 /**
  * Analytics Manager - Smart Business Insights
@@ -54,6 +57,7 @@ export class AnalyticsManager {
      * Render content for specific tab
      */
     static renderTabContent(tab) {
+        if (!this.ensureRange(tab, () => this.renderTabContent(tab))) return;
         switch (tab) {
             case 'overview':
                 this.renderTodayPrediction();
@@ -80,11 +84,64 @@ export class AnalyticsManager {
      * Render all analytics sections
      */
     static renderAll() {
+        if (!this.ensureRange('overview', () => this.renderAll())) return;
         this.renderTodayPrediction();
         this.renderMonthSummary();
         this.renderOutstandingDues();
         this.renderMonthlyProjection();
         // Other tabs will render on demand
+    }
+
+    /**
+     * Earliest date a tab's figures read (local midnight). Overview/items/
+     * insights use last month and the same weekday over the last 4 weeks;
+     * trends also use the profit-trend period.
+     * @param {string} tab
+     * @returns {Date}
+     */
+    static requiredStart(tab) {
+        const { today, lastMonthStart } = this.getDateHelpers();
+        const fourWeeksAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 28);
+        let start = lastMonthStart < fourWeeksAgo ? lastMonthStart : fourWeeksAgo;
+        if (tab === 'trends') {
+            const trendStart = this.profitTrendStart();
+            if (trendStart < start) start = trendStart;
+        }
+        return start;
+    }
+
+    /**
+     * Local midnight on or before the start of the profit-trend period.
+     * @returns {Date}
+     */
+    static profitTrendStart() {
+        const days = PROFIT_PERIOD_DAYS[this.profitPeriod] || 7;
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+    }
+
+    /**
+     * Make sure the tab's date range is loaded before computing it; shows a
+     * loading notice (and hides stale figures) meanwhile.
+     * @param {string} tab
+     * @param {Function} rerender
+     * @returns {boolean} true when the tab can render now
+     */
+    static ensureRange(tab, rerender) {
+        const owner = `analytics-${tab}`;
+        const status = rangeStatus(owner, this.requiredStart(tab), rerender);
+        const tabEl = document.getElementById(`analytics${tab.charAt(0).toUpperCase() + tab.slice(1)}Tab`);
+        if (tabEl) {
+            const scopes = [...tabEl.children].filter(el => !el.classList.contains('history-range-notice'));
+            applyRangeState(scopes, status, {
+                loadingText: 'Loading older data…',
+                onRetry: () => {
+                    retryRange(owner);
+                    rerender();
+                }
+            });
+        }
+        return status !== 'loading';
     }
 
     /**
@@ -249,7 +306,9 @@ export class AnalyticsManager {
             }
         });
 
-        this.renderProfitTrend();
+        if (this.ensureRange('trends', () => this.renderTabContent('trends'))) {
+            this.renderProfitTrend();
+        }
     }
 
     /**
