@@ -786,6 +786,8 @@ window.app = {
     history: {
         saveBillToHistory: () => HistoryManager.saveBillToHistory(),
         render: () => HistoryManager.renderHistory(),
+        // Re-render keeping the selected Purchase/Sale filter and search text (used by live sync)
+        refresh: () => HistoryManager.refreshHistory(),
         viewBill: (index, type) => HistoryManager.viewBill(index, type),
         
         closeBillDetails: () => HistoryManager.closeBillDetails(),

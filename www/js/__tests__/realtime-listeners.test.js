@@ -134,7 +134,7 @@ describe('FirebaseService.setupRealtimeListeners', () => {
         document.body.innerHTML = '<div id="stock" class="tab active"></div><div id="history" class="tab"></div>';
         window.app = {
             stock: { render: jest.fn() },
-            history: { render: jest.fn() }
+            history: { refresh: jest.fn() }
         };
         const calcSpy = jest.spyOn(FirebaseService, 'calculateStock');
 
@@ -154,14 +154,14 @@ describe('FirebaseService.setupRealtimeListeners', () => {
         expect(calcSpy).toHaveBeenCalledTimes(1);
         expect(AppState.stock.gehu.quantity).toBe(2);
         expect(window.app.stock.render).toHaveBeenCalledTimes(1);
-        expect(window.app.history.render).not.toHaveBeenCalled();
+        expect(window.app.history.refresh).not.toHaveBeenCalled();
 
         document.getElementById('stock').classList.remove('active');
         document.getElementById('history').classList.add('active');
         window.dispatchEvent(new CustomEvent('aadhat:tabshown', { detail: { tabId: 'history' } }));
         await flushMicrotasks();
 
-        expect(window.app.history.render).toHaveBeenCalledTimes(1);
+        expect(window.app.history.refresh).toHaveBeenCalledTimes(1);
         expect(calcSpy).toHaveBeenCalledTimes(1);
     });
 

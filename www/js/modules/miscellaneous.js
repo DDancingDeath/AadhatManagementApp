@@ -46,7 +46,7 @@ export class ExpensesManager {
             updatedByName: expense.createdByName
         };
         await this.updateExistingExpense(editing.id, fields);
-        this.editingExpense = null;
+        this.cancelExpenseEdit();
 
         // Keep original creation info on the object used for printing
         if (original.date) expense.date = original.date;
@@ -111,6 +111,7 @@ export class ExpensesManager {
      * @param {Event} [evt] - Optional click event for button styling
      */
     static filterExpenseTab(view, evt) {
+        this.cancelExpenseEdit();
         const buttons = document.querySelectorAll('#expenses .filter-btn');
         buttons.forEach(btn => btn.classList.remove('active'));
         if (evt) evt.target.classList.add('active');
@@ -535,6 +536,7 @@ export class ExpensesManager {
     }
 
     static async editExpense(expenseId, category) {
+        this.cancelExpenseEdit();
         const expense = AppState.expensesHistory.find(p => p.id == expenseId);
         if (!expense) {
             UIManager.showToast('Expense not found');
@@ -556,8 +558,26 @@ export class ExpensesManager {
 
         // Edit in place: saving this category updates the same document (nothing is deleted)
         this.editingExpense = { id: String(expense.id), category };
+
+        // Abandoning the edit (clearing the amount, switching expense tab or app tab) must
+        // turn the next save back into a new expense instead of overwriting this one.
+        const amountInput = document.getElementById(category === 'business' ? 'businessExpenseAmount' : 'personalExpenseAmount');
+        const editing = this.editingExpense;
+        const onAmountInput = () => {
+            if (amountInput.value.trim() === '' && this.editingExpense === editing) {
+                this.cancelExpenseEdit();
+            }
+        };
+        amountInput?.addEventListener('input', onAmountInput);
+        editing.cleanup = () => amountInput?.removeEventListener('input', onAmountInput);
         
         UIManager.showToast('Edit expense and save to update');
+    }
+
+    /** Stops editing: the next save creates a new expense. */
+    static cancelExpenseEdit() {
+        this.editingExpense?.cleanup?.();
+        this.editingExpense = null;
     }
 
     static async deleteExpense(expenseId, category, showConfirm = true) {
@@ -575,7 +595,7 @@ export class ExpensesManager {
             const existing = (AppState.expensesHistory || []).find(e => String(e.id) === String(expenseId));
             await FirebaseService.deleteExpense(String(expenseId));
             if (this.editingExpense && String(this.editingExpense.id) === String(expenseId)) {
-                this.editingExpense = null;
+                this.cancelExpenseEdit();
             }
             await AuditService.log(AuditService.ACTIONS.DELETE_EXPENSE || 'DELETE_EXPENSE', {
                 expenseId: String(expenseId),
@@ -639,4 +659,11 @@ export class ExpensesManager {
         // Print the expense
         this.printExpenseReceipt(expense);
     }
+}
+
+// Leaving the Expenses tab abandons any in-progress edit
+if (typeof window !== 'undefined') {
+    window.addEventListener('aadhat:tabshown', (event) => {
+        if (event.detail?.tabId !== 'expenses') ExpensesManager.cancelExpenseEdit();
+    });
 }

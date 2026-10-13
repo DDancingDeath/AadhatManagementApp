@@ -644,6 +644,11 @@ export class HistoryManager {
         this.renderHistory(currentType, searchTerm);
     }
 
+    static refreshHistory() {
+        const searchInput = document.getElementById('historySearch');
+        this.searchHistory(searchInput ? searchInput.value : '');
+    }
+
     static filterHistory(type, event) {
         // Update button states
         const buttons = event.target.parentElement.querySelectorAll('.filter-btn');

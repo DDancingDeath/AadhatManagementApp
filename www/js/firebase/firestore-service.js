@@ -102,14 +102,14 @@ const VIEWS = {
     billingDropdown: { tab: 'billing', run: () => window.app?.billing?.loadItemsDropdown?.() },
     salesDropdown: { tab: 'wholesale-sales', run: () => window.app?.sales?.loadItemsDropdown?.() },
     wholesaleHistory: { tab: 'wholesale-sales', run: () => window.app?.wholesaleSales?.renderHistory?.() },
-    history: { tab: 'history', run: () => window.app?.history?.render?.() },
+    history: { tab: 'history', run: () => window.app?.history?.refresh?.() },
     due: { tab: 'due', run: () => window.app?.outstanding?.render?.() },
     stockAdjustmentHistory: { tab: 'stock', run: () => window.app?.stock?.renderAdjustmentHistory?.() },
     stockView: { tab: 'stock', run: () => window.app?.stock?.render?.() },
     expensesHistory: { tab: 'expenses', run: () => window.app?.expenses?.renderHistory?.() },
-    financeOverview: { tab: 'finance', run: () => window.app?.finance?.calculateOverview?.() },
-    financeWithdrawals: { tab: 'finance', run: () => window.app?.finance?.renderWithdrawalHistory?.() },
-    analytics: { tab: 'analytics', run: () => window.app?.analytics?.render?.() },
+    financeOverview: { tab: 'finance', run: () => window.app?.finance?.renderDashboard?.() },
+    financeWithdrawals: { tab: 'finance', run: () => window.app?.finance?.renderWithdrawals?.() },
+    analytics: { tab: 'analytics', run: () => window.app?.analytics?.renderAll?.() },
     reports: { tab: 'reports', run: () => window.app?.reports?.renderReports?.() }
 };
 
