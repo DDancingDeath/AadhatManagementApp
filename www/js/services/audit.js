@@ -131,6 +131,14 @@ export class AuditService {
                 return { deleted: 0, skipped: true };
             }
             
+            // Run at most once per day per device: each run costs up to 100 reads.
+            const CLEANUP_KEY = 'auditCleanupLastRun';
+            const lastRun = Number(localStorage.getItem(CLEANUP_KEY)) || 0;
+            if (Date.now() - lastRun < 24 * 60 * 60 * 1000) {
+                return { deleted: 0, skipped: true };
+            }
+            localStorage.setItem(CLEANUP_KEY, String(Date.now()));
+            
             const db = firebase.firestore();
             const cutoffDate = Date.now() - (this.RETENTION_DAYS * 24 * 60 * 60 * 1000);
             
