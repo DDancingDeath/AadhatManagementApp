@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { check } = require('../../../scripts/check-sw-assets.js');
-import { loadScriptOnce } from '../utils/lazy-scripts.js';
+import { loadScriptOnce, ensureXLSX, XLSX_URL, XLSX_INTEGRITY } from '../utils/lazy-scripts.js';
 
 const WWW = path.join(__dirname, '..', '..');
 
@@ -61,5 +61,16 @@ describe('loadScriptOnce', () => {
         expect(p2).not.toBe(p1);
         expect(document.head.querySelectorAll(`script[src="${src}"]`)).toHaveLength(2);
         p2.catch(() => {});
+    });
+
+    test('ensureXLSX pins the CDN script with Subresource Integrity', () => {
+        const p = ensureXLSX();
+        const script = document.head.querySelector(`script[src="${XLSX_URL}"]`);
+        expect(XLSX_URL).toMatch(/xlsx-\d+\.\d+\.\d+\//);
+        expect(script.integrity).toBe(XLSX_INTEGRITY);
+        expect(XLSX_INTEGRITY).toMatch(/^sha384-[A-Za-z0-9+/]{64}$/);
+        expect(script.crossOrigin).toBe('anonymous');
+        script.onerror();
+        p.catch(() => {});
     });
 });
