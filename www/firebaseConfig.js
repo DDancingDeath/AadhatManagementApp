@@ -113,6 +113,15 @@ const auth = firebase.auth();
 // Initialize Cloud Firestore
 const db = firebase.firestore();
 
+// Local testing against the Firebase emulators: only on localhost with ?emulator=1
+// (ports match firebase.json "emulators"). Never active in production or the APK.
+if (['localhost', '127.0.0.1'].includes(window.location.hostname) &&
+    new URLSearchParams(window.location.search).get('emulator') === '1') {
+  auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
+  db.useEmulator('127.0.0.1', 8181);
+  console.log('🧪 Using Firebase emulators (auth:9099, firestore:8181)');
+}
+
 // Enable offline persistence (Note: Using compat API for simplicity)
 db.enablePersistence({ synchronizeTabs: true })
   .catch((err) => {

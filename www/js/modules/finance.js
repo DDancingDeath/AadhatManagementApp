@@ -791,7 +791,7 @@ export class FinanceManager {
                 createdAt: new Date().toISOString()
             };
             
-            await FirebaseService.addWithdrawal(withdrawal);
+            await FirebaseService.saveWithdrawal(withdrawal);
             
             // Clear form
             document.getElementById('withdrawalAmount').value = '';
