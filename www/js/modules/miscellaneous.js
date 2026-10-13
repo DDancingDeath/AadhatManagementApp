@@ -10,6 +10,8 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
+import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 
 /**
  * Expenses Manager - Manages expense operations
@@ -274,8 +276,10 @@ export class ExpensesManager {
                 return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
             });
         
+        this.attachExpenseScroll(container);
+
         if (businessExpenses.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>';
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(this.emptyExpenseMessage('business'))}</p>`;
             return;
         }
 
@@ -299,6 +303,23 @@ export class ExpensesManager {
         `).join('');
     }
 
+    /**
+     * Older expenses load one month at a time as the user scrolls the list.
+     * @param {HTMLElement} container
+     */
+    static attachExpenseScroll(container) {
+        attachOlderHistoryScroll(container, { noun: 'expenses', onLoaded: () => this.renderexpensesHistory() });
+    }
+
+    /**
+     * @param {'business'|'personal'} category
+     * @returns {string} plain text
+     */
+    static emptyExpenseMessage(category) {
+        if (isFullHistoryLoaded()) return `No ${category} expenses recorded yet`;
+        return `No ${category} expenses since ${formatWindowDate(historyLoadedFrom())}`;
+    }
+
     static renderPersonalExpenseHistory() {
         const container = document.getElementById('personalExpenseHistoryList');
         const personalExpenses = AppState.expensesHistory
@@ -309,8 +330,10 @@ export class ExpensesManager {
                 return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
             });
         
+        this.attachExpenseScroll(container);
+
         if (personalExpenses.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>';
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(this.emptyExpenseMessage('personal'))}</p>`;
             return;
         }
 

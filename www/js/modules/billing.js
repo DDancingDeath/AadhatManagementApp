@@ -10,6 +10,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
+import { findBillIndex } from '../utils/history-window.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 import { PurchaseManager } from './purchase.js';
 import { RetailSaleManager } from './retail-sale.js';
@@ -858,13 +859,15 @@ const BillingManager = {
                 UIManager.showToast(`Unknown bill type: ${billType}`);
                 return;
             }
-            const bill = history[billIndex];
+            // Prefer the id stored by viewBill: indices shift when records are added
+            const resolvedIndex = findBillIndex(history, window.currentBillId, billIndex);
+            const bill = history[resolvedIndex];
             if (!bill) {
                 UIManager.showToast('Bill not found');
                 return;
             }
 
-            this.editingBillIndex = billIndex;
+            this.editingBillIndex = resolvedIndex;
             this.editingBillId = bill.id;
             this.editingBillType = billType;
 
@@ -982,7 +985,8 @@ const BillingManager = {
                 UIManager.showToast(`Unknown bill type: ${billType}`);
                 return;
             }
-            const bill = history[billIndex];
+            const currentIndex = findBillIndex(history, this.editingBillId, billIndex);
+            const bill = history[currentIndex];
             
             if (!bill) {
                 UIManager.showToast('Original bill not found');
@@ -1031,7 +1035,8 @@ const BillingManager = {
                 const writePromise = FirebaseService.updatePurchase(updatedBill);
                 if (typeof options.onWriteIssued === 'function') options.onWriteIssued(updatedBill);
                 await FirebaseService.settleWrite(writePromise, 'updatePurchase');
-                AppState.purchaseHistory[billIndex] = updatedBill;
+                const savedIndex = findBillIndex(AppState.purchaseHistory, bill.id, currentIndex);
+                if (savedIndex !== -1) AppState.purchaseHistory[savedIndex] = updatedBill;
                 
                 AuditService.log(AuditService.ACTIONS.EDIT_BILL, {
                     billNumber: updatedBill.billNumber || 'N/A',
