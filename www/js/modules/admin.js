@@ -316,7 +316,7 @@ const AdminManager = {
             const col = window.getCollection ? window.getCollection('users') : 'users';
             
             await db.collection(col).doc(userId).update({
-                status: 'approved',
+                status: 'active',
                 role: role,
                 approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
                 approvedBy: AppState.currentUser?.uid
