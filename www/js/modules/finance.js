@@ -8,6 +8,8 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
+import { billTotal, outstandingDue } from '../utils/money.js';
+import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
 
 /**
  * Finance Manager - Manages financial operations and reporting
@@ -35,7 +37,7 @@ export class FinanceManager {
     static setDefaultDate() {
         const dateInput = document.getElementById('withdrawalDate');
         if (dateInput) {
-            dateInput.value = new Date().toISOString().split('T')[0];
+            dateInput.value = todayLocalISO();
         }
     }
 
@@ -167,7 +169,7 @@ export class FinanceManager {
             return;
         }
         
-        if (new Date(startDate) > new Date(endDate)) {
+        if (parseLocalDate(startDate) > parseLocalDate(endDate)) {
             UIManager.showToast('Start date must be before end date');
             return;
         }
@@ -183,7 +185,7 @@ export class FinanceManager {
      * @returns {boolean}
      */
     static isInDateRange(date) {
-        const d = new Date(date);
+        const d = parseAnyBillDate(date) || new Date(NaN);
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         
@@ -202,8 +204,8 @@ export class FinanceManager {
                 return d >= yearAgo;
             case 'custom':
                 if (this.customStartDate && this.customEndDate) {
-                    const start = new Date(this.customStartDate);
-                    const end = new Date(this.customEndDate);
+                    const start = parseLocalDate(this.customStartDate);
+                    const end = parseLocalDate(this.customEndDate);
                     end.setHours(23, 59, 59, 999);
                     return d >= start && d <= end;
                 }
@@ -225,8 +227,8 @@ export class FinanceManager {
             case 'year': return 'This Year';
             case 'custom': 
                 if (this.customStartDate && this.customEndDate) {
-                    const start = new Date(this.customStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-                    const end = new Date(this.customEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                    const start = parseLocalDate(this.customStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                    const end = parseLocalDate(this.customEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                     return `${start} - ${end}`;
                 }
                 return 'Custom';
@@ -264,7 +266,7 @@ export class FinanceManager {
 
         // Investment (purchases)
         purchaseHistory.filter(p => this.isInDateRange(p.date)).forEach(purchase => {
-            investment += parseFloat(purchase.total) || 0;
+            investment += billTotal(purchase);
             investmentCount++;
         });
 
@@ -372,21 +374,24 @@ export class FinanceManager {
         const monthlyData = {};
 
         [...salesHistory, ...retailSalesHistory].forEach(sale => {
-            const date = new Date(sale.date);
+            const date = parseAnyBillDate(sale.date);
+            if (!date) return;
             const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
             monthlyData[key].revenue += parseFloat(sale.total) || 0;
         });
 
         purchaseHistory.forEach(purchase => {
-            const date = new Date(purchase.date);
+            const date = parseAnyBillDate(purchase.date);
+            if (!date) return;
             const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
-            monthlyData[key].costs += parseFloat(purchase.total) || 0;
+            monthlyData[key].costs += billTotal(purchase);
         });
 
         expensesHistory.forEach(expense => {
-            const date = new Date(expense.date);
+            const date = parseAnyBillDate(expense.date);
+            if (!date) return;
             const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
             monthlyData[key].costs += parseFloat(expense.amount) || 0;
@@ -490,27 +495,20 @@ export class FinanceManager {
      */
     static calculateOutstanding() {
         const salesHistory = AppState.salesHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
         const purchaseHistory = AppState.purchaseHistory || [];
         
         let dueToReceive = 0;
         let dueToPay = 0;
         
-        // Due from sales
-        salesHistory.forEach(sale => {
-            const total = parseFloat(sale.total) || 0;
-            const paid = parseFloat(sale.amountPaid) || parseFloat(sale.cashPayment) || 0;
-            const online = parseFloat(sale.onlinePayment) || 0;
-            const due = total - paid - online;
-            if (due > 0) dueToReceive += due;
+        // Due from sales (wholesale + retail), same rule as the Outstanding screen
+        [...salesHistory, ...retailSalesHistory].forEach(sale => {
+            dueToReceive += outstandingDue(sale);
         });
         
         // Due for purchases
         purchaseHistory.forEach(purchase => {
-            const total = parseFloat(purchase.total) || 0;
-            const paid = parseFloat(purchase.amountPaid) || parseFloat(purchase.cashPayment) || 0;
-            const online = parseFloat(purchase.onlinePayment) || 0;
-            const due = total - paid - online;
-            if (due > 0) dueToPay += due;
+            dueToPay += outstandingDue(purchase);
         });
         
         return { dueToReceive, dueToPay };
@@ -531,7 +529,7 @@ export class FinanceManager {
         [...salesHistory, ...retailSalesHistory].forEach(s => revenue += parseFloat(s.total) || 0);
         
         let costs = 0;
-        purchaseHistory.forEach(p => costs += parseFloat(p.total) || 0);
+        purchaseHistory.forEach(p => costs += billTotal(p));
         expensesHistory.forEach(e => costs += parseFloat(e.amount) || 0);
         
         let withdrawals = 0;
@@ -711,7 +709,7 @@ export class FinanceManager {
         let revenue = 0;
         [...salesHistory, ...retailSalesHistory].forEach(s => revenue += parseFloat(s.total) || 0);
         let costs = 0;
-        purchaseHistory.forEach(p => costs += parseFloat(p.total) || 0);
+        purchaseHistory.forEach(p => costs += billTotal(p));
         expensesHistory.forEach(e => costs += parseFloat(e.amount) || 0);
         
         const profit = revenue - costs;

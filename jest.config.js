@@ -2,6 +2,9 @@
  * Jest Configuration for Aadhat Management App
  * @type {import('jest').Config}
  */
+// Business runs in IST; pin test timezone so date tests are deterministic on any machine/CI.
+process.env.TZ = 'Asia/Kolkata';
+
 module.exports = {
     // Use jsdom environment for DOM testing
     testEnvironment: 'jsdom',

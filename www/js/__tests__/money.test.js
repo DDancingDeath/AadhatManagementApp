@@ -1,0 +1,87 @@
+/**
+ * @fileoverview Tests for money helpers / payment schema normalisation
+ */
+import { round2, sumMoney, readPayment, billTotal, outstandingDue } from '../utils/money.js';
+
+describe('round2', () => {
+    test('rounds half-paise correctly', () => {
+        expect(round2(1.005)).toBe(1.01);
+        expect(round2(0.1 + 0.2)).toBe(0.3);
+        expect(round2('12.345')).toBe(12.35);
+        expect(round2(undefined)).toBe(0);
+    });
+});
+
+describe('sumMoney', () => {
+    test('sums with mapper and ignores junk', () => {
+        expect(sumMoney([{ a: 0.1 }, { a: 0.2 }, { a: 'x' }], x => x.a)).toBe(0.3);
+        expect(sumMoney(null)).toBe(0);
+    });
+});
+
+describe('readPayment', () => {
+    test('current schema (payment object + top-level copies)', () => {
+        const bill = {
+            grandTotal: 1000, amountPayable: 1000, billTotal: 1100,
+            onlinePayment: 300, cashPayment: 200, dueAmount: 500,
+            payment: { online: 300, cash: 200, due: 500, total: 1000 }
+        };
+        expect(readPayment(bill)).toEqual({ total: 1000, cash: 200, online: 300, due: 500, paid: 500 });
+    });
+
+    test('payment object wins over stale top-level fields after a due payment', () => {
+        const bill = {
+            total: 1000, cashPayment: 0, dueAmount: 1000,
+            payment: { online: 0, cash: 400, due: 600, total: 400 }
+        };
+        expect(readPayment(bill)).toMatchObject({ cash: 400, due: 600, paid: 400 });
+    });
+
+    test('wholesale schema (payment object only)', () => {
+        const sale = { total: 2500, payment: { online: 0, cash: 0, total: 0, due: 2500 } };
+        expect(readPayment(sale)).toEqual({ total: 2500, cash: 0, online: 0, due: 2500, paid: 0 });
+    });
+
+    test('legacy top-level only schema uses dueAmount', () => {
+        const bill = { total: 900, cashPayment: 400, onlinePayment: 100, dueAmount: 400 };
+        expect(readPayment(bill)).toEqual({ total: 900, cash: 400, online: 100, due: 400, paid: 500 });
+    });
+
+    test('amountPaid = 0 does not fall through to cashPayment incorrectly / cashPayment kept', () => {
+        const bill = { total: 1000, amountPaid: 0, cashPayment: 600, onlinePayment: 0 };
+        expect(readPayment(bill)).toMatchObject({ cash: 600, due: 400 });
+    });
+
+    test('explicit cashPayment = 0 is respected (no fall-through to amountPaid)', () => {
+        const bill = { total: 1000, cashPayment: 0, amountPaid: 700, onlinePayment: 300, dueAmount: 700 };
+        expect(readPayment(bill)).toMatchObject({ cash: 0, online: 300, due: 700 });
+    });
+
+    test('legacy amountPaid-only schema derives due from total', () => {
+        const bill = { total: 1000, amountPaid: 250, onlinePayment: 150 };
+        expect(readPayment(bill)).toEqual({ total: 1000, cash: 250, online: 150, due: 600, paid: 400 });
+    });
+
+    test('string amounts and float noise are rounded', () => {
+        const bill = { total: '100.10', payment: { cash: '0.1', online: 0.2, due: '99.8' } };
+        expect(readPayment(bill)).toEqual({ total: 100.1, cash: 0.1, online: 0.2, due: 99.8, paid: 0.3 });
+    });
+
+    test('no payment info at all means no due', () => {
+        expect(readPayment({ total: 500 })).toMatchObject({ due: 0, paid: 0 });
+        expect(readPayment(null)).toEqual({ total: 0, cash: 0, online: 0, due: 0, paid: 0 });
+    });
+});
+
+describe('billTotal / outstandingDue', () => {
+    test('purchase uses net payable before gross billTotal', () => {
+        expect(billTotal({ billTotal: 1100, grandTotal: 1000 })).toBe(1000);
+        expect(billTotal({ billTotal: 1100 })).toBe(1100);
+    });
+
+    test('cleared or overpaid bills have no outstanding', () => {
+        expect(outstandingDue({ payment: { due: 300 }, cleared: true })).toBe(0);
+        expect(outstandingDue({ payment: { due: -5 } })).toBe(0);
+        expect(outstandingDue({ dueAmount: 300 })).toBe(300);
+    });
+});

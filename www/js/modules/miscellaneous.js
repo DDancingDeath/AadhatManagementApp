@@ -9,12 +9,80 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
+import { AuditService } from '../services/audit.js';
 
 /**
  * Expenses Manager - Manages expense operations
  * @class ExpensesManager
  */
 export class ExpensesManager {
+    /**
+     * Expense currently loaded into a form for editing ({ id, category }), or null.
+     * While set, saving that category updates the existing document in place.
+     * @type {{id: string, category: string}|null}
+     */
+    static editingExpense = null;
+
+    /**
+     * Create a new expense, or update the one being edited (same doc, no delete).
+     * @param {Object} expense - Expense built from the form
+     * @returns {Promise<boolean>} true if an existing expense was updated
+     */
+    static async persistExpense(expense) {
+        const editing = this.editingExpense;
+        if (!editing || editing.category !== expense.category) {
+            await FirebaseService.saveExpense(expense);
+            return false;
+        }
+
+        const original = (AppState.expensesHistory || []).find(e => String(e.id) === String(editing.id)) || {};
+        const fields = {
+            type: expense.type,
+            personName: expense.personName,
+            amount: expense.amount,
+            remarks: expense.remarks,
+            updatedAt: Helpers.getCurrentDateTime(),
+            updatedBy: expense.createdBy,
+            updatedByName: expense.createdByName
+        };
+        await this.updateExistingExpense(editing.id, fields);
+        this.editingExpense = null;
+
+        // Keep original creation info on the object used for printing
+        if (original.date) expense.date = original.date;
+        if (original.createdByName) expense.createdByName = original.createdByName;
+
+        await AuditService.log(AuditService.ACTIONS.EDIT_EXPENSE || 'EDIT_EXPENSE', {
+            expenseId: String(editing.id),
+            category: expense.category,
+            oldAmount: original.amount,
+            newAmount: expense.amount,
+            oldType: original.type,
+            newType: expense.type
+        });
+        return true;
+    }
+
+    /**
+     * Update an expense document in place. Resolves docs the same way as
+     * FirebaseService.deleteExpense: numeric ids are legacy `id` fields, others are doc ids.
+     * @param {string|number} expenseId
+     * @param {Object} fields
+     */
+    static async updateExistingExpense(expenseId, fields) {
+        const name = window.getCollection ? window.getCollection('expenses') : 'expenses';
+        const coll = FirebaseService.db.collection(name);
+        let refs;
+        if (typeof expenseId === 'number' || !isNaN(Number(expenseId))) {
+            const snapshot = await coll.where('id', '==', Number(expenseId)).get();
+            refs = snapshot.docs.map(doc => doc.ref);
+        } else {
+            refs = [coll.doc(String(expenseId))];
+        }
+        if (refs.length === 0) throw new Error('Expense not found');
+        await Promise.all(refs.map(ref => ref.update(fields)));
+    }
+
     /**
      * Update expense person autocomplete options
      * Extracts unique person names from expense history
@@ -93,16 +161,17 @@ export class ExpensesManager {
         };
 
         // Use withLoading for the Firebase operation
+        let updated = false;
         await UIManager.withLoading(async () => {
-            await FirebaseService.saveExpense(expense);
+            updated = await this.persistExpense(expense);
         });
         
         // Add to AppState for immediate reflection
         if (!AppState.expenseHistory) AppState.expenseHistory = [];
-        AppState.expenseHistory.push(expense);
+        if (!updated) AppState.expenseHistory.push(expense);
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('✓ Business expense saved');
+        UIManager.showToast(updated ? '✓ Business expense updated' : '✓ Business expense saved');
         
         document.getElementById('businessExpenseType').value = '';
         document.getElementById('businessExpensePerson').value = '';
@@ -154,16 +223,17 @@ export class ExpensesManager {
         };
 
         // Use withLoading for the Firebase operation
+        let updated = false;
         await UIManager.withLoading(async () => {
-            await FirebaseService.saveExpense(expense);
+            updated = await this.persistExpense(expense);
         });
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('✓ Personal expense saved');
+        UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');
         
         // Add to AppState for immediate reflection
         if (!AppState.expenseHistory) AppState.expenseHistory = [];
-        AppState.expenseHistory.push(expense);
+        if (!updated) AppState.expenseHistory.push(expense);
         
         document.getElementById('personalExpenseType').value = '';
         document.getElementById('personalExpenseAmount').value = '';
@@ -299,10 +369,10 @@ export class ExpensesManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.saveExpense(expense);
+        const updated = await this.persistExpense(expense);
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('✓ Business expense saved');
+        UIManager.showToast(updated ? '✓ Business expense updated' : '✓ Business expense saved');
         
         document.getElementById('businessExpenseType').value = '';
         document.getElementById('businessExpensePerson').value = '';
@@ -484,8 +554,8 @@ export class ExpensesManager {
             document.getElementById('personalExpenseRemarks').value = expense.remarks || '';
         }
 
-        // Delete the old expense
-        await this.deleteExpense(expenseId, category, false);
+        // Edit in place: saving this category updates the same document (nothing is deleted)
+        this.editingExpense = { id: String(expense.id), category };
         
         UIManager.showToast('Edit expense and save to update');
     }
@@ -502,7 +572,17 @@ export class ExpensesManager {
         }
 
         try {
+            const existing = (AppState.expensesHistory || []).find(e => String(e.id) === String(expenseId));
             await FirebaseService.deleteExpense(String(expenseId));
+            if (this.editingExpense && String(this.editingExpense.id) === String(expenseId)) {
+                this.editingExpense = null;
+            }
+            await AuditService.log(AuditService.ACTIONS.DELETE_EXPENSE || 'DELETE_EXPENSE', {
+                expenseId: String(expenseId),
+                category: existing?.category || category,
+                amount: existing?.amount,
+                type: existing?.type
+            });
             UIManager.hapticFeedback('medium');
             UIManager.showToast('✓ Expense deleted');
             
@@ -542,10 +622,10 @@ export class ExpensesManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.saveExpense(expense);
+        const updated = await this.persistExpense(expense);
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('✓ Personal expense saved');
+        UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');
         
         document.getElementById('personalExpenseType').value = '';
         document.getElementById('personalExpenseAmount').value = '';
