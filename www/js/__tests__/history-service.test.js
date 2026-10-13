@@ -240,7 +240,7 @@ describe('recent history window + stock checkpoint', () => {
         jest.useRealTimers();
         await p;
         fake.db.collection = origCollection;
-        expect(hang).toBeLessThan(0);
+        expect(hang).toBeLessThan(2);
         expect(FirebaseService.isFullHistoryLoaded()).toBe(true);
         expect(AppState.stock).toEqual(fullStock());
     });

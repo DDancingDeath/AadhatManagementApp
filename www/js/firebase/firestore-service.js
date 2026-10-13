@@ -240,7 +240,8 @@ const BACKFILL_MAX_WRITES = 5000;
 const BACKFILL_BATCH_SIZE = 400;
 const ROLL_FORWARD_RETRY_MS = 30000;
 /** Per-attempt timeout of one-shot history reads (see getWithRetry). */
-const GET_TIMEOUT_MS = 20000;
+const GET_TIMEOUT_MS = 15000;
+const RETRY_LIMIT_BASE = 1000000;
 /** Retry delay after the full-history read for stock failed. */
 const FULL_LOAD_RETRY_MS = 30000;
 const DUE_FIELDS = ['payment.due', 'dueAmount'];
@@ -515,22 +516,26 @@ function requestRebuild(after = Promise.resolve()) {
 }
 
 /**
- * One-shot query read that cannot hang: query.get() is served through the
- * watch stream and resolves only once the target is CURRENT; if the backend
- * never marks it current (seen with the emulator when several large one-shot
- * targets are added at once) the promise would never settle. Times out and
- * retries with a fresh get().
+ * One-shot read that cannot hang. query.get() is served through the watch
+ * stream and resolves only once its target is CURRENT; when the backend never
+ * marks it current (reproduced on the emulator: ADD without CURRENT) the
+ * promise never settles, and a plain retry of the same query would join the
+ * same stuck target. So each attempt times out and the retry uses a
+ * different-but-equivalent query (`makeQuery(attempt)`), i.e. a new target.
+ * @param {Object|Function} query query/doc ref, or attempt => query
  * @private
  */
-async function getWithRetry(query, label, { attempts = 3, timeoutMs = GET_TIMEOUT_MS } = {}) {
+async function getWithRetry(query, label, { attempts = 4, timeoutMs = GET_TIMEOUT_MS } = {}) {
+    const makeQuery = typeof query === 'function' ? query : () => query;
     let lastError = null;
     for (let i = 0; i < attempts; i++) {
         let timer = null;
         try {
             return await Promise.race([
-                query.get(),
+                makeQuery(i).get(),
                 new Promise((_, reject) => {
-                    timer = setTimeout(() => reject(Object.assign(new Error(`${label}: read timed out`), { code: 'deadline-exceeded' })), timeoutMs);
+                    // Escalating timeout so a slow (not stuck) connection isn't charged repeated reads.
+                    timer = setTimeout(() => reject(Object.assign(new Error(`${label}: read timed out`), { code: 'deadline-exceeded' })), timeoutMs * 2 ** i);
                 })
             ]);
         } catch (e) {
@@ -559,9 +564,13 @@ async function extendHistory(target) {
     const db = getDb();
     const snaps = [];
     for (const spec of HISTORY_COLLECTIONS) {
-        let q = db.collection(col(spec.key));
-        if (!full) q = q.where('timestamp', '>=', target).where('timestamp', '<', upper);
-        snaps.push(await getWithRetry(q, `${spec.label} history`).catch(err => {
+        const makeQuery = (attempt) => {
+            let q = db.collection(col(spec.key));
+            if (!full) q = q.where('timestamp', '>=', target).where('timestamp', '<', upper);
+            // A retry needs a distinct watch target; a huge limit keeps the results identical.
+            return attempt ? q.limit(RETRY_LIMIT_BASE + attempt) : q;
+        };
+        snaps.push(await getWithRetry(makeQuery, `${spec.label} history`).catch(err => {
             if (spec.optional) {
                 console.error(`${spec.label} history fetch error:`, err);
                 return null;
@@ -621,7 +630,7 @@ function oldestTimestamp() {
         const gen = sessionGen;
         const db = getDb();
         oldestTimestampPromise = Promise.all(HISTORY_COLLECTIONS.map(spec =>
-            getWithRetry(db.collection(col(spec.key)).orderBy('timestamp', 'asc').limit(1), `${spec.label} oldest`)
+            getWithRetry(a => db.collection(col(spec.key)).orderBy('timestamp', 'asc').limit(1 + a), `${spec.label} oldest`)
                 .then(s => (s.docs.length ? Number(s.docs[0].data().timestamp) : Infinity))
                 .catch(err => {
                     if (spec.optional) return Infinity;
