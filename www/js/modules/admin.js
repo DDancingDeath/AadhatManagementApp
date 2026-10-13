@@ -107,13 +107,13 @@ const AdminManager = {
                 
                 <label>Heavy Packet Weight Threshold (kg):</label>
                 <input type="number" inputmode="decimal" id="adminHeavyWeight" 
-                       placeholder="30" value="${heavyWeight}" 
+                       placeholder="30" value="${Helpers.escapeHtml(heavyWeight)}" 
                        onchange="window.app.admin.saveConfigure()" />
                 <p class="setting-description">Packets above this weight will incur labor charges</p>
 
                 <label>Labor Charge per Heavy Packet (₹):</label>
                 <input type="number" inputmode="decimal" id="adminLaborRate" 
-                       placeholder="6" value="${laborRate}" 
+                       placeholder="6" value="${Helpers.escapeHtml(laborRate)}" 
                        onchange="window.app.admin.saveConfigure()" />
                 <p class="setting-description">Amount charged for each heavy packet</p>
 
@@ -239,14 +239,14 @@ const AdminManager = {
                     <span class="user-role-badge pending">Pending</span>
                 </div>
                 <div class="user-actions">
-                    <select id="role-${user.id}">
+                    <select id="role-${Helpers.escapeHtml(user.id)}">
                         <option value="staff">Staff</option>
                         <option value="manager">Manager</option>
                     </select>
-                    <button class="btn-approve" onclick="window.app.admin.approveUser('${user.id}')">
+                    <button class="btn-approve" onclick="window.app.admin.approveUser('${Helpers.escapeJsAttr(user.id)}')">
                         ✓ Approve
                     </button>
-                    <button class="btn-reject" onclick="window.app.admin.rejectUser('${user.id}')">
+                    <button class="btn-reject" onclick="window.app.admin.rejectUser('${Helpers.escapeJsAttr(user.id)}')">
                         ✕ Reject
                     </button>
                 </div>
@@ -286,17 +286,17 @@ const AdminManager = {
                         <div class="user-name">${Helpers.escapeHtml(user.name || 'Unknown')} ${isCurrentUser ? '<span style="color: #999; font-size: 12px;">(You)</span>' : ''}</div>
                         <div class="user-email">${Helpers.escapeHtml(user.email)}</div>
                     </div>
-                    <span class="user-role-badge ${user.role}">${user.role}</span>
+                    <span class="user-role-badge ${Helpers.escapeHtml(user.role)}">${Helpers.escapeHtml(user.role)}</span>
                 </div>
                 ${!isCurrentUser ? `
                 <div class="user-actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
-                    <button onclick="window.app.admin.showChangeRole('${user.id}', '${safeName}', '${user.role}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #f7fafc; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; font-size: 13px;">
+                    <button onclick="window.app.admin.showChangeRole('${Helpers.escapeJsAttr(user.id)}', '${safeName}', '${Helpers.escapeJsAttr(user.role)}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #f7fafc; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; font-size: 13px;">
                         ✏️ Edit Role
                     </button>
-                    <button onclick="window.app.admin.resetUserPassword('${user.id}', '${safeEmail}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; cursor: pointer; font-size: 13px; color: #92400e;">
+                    <button onclick="window.app.admin.resetUserPassword('${Helpers.escapeJsAttr(user.id)}', '${safeEmail}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; cursor: pointer; font-size: 13px; color: #92400e;">
                         🔑 Reset Password
                     </button>
-                    <button onclick="window.app.admin.deleteUser('${user.id}', '${safeName}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; cursor: pointer; font-size: 13px; color: #991b1b;">
+                    <button onclick="window.app.admin.deleteUser('${Helpers.escapeJsAttr(user.id)}', '${safeName}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; cursor: pointer; font-size: 13px; color: #991b1b;">
                         🗑️ Delete
                     </button>
                 </div>
@@ -565,11 +565,11 @@ const AdminManager = {
         container.innerHTML = `
             <div class="storage-grid">
                 <div class="storage-stat-card">
-                    <div class="storage-stat-value">${stats.totalDocs}</div>
+                    <div class="storage-stat-value">${Helpers.escapeHtml(stats.totalDocs)}</div>
                     <div class="storage-stat-label">Total Documents</div>
                 </div>
                 <div class="storage-stat-card">
-                    <div class="storage-stat-value">${stats.estimatedSize}</div>
+                    <div class="storage-stat-value">${Helpers.escapeHtml(stats.estimatedSize)}</div>
                     <div class="storage-stat-label">Estimated Size</div>
                 </div>
             </div>
@@ -577,10 +577,10 @@ const AdminManager = {
                 ${stats.breakdown.map(col => `
                     <div class="collection-item">
                         <span class="collection-name">
-                            <span>${col.icon}</span>
-                            <span>${col.label}</span>
+                            <span>${Helpers.escapeHtml(col.icon)}</span>
+                            <span>${Helpers.escapeHtml(col.label)}</span>
                         </span>
-                        <span class="collection-count">${col.count}</span>
+                        <span class="collection-count">${Helpers.escapeHtml(col.count)}</span>
                     </div>
                 `).join('')}
             </div>

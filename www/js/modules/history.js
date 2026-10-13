@@ -261,12 +261,12 @@ export class HistoryManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill('${billRef(bill)}', '${bill.type}')">#${billNumber}</span>${bill.customerName ? ` <strong>${Helpers.escapeHtml(bill.customerName)}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill('${billRef(bill)}', '${Helpers.escapeJsAttr(bill.type)}')">#${Helpers.escapeHtml(billNumber)}</span>${bill.customerName ? ` <strong>${Helpers.escapeHtml(bill.customerName)}</strong>` : ''}
                     <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
                 <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${Helpers.escapeHtml(bill.createdByName || bill.userName)}</strong>` : ''}</div>
                 <div class="history-summary">
-                    ${Helpers.escapeHtml(bill.items.map(item => item.name).join(', '))} • ${totalPackets} packets
+                    ${Helpers.escapeHtml(bill.items.map(item => item.name).join(', '))} • ${Helpers.escapeHtml(totalPackets)} packets
                 </div>
                 ${paymentHTML}
             `;
@@ -496,9 +496,9 @@ export class HistoryManager {
         const itemsHTML = bill.items.map(item => `
             <tr>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${Helpers.escapeHtml(item.name)}</td>
-                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Helpers.escapeHtml(item.rate)}</td>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)}</td>
-                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${item.total}</strong></td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${Helpers.escapeHtml(item.total)}</strong></td>
             </tr>
         `).join('');
         
@@ -536,7 +536,7 @@ export class HistoryManager {
                 <div class="bill-info-section">
                     <div class="bill-info-row">
                         <div class="bill-info-label">Bill No:</div>
-                        <div class="bill-info-value"><strong style="color: ${billColor};">#${billNumber}</strong></div>
+                        <div class="bill-info-value"><strong style="color: ${billColor};">#${Helpers.escapeHtml(billNumber)}</strong></div>
                     </div>
                     <div class="bill-info-row">
                         <div class="bill-info-label">Date:</div>
@@ -586,7 +586,7 @@ export class HistoryManager {
                 </table>
                 
                 <div style="text-align: right; padding: 8px 0; font-size: 14px; color: #6c757d; margin-bottom: 12px;">
-                    Total Packets: <strong style="color: #212529; font-size: 15px;">${totalPackets}</strong>
+                    Total Packets: <strong style="color: #212529; font-size: 15px;">${Helpers.escapeHtml(totalPackets)}</strong>
                 </div>
                 
                 <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6;">
@@ -847,14 +847,14 @@ export class HistoryManager {
                     <tr style="border-bottom: 1px solid #e5e7eb; background: ${rowBackground}; cursor: pointer; transition: all 0.3s ease;" 
                         onmouseover="this.style.background='${hoverBackground}'; this.style.transform='scale(1.01)'" 
                         onmouseout="this.style.background='${rowBackground}'; this.style.transform='scale(1)'"
-                        onclick="window.app.history.viewBill('${billRef(bill)}', '${bill.type}')">
+                        onclick="window.app.history.viewBill('${billRef(bill)}', '${Helpers.escapeJsAttr(bill.type)}')">
                         ${isFirstRow ? `
                             <td rowspan="${rowspan}" style="padding: 12px 8px; border-right: 1px solid #e5e7eb; font-weight: 500;">
                                 ${Helpers.escapeHtml(bill.customerName || '-')}
                             </td>
                         ` : ''}
                         <td style="padding: 12px 8px;">${Helpers.escapeHtml(item.name)}</td>
-                        <td style="padding: 12px 8px; text-align: right;">₹${item.rate}</td>
+                        <td style="padding: 12px 8px; text-align: right;">₹${Helpers.escapeHtml(item.rate)}</td>
                         <td style="padding: 12px 8px; text-align: right;">${(item.qty || 0).toFixed(1)}</td>
                         ${isFirstRow ? `
                             <td rowspan="${rowspan}" style="padding: 12px 8px; text-align: right; border-left: 1px solid #e5e7eb; font-weight: 700; color: ${itemColor}; font-size: 15px;">

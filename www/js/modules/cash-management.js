@@ -974,11 +974,11 @@ export class CashManagementManager {
                         ${status}
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; color: #6c757d;">
-                        <div>Opening: <strong>₹${session.openingBalance}</strong></div>
+                        <div>Opening: <strong>₹${Helpers.escapeHtml(session.openingBalance)}</strong></div>
                         ${session.signedOut ? `
-                            <div>Closing: <strong>₹${session.closingBalance}</strong></div>
-                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${cashAdded}</strong></div>` : ''}
-                            <div>Expected: <strong>₹${session.expectedBalance || 0}</strong></div>
+                            <div>Closing: <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
+                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
+                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
                             <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
                             ` : '<div>In Progress...</div>'}
                         </div>
@@ -1039,11 +1039,11 @@ export class CashManagementManager {
                         ${status}
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; color: #6c757d;">
-                        <div>Opening: <strong>₹${session.openingBalance}</strong></div>
+                        <div>Opening: <strong>₹${Helpers.escapeHtml(session.openingBalance)}</strong></div>
                         ${session.signedOut ? `
-                            <div>Closing: <strong>₹${session.closingBalance}</strong></div>
-                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${cashAdded}</strong></div>` : ''}
-                            <div>Expected: <strong>₹${session.expectedBalance || 0}</strong></div>
+                            <div>Closing: <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
+                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
+                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
                             <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
                             ` : '<div>In Progress...</div>'}
                         </div>
@@ -1106,19 +1106,19 @@ export class CashManagementManager {
                     <!-- Expenses & Others -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expenses & Others</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashOut}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashOut)}</div>
                     </div>
                     
                     <!-- Expected Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Balance</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.expectedBalance || 0}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.expectedBalance || 0)}</div>
                     </div>
                     
                     <!-- Actual Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Actual Balance</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.closingBalance}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.closingBalance)}</div>
                     </div>
                     
                     <!-- Difference -->
@@ -1132,25 +1132,25 @@ export class CashManagementManager {
                     <!-- Opening Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Opening Balance</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.openingBalance || 0}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.openingBalance || 0)}</div>
                     </div>
                     
                     <!-- Cash In -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Cash In</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashIn - (session.openingBalance || 0)}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashIn - (session.openingBalance || 0))}</div>
                     </div>
                     
                     <!-- Cash Out -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Cash Out</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashOut}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashOut)}</div>
                     </div>
                     
                     <!-- Expected Cash -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Cash</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.expectedBalance || 0}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.expectedBalance || 0)}</div>
                     </div>
                 </div>
                 `}
@@ -1161,23 +1161,23 @@ export class CashManagementManager {
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
                             <span>Opening Balance:</span>
-                            <strong style="color: #6366f1;">₹${session.openingBalance}</strong>
+                            <strong style="color: #6366f1;">₹${Helpers.escapeHtml(session.openingBalance)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Added:</span>
-                            <strong style="color: #10b981;">₹${session.transactions?.cashDeposits || 0}</strong>
+                            <strong style="color: #10b981;">₹${Helpers.escapeHtml(session.transactions?.cashDeposits || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Sales:</span>
-                            <strong style="color: #22c55e;">₹${session.transactions?.cashSales || 0}</strong>
+                            <strong style="color: #22c55e;">₹${Helpers.escapeHtml(session.transactions?.cashSales || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Due Received:</span>
-                            <strong style="color: #3b82f6;">₹${session.transactions?.dueReceived || 0}</strong>
+                            <strong style="color: #3b82f6;">₹${Helpers.escapeHtml(session.transactions?.dueReceived || 0)}</strong>
                         </div>
                         <div style="border-top: 2px solid #059669; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; font-weight: 600;">
                             <span>Total Cash In:</span>
-                            <strong style="color: #059669;">₹${totalCashIn}</strong>
+                            <strong style="color: #059669;">₹${Helpers.escapeHtml(totalCashIn)}</strong>
                         </div>
                     </div>
                 </div>
@@ -1188,23 +1188,23 @@ export class CashManagementManager {
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Purchases:</span>
-                            <strong style="color: #ef4444;">₹${session.transactions?.cashPurchases || 0}</strong>
+                            <strong style="color: #ef4444;">₹${Helpers.escapeHtml(session.transactions?.cashPurchases || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Due Paid:</span>
-                            <strong style="color: #dc2626;">₹${session.transactions?.duePaid || 0}</strong>
+                            <strong style="color: #dc2626;">₹${Helpers.escapeHtml(session.transactions?.duePaid || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Business Expenses:</span>
-                            <strong style="color: #f97316;">₹${session.transactions?.businessExpenses || 0}</strong>
+                            <strong style="color: #f97316;">₹${Helpers.escapeHtml(session.transactions?.businessExpenses || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Personal Expenses:</span>
-                            <strong style="color: #f59e0b;">₹${session.transactions?.personalExpenses || 0}</strong>
+                            <strong style="color: #f59e0b;">₹${Helpers.escapeHtml(session.transactions?.personalExpenses || 0)}</strong>
                         </div>
                         <div style="border-top: 2px solid #dc2626; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; font-weight: 600;">
                             <span>Total Cash Out:</span>
-                            <strong style="color: #dc2626;">₹${totalCashOut}</strong>
+                            <strong style="color: #dc2626;">₹${Helpers.escapeHtml(totalCashOut)}</strong>
                         </div>
                     </div>
                 </div>
@@ -1217,7 +1217,7 @@ export class CashManagementManager {
                                 <div style="background: white; padding: 8px; border-radius: 6px; border-left: 3px solid #10b981;">
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
                                         <strong style="color: #333; font-size: 12px;">${Helpers.escapeHtml(d.reason || 'Cash added')}</strong>
-                                        <strong style="color: #10b981; font-size: 13px;">₹${d.amount}</strong>
+                                        <strong style="color: #10b981; font-size: 13px;">₹${Helpers.escapeHtml(d.amount)}</strong>
                                     </div>
                                     <div style="color: #6c757d; font-size: 10px;">
                                         Added by ${Helpers.escapeHtml(d.addedBy)}
@@ -1241,7 +1241,7 @@ export class CashManagementManager {
                                     <div style="background: white; padding: 8px; border-radius: 6px; border-left: 3px solid ${borderColor};">
                                         <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
                                             <strong style="color: #333; font-size: 12px;">${typeLabel} ${Helpers.escapeHtml(p.customer)}</strong>
-                                            <strong style="color: ${amountColor}; font-size: 13px;">${isReceived ? '+' : '-'}₹${p.amount}</strong>
+                                            <strong style="color: ${amountColor}; font-size: 13px;">${isReceived ? '+' : '-'}₹${Helpers.escapeHtml(p.amount)}</strong>
                                         </div>
                                         <div style="color: #6c757d; font-size: 10px;">
                                             ${Helpers.escapeHtml(p.method)} • ${Helpers.escapeHtml(p.notes || 'No notes')}
@@ -1257,8 +1257,8 @@ export class CashManagementManager {
                 <!-- Notes -->
                 <div style="background: #fffbeb; padding: 12px; border-radius: 8px; border-left: 3px solid #f59e0b;">
                     <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #92400e;">📝 Notes</h4>
-                    ${session.openingNotes ? `<div style="font-size: 12px; color: #78350f; margin-bottom: 6px;"><strong>Sign In:</strong> ${session.openingNotes}</div>` : ''}
-                    ${session.closingNotes ? `<div style="font-size: 12px; color: #78350f;"><strong>Sign Out:</strong> ${session.closingNotes}</div>` : ''}
+                    ${session.openingNotes ? `<div style="font-size: 12px; color: #78350f; margin-bottom: 6px;"><strong>Sign In:</strong> ${Helpers.escapeHtml(session.openingNotes)}</div>` : ''}
+                    ${session.closingNotes ? `<div style="font-size: 12px; color: #78350f;"><strong>Sign Out:</strong> ${Helpers.escapeHtml(session.closingNotes)}</div>` : ''}
                 </div>
                 ` : ''}
             </div>

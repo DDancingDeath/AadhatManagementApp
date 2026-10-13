@@ -594,7 +594,7 @@ const ItemsManager = {
                 row.innerHTML = `
                     <td style="padding: 16px; font-weight: 600; color: #1f2937; font-size: 15px; border-right: 1px solid #f3f4f6;">
                         ${Helpers.escapeHtml(displayName || item.name || '-')}
-                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
+                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${Helpers.escapeHtml(itemFrequency)}</span>` : ''}
                     </td>
                     <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${Helpers.escapeHtml(purchaseRates)}</td>
                     <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600;">${Helpers.escapeHtml(saleRates)}</td>
@@ -603,7 +603,7 @@ const ItemsManager = {
                 row.innerHTML = `
                     <td style="padding: 16px; font-weight: 600; color: #1f2937; font-size: 15px; border-right: 1px solid #f3f4f6;">
                         ${Helpers.escapeHtml(displayName || item.name || '-')}
-                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
+                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${Helpers.escapeHtml(itemFrequency)}</span>` : ''}
                     </td>
                     <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${Helpers.escapeHtml(purchaseRates)}</td>
                     <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${Helpers.escapeHtml(saleRates)}</td>
