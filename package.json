@@ -4,7 +4,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:rules": "npx --yes firebase-tools@latest emulators:exec --only firestore --project demo-aadhat \"node rules-tests/test.js\""
+    "test:rules": "npx --yes firebase-tools@latest emulators:exec --only firestore --project demo-aadhat \"node rules-tests/test.js\"",
+    "check:sw": "node scripts/check-sw-assets.js"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^7.2.0",
