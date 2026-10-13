@@ -10,6 +10,13 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
+import { readPayment, round2 } from '../utils/money.js';
+import { parseAnyBillDate } from '../utils/dates.js';
+
+const PAYMENT_TOLERANCE = 0.01;
+const COLLECTION_BY_TYPE = { purchase: 'purchases', retail: 'retailSales', wholesale: 'wholesaleSales' };
+
+const colName = (name) => (window.getCollection ? window.getCollection(name) : name);
 
 /**
  * Outstanding Manager - Manages due payments
@@ -92,13 +99,14 @@ export class OutstandingManager {
         
         if (currentDueFilter === 'purchase') {
             purchaseHistory.forEach(purchase => {
-                const duePaid = purchase.payment ? (purchase.payment.due || 0) : (purchase.dueAmount || 0);
+                const pay = readPayment(purchase);
+                const duePaid = pay.due;
                 
                 if (duePaid > 0 && !purchase.cleared) {
-                    const totalPayable = purchase.grandTotal || purchase.amountPayable || purchase.total || 0;
-                    const onlinePaid = purchase.payment ? (purchase.payment.online || 0) : (purchase.onlinePayment || 0);
-                    const cashPaid = purchase.payment ? (purchase.payment.cash || 0) : (purchase.cashPayment || 0);
-                    const totalPaid = onlinePaid + cashPaid;
+                    const totalPayable = pay.total;
+                    const onlinePaid = pay.online;
+                    const cashPaid = pay.cash;
+                    const totalPaid = pay.paid;
                     
                     dueTransactions.push({
                         ...purchase,
@@ -114,13 +122,14 @@ export class OutstandingManager {
         } else if (currentDueFilter === 'sale') {
             // Only retail sales - wholesale dues are on wholesale page
             retailSalesHistory.forEach(sale => {
-                const dueReceived = sale.payment ? (sale.payment.due || 0) : (sale.dueAmount || 0);
+                const pay = readPayment(sale);
+                const dueReceived = pay.due;
                 
                 if (dueReceived > 0 && !sale.cleared) {
                     const totalReceivable = sale.total || 0;
-                    const onlineReceived = sale.payment ? (sale.payment.online || 0) : (sale.onlinePayment || 0);
-                    const cashReceived = sale.payment ? (sale.payment.cash || 0) : (sale.cashPayment || 0);
-                    const totalReceived = onlineReceived + cashReceived;
+                    const onlineReceived = pay.online;
+                    const cashReceived = pay.cash;
+                    const totalReceived = pay.paid;
                     
                     dueTransactions.push({
                         ...sale,
@@ -137,8 +146,8 @@ export class OutstandingManager {
         
         // Sort by date (newest first) - use timestamp if available, otherwise parse date
         dueTransactions.sort((a, b) => {
-            const dateA = a.timestamp || new Date(a.date).getTime();
-            const dateB = b.timestamp || new Date(b.date).getTime();
+            const dateA = a.timestamp || parseAnyBillDate(a.date)?.getTime() || 0;
+            const dateB = b.timestamp || parseAnyBillDate(b.date)?.getTime() || 0;
             return dateB - dateA;
         });
         
@@ -205,7 +214,7 @@ export class OutstandingManager {
     static async recordPayment(transactionId, transactionType) {
         try {
             const paymentInput = document.getElementById(`payment_${transactionId}`);
-            const paymentAmount = Number(paymentInput.value) || 0;
+            const paymentAmount = round2(Number(paymentInput.value) || 0);
             
             if (paymentAmount <= 0) {
                 UIManager.showToast('Please enter a valid payment amount');
@@ -227,47 +236,27 @@ export class OutstandingManager {
                 return;
             }
             
-            const outstanding = transaction.payment?.due || 0;
+            const outstanding = readPayment(transaction).due;
             
-            if (paymentAmount > outstanding) {
+            if (paymentAmount > outstanding + PAYMENT_TOLERANCE) {
                 UIManager.showToast('Payment amount exceeds outstanding amount');
                 return;
             }
             
-            // Initialize payments array if it doesn't exist
-            if (!transaction.payments) transaction.payments = [];
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                UIManager.showToast('Internet required to record payment');
+                return;
+            }
             
-            // Record the payment
             const payment = {
                 amount: paymentAmount,
                 date: Helpers.getCurrentDateTime(),
                 recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             };
             
-            transaction.payments.push(payment);
-            
-            // Update payment totals
-            if (!transaction.payment) {
-                transaction.payment = { online: 0, cash: 0, due: 0, total: 0 };
-            }
-            
-            transaction.payment.cash = (transaction.payment.cash || 0) + paymentAmount;
-            transaction.payment.total = (transaction.payment.online || 0) + transaction.payment.cash;
-            
-            if (transactionType === 'purchase') {
-                const totalPayable = transaction.grandTotal || transaction.amountPayable || transaction.total || 0;
-                transaction.payment.due = totalPayable - transaction.payment.total;
-                await FirebaseService.updatePurchase(transaction);
-            } else if (transactionType === 'retail') {
-                const totalReceivable = transaction.total || 0;
-                transaction.payment.due = totalReceivable - transaction.payment.total;
-                await FirebaseService.updateRetailSale(transaction);
-            } else {
-                // wholesale
-                const totalReceivable = transaction.total || 0;
-                transaction.payment.due = totalReceivable - transaction.payment.total;
-                await FirebaseService.updateWholesaleSale(transaction);
-            }
+            // Server-side read-modify-write so concurrent payments from two devices can't overwrite each other
+            const written = await this.applyPaymentTransaction(transactionType, transaction, paymentAmount, payment);
+            Object.assign(transaction, written);
             
             paymentInput.value = '';
             this.renderDue();
@@ -286,8 +275,80 @@ export class OutstandingManager {
             
         } catch (error) {
             console.error('Error recording payment:', error);
-            UIManager.showToast('Error: ' + error.message);
+            if (error && error.code === 'exceeds-due') {
+                UIManager.showToast(`Payment amount exceeds outstanding amount (₹${error.due})`);
+                this.renderDue();
+            } else if (OutstandingManager.isOfflineError(error)) {
+                UIManager.showToast('Internet required to record payment');
+            } else {
+                UIManager.showToast('Error: ' + error.message);
+            }
         }
+    }
+
+    static isOfflineError(error) {
+        if (!error) return false;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+        const msg = String(error.message || '').toLowerCase();
+        return error.code === 'unavailable' || msg.includes('offline') || msg.includes('network');
+    }
+
+    /**
+     * Record a payment against a bill inside a Firestore transaction.
+     * Re-reads the bill from the server, recomputes due from the fresh doc and
+     * writes only payment fields (payment.*, payments[], and dueAmount if present).
+     * @returns {Promise<Object>} The fields written (for patching local state)
+     */
+    static async applyPaymentTransaction(transactionType, bill, amount, entry) {
+        const db = FirebaseService.db;
+        const coll = db.collection(colName(COLLECTION_BY_TYPE[transactionType] || 'wholesaleSales'));
+        // FirebaseService saves/updates bills at doc(String(bill.id)); legacy docs may only carry an `id` field
+        let ref = coll.doc(String(bill.id));
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const written = await db.runTransaction(async (tx) => {
+                const snap = await tx.get(ref);
+                if (!snap.exists) return null;
+                const fresh = snap.data() || {};
+                const pay = readPayment(fresh);
+
+                if (amount > pay.due + PAYMENT_TOLERANCE) {
+                    const err = new Error('Payment amount exceeds outstanding amount');
+                    err.code = 'exceeds-due';
+                    err.due = pay.due;
+                    throw err;
+                }
+
+                const newCash = round2(pay.cash + amount);
+                let newDue = round2(pay.due - amount);
+                if (newDue < PAYMENT_TOLERANCE) newDue = 0;
+
+                const update = {
+                    payment: {
+                        ...(fresh.payment && typeof fresh.payment === 'object' ? fresh.payment : {}),
+                        online: pay.online,
+                        cash: newCash,
+                        due: newDue,
+                        total: round2(pay.online + newCash)
+                    },
+                    payments: [...(Array.isArray(fresh.payments) ? fresh.payments : []), entry]
+                };
+                if (Object.prototype.hasOwnProperty.call(fresh, 'dueAmount')) {
+                    update.dueAmount = newDue;
+                }
+                tx.update(ref, update);
+                return update;
+            });
+
+            if (written) return written;
+
+            if (attempt === 0) {
+                const snap = await coll.where('id', '==', bill.id).limit(2).get();
+                if (snap.size !== 1) break;
+                ref = snap.docs[0].ref;
+            }
+        }
+        throw new Error('Transaction not found');
     }
 
     static async markAsCleared(transactionId, transactionType) {
@@ -301,7 +362,7 @@ export class OutstandingManager {
                 collection = 'wholesaleSales';
             }
             
-            await db.collection(collection).doc(String(transactionId)).update({
+            await db.collection(colName(collection)).doc(String(transactionId)).update({
                 cleared: true,
                 clearedAt: Helpers.getCurrentDateTime(),
                 clearedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
