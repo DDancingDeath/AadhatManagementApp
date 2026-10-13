@@ -33,13 +33,20 @@ export class WholesaleSalesManager {
         
         select.innerHTML = '<option value="">Select item</option>';
 
+        // While stock is still being calculated in the background, list every item
+        // (the dropdown is refreshed with the stock filter once it is ready)
+        const stockReady = AppState.stockReady !== false;
+        if (!stockReady) {
+            select.options[0].textContent = 'Select item (stock updating…)';
+        }
+
         // Load only items that have stock
         AppState.items.forEach(item => {
             // Check stock by itemId first, then by name
             const stockData = AppState.stock[item.id] || AppState.stock[item.name];
             
             // Only show items with positive stock quantity
-            if (stockData && stockData.quantity > 0) {
+            if (!stockReady || (stockData && stockData.quantity > 0)) {
                 const opt = document.createElement('option');
                 opt.value = item.name;
                 const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
@@ -75,16 +82,19 @@ export class WholesaleSalesManager {
         
         // Check stock by itemId first, then by name
         const stockData = AppState.stock[item.id] || AppState.stock[itemName];
-        
-        if (!stockData) {
+
+        if (AppState.stockReady === false) {
+            availableStockEl.textContent = "updating…";
+            avgRateEl.textContent = "-";
+        } else if (!stockData) {
             availableStockEl.textContent = "0.00";
             avgRateEl.textContent = "-";
             sellRateEl.value = "";
             return;
+        } else {
+            availableStockEl.textContent = (stockData.quantity || 0).toFixed(2);
+            avgRateEl.textContent = (stockData.rate || 0).toFixed(2);
         }
-        
-        availableStockEl.textContent = (stockData.quantity || 0).toFixed(2);
-        avgRateEl.textContent = (stockData.rate || 0).toFixed(2);
         
         // Check if item has predefined wholesale rates
         if (item.wholesaleRates && item.wholesaleRates.length > 0) {
@@ -124,6 +134,10 @@ export class WholesaleSalesManager {
         }
         
         // Check stock
+        if (AppState.stockReady === false) {
+            UIManager.showToast('Stock is still updating — please try again in a moment');
+            return;
+        }
         const stockData = AppState.stock[item.id] || AppState.stock[itemName];
         if (!stockData || stockData.quantity < quantity) {
             const available = stockData?.quantity || 0;
