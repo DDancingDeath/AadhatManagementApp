@@ -6,6 +6,8 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
+import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 
 /** Buttons disabled while a wholesale save/print is in flight */
 const WHOLESALE_BUTTONS = '[onclick*="wholesaleSales.completeSale"], [onclick*="wholesaleSales.printWholesaleSale"]';
@@ -601,14 +603,18 @@ export class WholesaleSalesManager {
             .filter(sale => sale.source === 'sales-tab')
             .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         
+        // Older sales load one month at a time as the user scrolls
+        attachOlderHistoryScroll(container, { noun: 'sales', onLoaded: () => this.renderSalesHistory() });
+
         if (salesTabHistory.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No sales yet</p>';
+            const message = isFullHistoryLoaded() ? 'No sales yet' : `No sales since ${formatWindowDate(historyLoadedFrom())}`;
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(message)}</p>`;
             return;
         }
 
         container.innerHTML = "";
 
-        salesTabHistory.forEach((sale, saleIndex) => {
+        salesTabHistory.forEach((sale) => {
             const div = document.createElement("div");
             div.className = "history-item";
             
@@ -628,7 +634,7 @@ export class WholesaleSalesManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSale(${saleIndex})">#${sale.billNumber || sale.id}</span>${sale.customerName ? `<strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}
+                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${sale.billNumber || sale.id}</span>${sale.customerName ? `<strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}
                     <span style="color: #28a745; font-weight: 700;">₹ ${Math.round(sale.total)}</span>
                 </div>
                 <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
@@ -652,6 +658,7 @@ export class WholesaleSalesManager {
         
         // Store index and type for edit/delete functionality
         window.currentBillIndex = index;
+        window.currentBillId = sale.id;
         window.currentBillType = 'wholesale';
         
         const itemsHTML = sale.items.map(item => {

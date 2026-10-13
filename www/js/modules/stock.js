@@ -9,6 +9,8 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
+import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 
 /**
  * Stock Manager - Manages inventory stock operations
@@ -539,8 +541,12 @@ export class StockManager {
                 return timeB - timeA;
             });
 
+            // Older adjustments load one month at a time as the user scrolls
+            attachOlderHistoryScroll(container, { noun: 'adjustments', onLoaded: () => this.renderAdjustmentHistory() });
+
             if (adjustments.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>';
+                const message = isFullHistoryLoaded() ? 'No adjustments yet' : `No adjustments since ${formatWindowDate(historyLoadedFrom())}`;
+                container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 20px;">${Helpers.escapeHtml(message)}</p>`;
                 return;
             }
 

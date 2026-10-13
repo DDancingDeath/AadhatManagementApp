@@ -4,6 +4,9 @@ import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { readPayment, outstandingDue } from '../utils/money.js';
 import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+import {
+    rangeStatus, retryRange, applyRangeState, needsHistoryFrom, ensureHistoryFrom
+} from '../utils/history-window.js';
 
 export class ReportsManager {
     static currentTab = 'overview';
@@ -83,6 +86,47 @@ export class ReportsManager {
             this.customEndDate.setHours(23, 59, 59, 999);
             this.renderReports();
         }
+    }
+
+    /**
+     * Earliest date the current period needs (local midnight; null = all time).
+     * Rounded to a day so the value is stable between renders.
+     * @returns {Date|null}
+     */
+    static getRangeStart() {
+        const now = new Date();
+        switch (this.currentDateFilter) {
+            case 'today':
+                return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            case 'week':
+                return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+            case 'month':
+                return new Date(now.getFullYear(), now.getMonth(), 1);
+            case 'year':
+                return new Date(now.getFullYear(), 0, 1);
+            case 'custom':
+                return (this.customStartDate && this.customEndDate) ? this.customStartDate : null;
+            case 'all':
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Load older history for an export of the selected period first.
+     * @returns {Promise<boolean>} false if the period couldn't be loaded
+     */
+    static async ensureRangeLoaded() {
+        const start = this.getRangeStart();
+        if (!needsHistoryFrom(start)) return true;
+        let covered = false;
+        try {
+            covered = await UIManager.withLoading(() => ensureHistoryFrom(start));
+        } catch (error) {
+            console.error('Loading older history failed:', error);
+        }
+        if (!covered) UIManager.showToast("Couldn't load older data for this period");
+        return covered;
     }
 
     static filterByDate(bills) {
@@ -220,6 +264,18 @@ export class ReportsManager {
 
     // ==================== MAIN RENDER ====================
     static renderReports() {
+        // Never show partial totals: wait for the period's history to load
+        const start = this.getRangeStart();
+        const status = rangeStatus('reports', start, () => this.renderReports());
+        applyRangeState([...document.querySelectorAll('#reports .reports-section')], status, {
+            loadingText: start ? 'Loading older data for this period…' : 'Loading full history…',
+            onRetry: () => {
+                retryRange('reports');
+                this.renderReports();
+            }
+        });
+        if (status === 'loading') return;
+
         this.populateFilters();
 
         switch(this.currentTab) {
@@ -805,7 +861,8 @@ export class ReportsManager {
     }
 
     // ==================== EXPORT FUNCTIONS ====================
-    static exportCSV() {
+    static async exportCSV() {
+        if (!(await this.ensureRangeLoaded())) return;
         const purchaseHistory = AppState.purchaseHistory || [];
         const retailSalesHistory = AppState.retailSalesHistory || [];
         const wholesaleSalesHistory = AppState.salesHistory || [];
@@ -862,7 +919,8 @@ export class ReportsManager {
         UIManager.showToast(`Exported ${filteredPurchases.length + filteredSales.length} transactions to CSV`);
     }
 
-    static exportPDF() {
+    static async exportPDF() {
+        if (!(await this.ensureRangeLoaded())) return;
         const purchaseHistory = AppState.purchaseHistory || [];
         const retailSalesHistory = AppState.retailSalesHistory || [];
         const wholesaleSalesHistory = AppState.salesHistory || [];

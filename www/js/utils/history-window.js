@@ -1,0 +1,254 @@
+/**
+ * @fileoverview Helpers for screens that read the windowed history arrays.
+ *
+ * AppState history arrays (purchases, sales, expenses, stock adjustments,
+ * withdrawals) only hold records from `historyLoadedFrom` onward (plus older
+ * bills that still have a due). Screens that need an older range ask
+ * FirebaseService to extend the window first, and show a loading state
+ * instead of partial totals while that happens.
+ *
+ * FirebaseService is read from `window` (set in main.js) so this module has
+ * no Firebase import and every call is defensive: with an older service that
+ * has no window API, historyLoadedFrom is 0 (= full history loaded).
+ * @module utils/history-window
+ */
+
+import { AppState } from './state.js';
+
+const service = () => (typeof window !== 'undefined' ? window.FirebaseService : null) || null;
+
+/**
+ * Normalise a range start to epoch ms.
+ * @param {number|Date|null|undefined} from
+ * @returns {number|null} null = "all history"
+ */
+export function toMs(from) {
+    if (from === null || from === undefined) return null;
+    if (from instanceof Date) return from.getTime();
+    const n = Number(from);
+    return Number.isFinite(n) ? n : NaN;
+}
+
+/**
+ * Start of the loaded history window (ms epoch). 0 = full history loaded.
+ * @returns {number}
+ */
+export function historyLoadedFrom() {
+    const s = service();
+    if (typeof s?.getHistoryWindowStart === 'function') {
+        const v = Number(s.getHistoryWindowStart());
+        if (Number.isFinite(v)) return v;
+    }
+    const v = Number(AppState.historyLoadedFrom);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
+ * @returns {boolean} true when every record is in AppState
+ */
+export function isFullHistoryLoaded() {
+    const s = service();
+    if (typeof s?.isFullHistoryLoaded === 'function') return !!s.isFullHistoryLoaded();
+    return historyLoadedFrom() === 0;
+}
+
+/**
+ * Does a range starting at `rangeStart` need records that are not loaded yet?
+ * @param {number|Date|null} rangeStart - null/undefined = all history
+ * @param {number} [loadedFrom] - defaults to the current window start
+ * @returns {boolean}
+ */
+export function needsHistoryFrom(rangeStart, loadedFrom = historyLoadedFrom()) {
+    if (!loadedFrom) return false;
+    const ms = toMs(rangeStart);
+    if (ms === null) return true;
+    if (!Number.isFinite(ms)) return false;
+    return ms < loadedFrom;
+}
+
+const inflight = new Map();
+
+/**
+ * Make sure AppState covers [rangeStart, now]. Concurrent calls for the same
+ * range share one request.
+ * @param {number|Date|null} rangeStart - null = all history
+ * @returns {Promise<boolean>} true if the range is covered afterwards
+ */
+export function ensureHistoryFrom(rangeStart) {
+    if (!needsHistoryFrom(rangeStart)) return Promise.resolve(true);
+    const s = service();
+    if (typeof s?.ensureHistoryFrom !== 'function') return Promise.resolve(false);
+    const ms = toMs(rangeStart);
+    const key = ms === null ? 'all' : String(ms);
+    if (!inflight.has(key)) {
+        const p = Promise.resolve()
+            .then(() => s.ensureHistoryFrom(ms))
+            .then(() => !needsHistoryFrom(rangeStart))
+            .finally(() => inflight.delete(key));
+        inflight.set(key, p);
+    }
+    return inflight.get(key);
+}
+
+let olderInflight = null;
+let reachedEndFlag = false;
+
+/**
+ * Extend the window back by `months` calendar months (one request at a time
+ * app-wide; concurrent callers share it).
+ * @param {number} [months=1]
+ * @returns {Promise<{loadedFrom: number, reachedEnd: boolean}>}
+ */
+export function loadOlderHistory(months = 1) {
+    if (olderInflight) return olderInflight;
+    const s = service();
+    if (isFullHistoryLoaded() || typeof s?.loadOlderHistory !== 'function') {
+        reachedEndFlag = true;
+        return Promise.resolve({ loadedFrom: historyLoadedFrom(), reachedEnd: true });
+    }
+    olderInflight = Promise.resolve()
+        .then(() => s.loadOlderHistory(months))
+        .then((res) => {
+            const reachedEnd = !!res?.reachedEnd || isFullHistoryLoaded();
+            if (reachedEnd) reachedEndFlag = true;
+            return { loadedFrom: res?.loadedFrom ?? historyLoadedFrom(), reachedEnd };
+        })
+        .finally(() => { olderInflight = null; });
+    return olderInflight;
+}
+
+/** @returns {boolean} true when there is nothing older to load */
+export function historyReachedEnd() {
+    return reachedEndFlag || isFullHistoryLoaded();
+}
+
+/** @returns {boolean} true while loadOlderHistory is running */
+export function isLoadingOlderHistory() {
+    return !!olderInflight;
+}
+
+const gates = new Map();
+
+/**
+ * Range gate for renderers. Returns 'ready' when the range is loaded.
+ * Otherwise starts loading it (once per owner+range), returns 'loading', and
+ * calls `rerender` when done. If loading fails it returns 'error' until
+ * {@link retryRange} is called for that owner.
+ * @param {string} owner - Stable key for the screen (e.g. 'reports')
+ * @param {number|Date|null} rangeStart - null = all history
+ * @param {Function} rerender
+ * @returns {'ready'|'loading'|'error'}
+ */
+export function rangeStatus(owner, rangeStart, rerender) {
+    if (!needsHistoryFrom(rangeStart)) {
+        gates.delete(owner);
+        return 'ready';
+    }
+    const ms = toMs(rangeStart);
+    const key = ms === null ? 'all' : String(ms);
+    const current = gates.get(owner);
+    if (current && current.key === key) return current.status;
+
+    const entry = { key, status: 'loading' };
+    gates.set(owner, entry);
+    ensureHistoryFrom(rangeStart).then(
+        (covered) => {
+            if (gates.get(owner) !== entry) return;
+            if (covered) gates.delete(owner);
+            else entry.status = 'error';
+            rerender?.();
+        },
+        (err) => {
+            console.error(`History load failed (${owner}):`, err);
+            if (gates.get(owner) !== entry) return;
+            entry.status = 'error';
+            rerender?.();
+        }
+    );
+    return 'loading';
+}
+
+/** Forget a failed load so the next render retries it. */
+export function retryRange(owner) {
+    gates.delete(owner);
+}
+
+/** Local midnight of the first day of the month `monthsBack` months ago. */
+export function monthStart(monthsBack = 0, now = new Date()) {
+    return new Date(now.getFullYear(), now.getMonth() - monthsBack, 1);
+}
+
+/** Short human date for notices, e.g. "1 Sep 2026". */
+export function formatWindowDate(ms) {
+    if (!ms) return '';
+    return new Date(ms).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/**
+ * Show/hide a range-loading notice and blur the figures in `scopes` while
+ * their range is loading (so partial totals are never shown as final).
+ * @param {HTMLElement|HTMLElement[]} scopes - Elements holding range figures;
+ *   the notice is inserted before the first one.
+ * @param {'ready'|'loading'|'error'} status
+ * @param {Object} [opts]
+ * @param {string} [opts.loadingText]
+ * @param {string} [opts.errorText]
+ * @param {Function} [opts.onRetry]
+ */
+export function applyRangeState(scopes, status, opts = {}) {
+    const list = (Array.isArray(scopes) ? scopes : [scopes]).filter(Boolean);
+    if (list.length === 0) return;
+    const anchor = list[0];
+    let notice = anchor.previousElementSibling;
+    if (!notice || !notice.classList.contains('history-range-notice')) notice = null;
+
+    list.forEach(el => el.classList.toggle('history-range-loading', status === 'loading'));
+
+    if (status === 'ready') {
+        notice?.remove();
+        return;
+    }
+    if (!notice) {
+        notice = document.createElement('div');
+        notice.className = 'history-range-notice';
+        notice.setAttribute('role', 'status');
+        anchor.parentNode?.insertBefore(notice, anchor);
+    }
+    notice.classList.toggle('is-error', status === 'error');
+    notice.textContent = '';
+    const text = document.createElement('span');
+    if (status === 'loading') {
+        const spinner = document.createElement('span');
+        spinner.className = 'history-range-spinner';
+        notice.appendChild(spinner);
+        text.textContent = opts.loadingText || 'Loading older data…';
+        notice.appendChild(text);
+    } else {
+        const from = formatWindowDate(historyLoadedFrom());
+        text.textContent = opts.errorText ||
+            `Couldn't load older data. Figures only include records since ${from}.`;
+        notice.appendChild(text);
+        if (typeof opts.onRetry === 'function') {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'history-range-retry';
+            btn.textContent = 'Retry';
+            btn.addEventListener('click', opts.onRetry);
+            notice.appendChild(btn);
+        }
+    }
+}
+
+/**
+ * Resolve a bill's current index by id (indices shift when live sync or
+ * older-history loads add records). Falls back to `fallbackIndex` when no id.
+ * @param {Array<Object>} history
+ * @param {string|number|null|undefined} id
+ * @param {number} [fallbackIndex=-1]
+ * @returns {number}
+ */
+export function findBillIndex(history, id, fallbackIndex = -1) {
+    if (!Array.isArray(history)) return -1;
+    if (id === null || id === undefined || id === '') return fallbackIndex;
+    return history.findIndex(b => b && String(b.id) === String(id));
+}

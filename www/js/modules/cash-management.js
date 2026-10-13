@@ -10,6 +10,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { todayLocalISO, localISODaysAgo, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+import { needsHistoryFrom, ensureHistoryFrom } from '../utils/history-window.js';
 
 const sessionRef = (sessionId) => {
     const name = window.getCollection ? window.getCollection('cashManagement') : 'cashManagement';
@@ -129,7 +130,27 @@ export class CashManagementManager {
             const today = todayLocalISO(); // YYYY-MM-DD (local day, not UTC)
             
             // Find any sessions from earlier days that are not signed out
-            const unclosedSessions = sessions.filter(s => s.date && s.date < today && !s.signedOut);
+            let unclosedSessions = sessions.filter(s => s.date && s.date < today && !s.signedOut);
+
+            // Closing figures are computed from that day's bills/expenses, which
+            // may be older than the loaded history window: load that range first,
+            // and skip (retry next time) any day we couldn't load rather than
+            // writing wrong totals.
+            const dayStart = (s) => parseLocalDate(s.date)?.getTime();
+            const isOlder = (s) => Number.isFinite(dayStart(s)) && needsHistoryFrom(dayStart(s));
+            const needOlder = unclosedSessions.filter(isOlder);
+            if (needOlder.length > 0) {
+                const oldest = Math.min(...needOlder.map(dayStart));
+                let covered = false;
+                try {
+                    covered = await ensureHistoryFrom(oldest);
+                } catch (err) {
+                    console.warn('Could not load older history for auto sign-out:', err?.message || err);
+                }
+                if (!covered) {
+                    unclosedSessions = unclosedSessions.filter(s => !isOlder(s));
+                }
+            }
             
             // Update all unclosed sessions in parallel
             const updatePromises = unclosedSessions.map(async (session) => {
