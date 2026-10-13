@@ -239,6 +239,10 @@ const INVALIDATION_MARGIN_MS = 2 * DAY_MS;
 const BACKFILL_MAX_WRITES = 5000;
 const BACKFILL_BATCH_SIZE = 400;
 const ROLL_FORWARD_RETRY_MS = 30000;
+/** Per-attempt timeout of one-shot history reads (see getWithRetry). */
+const GET_TIMEOUT_MS = 20000;
+/** Retry delay after the full-history read for stock failed. */
+const FULL_LOAD_RETRY_MS = 30000;
 const DUE_FIELDS = ['payment.due', 'dueAmount'];
 /** Max pinned (due-but-not-queryable) bills per collection; listened to in chunks of 30. */
 const PINNED_MAX = 300;
@@ -511,8 +515,39 @@ function requestRebuild(after = Promise.resolve()) {
 }
 
 /**
+ * One-shot query read that cannot hang: query.get() is served through the
+ * watch stream and resolves only once the target is CURRENT; if the backend
+ * never marks it current (seen with the emulator when several large one-shot
+ * targets are added at once) the promise would never settle. Times out and
+ * retries with a fresh get().
+ * @private
+ */
+async function getWithRetry(query, label, { attempts = 3, timeoutMs = GET_TIMEOUT_MS } = {}) {
+    let lastError = null;
+    for (let i = 0; i < attempts; i++) {
+        let timer = null;
+        try {
+            return await Promise.race([
+                query.get(),
+                new Promise((_, reject) => {
+                    timer = setTimeout(() => reject(Object.assign(new Error(`${label}: read timed out`), { code: 'deadline-exceeded' })), timeoutMs);
+                })
+            ]);
+        } catch (e) {
+            lastError = e;
+            if (e?.code !== 'deadline-exceeded' && e?.code !== 'unavailable') throw e;
+            console.warn(`${label}: one-shot read attempt ${i + 1} failed (${e.code}), retrying`);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+    throw lastError;
+}
+
+/**
  * One-shot fetch of history older than the loaded window (target 0 = all
  * history, unfiltered so legacy docs without `timestamp` are included).
+ * Collections are read one after another (see getWithRetry).
  * @private
  */
 async function extendHistory(target) {
@@ -522,18 +557,19 @@ async function extendHistory(target) {
     const upper = AppState.historyLoadedFrom;
     const full = target === 0;
     const db = getDb();
-    const snaps = await Promise.all(HISTORY_COLLECTIONS.map(spec => {
+    const snaps = [];
+    for (const spec of HISTORY_COLLECTIONS) {
         let q = db.collection(col(spec.key));
         if (!full) q = q.where('timestamp', '>=', target).where('timestamp', '<', upper);
-        return q.get().catch(err => {
+        snaps.push(await getWithRetry(q, `${spec.label} history`).catch(err => {
             if (spec.optional) {
                 console.error(`${spec.label} history fetch error:`, err);
                 return null;
             }
             throw err;
-        });
-    }));
-    if (gen !== sessionGen || windowState !== ws) return;
+        }));
+        if (gen !== sessionGen || windowState !== ws) return;
+    }
     let fromServer = true;
     snaps.forEach((snap, i) => {
         if (!snap) return;
@@ -585,7 +621,7 @@ function oldestTimestamp() {
         const gen = sessionGen;
         const db = getDb();
         oldestTimestampPromise = Promise.all(HISTORY_COLLECTIONS.map(spec =>
-            db.collection(col(spec.key)).orderBy('timestamp', 'asc').limit(1).get()
+            getWithRetry(db.collection(col(spec.key)).orderBy('timestamp', 'asc').limit(1), `${spec.label} oldest`)
                 .then(s => (s.docs.length ? Number(s.docs[0].data().timestamp) : Infinity))
                 .catch(err => {
                     if (spec.optional) return Infinity;
@@ -602,7 +638,7 @@ function oldestTimestamp() {
 /** Re-reads an old bill that left a dues query (paid off, or deleted). */
 function refetchAfterDueRemoval(c, docId, prev) {
     const gen = sessionGen;
-    getDb().collection(col(c.spec.key)).doc(docId).get().then(snap => {
+    getWithRetry(getDb().collection(col(c.spec.key)).doc(docId), `${c.spec.label} ${docId}`).then(snap => {
         if (gen !== sessionGen || !windowState || liveIdSet(c).has(docId)) return;
         if (snap.exists) {
             const rec = mapDoc(snap);
@@ -1475,6 +1511,13 @@ const FirebaseService = {
                 await this.ensureHistoryFrom(null);
             } catch (e) {
                 console.error('Loading full history for stock failed:', e);
+            }
+            if (AppState.historyLoadedFrom !== 0 && windowState) {
+                // Not exact without full history: retry and recompute shortly.
+                const gen = sessionGen;
+                setTimeout(() => {
+                    if (gen === sessionGen) markDirty(['stockView'], true);
+                }, FULL_LOAD_RETRY_MS);
             }
             cp = usableCheckpoint();
             if (cp) {

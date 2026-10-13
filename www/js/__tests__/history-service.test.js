@@ -220,6 +220,31 @@ describe('recent history window + stock checkpoint', () => {
         expect(cpDoc().staleCount).toBe(1);
     });
 
+    it('a one-shot history read that never completes is retried instead of hanging startup', async () => {
+        install(17);
+        await FirebaseService.setupRealtimeListeners();
+        jest.useFakeTimers();
+        // The next two get() calls (the first collection of the full load) never settle.
+        let hang = 2;
+        const origCollection = fake.db.collection;
+        fake.db.collection = (name) => {
+            const c = origCollection(name);
+            return { ...c, get: () => (hang-- > 0 ? new Promise(() => {}) : c.get()) };
+        };
+        let done = false;
+        const p = FirebaseService.getStock().then(() => { done = true; });
+        for (let i = 0; i < 10 && !done; i++) {
+            jest.advanceTimersByTime(20000);
+            for (let k = 0; k < 50; k++) await Promise.resolve();
+        }
+        jest.useRealTimers();
+        await p;
+        fake.db.collection = origCollection;
+        expect(hang).toBeLessThan(0);
+        expect(FirebaseService.isFullHistoryLoaded()).toBe(true);
+        expect(AppState.stock).toEqual(fullStock());
+    });
+
     it('rolls an old checkpoint forward from in-memory data without changing stock', async () => {
         install(11);
         await open();
