@@ -7,6 +7,9 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
 
+/** Buttons disabled while a wholesale save/print is in flight */
+const WHOLESALE_BUTTONS = '[onclick*="wholesaleSales.completeSale"], [onclick*="wholesaleSales.printWholesaleSale"]';
+
 let wholesaleSaleItems = [];
 
 export class WholesaleSalesManager {
@@ -226,7 +229,13 @@ export class WholesaleSalesManager {
         UIManager.hapticFeedback();
     }
 
-    static async completeSale() {
+    static async completeSale(options = {}) {
+        return Helpers.runExclusive('wholesale', WHOLESALE_BUTTONS, () => this._completeSale(options));
+    }
+
+    // Unguarded save; callers must hold the 'wholesale' lock.
+    // options.onWriteIssued(saleData) is called as soon as the write is issued.
+    static async _completeSale(options = {}) {
         if (wholesaleSaleItems.length === 0) {
             UIManager.showToast('Please add items to the bill');
             return;
@@ -253,50 +262,55 @@ export class WholesaleSalesManager {
         const profit = Helpers.getElementInt('salesProfitAmount');
         const profitPercent = Helpers.getElementNumber('salesProfitPercent');
         
-        // Generate bill number
-        const billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
-        
-        const saleData = {
-            id: Date.now(),
-            billNumber,
-            customerName,
-            items: wholesaleSaleItems.map(item => ({
-                itemId: item.itemId,
-                name: item.name,
-                rate: item.rate,
-                quantity: item.qty,
-                total: item.total
-            })),
-            total,
-            expenses,
-            profit,
-            profitPercent,
-            comments,
-            type: 'wholesale',
-            payment: {
-                online: 0,
-                cash: 0,
-                total: 0,
-                due: total
-            },
-            date: Helpers.getCurrentDateTime(),
-            timestamp: Date.now(),
-            createdBy: AppState.currentUser?.uid || 'unknown',
-            createdByName: AppState.userName || 'User',
-            source: 'sales-tab'
-        };
-        
         try {
-            await FirebaseService.saveWholesaleSale(saleData);
+            // Generate bill number
+            const billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
             
-            // Audit log
-            await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
-                billNumber: saleData.billNumber,
-                total: saleData.total,
-                customerName: saleData.customerName || 'N/A',
-                itemCount: saleData.items.length,
+            const saleData = {
+                id: Date.now(),
+                billNumber,
+                customerName,
+                items: wholesaleSaleItems.map(item => ({
+                    itemId: item.itemId,
+                    name: item.name,
+                    rate: item.rate,
+                    quantity: item.qty,
+                    total: item.total
+                })),
+                total,
+                expenses,
+                profit,
+                profitPercent,
+                comments,
+                type: 'wholesale',
+                payment: {
+                    online: 0,
+                    cash: 0,
+                    total: 0,
+                    due: total
+                },
+                date: Helpers.getCurrentDateTime(),
+                timestamp: Date.now(),
+                createdBy: AppState.currentUser?.uid || 'unknown',
+                createdByName: AppState.userName || 'User',
                 source: 'sales-tab'
-            });
+            };
+            
+            const writePromise = FirebaseService.saveWholesaleSale(saleData);
+            if (typeof options.onWriteIssued === 'function') {
+                options.onWriteIssued(saleData);
+            }
+            await writePromise;
+            
+            Helpers.runInBackground([
+                () => AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
+                    billNumber: saleData.billNumber,
+                    total: saleData.total,
+                    customerName: saleData.customerName || 'N/A',
+                    itemCount: saleData.items.length,
+                    source: 'sales-tab'
+                })
+            ]);
             
             // Update customer options
             this.updateWholesaleCustomerOptions(customerName);
@@ -316,12 +330,14 @@ export class WholesaleSalesManager {
             this.renderWholesaleBill();
             this.renderSalesHistory();
             
-            // Recalculate stock
-            AppState.stock = await FirebaseService.calculateStock();
-            this.loadItemsDropdown(); // Refresh dropdown to show updated stock
+            // Stock is not recalculated here: the wholesaleSales realtime listener
+            // fires on the local write, recalculates AppState.stock and refreshes
+            // this dropdown. The item detail fields were cleared above so no stale
+            // per-item stock is shown in the meantime.
             
             UIManager.showToast('✓ Sale completed successfully');
             UIManager.hapticFeedback();
+            return saleData;
         } catch (error) {
             console.error('Error completing sale:', error);
             UIManager.showToast('Error: ' + error.message);
@@ -329,44 +345,28 @@ export class WholesaleSalesManager {
     }
 
     static async printWholesaleSale() {
+        if (Helpers.isBusy('wholesale')) return;
         if (wholesaleSaleItems.length === 0) {
             UIManager.showToast('No items to print');
             return;
         }
         
-        // Collect sale data before saving (since save will clear the bill)
-        const customerName = Helpers.getInputText('wholesaleCustomerName');
-        const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
-        const expenses = Helpers.getInputInt('salesExpensesAmount');
-        const profit = Helpers.getElementInt('salesProfitAmount');
-        const comments = Helpers.getInputText('salesComments');
-        
-        const saleData = {
-            customerName,
-            items: wholesaleSaleItems.map(item => ({
-                name: item.name,
-                rate: item.rate,
-                qty: item.qty,
-                total: item.total
-            })),
-            total,
-            expenses,
-            profit,
-            comments,
-            date: Helpers.getCurrentDateTime()
-        };
-        
+        let printPromise = null;
         try {
-            // Save the sale first
-            await this.completeSale();
+            // Print the exact sale being saved, as soon as its write is issued
+            const savedSale = await Helpers.runExclusive('wholesale', WHOLESALE_BUTTONS, () => this._completeSale({
+                onWriteIssued: (sale) => { printPromise = PrinterService.printWholesaleSale(sale); }
+            }));
             
-            // Then print with the data we collected
-            await PrinterService.printWholesaleSale(saleData);
+            if (!printPromise) return;
+            await printPromise;
             
-            UIManager.showToast('Sale saved and printed!');
+            if (savedSale) {
+                UIManager.showToast('Sale saved and printed!');
+            }
         } catch (error) {
             console.error('Print error:', error);
-            UIManager.showToast('Error: ' + error.message);
+            UIManager.showToast('Error: ' + (error?.message || error));
         }
     }
 
