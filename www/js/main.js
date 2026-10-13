@@ -333,6 +333,8 @@ async function debugStockForName(query) {
     };
 
     const computed = await FirebaseService.calculateStock();
+    // The timeline below replays AppState directly, so it needs all history.
+    await FirebaseService.ensureHistoryFrom(null);
 
     for (const item of matches) {
         const events = [];

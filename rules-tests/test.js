@@ -74,6 +74,20 @@ function defineSuite(prefix) {
     t('pending user cannot read counters', () =>
         assertFails(as('pending1').collection(counters).doc('x').get()));
 
+    const checkpoints = `${prefix}stockCheckpoints`;
+
+    t('approved staff can write and read the stock checkpoint', async () => {
+        await assertSucceeds(as('staff1').collection(checkpoints).doc('current').set({ asOf: 1, stale: false }));
+        await assertSucceeds(as('manager1').collection(checkpoints).doc('current').set({ stale: true }, { merge: true }));
+        await assertSucceeds(as('legacyOwner').collection(checkpoints).doc('current').get());
+    });
+
+    t('pending/rejected/unauthenticated users cannot touch the stock checkpoint', async () => {
+        await assertFails(as('pending1').collection(checkpoints).doc('current').get());
+        await assertFails(as('rejected1').collection(checkpoints).doc('current').set({ stale: true }));
+        await assertFails(anon().collection(checkpoints).doc('current').get());
+    });
+
     // ---- users collection ----
 
     t('pending user can read own profile', () =>

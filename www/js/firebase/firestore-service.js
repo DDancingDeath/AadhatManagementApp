@@ -10,6 +10,22 @@
 import { AppState } from '../utils/state.js';
 import { APP_CONFIG } from '../utils/constants.js';
 import { Helpers } from '../utils/helpers.js';
+import { outstandingDue } from '../utils/money.js';
+import { parseAnyBillDate } from '../utils/dates.js';
+import {
+    STOCK_REPLAY_FORMAT,
+    eventTime,
+    computeStock,
+    computeStockFrom,
+    buildCheckpointState,
+    itemsSignature,
+    resolutionsStillValid,
+    serializeState,
+    deserializeState,
+    changeInvalidatesCheckpoint,
+    stockFingerprint
+} from '../utils/stock-replay.js';
+import { defaultWindowStart, monthsBefore, normalizeFrom, dateDescComparator } from '../utils/history-window.js';
 
 /**
  * Gets the Firestore database reference.
@@ -68,25 +84,35 @@ const defaultMapDoc = (doc) => ({ id: doc.id, ...doc.data() });
  * snapshot.docs order exactly).
  * @param {{docs: Object[], initialized: boolean}} live
  * @param {firebase.firestore.QuerySnapshot} snapshot
- * @returns {boolean} true if the data changed
+ * @param {Function} [mapFn]
+ * @returns {{changed: boolean, changes: Array<{type: string, docId: string, oldRec: ?Object, newRec: ?Object}>|null}}
+ *   changes is null for the initial snapshot (or after a resync)
  * @private
  */
-const applySnapshot = (live, snapshot) => {
+const applySnapshot = (live, snapshot, mapFn = defaultMapDoc) => {
     if (!live.initialized) {
-        live.docs = snapshot.docs.map(defaultMapDoc);
+        live.docs = snapshot.docs.map(mapFn);
         live.initialized = true;
-        return true;
+        return { changed: true, changes: null };
     }
     const changes = snapshot.docChanges();
-    if (changes.length === 0) return false;
+    if (changes.length === 0) return { changed: false, changes: [] };
+    const diffs = [];
     changes.forEach(change => {
-        if (change.oldIndex !== -1) live.docs.splice(change.oldIndex, 1);
-        if (change.newIndex !== -1) live.docs.splice(change.newIndex, 0, defaultMapDoc(change.doc));
+        let oldRec = null;
+        let newRec = null;
+        if (change.oldIndex !== -1) oldRec = live.docs.splice(change.oldIndex, 1)[0] || null;
+        if (change.newIndex !== -1) {
+            newRec = mapFn(change.doc);
+            live.docs.splice(change.newIndex, 0, newRec);
+        }
+        diffs.push({ type: change.type, docId: change.doc.id, oldRec, newRec });
     });
     if (live.docs.length !== snapshot.size) {
-        live.docs = snapshot.docs.map(defaultMapDoc);
+        live.docs = snapshot.docs.map(mapFn);
+        return { changed: true, changes: null };
     }
-    return true;
+    return { changed: true, changes: diffs };
 };
 
 const isTabActive = (tabId) => !!document.getElementById(tabId)?.classList.contains('active');
@@ -175,6 +201,692 @@ if (typeof window !== 'undefined') {
             flushPendingWork();
         }
     });
+}
+
+// -------------------- RECENT-HISTORY WINDOW + STOCK CHECKPOINT --------------------
+//
+// Reads per app open are kept to the recent window instead of all history:
+//  * Each history collection is listened to with `timestamp >= liveFrom`, where
+//    liveFrom = min(1st of previous month, checkpoint.asOf). Every current save
+//    path writes a numeric `timestamp` (FirebaseService.save*/update* add one
+//    when missing); legacy docs get one from the checkpoint rebuild backfill.
+//  * Old bills that still have money due are kept in memory by realtime
+//    listeners on `payment.due > 0` and `dueAmount > 0`.
+//  * Stock = replay(checkpoint.state, events with t >= checkpoint.asOf). The
+//    checkpoint (doc stockCheckpoints/current) is the running state after every
+//    event before asOf, so the result is identical to a full replay. It is
+//    rebuilt from a full read when missing/stale/incompatible (one device at a
+//    time, guarded by a lease), rolled forward from in-memory data when it is
+//    more than a week behind the window start, and marked stale whenever a
+//    stock-affecting record older than it is created/edited/deleted.
+//  * ensureHistoryFrom()/loadOlderHistory() one-shot fetch older ranges on
+//    demand. Those records stay in memory for the session but are NOT live:
+//    edits made to them on another device show up on the next app open.
+//
+// AppState history arrays keep their historical order (`date` desc, ties by
+// document id desc, as orderBy('date','desc') returned) and, like that query,
+// exclude documents without a `date` field.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CHECKPOINT_COLLECTION = 'stockCheckpoints';
+const CHECKPOINT_DOC_ID = 'current';
+/** Roll the checkpoint forward once it is this far behind the window start. */
+const ROLL_FORWARD_SLACK_MS = 7 * DAY_MS;
+/** How long a device may hold the rebuild lease. */
+const REBUILD_LEASE_MS = 10 * 60 * 1000;
+/** Edits older than the window start of (now + margin) invalidate (covers roll-forwards by devices near a month boundary). */
+const INVALIDATION_MARGIN_MS = 2 * DAY_MS;
+const BACKFILL_MAX_WRITES = 5000;
+const BACKFILL_BATCH_SIZE = 400;
+const ROLL_FORWARD_RETRY_MS = 30000;
+const DUE_FIELDS = ['payment.due', 'dueAmount'];
+/** Max pinned (due-but-not-queryable) bills per collection; listened to in chunks of 30. */
+const PINNED_MAX = 300;
+const PINNED_CHUNK = 30;
+
+const HISTORY_COLLECTIONS = [
+    { key: 'purchases', stateKey: 'purchaseHistory', label: 'Purchases', stock: true, dues: true,
+        views: ['billingDropdown', 'salesDropdown', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'] },
+    { key: 'retailSales', stateKey: 'retailSalesHistory', label: 'Retail sales', stock: true, dues: true,
+        views: ['billingDropdown', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'] },
+    { key: 'wholesaleSales', stateKey: 'salesHistory', label: 'Sales', stock: true, dues: true,
+        views: ['billingDropdown', 'salesDropdown', 'wholesaleHistory', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'] },
+    { key: 'expenses', stateKey: 'expensesHistory', label: 'Expenses',
+        views: ['expensesHistory', 'financeOverview', 'analytics', 'reports'] },
+    { key: 'stockAdjustments', stateKey: 'stockAdjustments', label: 'Stock adjustments', stock: true,
+        views: ['stockAdjustmentHistory', 'stockView'] },
+    { key: 'withdrawals', stateKey: 'withdrawalsHistory', label: 'Withdrawals', optional: true,
+        views: ['financeOverview', 'financeWithdrawals'] }
+];
+const HISTORY_SPEC = Object.fromEntries(HISTORY_COLLECTIONS.map(s => [s.key, s]));
+const ALL_HISTORY_VIEWS = [...new Set(HISTORY_COLLECTIONS.flatMap(s => s.views))];
+
+/** Firestore document id of each mapped record (the data may carry its own `id`). */
+const docIds = new WeakMap();
+const mapDoc = (doc) => {
+    const rec = { id: doc.id, ...doc.data() };
+    docIds.set(rec, doc.id);
+    return rec;
+};
+const docIdOf = (rec) => (docIds.has(rec) ? docIds.get(rec) : String(rec?.id));
+const byDateDesc = dateDescComparator(docIdOf);
+
+let sessionGen = 0;
+/** @type {?{gen: number, liveFrom: number, rawFull: boolean, colls: Object}} */
+let windowState = null;
+/** Latest checkpoint doc data seen (undefined = not read yet, null = missing). */
+let checkpointDoc;
+/** Checkpoint in use for stock (parsed), or null. */
+let activeCheckpoint = null;
+let checkpointItemsCheck = { items: null, checkpoint: null, ok: false };
+let rebuildPromise = null;
+let rebuildRequestedAgain = false;
+let oldestTimestampPromise = null;
+let extendQueue = Promise.resolve();
+const pendingExtends = new Map();
+const invalidationTags = new Set();
+
+const checkpointRef = () => getDb().collection(col(CHECKPOINT_COLLECTION)).doc(CHECKPOINT_DOC_ID);
+
+const createCollState = (spec) => ({
+    spec,
+    live: { docs: [], initialized: false, server: false },
+    dues: [],
+    extended: new Map(),
+    publishedExtended: new Set()
+});
+
+const liveIdSet = (c, except = null) => {
+    const ids = new Set();
+    [c.live, ...c.dues].forEach(l => {
+        if (l !== except) l.docs.forEach(r => ids.add(docIdOf(r)));
+    });
+    return ids;
+};
+
+const findInSources = (c, docId, except = null) => {
+    for (const l of [c.live, ...c.dues]) {
+        if (l === except) continue;
+        const rec = l.docs.find(r => docIdOf(r) === docId);
+        if (rec) return rec;
+    }
+    return c.extended.get(docId) || null;
+};
+
+const currentSources = () => ({
+    purchases: AppState.purchaseHistory || [],
+    wholesaleSales: AppState.salesHistory || [],
+    retailSales: AppState.retailSalesHistory || [],
+    stockAdjustments: AppState.stockAdjustments || []
+});
+
+/**
+ * Rebuilds AppState[stateKey] from the window listener, the dues listeners and
+ * the one-shot (extended) records, deduped by document id (live data wins).
+ * @private
+ */
+function publishCollection(c) {
+    const current = AppState[c.spec.stateKey];
+    if (c.publishedExtended.size && Array.isArray(current)) {
+        // A one-shot record that was published but is gone from AppState was
+        // removed by app code (e.g. a delete that splices the array); don't
+        // resurrect it, and treat it as a deletion for the stock checkpoint.
+        const present = new Set(current.map(r => String(r?.id)));
+        const live = liveIdSet(c);
+        c.publishedExtended.forEach(docId => {
+            const rec = c.extended.get(docId);
+            if (rec && !present.has(String(rec.id)) && !live.has(docId)) {
+                c.extended.delete(docId);
+                if (c.spec.stock) noteObservedChange(c, rec, null, 'removed locally');
+            }
+        });
+    }
+    const merged = new Map();
+    c.extended.forEach((rec, id) => merged.set(id, rec));
+    c.dues.forEach(l => l.docs.forEach(rec => merged.set(docIdOf(rec), rec)));
+    c.live.docs.forEach(rec => merged.set(docIdOf(rec), rec));
+    const list = [];
+    merged.forEach(rec => {
+        if (rec.date !== undefined) list.push(rec);
+    });
+    list.sort(byDateDesc);
+    c.publishedExtended = new Set();
+    list.forEach(rec => {
+        const id = docIdOf(rec);
+        if (c.extended.get(id) === rec) c.publishedExtended.add(id);
+    });
+    AppState[c.spec.stateKey] = list;
+    dataVersion++;
+}
+
+/** Parses a checkpoint doc; null if missing, stale or incompatible. */
+function parseCheckpoint(data) {
+    if (!data || data.formatVersion !== STOCK_REPLAY_FORMAT || data.stale) return null;
+    if (typeof data.asOf !== 'number' || !Number.isFinite(data.asOf)) return null;
+    const state = deserializeState(data.state);
+    if (!state || !Array.isArray(data.resolutions)) return null;
+    return {
+        asOf: data.asOf,
+        state,
+        resolutions: data.resolutions.map(r => [r?.i ?? null, r?.n ?? '', r?.k]),
+        itemsSignature: data.itemsSignature,
+        staleCount: data.staleCount || 0,
+        builtAt: data.builtAt || 0
+    };
+}
+
+const checkpointMatchesItems = (cp, items = AppState.items || []) => {
+    if (checkpointItemsCheck.items === items && checkpointItemsCheck.checkpoint === cp) {
+        return checkpointItemsCheck.ok;
+    }
+    const ok = cp.itemsSignature === itemsSignature(items) || resolutionsStillValid(cp.resolutions, items);
+    checkpointItemsCheck = { items, checkpoint: cp, ok };
+    return ok;
+};
+
+/** The active checkpoint if it can produce exact stock right now. */
+function usableCheckpoint() {
+    const cp = activeCheckpoint;
+    if (!cp || !windowState || windowState.liveFrom > cp.asOf) return null;
+    return checkpointMatchesItems(cp) ? cp : null;
+}
+
+function adoptCheckpoint(data) {
+    const cp = parseCheckpoint(data);
+    if (!cp || !windowState || cp.asOf < windowState.liveFrom) return false;
+    const cur = activeCheckpoint;
+    if (cur && cur.asOf === cp.asOf && cur.builtAt === cp.builtAt && cur.staleCount === cp.staleCount) return true;
+    activeCheckpoint = cp;
+    dataVersion++;
+    return true;
+}
+
+const knownCheckpointAsOf = () => Math.max(
+    activeCheckpoint?.asOf || 0,
+    checkpointDoc && typeof checkpointDoc.asOf === 'number' ? checkpointDoc.asOf : 0
+);
+
+const invalidationTag = (collKey, oldRec, newRec) =>
+    `${collKey}|${docIdOf(oldRec || newRec)}|${stockFingerprint(newRec)}`;
+
+/**
+ * Marks the stored checkpoint stale (merge write, fire-and-forget). When the
+ * change also falls before the checkpoint this device uses, stock falls back
+ * to a full replay until a rebuilt checkpoint is available.
+ * @private
+ */
+function invalidateCheckpoint(reason, affectsLocal) {
+    let write = Promise.resolve();
+    try {
+        const fv = typeof firebase !== 'undefined' ? firebase.firestore?.FieldValue : null;
+        write = checkpointRef().set({
+            stale: true,
+            staleCount: fv?.increment ? fv.increment(1) : Date.now(),
+            staleAt: Date.now(),
+            staleReason: String(reason).slice(0, 200),
+            staleBy: AppState.currentUser?.uid || 'unknown'
+        }, { merge: true });
+        write.catch(e => console.error('Stock checkpoint invalidation failed:', e));
+    } catch (e) {
+        console.error('Stock checkpoint invalidation failed:', e);
+    }
+    console.info(`Stock checkpoint invalidated (${reason})`);
+    if (affectsLocal && activeCheckpoint) {
+        activeCheckpoint = null;
+        dataVersion++;
+        if (windowState) markDirty(['stockView'], true);
+    }
+    // Rebuild once the stale mark has reached the server (otherwise the
+    // rebuild's own conflict check would discard it).
+    requestRebuild(write);
+}
+
+/** Safety net for changes seen by listeners (other devices, direct writes). */
+function noteObservedChange(c, oldRec, newRec, why) {
+    const threshold = knownCheckpointAsOf();
+    if (!threshold || !changeInvalidatesCheckpoint(oldRec, newRec, threshold)) return;
+    const tag = invalidationTag(c.spec.key, oldRec, newRec);
+    if (invalidationTags.has(tag)) return;
+    invalidationTags.add(tag);
+    const local = !!activeCheckpoint && changeInvalidatesCheckpoint(oldRec, newRec, activeCheckpoint.asOf);
+    invalidateCheckpoint(`${c.spec.key} ${why}`, local);
+}
+
+/**
+ * Called by FirebaseService write paths for stock-affecting records, after the
+ * record write has been issued (writes reach the server in issue order).
+ * @private
+ */
+function noteStockWrite(collKey, oldRec, newRec, opts = {}) {
+    try {
+        const threshold = Math.max(knownCheckpointAsOf(), defaultWindowStart(Date.now() + INVALIDATION_MARGIN_MS));
+        if (!changeInvalidatesCheckpoint(oldRec, newRec, threshold, opts)) return;
+        invalidationTags.add(invalidationTag(collKey, oldRec, newRec));
+        const local = !!activeCheckpoint && changeInvalidatesCheckpoint(oldRec, newRec, activeCheckpoint.asOf, opts);
+        invalidateCheckpoint(`${collKey} write`, local);
+    } catch (e) {
+        console.error('Stock checkpoint invalidation check failed:', e);
+    }
+}
+
+/** Finds the in-memory version of a history record by document id or `id` field. */
+function findRecord(collKey, id) {
+    if (id === undefined || id === null) return null;
+    const arr = AppState[HISTORY_SPEC[collKey].stateKey] || [];
+    const sid = String(id);
+    return arr.find(r => docIdOf(r) === sid) || arr.find(r => String(r?.id) === sid) || null;
+}
+
+/** Drops a deleted record from the one-shot set so it is not resurrected. */
+function forgetRecord(collKey, id) {
+    const c = windowState?.colls[collKey];
+    if (!c) return;
+    const sid = String(id);
+    let removed = c.extended.delete(sid);
+    c.extended.forEach((rec, docId) => {
+        if (String(rec.id) === sid) removed = c.extended.delete(docId) || removed;
+    });
+    if (removed) publishCollection(c);
+}
+
+/**
+ * Gives a record the numeric `timestamp` the window queries filter on. Uses
+ * the time the stock replay already assigns it (so replay order is unchanged),
+ * or now for a new record without a parseable date.
+ * @private
+ */
+function ensureTimestamp(record, isNew) {
+    if (!record || typeof record.timestamp === 'number') return;
+    const t = eventTime(record);
+    record.timestamp = t === Number.MAX_SAFE_INTEGER && isNew ? Date.now() : t;
+}
+
+function requestRebuild(after = Promise.resolve()) {
+    if (!windowState) return;
+    const gen = sessionGen;
+    Promise.resolve(after).catch(() => {}).then(() => {
+        if (gen !== sessionGen || !windowState) return null;
+        return FirebaseService.rebuildStockCheckpoint();
+    }).catch(e => console.error('Stock checkpoint rebuild failed:', e));
+}
+
+/**
+ * One-shot fetch of history older than the loaded window (target 0 = all
+ * history, unfiltered so legacy docs without `timestamp` are included).
+ * @private
+ */
+async function extendHistory(target) {
+    const ws = windowState;
+    if (!ws) return;
+    const gen = sessionGen;
+    const upper = AppState.historyLoadedFrom;
+    const full = target === 0;
+    const db = getDb();
+    const snaps = await Promise.all(HISTORY_COLLECTIONS.map(spec => {
+        let q = db.collection(col(spec.key));
+        if (!full) q = q.where('timestamp', '>=', target).where('timestamp', '<', upper);
+        return q.get().catch(err => {
+            if (spec.optional) {
+                console.error(`${spec.label} history fetch error:`, err);
+                return null;
+            }
+            throw err;
+        });
+    }));
+    if (gen !== sessionGen || windowState !== ws) return;
+    let fromServer = true;
+    snaps.forEach((snap, i) => {
+        if (!snap) return;
+        const c = ws.colls[HISTORY_COLLECTIONS[i].key];
+        if (snap.metadata?.fromCache) fromServer = false;
+        const live = liveIdSet(c);
+        snap.docs.forEach(doc => {
+            if (!live.has(doc.id)) c.extended.set(doc.id, mapDoc(doc));
+        });
+        publishCollection(c);
+    });
+    if (fromServer) {
+        if (full) {
+            AppState.historyLoadedFrom = 0;
+            ws.rawFull = true;
+        } else if (AppState.historyLoadedFrom !== 0 && target < AppState.historyLoadedFrom) {
+            AppState.historyLoadedFrom = target;
+        }
+    } else {
+        console.warn('History fetch was served from the offline cache; loaded window not extended.');
+    }
+    markDirty(ALL_HISTORY_VIEWS, true);
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aadhat:historyextended', { detail: { from: AppState.historyLoadedFrom } }));
+    }
+}
+
+function queueExtend(target, raw = false) {
+    const covered = () => !windowState || (raw
+        ? windowState.rawFull
+        : AppState.historyLoadedFrom === 0 || (target > 0 && target >= AppState.historyLoadedFrom));
+    if (covered()) return Promise.resolve();
+    const key = `${raw ? 'raw' : 'w'}:${target}`;
+    if (pendingExtends.has(key)) return pendingExtends.get(key);
+    const gen = sessionGen;
+    const p = extendQueue.then(() => (gen === sessionGen && !covered() ? extendHistory(target) : undefined));
+    extendQueue = p.catch(() => {});
+    pendingExtends.set(key, p);
+    const clear = () => {
+        if (pendingExtends.get(key) === p) pendingExtends.delete(key);
+    };
+    p.then(clear, clear);
+    return p;
+}
+
+/** Oldest numeric timestamp across history collections (cached per session). */
+function oldestTimestamp() {
+    if (!oldestTimestampPromise) {
+        const gen = sessionGen;
+        const db = getDb();
+        oldestTimestampPromise = Promise.all(HISTORY_COLLECTIONS.map(spec =>
+            db.collection(col(spec.key)).orderBy('timestamp', 'asc').limit(1).get()
+                .then(s => (s.docs.length ? Number(s.docs[0].data().timestamp) : Infinity))
+                .catch(err => {
+                    if (spec.optional) return Infinity;
+                    throw err;
+                })
+        )).then(values => Math.min(...values)).catch(err => {
+            if (gen === sessionGen) oldestTimestampPromise = null;
+            throw err;
+        });
+    }
+    return oldestTimestampPromise;
+}
+
+/** Re-reads an old bill that left a dues query (paid off, or deleted). */
+function refetchAfterDueRemoval(c, docId, prev) {
+    const gen = sessionGen;
+    getDb().collection(col(c.spec.key)).doc(docId).get().then(snap => {
+        if (gen !== sessionGen || !windowState || liveIdSet(c).has(docId)) return;
+        if (snap.exists) {
+            const rec = mapDoc(snap);
+            c.extended.set(docId, rec);
+            if (c.spec.stock && prev) noteObservedChange(c, prev, rec, 'modified');
+        } else {
+            c.extended.delete(docId);
+            if (c.spec.stock && prev) noteObservedChange(c, prev, null, 'deleted');
+        }
+        publishCollection(c);
+        markDirty(c.spec.views, !!c.spec.stock);
+    }).catch(e => console.error(`${c.spec.label}: re-reading ${docId} failed:`, e));
+}
+
+/**
+ * Due as the screens compute it: readPayment()/outstandingDue() (Due tab,
+ * finance, reports) and, for wholesale bills, also the Sales tab rule
+ * `payment.due || (total - received)`.
+ */
+function hasDue(collKey, rec) {
+    if (outstandingDue(rec) > 0) return true;
+    if (collKey !== 'wholesaleSales' || rec.cleared) return false;
+    const p = rec.payment || {};
+    const received = (p.online || 0) + (p.cash || 0);
+    return (p.due || ((rec.total || 0) - received)) > 0;
+}
+
+/** Whether the `payment.due > 0` / `dueAmount > 0` listeners return this bill. */
+const dueVisibleToQueries = (rec) => {
+    const p = rec.payment && typeof rec.payment === 'object' ? rec.payment : {};
+    return (typeof p.due === 'number' && p.due > 0) || (typeof rec.dueAmount === 'number' && rec.dueAmount > 0);
+};
+
+/**
+ * Backfills a numeric `timestamp` (= the time the replay already used) into
+ * legacy documents so the window queries see them, and collects the ids of
+ * bills that are due but invisible to the dues queries (legacy derived dues,
+ * wholesale `total - received`); those are stored in the checkpoint as
+ * `pinned` and listened to by id. Writes needed for stock correctness
+ * (records at/after the new checkpoint) come first and must succeed; the rest
+ * are best effort and capped.
+ * @private
+ */
+async function runBackfill(asOf) {
+    const ws = windowState;
+    const db = getDb();
+    const critical = [];
+    const optional = [];
+    const pinned = {};
+    HISTORY_COLLECTIONS.forEach(spec => { if (spec.dues) pinned[spec.key] = []; });
+    HISTORY_COLLECTIONS.forEach(spec => {
+        const c = ws.colls[spec.key];
+        const all = new Map();
+        c.extended.forEach((rec, id) => all.set(id, rec));
+        [c.live, ...c.dues].forEach(l => l.docs.forEach(rec => all.set(docIdOf(rec), rec)));
+        all.forEach((rec, docId) => {
+            if (rec.date === undefined) return;
+            const update = {};
+            let isCritical = false;
+            if (typeof rec.timestamp !== 'number') {
+                const t = eventTime(rec);
+                if (spec.stock || t !== Number.MAX_SAFE_INTEGER) {
+                    update.timestamp = t;
+                    isCritical = !!spec.stock && t >= asOf;
+                }
+            }
+            if (Object.keys(update).length) {
+                (isCritical ? critical : optional).push({ ref: db.collection(col(spec.key)).doc(docId), update });
+            }
+            if (spec.dues && hasDue(spec.key, rec) && !dueVisibleToQueries(rec)) pinned[spec.key].push(docId);
+        });
+    });
+    const commit = async (writes) => {
+        for (let i = 0; i < writes.length; i += BACKFILL_BATCH_SIZE) {
+            const batch = db.batch();
+            writes.slice(i, i + BACKFILL_BATCH_SIZE).forEach(w => batch.update(w.ref, w.update));
+            await batch.commit();
+        }
+    };
+    try {
+        await commit(critical);
+    } catch (e) {
+        console.error('Stock checkpoint backfill (required part) failed:', e);
+        return { ok: false };
+    }
+    const allowed = optional.slice(0, Math.max(0, BACKFILL_MAX_WRITES - critical.length));
+    let complete = allowed.length === optional.length;
+    try {
+        await commit(allowed);
+    } catch (e) {
+        console.error('Stock checkpoint backfill (best-effort part) failed:', e);
+        complete = false;
+    }
+    Object.keys(pinned).forEach(k => {
+        if (pinned[k].length > PINNED_MAX) {
+            console.warn(`${pinned[k].length} ${k} bills have a due only derivable from totals; listening to the first ${PINNED_MAX}.`);
+            pinned[k] = pinned[k].slice(0, PINNED_MAX);
+        }
+    });
+    return { ok: true, complete, writes: critical.length + allowed.length, pinned };
+}
+
+const RESOLUTION_TAG = (r) => `${typeof r[0]}\u0000${r[0]}\u0000${r[1]}`;
+
+function checkpointPayload({ asOf, state, resolutions, items, staleCount, backfill, extra = {} }) {
+    return {
+        formatVersion: STOCK_REPLAY_FORMAT,
+        asOf,
+        state: serializeState(state),
+        resolutions: resolutions.map(r => ({ i: r[0], n: r[1], k: r[2] })),
+        itemsSignature: itemsSignature(items),
+        stale: false,
+        staleCount,
+        builtAt: Date.now(),
+        builtBy: AppState.currentUser?.uid || 'unknown',
+        rebuildingUntil: 0,
+        rebuildingBy: null,
+        backfill: backfill || null,
+        ...extra
+    };
+}
+
+const CHECKPOINT_MAX_BYTES = 900 * 1024;
+
+/** Whether this session already tried a rebuild without being asked to by an invalidation. */
+let rebuildAttempted = false;
+
+/**
+ * Listens to the checkpoint doc. Resolves after the first server snapshot (or
+ * the cache when offline / the server is slow). Later snapshots adopt fresh
+ * checkpoints built or rolled forward by other devices; a stale mark leaves
+ * the checkpoint in use until a rebuilt one arrives.
+ * @private
+ */
+function listenCheckpoint(gen) {
+    return new Promise(resolve => {
+        let ready = false;
+        let timer = null;
+        const done = () => {
+            if (ready) return;
+            ready = true;
+            clearTimeout(timer);
+            resolve();
+        };
+        pendingFirstSnapshots.push({ resolve: done, reject: done });
+        let unsubscribe = () => {};
+        try {
+            unsubscribe = checkpointRef().onSnapshot({ includeMetadataChanges: true }, snap => {
+                if (gen !== sessionGen) return;
+                checkpointDoc = snap.exists ? snap.data() : null;
+                if (ready) {
+                    if (checkpointDoc && !checkpointDoc.stale && adoptCheckpoint(checkpointDoc)) {
+                        markDirty(['stockView'], true);
+                    }
+                    return;
+                }
+                if (!snap.metadata.fromCache || navigator.onLine === false) {
+                    done();
+                } else if (!timer) {
+                    timer = setTimeout(done, FIRST_SNAPSHOT_SERVER_WAIT_MS);
+                }
+            }, error => {
+                console.error('Stock checkpoint listener error:', error);
+                if (checkpointDoc === undefined) checkpointDoc = null;
+                done();
+            });
+        } catch (e) {
+            console.error('Stock checkpoint listener error:', e);
+            checkpointDoc = null;
+            done();
+        }
+        unsubscribeFunctions.push(unsubscribe);
+    });
+}
+
+/**
+ * Moves the checkpoint to `newAsOf` using the in-memory window data
+ * (events with asOf <= t < newAsOf); no extra reads. The transaction only
+ * writes if nobody changed/invalidated the checkpoint meanwhile.
+ * @private
+ */
+async function rollForwardCheckpoint(cp, newAsOf) {
+    const ws = windowState;
+    const gen = sessionGen;
+    if (!ws || ws.liveFrom > cp.asOf) return 'uncovered';
+    if (HISTORY_COLLECTIONS.some(s => s.stock && !ws.colls[s.key].live.server)) return 'waiting';
+    const items = AppState.items || [];
+    const { state, resolutions } = buildCheckpointState(currentSources(), newAsOf, items, { state: cp.state, from: cp.asOf });
+    const allResolutions = new Map();
+    [...cp.resolutions, ...resolutions].forEach(r => allResolutions.set(RESOLUTION_TAG(r), r));
+    const ref = checkpointRef();
+    let payload = null;
+    const ok = await getDb().runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        const d = snap.exists ? snap.data() : null;
+        if (!d || d.formatVersion !== STOCK_REPLAY_FORMAT || d.stale || d.asOf !== cp.asOf ||
+            (d.staleCount || 0) !== cp.staleCount || (d.builtAt || 0) !== cp.builtAt ||
+            (d.rebuildingUntil || 0) > Date.now()) {
+            return false;
+        }
+        payload = checkpointPayload({
+            asOf: newAsOf,
+            state,
+            resolutions: [...allResolutions.values()],
+            items,
+            staleCount: cp.staleCount,
+            backfill: d.backfill || null,
+            extra: { rolledForwardFrom: cp.asOf, pinned: d.pinned || null }
+        });
+        if (JSON.stringify(payload).length > CHECKPOINT_MAX_BYTES) return false;
+        tx.set(ref, payload);
+        return true;
+    });
+    if (!ok) return 'conflict';
+    if (gen === sessionGen) adoptCheckpoint(payload);
+    console.info(`Stock checkpoint rolled forward to ${new Date(newAsOf).toISOString()}`);
+    return 'rolled';
+}
+
+/** See FirebaseService.rebuildStockCheckpoint(). @private */
+async function rebuildCheckpointNow(gen) {
+    const db = getDb();
+    const ref = checkpointRef();
+    const token = `${AppState.currentUser?.uid || 'anon'}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+    let baseStaleCount = 0;
+    const lease = await db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        const d = snap.exists ? snap.data() : null;
+        const parsed = parseCheckpoint(d);
+        if (parsed && checkpointMatchesItems(parsed)) return 'fresh';
+        if (d && (d.rebuildingUntil || 0) > Date.now()) return 'leased';
+        baseStaleCount = d?.staleCount || 0;
+        tx.set(ref, { rebuildingUntil: Date.now() + REBUILD_LEASE_MS, rebuildingBy: token }, { merge: true });
+        return 'acquired';
+    });
+    if (lease !== 'acquired') return { status: lease };
+    let result = { status: 'failed' };
+    try {
+        await queueExtend(0, true);
+        const ws = windowState;
+        if (gen !== sessionGen || !ws) return (result = { status: 'cancelled' });
+        if (!ws.rawFull || HISTORY_COLLECTIONS.some(s => s.stock && !ws.colls[s.key].live.server)) {
+            return (result = { status: 'offline' });
+        }
+        const asOf = Math.max(defaultWindowStart(Date.now()), ws.liveFrom);
+        const backfill = await runBackfill(asOf);
+        if (gen !== sessionGen) return (result = { status: 'cancelled' });
+        if (!backfill.ok) return (result = { status: 'backfill-failed' });
+        const items = AppState.items || [];
+        const { state, resolutions } = buildCheckpointState(currentSources(), asOf, items);
+        const payload = checkpointPayload({
+            asOf,
+            state,
+            resolutions,
+            items,
+            staleCount: baseStaleCount,
+            backfill: { complete: backfill.complete, writes: backfill.writes, at: Date.now() },
+            extra: { pinned: backfill.pinned }
+        });
+        if (JSON.stringify(payload).length > CHECKPOINT_MAX_BYTES) {
+            console.error('Stock checkpoint too large to store; stock keeps using full history.');
+            return (result = { status: 'too-large' });
+        }
+        const committed = await db.runTransaction(async tx => {
+            const snap = await tx.get(ref);
+            const d = snap.exists ? snap.data() : null;
+            if (!d || d.rebuildingBy !== token || (d.staleCount || 0) !== baseStaleCount) return false;
+            tx.set(ref, payload);
+            return true;
+        });
+        if (!committed) return (result = { status: 'conflict' });
+        if (gen === sessionGen && adoptCheckpoint(payload)) markDirty(['stockView'], true);
+        console.info(`Stock checkpoint rebuilt as of ${new Date(asOf).toISOString()} (${backfill.writes} backfill writes)`);
+        return (result = { status: 'built', asOf, backfill });
+    } finally {
+        if (result.status !== 'built') {
+            db.runTransaction(async tx => {
+                const snap = await tx.get(ref);
+                if (snap.exists && snap.data().rebuildingBy === token) {
+                    tx.update(ref, { rebuildingUntil: 0, rebuildingBy: null });
+                }
+            }).catch(() => {});
+        }
+    }
 }
 
 /** Max time a bill save waits for the server to acknowledge a write. */
@@ -292,6 +1004,19 @@ const FirebaseService = {
         stockDirty = false;
         stockCache = {};
         dataVersion++;
+        sessionGen++;
+        windowState = null;
+        checkpointDoc = undefined;
+        activeCheckpoint = null;
+        checkpointItemsCheck = { items: null, checkpoint: null, ok: false };
+        rebuildPromise = null;
+        rebuildRequestedAgain = false;
+        rebuildAttempted = false;
+        oldestTimestampPromise = null;
+        extendQueue = Promise.resolve();
+        pendingExtends.clear();
+        invalidationTags.clear();
+        AppState.historyLoadedFrom = 0;
     },
 
     /**
@@ -375,10 +1100,14 @@ const FirebaseService = {
             purchase.userName = AppState.userName;
         }
         
+        const previous = purchase.id ? findRecord('purchases', purchase.id) : null;
+        ensureTimestamp(purchase, !previous);
         if (!purchase.id) {
             purchase.id = getDb().collection(col('purchases')).doc().id;
         }
-        await settleWrite(getDb().collection(col('purchases')).doc(purchase.id).set(purchase), 'savePurchase');
+        const write = getDb().collection(col('purchases')).doc(purchase.id).set(purchase);
+        noteStockWrite('purchases', previous, purchase);
+        await settleWrite(write, 'savePurchase');
         return purchase;
     },
 
@@ -394,7 +1123,11 @@ const FirebaseService = {
         if (!purchase.id) {
             throw new Error('Purchase ID is required for update');
         }
-        await getDb().collection(col('purchases')).doc(purchase.id).set(purchase);
+        const previous = findRecord('purchases', purchase.id);
+        ensureTimestamp(purchase, false);
+        const write = getDb().collection(col('purchases')).doc(purchase.id).set(purchase);
+        noteStockWrite('purchases', previous, purchase, { oldUnknown: true });
+        await write;
         return purchase;
     },
 
@@ -405,7 +1138,11 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deletePurchase(purchaseId) {
-        await getDb().collection(col('purchases')).doc(purchaseId).delete();
+        const previous = findRecord('purchases', purchaseId);
+        const write = getDb().collection(col('purchases')).doc(purchaseId).delete();
+        noteStockWrite('purchases', previous, null, { oldUnknown: true });
+        await write;
+        forgetRecord('purchases', purchaseId);
     },
 
     /**
@@ -437,10 +1174,14 @@ const FirebaseService = {
             sale.userName = AppState.userName;
         }
         
+        const previous = sale.id ? findRecord('wholesaleSales', sale.id) : null;
+        ensureTimestamp(sale, !previous);
         if (!sale.id) {
             sale.id = getDb().collection(col('wholesaleSales')).doc().id;
         }
-        await settleWrite(getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale), 'saveWholesaleSale');
+        const write = getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale);
+        noteStockWrite('wholesaleSales', previous, sale);
+        await settleWrite(write, 'saveWholesaleSale');
         return sale;
     },
 
@@ -456,7 +1197,11 @@ const FirebaseService = {
         if (!sale.id) {
             throw new Error('Sale ID is required for update');
         }
-        await getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale);
+        const previous = findRecord('wholesaleSales', sale.id);
+        ensureTimestamp(sale, false);
+        const write = getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale);
+        noteStockWrite('wholesaleSales', previous, sale, { oldUnknown: true });
+        await write;
         return sale;
     },
 
@@ -479,10 +1224,14 @@ const FirebaseService = {
             sale.userName = AppState.userName;
         }
         
+        const previous = sale.id ? findRecord('retailSales', sale.id) : null;
+        ensureTimestamp(sale, !previous);
         if (!sale.id) {
             sale.id = getDb().collection(col('retailSales')).doc().id;
         }
-        await settleWrite(getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale), 'saveRetailSale');
+        const write = getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale);
+        noteStockWrite('retailSales', previous, sale);
+        await settleWrite(write, 'saveRetailSale');
         return sale;
     },
 
@@ -508,7 +1257,11 @@ const FirebaseService = {
         if (!sale.id) {
             throw new Error('Sale ID is required for update');
         }
-        await getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale);
+        const previous = findRecord('retailSales', sale.id);
+        ensureTimestamp(sale, false);
+        const write = getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale);
+        noteStockWrite('retailSales', previous, sale, { oldUnknown: true });
+        await write;
         return sale;
     },
 
@@ -519,7 +1272,11 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deleteRetailSale(saleId) {
-        await getDb().collection(col('retailSales')).doc(String(saleId)).delete();
+        const previous = findRecord('retailSales', saleId);
+        const write = getDb().collection(col('retailSales')).doc(String(saleId)).delete();
+        noteStockWrite('retailSales', previous, null, { oldUnknown: true });
+        await write;
+        forgetRecord('retailSales', saleId);
     },
 
     /**
@@ -529,7 +1286,11 @@ const FirebaseService = {
      * @returns {Promise<void>}
      */
     async deleteWholesaleSale(saleId) {
-        await getDb().collection(col('wholesaleSales')).doc(String(saleId)).delete();
+        const previous = findRecord('wholesaleSales', saleId);
+        const write = getDb().collection(col('wholesaleSales')).doc(String(saleId)).delete();
+        noteStockWrite('wholesaleSales', previous, null, { oldUnknown: true });
+        await write;
+        forgetRecord('wholesaleSales', saleId);
     },
 
     /**
@@ -560,6 +1321,7 @@ const FirebaseService = {
             expense.userName = AppState.userName;
         }
         
+        ensureTimestamp(expense, true);
         const docRef = await getDb().collection(col('expenses')).add(expense);
         return { id: docRef.id, ...expense };
     },
@@ -584,6 +1346,7 @@ const FirebaseService = {
             await getDb().collection(col('expenses')).doc(expenseId).delete();
         }
         
+        forgetRecord('expenses', expenseId);
         // Update local state
         const index = AppState.expensesHistory.findIndex(e => e.id == expenseId);
         if (index !== -1) {
@@ -621,7 +1384,10 @@ const FirebaseService = {
             adjustment.userName = AppState.userName;
         }
         
-        const docRef = await getDb().collection(col('stockAdjustments')).add(adjustment);
+        ensureTimestamp(adjustment, true);
+        const write = getDb().collection(col('stockAdjustments')).add(adjustment);
+        noteStockWrite('stockAdjustments', null, adjustment);
+        const docRef = await write;
         return { id: docRef.id, ...adjustment };
     },
 
@@ -665,276 +1431,51 @@ const FirebaseService = {
             withdrawal.userName = AppState.userName;
         }
         
+        // The window queries filter on `timestamp`; `date` is a user-picked day, so use the
+        // later of creation time and that day (a backdated withdrawal is then an extra older record).
+        if (typeof withdrawal.timestamp !== 'number') {
+            withdrawal.timestamp = Math.max(Date.now(), parseAnyBillDate(withdrawal.date)?.getTime() || 0);
+        }
         const docRef = await getDb().collection(col('withdrawals')).add(withdrawal);
         return { id: docRef.id, ...withdrawal };
     },
 
     /**
-     * Calculates current stock levels from all purchases, sales, and adjustments.
+     * Calculates current stock levels from purchases, sales and adjustments.
      *
-     * Events from every source (purchases, wholesale sales, retail sales, stock
-     * adjustments) are merged into a single timeline and applied in strict
-     * chronological order. This is critical because:
-     *   1. Stock adjustments are loaded `orderBy('date','desc')`, so iterating
-     *      them in array order applies the newest first — which inverts the
-     *      meaning of any `set` adjustment whenever older `add`/`remove`
-     *      adjustments exist.
-     *   2. A `set` adjustment is a calibration point at a moment in time. If we
-     *      re-apply *all* purchases/sales and then overwrite with `adj.newStock`
-     *      (a stale snapshot of stock at the moment the adjustment was saved),
-     *      every purchase/sale recorded after the adjustment is silently lost.
-     *
-     * Sorting all events chronologically and applying them in order resolves
-     * both problems: a `set` becomes the running stock at its timestamp, and
-     * later events adjust from that point.
+     * All events are merged into one timeline and applied in strict
+     * chronological order (weighted-average cost with deficit rules; see
+     * utils/stock-replay.js). While listeners are active and a valid stock
+     * checkpoint is available, only events with t >= checkpoint.asOf are
+     * replayed on top of the checkpoint's running state, which gives exactly
+     * the same result as a full replay. Without a usable checkpoint the full
+     * history is loaded once (ensureHistoryFrom(null)) and replayed, and a
+     * checkpoint rebuild is requested in the background.
      *
      * @async
      * @returns {Promise<Object.<string, {quantity: number, rate: number}>>} Stock object keyed by item ID
      */
     async calculateStock() {
-        const stock = {};
-
-        /**
-         * Helper function to get item key. Resolves to a canonical catalogue id
-         * whenever possible. Falls back to a case-insensitive, whitespace-trimmed
-         * comparison against `name` and `hindiName` so legacy records that don't
-         * carry an `itemId` (or whose stored name differs only in casing or
-         * surrounding whitespace) still collapse to the same bucket as their
-         * canonical counterpart.
-         *
-         * @param {Object} item - Item from bill/sale
-         * @returns {string} Item key for stock lookup
-         */
-        const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
-        // Lookup tables built once per call (O(I)) instead of scanning
-        // AppState.items for every event (O(E*I)). Both maps keep the FIRST
-        // catalogue entry in array order, matching Array.prototype.find.
-        const catalogueIds = new Set();
-        const idByName = new Map();
-        (AppState.items || []).forEach(i => {
-            catalogueIds.add(i.id);
-            const n = normalize(i.name);
-            if (!idByName.has(n)) idByName.set(n, i.id);
-            const h = normalize(i.hindiName);
-            if (!idByName.has(h)) idByName.set(h, i.id);
-        });
-        const getItemKey = (item) => {
-            if (item.itemId) {
-                if (catalogueIds.has(item.itemId)) return item.itemId;
-                // itemId points to a deleted catalogue entry — fall through to
-                // name matching rather than orphaning the bucket under a stale id.
+        if (!windowState) {
+            return computeStock(currentSources(), AppState.items);
+        }
+        let cp = usableCheckpoint();
+        if (cp) {
+            return computeStockFrom(cp.state, cp.asOf, currentSources(), AppState.items);
+        }
+        if (!rebuildAttempted) requestRebuild();
+        if (AppState.historyLoadedFrom !== 0) {
+            try {
+                await this.ensureHistoryFrom(null);
+            } catch (e) {
+                console.error('Loading full history for stock failed:', e);
             }
-            const target = normalize(item.name);
-            if (target && idByName.has(target)) {
-                return idByName.get(target);
-            }
-            // Last resort: bucket under a normalized name so different casings
-            // of the same legacy item still merge together.
-            return target || (item.itemId || '__unknown__');
-        };
-
-        /**
-         * Resolve a sortable timestamp (ms since epoch) for a record. Prefers
-         * the numeric `timestamp` field when present, then a Firestore Timestamp
-         * with `.toMillis()`, then the human-readable `date` string parsed via
-         * Helpers.parseDate. Records with no resolvable time are pushed to the
-         * end of the timeline so they don't corrupt the ordering of dated events.
-         */
-        const eventTime = (record) => {
-            if (typeof record.timestamp === 'number') return record.timestamp;
-            if (record.timestamp && typeof record.timestamp.toMillis === 'function') {
-                return record.timestamp.toMillis();
-            }
-            const parsed = Helpers.parseDate(record.date);
-            return parsed ? parsed.getTime() : Number.MAX_SAFE_INTEGER;
-        };
-
-        // Build a single chronological event timeline. Each purchase/sale doc
-        // may contain multiple line items; the parent doc's timestamp applies
-        // to all of them.
-        const events = [];
-
-        AppState.purchaseHistory.forEach(purchase => {
-            if (!Array.isArray(purchase.items)) return;
-            const t = eventTime(purchase);
-            purchase.items.forEach(item => events.push({ t, kind: 'purchase', item }));
-        });
-
-        AppState.salesHistory.forEach(sale => {
-            if (!Array.isArray(sale.items)) return;
-            const t = eventTime(sale);
-            sale.items.forEach(item => events.push({ t, kind: 'sale', item }));
-        });
-
-        AppState.retailSalesHistory.forEach(sale => {
-            if (!Array.isArray(sale.items)) return;
-            const t = eventTime(sale);
-            sale.items.forEach(item => events.push({ t, kind: 'sale', item }));
-        });
-
-        AppState.stockAdjustments.forEach(adj => {
-            events.push({ t: eventTime(adj), kind: 'adjustment', adj });
-        });
-
-        // Ascending chronological order. Array.prototype.sort is stable in
-        // modern JS engines, so ties keep their original insertion order.
-        events.sort((a, b) => a.t - b.t);
-
-        // `totalValue` represents the cost basis of the stock *currently on
-        // hand*. When the running quantity drops to zero or below, the cost
-        // basis of "on-hand" stock is zero by definition — we don't own any
-        // of the goods, so there is no carrying cost to track. Without this
-        // discipline, the running average rate becomes nonsensical: a sale
-        // that exceeds available stock leaves `totalValue` artificially high
-        // (because `avgRate` is clamped to 0 once `quantity <= 0`, so the
-        // sale subtracts nothing), and subsequent purchases pile their full
-        // cost on top — yielding rates many times the actual purchase price.
-        //
-        // The rules below clamp `totalValue` to 0 whenever the running
-        // quantity is at or below zero, and treat a purchase that lifts a
-        // negative position back into positive territory as "filling the
-        // deficit" first (sunk cost honoring an oversale) and contributing
-        // only the *excess* portion to the new cost basis at the purchase
-        // rate.
-        for (const ev of events) {
-            if (ev.kind === 'purchase') {
-                const key = getItemKey(ev.item);
-                if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
-                const qty = parseFloat(ev.item.qty || ev.item.quantity) || 0;
-                const rate = parseFloat(ev.item.rate) || 0;
-                const prevQty = stock[key].quantity;
-                const newQty = prevQty + qty;
-                stock[key].quantity = newQty;
-                if (newQty <= 0) {
-                    // Still in deficit (or back to exactly zero) after the
-                    // purchase — no on-hand value to carry.
-                    stock[key].totalValue = 0;
-                } else if (prevQty < 0) {
-                    // Purchase fills the deficit and adds new stock; only
-                    // the excess (newQty) is on-hand inventory.
-                    stock[key].totalValue = newQty * rate;
-                } else {
-                    // Normal: stock was already non-negative; accumulate.
-                    stock[key].totalValue += qty * rate;
-                }
-            } else if (ev.kind === 'sale') {
-                const key = getItemKey(ev.item);
-                // Create the entry on demand so a sale of an item that was
-                // only ever introduced via a stock adjustment (or whose key
-                // mismatched a purchase) is still reflected, instead of being
-                // silently dropped and inflating displayed stock elsewhere.
-                if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
-                const qty = parseFloat(ev.item.qty || ev.item.quantity) || 0;
-                const prevQty = stock[key].quantity;
-                const avgRate = prevQty > 0 ? stock[key].totalValue / prevQty : 0;
-                const newQty = prevQty - qty;
-                stock[key].quantity = newQty;
-                if (newQty <= 0) {
-                    // Sale equals or exceeds on-hand stock — no remaining
-                    // cost basis to carry forward.
-                    stock[key].totalValue = 0;
-                } else {
-                    stock[key].totalValue -= qty * avgRate;
-                }
-            } else if (ev.kind === 'adjustment') {
-                const adj = ev.adj;
-                // Route the adjustment through the same canonical-id
-                // resolution as purchases/sales. Using the raw `itemId`
-                // or `itemName` here causes the adjustment to fragment into
-                // its own bucket when the itemId points to a deleted
-                // catalogue entry or when the stored itemName casing/
-                // whitespace differs from the canonical version. Once
-                // fragmented, later sales subtract from the purchase
-                // bucket while the adjustment sits in its own bucket —
-                // the displayed quantity (which renderStock re-merges by
-                // catalogue match) is then over-stated by the size of the
-                // adjustment.
-                const key = getItemKey({ itemId: adj.itemId, name: adj.itemName });
-                if (!key) continue;
-                if (!stock[key]) stock[key] = { quantity: 0, rate: 0, totalValue: 0 };
-
-                const adjQty = parseFloat(adj.quantity) || 0;
-                const adjRate = parseFloat(adj.rate) || 0;
-
-                switch (adj.adjustType) {
-                    case 'add': {
-                        const prevQty = stock[key].quantity;
-                        const newQty = prevQty + adjQty;
-                        stock[key].quantity = newQty;
-                        if (newQty <= 0) {
-                            stock[key].totalValue = 0;
-                        } else if (prevQty < 0) {
-                            // Adjustment fills a deficit. If a rate was
-                            // supplied, use it for the on-hand excess;
-                            // otherwise we have no basis and the rate
-                            // falls to 0.
-                            stock[key].totalValue = adjRate > 0 ? newQty * adjRate : 0;
-                        } else if (adjRate > 0) {
-                            stock[key].totalValue += adjQty * adjRate;
-                        }
-                        // adjRate==0 with prevQty>=0: leave totalValue
-                        // alone — the existing average rate is diluted
-                        // across the larger quantity (preserves the
-                        // historical behavior for rate-less add adjustments).
-                        break;
-                    }
-                    case 'remove': {
-                        // Reduce quantity but keep total value proportional so
-                        // the weighted average rate is preserved.
-                        const prevQty = stock[key].quantity;
-                        const newQty = prevQty - adjQty;
-                        stock[key].quantity = newQty;
-                        if (newQty <= 0 || prevQty <= 0) {
-                            stock[key].totalValue = 0;
-                        } else {
-                            const removalRatio = adjQty / prevQty;
-                            stock[key].totalValue -= stock[key].totalValue * removalRatio;
-                        }
-                        break;
-                    }
-                    case 'set': {
-                        // For chronological replay we use the user-entered
-                        // target quantity (adj.quantity) rather than the
-                        // historical `newStock` snapshot — the snapshot was
-                        // computed against the stock state at save time and is
-                        // unreliable when later events have shifted things.
-                        const newQty = adjQty;
-                        const prevQty = stock[key].quantity;
-                        const prevTotal = stock[key].totalValue;
-                        stock[key].quantity = newQty;
-                        if (newQty <= 0) {
-                            stock[key].totalValue = 0;
-                        } else if (adjRate > 0) {
-                            stock[key].totalValue = newQty * adjRate;
-                        } else {
-                            // No rate supplied — carry the previous average
-                            // rate over to the new quantity. If we had no
-                            // valid prior basis (negative or zero stock),
-                            // the resulting rate is 0.
-                            const currentAvgRate = prevQty > 0 && prevTotal > 0
-                                ? prevTotal / prevQty
-                                : 0;
-                            stock[key].totalValue = newQty * currentAvgRate;
-                        }
-                        break;
-                    }
-                }
+            cp = usableCheckpoint();
+            if (cp) {
+                return computeStockFrom(cp.state, cp.asOf, currentSources(), AppState.items);
             }
         }
-
-        // Calculate average rates and clean up
-        Object.keys(stock).forEach(itemName => {
-            const s = stock[itemName];
-            if (s.quantity > 0 && s.totalValue > 0) {
-                s.rate = s.totalValue / s.quantity;
-            } else {
-                s.rate = 0;
-            }
-            // Remove totalValue as it's not needed in the final result
-            delete s.totalValue;
-        });
-
-        return stock;
+        return computeStock(currentSources(), AppState.items);
     },
 
     /**
@@ -956,13 +1497,141 @@ const FirebaseService = {
     },
 
     /**
+     * Start (ms epoch) of the history guaranteed to be in AppState; 0 = all.
+     * @returns {number}
+     */
+    getHistoryWindowStart() {
+        return AppState.historyLoadedFrom;
+    },
+
+    /**
+     * @returns {boolean} true when every history record is loaded
+     */
+    isFullHistoryLoaded() {
+        return AppState.historyLoadedFrom === 0;
+    },
+
+    /**
+     * Makes sure every history record with event time >= `from` is in AppState.
+     * Resolves immediately when already covered; otherwise one-shot fetches the
+     * missing range [from, historyLoadedFrom) of all history collections (all
+     * history, unfiltered, for null), merges it (deduped by id, date-desc order),
+     * updates AppState.historyLoadedFrom, re-renders and dispatches
+     * `aadhat:historyextended` ({detail: {from}}). Concurrent calls share work.
+     * Fetched records are not live (edits by other devices appear on next open).
+     * @param {number|Date|null} from ms epoch / Date; null = all history
+     * @returns {Promise<void>}
+     */
+    ensureHistoryFrom(from) {
+        return queueExtend(normalizeFrom(from)).then(() => undefined);
+    },
+
+    /**
+     * Extends the loaded history back by `months` calendar months (to full
+     * history once nothing older exists).
+     * @param {number} [months=1]
+     * @returns {Promise<{loadedFrom: number, reachedEnd: boolean}>}
+     */
+    async loadOlderHistory(months = 1) {
+        if (!windowState || AppState.historyLoadedFrom === 0) {
+            return { loadedFrom: AppState.historyLoadedFrom, reachedEnd: true };
+        }
+        const oldest = await oldestTimestamp();
+        const target = monthsBefore(AppState.historyLoadedFrom, months);
+        if (oldest < target) {
+            await this.ensureHistoryFrom(target);
+        } else if (checkpointDoc?.backfill?.complete === true) {
+            // Every document carries a numeric timestamp: [1, loadedFrom) is the rest.
+            const before = AppState.historyLoadedFrom;
+            await this.ensureHistoryFrom(1);
+            if (AppState.historyLoadedFrom === 1 && before !== 0) {
+                AppState.historyLoadedFrom = 0;
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('aadhat:historyextended', { detail: { from: 0 } }));
+                }
+            }
+        } else {
+            // Legacy documents without a timestamp may exist: load everything.
+            await this.ensureHistoryFrom(null);
+        }
+        return { loadedFrom: AppState.historyLoadedFrom, reachedEnd: AppState.historyLoadedFrom === 0 };
+    },
+
+    /**
+     * Diagnostics: the stock checkpoint in use, if any.
+     * @returns {?{asOf: number, builtAt: number, liveFrom: number}}
+     */
+    getStockCheckpointInfo() {
+        const cp = usableCheckpoint();
+        return cp ? { asOf: cp.asOf, builtAt: cp.builtAt, liveFrom: windowState.liveFrom } : null;
+    },
+
+    /**
+     * Rebuilds the stock checkpoint from a full read of all history (one device
+     * at a time via the `rebuildingUntil` lease). Also backfills `timestamp` /
+     * due fields into legacy documents so window and dues queries see them.
+     * @returns {Promise<{status: string}>} built | fresh | leased | offline | conflict | ...
+     */
+    rebuildStockCheckpoint() {
+        if (!windowState) return Promise.resolve({ status: 'inactive' });
+        if (rebuildPromise) {
+            rebuildRequestedAgain = true;
+            return rebuildPromise;
+        }
+        rebuildAttempted = true;
+        const gen = sessionGen;
+        const p = rebuildCheckpointNow(gen);
+        rebuildPromise = p;
+        const done = () => {
+            if (gen !== sessionGen || rebuildPromise !== p) return;
+            rebuildPromise = null;
+            if (rebuildRequestedAgain) {
+                rebuildRequestedAgain = false;
+                requestRebuild();
+            }
+        };
+        p.then(done, done);
+        return p;
+    },
+
+    /**
+     * Startup maintenance: request a rebuild when no checkpoint is usable, or
+     * roll the checkpoint forward (from data already in memory, no extra reads)
+     * when it lags the window start by more than a week.
+     * @returns {Promise<string>}
+     */
+    async maintainStockCheckpoint(attempt = 0) {
+        if (!windowState) return 'inactive';
+        const cp = usableCheckpoint();
+        if (!cp) {
+            if (!rebuildAttempted) requestRebuild();
+            return 'rebuild';
+        }
+        const W = defaultWindowStart(Date.now());
+        if (cp.asOf >= W - ROLL_FORWARD_SLACK_MS) return 'current';
+        const result = await rollForwardCheckpoint(cp, W);
+        if (result === 'waiting' && attempt < 5) {
+            const gen = sessionGen;
+            setTimeout(() => {
+                if (gen === sessionGen) this.maintainStockCheckpoint(attempt + 1).catch(e => console.error('Stock checkpoint roll-forward failed:', e));
+            }, ROLL_FORWARD_RETRY_MS);
+        }
+        return result;
+    },
+
+    /**
      * Sets up real-time Firestore listeners for live data synchronization.
-     * Listens to items, bills, sales, expenses, stock adjustments, and withdrawals.
+     *
+     * Items are listened to in full. History collections (purchases, retail
+     * and wholesale sales, expenses, stock adjustments, withdrawals) are
+     * listened to only from the recent window start (see the section comment
+     * above HISTORY_COLLECTIONS), plus bills with an outstanding due. The
+     * stock checkpoint doc is read first because the window start depends on it.
      *
      * The first snapshot of each listener populates AppState, so startup does
-     * not need a separate full-collection .get() (which would read every
-     * document twice). Later snapshots apply only docChanges() and schedule a
-     * single debounced stock recalculation + re-render of the visible tab.
+     * not need a separate .get(). Later snapshots apply only docChanges() and
+     * schedule a single debounced stock recalculation + re-render of the
+     * visible tab.
      *
      * @returns {Promise<void>} Resolves once every data listener has delivered
      *   its first snapshot; rejects if a required listener fails before that.
@@ -970,12 +1639,12 @@ const FirebaseService = {
     setupRealtimeListeners() {
         // Clear any existing listeners first
         this.cleanup();
+        const gen = sessionGen;
+        const db = getDb();
 
-        const firstSnapshots = [];
-        const listen = (query, stateKey, label, { views = [], immediateViews = [], affectsStock = false, optional = false } = {}) => {
-            const live = { docs: [], initialized: false };
+        const listen = (query, label, live, onData, { optional = false, mapFn = mapDoc } = {}) => {
             let settle;
-            firstSnapshots.push(new Promise((resolve, reject) => { settle = { resolve, reject }; }));
+            const first = new Promise((resolve, reject) => { settle = { resolve, reject }; });
             // If listeners are torn down before the first snapshot (e.g. logout
             // during startup), don't leave startup waiting forever.
             pendingFirstSnapshots.push(settle);
@@ -992,35 +1661,28 @@ const FirebaseService = {
             // includeMetadataChanges so the cache -> server transition is seen
             // even when the cached data was already up to date.
             const unsubscribe = query.onSnapshot({ includeMetadataChanges: true }, snapshot => {
-                const changed = applySnapshot(live, snapshot);
-                if (changed) {
-                    AppState[stateKey] = live.docs.slice();
-                    dataVersion++;
-                }
+                if (gen !== sessionGen) return;
+                const { changed, changes } = applySnapshot(live, snapshot, mapFn);
+                if (!snapshot.metadata.fromCache) live.server = true;
+                // Before startup is ready only AppState is updated; startup
+                // computes stock and renders the initial views itself.
+                if (changed) onData(changes, ready);
                 if (!ready) {
-                    // Startup computes stock and renders the initial views itself.
                     if (!snapshot.metadata.fromCache || navigator.onLine === false) {
                         markReady();
                     } else if (!readyTimer) {
                         readyTimer = setTimeout(markReady, FIRST_SNAPSHOT_SERVER_WAIT_MS);
                     }
-                    return;
                 }
-                if (!changed) return;
-                // Index-based views (item dropdown values, item cards) must
-                // never lag behind AppState.items, so refresh them right away.
-                immediateViews.forEach(name => {
-                    pendingViews.delete(name);
-                    runView(name);
-                });
-                markDirty(views, affectsStock);
             }, error => {
                 console.error(`${label} listener error:`, error);
                 clearTimeout(readyTimer);
                 if (!ready) {
                     ready = true;
                     if (optional) {
-                        AppState[stateKey] = [];
+                        live.docs = [];
+                        live.initialized = true;
+                        if (gen === sessionGen) onData(null, false);
                         settle.resolve();
                     } else {
                         settle.reject(error);
@@ -1028,36 +1690,80 @@ const FirebaseService = {
                 }
             });
             unsubscribeFunctions.push(unsubscribe);
+            return first;
         };
 
-        const db = getDb();
-        listen(db.collection(col('items')), 'items', 'Items', {
-            immediateViews: ['itemsList', 'billingDropdown', 'salesDropdown'],
-            affectsStock: true
+        const itemsLive = { docs: [], initialized: false, server: false };
+        const firstSnapshots = [listen(db.collection(col('items')), 'Items', itemsLive, (changes, started) => {
+            AppState.items = itemsLive.docs.slice();
+            dataVersion++;
+            if (!started) return;
+            // Index-based views (item dropdown values, item cards) must
+            // never lag behind AppState.items, so refresh them right away.
+            ['itemsList', 'billingDropdown', 'salesDropdown'].forEach(name => {
+                pendingViews.delete(name);
+                runView(name);
+            });
+            markDirty([], true);
+        }, { mapFn: defaultMapDoc })];
+
+        const historyReady = listenCheckpoint(gen).then(() => {
+            if (gen !== sessionGen) return undefined;
+            const W = defaultWindowStart(Date.now());
+            const cp = parseCheckpoint(checkpointDoc);
+            const liveFrom = cp ? Math.min(W, cp.asOf) : W;
+            windowState = { gen, liveFrom, rawFull: false, colls: {} };
+            AppState.historyLoadedFrom = liveFrom;
+            if (cp) adoptCheckpoint(checkpointDoc);
+
+            const waits = [];
+            HISTORY_COLLECTIONS.forEach(spec => {
+                const c = createCollState(spec);
+                windowState.colls[spec.key] = c;
+                const affectsStock = !!spec.stock;
+                const windowQuery = db.collection(col(spec.key))
+                    .where('timestamp', '>=', liveFrom)
+                    .orderBy('timestamp', 'desc');
+                waits.push(listen(windowQuery, spec.label, c.live, (changes, started) => {
+                    (changes || []).forEach(ch => {
+                        const previous = ch.oldRec || findInSources(c, ch.docId, c.live);
+                        if (ch.newRec) c.extended.delete(ch.docId);
+                        if (spec.stock) noteObservedChange(c, previous, ch.newRec, ch.type);
+                    });
+                    publishCollection(c);
+                    if (started) markDirty(spec.views, affectsStock);
+                }, { optional: !!spec.optional }));
+
+                if (!spec.dues) return;
+                const dueQueries = DUE_FIELDS.map(field => [field, db.collection(col(spec.key)).where(field, '>', 0)]);
+                const pinnedIds = Array.isArray(checkpointDoc?.pinned?.[spec.key]) ? checkpointDoc.pinned[spec.key].slice(0, PINNED_MAX) : [];
+                const docIdPath = typeof firebase !== 'undefined' && firebase.firestore?.FieldPath?.documentId
+                    ? firebase.firestore.FieldPath.documentId() : null;
+                for (let i = 0; docIdPath && i < pinnedIds.length; i += PINNED_CHUNK) {
+                    dueQueries.push(['pinned', db.collection(col(spec.key)).where(docIdPath, 'in', pinnedIds.slice(i, i + PINNED_CHUNK))]);
+                }
+                dueQueries.forEach(([field, duesQuery]) => {
+                    const live = { docs: [], initialized: false, server: false };
+                    c.dues.push(live);
+                    waits.push(listen(duesQuery, `${spec.label} dues (${field})`, live, (changes, started) => {
+                        (changes || []).forEach(ch => {
+                            if (ch.newRec) {
+                                const previous = ch.oldRec || c.extended.get(ch.docId) || null;
+                                c.extended.delete(ch.docId);
+                                if (spec.stock && previous) noteObservedChange(c, previous, ch.newRec, ch.type);
+                            } else if (!liveIdSet(c).has(ch.docId)) {
+                                // Paid off (keep a fresh copy) or deleted.
+                                refetchAfterDueRemoval(c, ch.docId, ch.oldRec);
+                            }
+                        });
+                        publishCollection(c);
+                        if (started) markDirty(spec.views, affectsStock);
+                    }, { optional: true }));
+                });
+            });
+            return Promise.all(waits);
         });
-        listen(db.collection(col('purchases')).orderBy('date', 'desc'), 'purchaseHistory', 'Purchases', {
-            views: ['billingDropdown', 'salesDropdown', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'],
-            affectsStock: true
-        });
-        listen(db.collection(col('retailSales')).orderBy('date', 'desc'), 'retailSalesHistory', 'Retail sales', {
-            views: ['billingDropdown', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'],
-            affectsStock: true
-        });
-        listen(db.collection(col('wholesaleSales')).orderBy('date', 'desc'), 'salesHistory', 'Sales', {
-            views: ['billingDropdown', 'salesDropdown', 'wholesaleHistory', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'],
-            affectsStock: true
-        });
-        listen(db.collection(col('expenses')).orderBy('date', 'desc'), 'expensesHistory', 'Expenses', {
-            views: ['expensesHistory', 'financeOverview', 'analytics', 'reports']
-        });
-        listen(db.collection(col('stockAdjustments')).orderBy('date', 'desc'), 'stockAdjustments', 'Stock adjustments', {
-            views: ['stockAdjustmentHistory', 'stockView'],
-            affectsStock: true
-        });
-        listen(db.collection(col('withdrawals')).orderBy('date', 'desc'), 'withdrawalsHistory', 'Withdrawals', {
-            views: ['financeOverview', 'financeWithdrawals'],
-            optional: true
-        });
+        firstSnapshots.push(historyReady);
 
         // Note: the former `cashSessions` and `users` listeners were removed.
         // Their callbacks targeted a non-existent element id / app method and
@@ -1122,7 +1828,14 @@ const FirebaseService = {
             console.warn('No currentUser.uid, skipping notifications listener');
         }
 
-        return Promise.all(firstSnapshots).then(() => undefined);
+        return Promise.all(firstSnapshots).then(() => {
+            if (gen !== sessionGen) return;
+            setTimeout(() => {
+                if (gen === sessionGen) {
+                    this.maintainStockCheckpoint().catch(e => console.error('Stock checkpoint maintenance failed:', e));
+                }
+            }, 0);
+        });
     },
 
     /**
@@ -1239,6 +1952,11 @@ const FirebaseService = {
             withdrawal.withdrawnByName = AppState.userName;
         }
         
+        // The window queries filter on `timestamp`; `date` is a user-picked day, so use the
+        // later of creation time and that day (a backdated withdrawal is then an extra older record).
+        if (typeof withdrawal.timestamp !== 'number') {
+            withdrawal.timestamp = Math.max(Date.now(), parseAnyBillDate(withdrawal.date)?.getTime() || 0);
+        }
         const docRef = await getDb().collection(col('withdrawals')).add(withdrawal);
         return { id: docRef.id, ...withdrawal };
     },
