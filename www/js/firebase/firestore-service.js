@@ -45,6 +45,58 @@ const col = (name) => {
 /** @type {Function[]} Array of unsubscribe functions for real-time listeners */
 const unsubscribeFunctions = [];
 
+/** Max time a bill save waits for the server to acknowledge a write. */
+const WRITE_ACK_TIMEOUT_MS = 1500;
+
+/**
+ * Waits for a Firestore write without blocking the UI on the server round trip.
+ * With offline persistence the write is applied to the local cache and queued as
+ * soon as it is issued, so this resolves when the server acknowledges it, right
+ * away when offline, or after WRITE_ACK_TIMEOUT_MS (the write keeps syncing in
+ * the background). Errors before that point reject; errors after it are logged
+ * and surfaced as a toast so a rejected write is never silent.
+ * @param {Promise<void>} writePromise - Promise returned by set()/update()/add()
+ * @param {string} label - Name used in logs
+ * @returns {Promise<{pending: boolean}>} pending=true if not yet acknowledged
+ */
+function settleWrite(writePromise, label = 'write') {
+    return new Promise((resolve, reject) => {
+        let released = false;
+        let timer = null;
+        const release = () => {
+            if (released) return;
+            released = true;
+            resolve({ pending: true });
+        };
+        writePromise.then(
+            () => {
+                if (timer) clearTimeout(timer);
+                if (!released) {
+                    released = true;
+                    resolve({ pending: false });
+                }
+            },
+            (error) => {
+                if (timer) clearTimeout(timer);
+                if (!released) {
+                    released = true;
+                    reject(error);
+                    return;
+                }
+                console.error(`[${label}] write failed after it was queued:`, error);
+                import('../ui/ui-manager.js')
+                    .then(({ UIManager }) => UIManager.showToast(`⚠️ Save failed on server: ${error?.message || error}`))
+                    .catch(() => {});
+            }
+        );
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            release();
+        } else {
+            timer = setTimeout(release, WRITE_ACK_TIMEOUT_MS);
+        }
+    });
+}
+
 /**
  * Firebase Service object containing all database operations.
  * Provides methods for CRUD operations on all collections.
@@ -124,6 +176,17 @@ const FirebaseService = {
     },
 
     /**
+     * See settleWrite(): resolves when a write is acknowledged, queued offline,
+     * or after a short timeout, so bill saves don't block on the network.
+     * @param {Promise<void>} writePromise
+     * @param {string} [label]
+     * @returns {Promise<{pending: boolean}>}
+     */
+    settleWrite(writePromise, label) {
+        return settleWrite(writePromise, label);
+    },
+
+    /**
      * Saves a purchase to Firestore. Creates new if no ID, updates if ID exists.
      * Automatically adds userId and userName from AppState.
      * @async
@@ -143,12 +206,10 @@ const FirebaseService = {
             purchase.userName = AppState.userName;
         }
         
-        if (purchase.id) {
-            await getDb().collection(col('purchases')).doc(purchase.id).set(purchase);
-        } else {
-            const docRef = await getDb().collection(col('purchases')).add(purchase);
-            purchase.id = docRef.id;
+        if (!purchase.id) {
+            purchase.id = getDb().collection(col('purchases')).doc().id;
         }
+        await settleWrite(getDb().collection(col('purchases')).doc(purchase.id).set(purchase), 'savePurchase');
         return purchase;
     },
 
@@ -207,12 +268,10 @@ const FirebaseService = {
             sale.userName = AppState.userName;
         }
         
-        if (sale.id) {
-            await getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale);
-        } else {
-            const docRef = await getDb().collection(col('wholesaleSales')).add(sale);
-            sale.id = docRef.id;
+        if (!sale.id) {
+            sale.id = getDb().collection(col('wholesaleSales')).doc().id;
         }
+        await settleWrite(getDb().collection(col('wholesaleSales')).doc(String(sale.id)).set(sale), 'saveWholesaleSale');
         return sale;
     },
 
@@ -251,12 +310,10 @@ const FirebaseService = {
             sale.userName = AppState.userName;
         }
         
-        if (sale.id) {
-            await getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale);
-        } else {
-            const docRef = await getDb().collection(col('retailSales')).add(sale);
-            sale.id = docRef.id;
+        if (!sale.id) {
+            sale.id = getDb().collection(col('retailSales')).doc().id;
         }
+        await settleWrite(getDb().collection(col('retailSales')).doc(String(sale.id)).set(sale), 'saveRetailSale');
         return sale;
     },
 

@@ -56,7 +56,10 @@ export class AuditService {
                 date: new Date().toISOString()
             };
             
-            await db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs').add(auditEntry);
+            // Fire-and-forget: the entry is queued locally (offline persistence)
+            // and synced in the background, so callers never wait on the network.
+            db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs').add(auditEntry)
+                .catch(error => console.error('[AUDIT ERROR]', error));
             
         } catch (error) {
             // Don't let audit failures break the app

@@ -245,6 +245,15 @@ export class Helpers {
     /**
      * Generate a bill number with prefix and date
      * Format: {prefix}{YYYYMMDD}-{sequence}
+     *
+     * Online, the sequence comes from an atomic per-day counter document
+     * `counters/{prefix}{YYYYMMDD}` (field `next` = last issued sequence), so
+     * concurrent devices never get the same number and no per-save scan of
+     * today's bills is needed. The first time a counter is used it is seeded
+     * from the number of bills already saved today (mid-day deploy).
+     * Offline, or if the transaction takes longer than BILL_COUNTER_TIMEOUT_MS,
+     * it falls back to counting today's bills from the local cache.
+     *
      * @param {string} prefix - Bill type prefix ('P' for purchase, 'S' for retail sale, 'W' for wholesale)
      * @param {string} collectionName - Firebase collection name to query for sequence
      * @returns {Promise<string>} Generated bill number
@@ -252,6 +261,7 @@ export class Helpers {
     static async generateBillNumber(prefix, collectionName) {
         const today = new Date();
         const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+        const format = (n) => `${prefix}${dateStr}-${String(n).padStart(3, '0')}`;
         
         const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
         const todayEnd = new Date(todayStart);
@@ -259,18 +269,148 @@ export class Helpers {
         
         try {
             const getCol = window.getCollection || ((name) => name);
-            const snapshot = await db.collection(getCol(collectionName))
+            const todaysBills = db.collection(getCol(collectionName))
                 .where('timestamp', '>=', todayStart.getTime())
-                .where('timestamp', '<', todayEnd.getTime())
-                .get();
+                .where('timestamp', '<', todayEnd.getTime());
+            const counterRef = db.collection(getCol('counters')).doc(`${prefix}${dateStr}`);
             
-            const nextNum = snapshot.size + 1;
-            return `${prefix}${dateStr}-${String(nextNum).padStart(3, '0')}`;
+            const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+            if (!offline && typeof db.runTransaction === 'function') {
+                try {
+                    const seq = await withTimeout(
+                        Helpers._nextCounterValue(counterRef, todaysBills, prefix, dateStr),
+                        BILL_COUNTER_TIMEOUT_MS
+                    );
+                    return format(seq);
+                } catch (counterError) {
+                    console.warn('Bill counter unavailable, using local fallback:', counterError?.message || counterError);
+                }
+            }
+            
+            // Fallback: local cache only, so this never blocks on the network.
+            const [cachedBills, counterSnap] = await Promise.all([
+                todaysBills.get({ source: 'cache' }).catch(() => null),
+                counterRef.get({ source: 'cache' }).catch(() => null)
+            ]);
+            // No usable cache (e.g. persistence disabled): previous behaviour.
+            const billsSnap = cachedBills || await todaysBills.get();
+            const cachedCounter = counterSnap?.exists ? (Number(counterSnap.data()?.next) || 0) : 0;
+            const seq = Math.max(billsSnap.size, cachedCounter) + 1;
+            
+            // Reserve the number on the server once we reconnect so online
+            // devices skip past it. Queued locally; never awaited.
+            try {
+                counterRef.set({ next: firebase.firestore.FieldValue.increment(1) }, { merge: true })
+                    .catch(err => console.warn('Bill counter reservation failed:', err?.message || err));
+            } catch (_) { /* ignore */ }
+            
+            return format(seq);
         } catch (error) {
             console.error('Error generating bill number:', error);
             return `${prefix}${dateStr}-${Date.now().toString().slice(-3)}`;
         }
     }
+
+    /**
+     * Atomically increment and return the day's bill counter.
+     * @private
+     */
+    static async _nextCounterValue(counterRef, todaysBills, prefix, dateStr) {
+        let existingCount = null;
+        return db.runTransaction(async (tx) => {
+            const snap = await tx.get(counterRef);
+            const data = snap.exists ? (snap.data() || {}) : {};
+            let current = Number(data.next) || 0;
+            if (!data.initialized) {
+                // Bills may already exist today (counter introduced mid-day or
+                // numbers reserved offline): never issue a number below them.
+                if (existingCount === null) {
+                    existingCount = (await todaysBills.get()).size;
+                }
+                current = Math.max(current, existingCount);
+            }
+            const next = current + 1;
+            tx.set(counterRef, {
+                next,
+                initialized: true,
+                prefix,
+                date: dateStr,
+                updatedAt: Date.now()
+            }, { merge: true });
+            return next;
+        });
+    }
+
+    /**
+     * Run `fn` unless another call with the same key is still running.
+     * While running, the matching buttons are disabled so a double tap
+     * cannot create a duplicate bill. Returns undefined when ignored.
+     * @param {string} key - Lock name (e.g. 'purchase')
+     * @param {string} buttonSelector - CSS selector for buttons to disable
+     * @param {Function} fn - Async work to run
+     * @returns {Promise<*>}
+     */
+    static async runExclusive(key, buttonSelector, fn) {
+        if (inFlightLocks.has(key)) return undefined;
+        inFlightLocks.add(key);
+        const buttons = (typeof document !== 'undefined' && buttonSelector)
+            ? Array.from(document.querySelectorAll(buttonSelector))
+            : [];
+        const previous = buttons.map(btn => ({ btn, disabled: btn.disabled, opacity: btn.style.opacity }));
+        buttons.forEach(btn => {
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.setAttribute('aria-busy', 'true');
+        });
+        try {
+            return await fn();
+        } finally {
+            inFlightLocks.delete(key);
+            previous.forEach(({ btn, disabled, opacity }) => {
+                btn.disabled = disabled;
+                btn.style.opacity = opacity;
+                btn.removeAttribute('aria-busy');
+            });
+        }
+    }
+
+    /**
+     * Run post-save bookkeeping (audit, item frequency, auto-save cleanup) in the
+     * background. Failures are logged and never block or fail the save.
+     * @param {Array<Function>} tasks - Functions returning promises (or values)
+     * @returns {Promise<PromiseSettledResult[]>}
+     */
+    static runInBackground(tasks) {
+        const promises = tasks.map(task => Promise.resolve().then(task));
+        return Promise.allSettled(promises).then(results => {
+            results.forEach(r => {
+                if (r.status === 'rejected') console.error('Background task failed:', r.reason);
+            });
+            return results;
+        });
+    }
+
+    /**
+     * Whether a runExclusive lock is currently held
+     * @param {string} key
+     * @returns {boolean}
+     */
+    static isBusy(key) {
+        return inFlightLocks.has(key);
+    }
+}
+
+const BILL_COUNTER_TIMEOUT_MS = 2500;
+const inFlightLocks = new Set();
+
+function withTimeout(promise, ms) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+        promise.then(
+            (value) => { clearTimeout(timer); resolve(value); },
+            (error) => { clearTimeout(timer); reject(error); }
+        );
+    });
 }
 
 // Returns the Android major version from the WebView user agent, or Infinity if unknown

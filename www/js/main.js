@@ -654,32 +654,8 @@ window.app = {
         fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
         completeSale: () => BillingManager.completeSale(),
         
-        // Print bill (saves and prints)
-        printBill: async () => {
-            const billItems = BillingManager.getBillItems();
-            if (billItems.length === 0) {
-                UIManager.showToast('No items in bill');
-                return;
-            }
-            
-            try {
-                // Save the bill first and wait for it to complete
-                const savedBill = await BillingManager.saveBillToHistory();
-                
-                if (!savedBill) {
-                    // Save failed or was cancelled
-                    return;
-                }
-                
-                // Only print after successful save
-                await PrinterService.printBill(savedBill);
-                
-                UIManager.showToast('Bill saved and printed!');
-            } catch (error) {
-                console.error('Print error:', error);
-                UIManager.showToast('Error: ' + error.message);
-            }
-        },
+        // Print bill (saves and prints; printing starts as soon as the save is issued)
+        printBill: () => BillingManager.printBill(),
         
         // Mode toggle between Purchase and Sale
         switchMode: (mode, event) => BillingManager.switchMode(mode, event),
