@@ -8,6 +8,10 @@ import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
+import { OutstandingManager } from './outstanding.js';
+import { readPayment, round2 } from '../utils/money.js';
+
+const PAYMENT_TOLERANCE = 0.01;
 
 /** Buttons disabled while a wholesale save/print is in flight */
 const WHOLESALE_BUTTONS = '[onclick*="wholesaleSales.completeSale"], [onclick*="wholesaleSales.printWholesaleSale"]';
@@ -448,45 +452,52 @@ export class WholesaleSalesManager {
         }
         
         const paymentInput = document.getElementById(`payment_${saleId}`);
-        const paymentAmount = Number(paymentInput.value) || 0;
+        const paymentAmount = round2(Number(paymentInput?.value) || 0);
         
         if (paymentAmount <= 0) {
             UIManager.showToast('Please enter a valid payment amount');
             return;
         }
         
-        const currentReceived = (sale.payment.online || 0) + (sale.payment.cash || 0);
-        const outstanding = sale.payment.due || 0;
+        const outstanding = readPayment(sale).due;
         
-        if (paymentAmount > outstanding) {
+        if (paymentAmount > outstanding + PAYMENT_TOLERANCE) {
             UIManager.showToast('Payment amount exceeds outstanding amount');
             return;
         }
         
-        if (!sale.payments) sale.payments = [];
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            UIManager.showToast('Internet required to record payment');
+            return;
+        }
         
         const payment = {
             amount: paymentAmount,
-            date: new Date().toLocaleString(),
+            date: Helpers.getCurrentDateTime(),
             recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
         
-        sale.payments.push(payment);
-        sale.payment.cash = (sale.payment.cash || 0) + paymentAmount;
-        sale.payment.total = (sale.payment.online || 0) + sale.payment.cash;
-        sale.payment.due = sale.total - sale.payment.total;
-        
         try {
-            await FirebaseService.updateWholesaleSale(sale);
+            // Same server-side transaction as the Due screen, so a payment recorded
+            // concurrently on another device is never overwritten by a full-document write
+            const written = await OutstandingManager.applyPaymentTransaction('wholesale', sale, paymentAmount, payment);
+            Object.assign(sale, written);
             
-            paymentInput.value = '';
+            if (paymentInput) paymentInput.value = '';
             this.renderSalesOutstanding();
             this.renderSalesHistory();
-            window.app.outstanding.renderDue();
+            window.app?.outstanding?.renderDue?.();
             UIManager.showToast(`✓ Payment of ₹${paymentAmount} recorded`);
         } catch (error) {
             console.error('Error recording payment:', error);
-            UIManager.showToast('Error: ' + error.message);
+            if (error && error.code === 'exceeds-due') {
+                UIManager.showToast(`Payment amount exceeds outstanding amount (₹${error.due})`);
+                this.renderSalesOutstanding();
+            } else if (OutstandingManager.isOfflineError(error)) {
+                UIManager.showToast('Internet required to record payment');
+            } else {
+                UIManager.showToast('Error: ' + error.message);
+            }
         }
     }
 
