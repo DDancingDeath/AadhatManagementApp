@@ -45,6 +45,165 @@ const col = (name) => {
 /** @type {Function[]} Array of unsubscribe functions for real-time listeners */
 const unsubscribeFunctions = [];
 
+/** @type {Array<{resolve: Function}>} First-snapshot waiters of active listeners */
+const pendingFirstSnapshots = [];
+
+/**
+ * Incremented whenever a listener changes AppState data. Used to decide
+ * whether a previously computed stock object is still current.
+ * @type {number}
+ */
+let dataVersion = 0;
+
+/** @type {{stock?: Object, version?: number}} Last stock computed by getStock() */
+let stockCache = {};
+
+const defaultMapDoc = (doc) => ({ id: doc.id, ...doc.data() });
+
+/**
+ * Applies a query snapshot to a listener's private, ordered document list.
+ * The first snapshot maps every document; later snapshots only deserialize
+ * the changed documents (docChanges indices are defined relative to the
+ * list with all prior changes applied, so sequential splicing reproduces
+ * snapshot.docs order exactly).
+ * @param {{docs: Object[], initialized: boolean}} live
+ * @param {firebase.firestore.QuerySnapshot} snapshot
+ * @returns {boolean} true if the data changed
+ * @private
+ */
+const applySnapshot = (live, snapshot) => {
+    if (!live.initialized) {
+        live.docs = snapshot.docs.map(defaultMapDoc);
+        live.initialized = true;
+        return true;
+    }
+    const changes = snapshot.docChanges();
+    if (changes.length === 0) return false;
+    changes.forEach(change => {
+        if (change.oldIndex !== -1) live.docs.splice(change.oldIndex, 1);
+        if (change.newIndex !== -1) live.docs.splice(change.newIndex, 0, defaultMapDoc(change.doc));
+    });
+    if (live.docs.length !== snapshot.size) {
+        live.docs = snapshot.docs.map(defaultMapDoc);
+    }
+    return true;
+};
+
+const isTabActive = (tabId) => !!document.getElementById(tabId)?.classList.contains('active');
+
+/**
+ * Views refreshed after data changes. `tab` is the tab the view lives in
+ * (null = always refresh). Views in hidden tabs stay pending until that
+ * tab is shown.
+ * @private
+ */
+const VIEWS = {
+    itemsList: { tab: null, run: () => window.app?.items?.render?.() },
+    billingDropdown: { tab: 'billing', run: () => window.app?.billing?.loadItemsDropdown?.() },
+    salesDropdown: { tab: 'wholesale-sales', run: () => window.app?.sales?.loadItemsDropdown?.() },
+    wholesaleHistory: { tab: 'wholesale-sales', run: () => window.app?.wholesaleSales?.renderHistory?.() },
+    history: { tab: 'history', run: () => window.app?.history?.render?.() },
+    due: { tab: 'due', run: () => window.app?.outstanding?.render?.() },
+    stockAdjustmentHistory: { tab: 'stock', run: () => window.app?.stock?.renderAdjustmentHistory?.() },
+    stockView: { tab: 'stock', run: () => window.app?.stock?.render?.() },
+    expensesHistory: { tab: 'expenses', run: () => window.app?.expenses?.renderHistory?.() },
+    financeOverview: { tab: 'finance', run: () => window.app?.finance?.calculateOverview?.() },
+    financeWithdrawals: { tab: 'finance', run: () => window.app?.finance?.renderWithdrawalHistory?.() },
+    analytics: { tab: 'analytics', run: () => window.app?.analytics?.render?.() },
+    reports: { tab: 'reports', run: () => window.app?.reports?.renderReports?.() }
+};
+
+/** Debounce window that coalesces bursts of snapshot events (ms). */
+const RENDER_DEBOUNCE_MS = 150;
+
+/** Max wait for server data at startup once cached data is available (ms). */
+const FIRST_SNAPSHOT_SERVER_WAIT_MS = 10000;
+const pendingViews = new Set();
+let stockDirty = false;
+let flushTimer = null;
+
+const runView = (name) => {
+    try {
+        VIEWS[name].run();
+    } catch (e) {
+        console.error(`View refresh error (${name}):`, e);
+    }
+};
+
+const runPendingViews = (shouldRun) => {
+    for (const name of [...pendingViews]) {
+        if (!shouldRun(VIEWS[name])) continue;
+        pendingViews.delete(name);
+        runView(name);
+    }
+};
+
+const flushPendingWork = async () => {
+    if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+    }
+    if (stockDirty) {
+        stockDirty = false;
+        try {
+            await FirebaseService.getStock();
+        } catch (e) {
+            console.error('Stock recalculation error:', e);
+        }
+    }
+    runPendingViews(view => !view.tab || isTabActive(view.tab));
+};
+
+const scheduleFlush = () => {
+    if (!flushTimer) {
+        flushTimer = setTimeout(flushPendingWork, RENDER_DEBOUNCE_MS);
+    }
+};
+
+const markDirty = (views, affectsStock) => {
+    views.forEach(v => pendingViews.add(v));
+    if (affectsStock) stockDirty = true;
+    scheduleFlush();
+};
+
+// Refresh views that went stale while their tab was hidden.
+if (typeof window !== 'undefined') {
+    window.addEventListener('aadhat:tabshown', (event) => {
+        const tabId = event.detail?.tabId;
+        if ([...pendingViews].some(name => VIEWS[name].tab === tabId)) {
+            // Run now (not debounced) so the tab never shows stale data.
+            flushPendingWork();
+        }
+    });
+}
+
+/** Users list cache for notification fan-out (avoids a query per edit). */
+const USERS_CACHE_TTL_MS = 10 * 60 * 1000;
+let usersCache = null;
+
+const getUsersForNotifications = async () => {
+    if (usersCache && Date.now() - usersCache.at < USERS_CACHE_TTL_MS) {
+        return usersCache.users;
+    }
+    const snapshot = await getDb().collection(col('users')).get();
+    const users = snapshot.docs.map(doc => ({ id: doc.id, role: doc.data().role }));
+    usersCache = { at: Date.now(), users };
+    return users;
+};
+
+/** Writes one notification per user id using batched writes. */
+const writeNotifications = async (userIds, notification) => {
+    const db = getDb();
+    const ref = db.collection(col('notifications'));
+    for (let i = 0; i < userIds.length; i += 450) {
+        const batch = db.batch();
+        userIds.slice(i, i + 450).forEach(userId => {
+            batch.set(ref.doc(), { ...notification, userId });
+        });
+        await batch.commit();
+    }
+};
+
 /**
  * Firebase Service object containing all database operations.
  * Provides methods for CRUD operations on all collections.
@@ -71,6 +230,16 @@ const FirebaseService = {
             }
         });
         unsubscribeFunctions.length = 0;
+        pendingFirstSnapshots.forEach(settle => settle.resolve());
+        pendingFirstSnapshots.length = 0;
+        if (flushTimer) {
+            clearTimeout(flushTimer);
+            flushTimer = null;
+        }
+        pendingViews.clear();
+        stockDirty = false;
+        stockCache = {};
+        dataVersion++;
     },
 
     /**
@@ -480,19 +649,27 @@ const FirebaseService = {
          * @returns {string} Item key for stock lookup
          */
         const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
+        // Lookup tables built once per call (O(I)) instead of scanning
+        // AppState.items for every event (O(E*I)). Both maps keep the FIRST
+        // catalogue entry in array order, matching Array.prototype.find.
+        const catalogueIds = new Set();
+        const idByName = new Map();
+        (AppState.items || []).forEach(i => {
+            catalogueIds.add(i.id);
+            const n = normalize(i.name);
+            if (!idByName.has(n)) idByName.set(n, i.id);
+            const h = normalize(i.hindiName);
+            if (!idByName.has(h)) idByName.set(h, i.id);
+        });
         const getItemKey = (item) => {
             if (item.itemId) {
-                const foundItem = AppState.items.find(i => i.id === item.itemId);
-                if (foundItem) return foundItem.id;
+                if (catalogueIds.has(item.itemId)) return item.itemId;
                 // itemId points to a deleted catalogue entry — fall through to
                 // name matching rather than orphaning the bucket under a stale id.
             }
             const target = normalize(item.name);
-            if (target) {
-                const foundItem = AppState.items.find(i =>
-                    normalize(i.name) === target || normalize(i.hindiName) === target
-                );
-                if (foundItem) return foundItem.id;
+            if (target && idByName.has(target)) {
+                return idByName.get(target);
             }
             // Last resort: bucket under a normalized name so different casings
             // of the same legacy item still merge together.
@@ -704,366 +881,131 @@ const FirebaseService = {
     },
 
     /**
+     * Returns the cached stock when it was computed from the current listener
+     * data (and nobody has replaced AppState.stock since); otherwise
+     * recalculates it, stores it in AppState.stock and returns it.
+     * @async
+     * @returns {Promise<Object.<string, {quantity: number, rate: number}>>}
+     */
+    async getStock() {
+        if (unsubscribeFunctions.length > 0 && stockCache.stock && stockCache.stock === AppState.stock && stockCache.version === dataVersion) {
+            return AppState.stock;
+        }
+        const version = dataVersion;
+        const stock = await this.calculateStock();
+        AppState.stock = stock;
+        stockCache = { stock, version };
+        return stock;
+    },
+
+    /**
      * Sets up real-time Firestore listeners for live data synchronization.
      * Listens to items, bills, sales, expenses, stock adjustments, and withdrawals.
-     * Updates AppState and triggers render functions when data changes.
-     * Uses window.app methods for proper module integration.
-     * @returns {void}
+     *
+     * The first snapshot of each listener populates AppState, so startup does
+     * not need a separate full-collection .get() (which would read every
+     * document twice). Later snapshots apply only docChanges() and schedule a
+     * single debounced stock recalculation + re-render of the visible tab.
+     *
+     * @returns {Promise<void>} Resolves once every data listener has delivered
+     *   its first snapshot; rejects if a required listener fails before that.
      */
     setupRealtimeListeners() {
         // Clear any existing listeners first
         this.cleanup();
 
-        // Listen to items collection
-        const unsubItems = getDb().collection(col('items')).onSnapshot(snapshot => {
-            AppState.items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            // Update item-related UI components
-            if (window.app?.items?.render) {
-                window.app.items.render();
-            }
-            if (window.app?.billing?.loadItemsDropdown) {
-                window.app.billing.loadItemsDropdown();
-            }
-            if (window.app?.sales?.loadItemsDropdown) {
-                window.app.sales.loadItemsDropdown();
-            }
-        }, error => {
-            console.error('Items listener error:', error);
+        const firstSnapshots = [];
+        const listen = (query, stateKey, label, { views = [], immediateViews = [], affectsStock = false, optional = false } = {}) => {
+            const live = { docs: [], initialized: false };
+            let settle;
+            firstSnapshots.push(new Promise((resolve, reject) => { settle = { resolve, reject }; }));
+            // If listeners are torn down before the first snapshot (e.g. logout
+            // during startup), don't leave startup waiting forever.
+            pendingFirstSnapshots.push(settle);
+            // Startup waits for server-confirmed data (like the former .get()),
+            // falling back to the offline cache when offline or the server is slow.
+            let ready = false;
+            let readyTimer = null;
+            const markReady = () => {
+                if (ready) return;
+                ready = true;
+                clearTimeout(readyTimer);
+                settle.resolve();
+            };
+            // includeMetadataChanges so the cache -> server transition is seen
+            // even when the cached data was already up to date.
+            const unsubscribe = query.onSnapshot({ includeMetadataChanges: true }, snapshot => {
+                const changed = applySnapshot(live, snapshot);
+                if (changed) {
+                    AppState[stateKey] = live.docs.slice();
+                    dataVersion++;
+                }
+                if (!ready) {
+                    // Startup computes stock and renders the initial views itself.
+                    if (!snapshot.metadata.fromCache || navigator.onLine === false) {
+                        markReady();
+                    } else if (!readyTimer) {
+                        readyTimer = setTimeout(markReady, FIRST_SNAPSHOT_SERVER_WAIT_MS);
+                    }
+                    return;
+                }
+                if (!changed) return;
+                // Index-based views (item dropdown values, item cards) must
+                // never lag behind AppState.items, so refresh them right away.
+                immediateViews.forEach(name => {
+                    pendingViews.delete(name);
+                    runView(name);
+                });
+                markDirty(views, affectsStock);
+            }, error => {
+                console.error(`${label} listener error:`, error);
+                clearTimeout(readyTimer);
+                if (!ready) {
+                    ready = true;
+                    if (optional) {
+                        AppState[stateKey] = [];
+                        settle.resolve();
+                    } else {
+                        settle.reject(error);
+                    }
+                }
+            });
+            unsubscribeFunctions.push(unsubscribe);
+        };
+
+        const db = getDb();
+        listen(db.collection(col('items')), 'items', 'Items', {
+            immediateViews: ['itemsList', 'billingDropdown', 'salesDropdown'],
+            affectsStock: true
         });
-        unsubscribeFunctions.push(unsubItems);
-        
-        // Listen to purchases collection (renamed from bills)
-        const unsubPurchases = getDb().collection(col('purchases')).orderBy('date', 'desc').onSnapshot(async snapshot => {
-            AppState.purchaseHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            // Recalculate stock when purchases change
-            try {
-                AppState.stock = await this.calculateStock();
-            } catch (e) {
-                console.error('Stock recalculation error:', e);
-            }
-            
-            // Update billing dropdown (stock availability may have changed)
-            if (window.app?.billing?.loadItemsDropdown) {
-                window.app.billing.loadItemsDropdown();
-            }
-            if (window.app?.sales?.loadItemsDropdown) {
-                window.app.sales.loadItemsDropdown();
-            }
-            
-            // Update history view if visible
-            if (window.app?.history?.render) {
-                const historyTab = document.getElementById('history');
-                if (historyTab && historyTab.style.display !== 'none') {
-                    window.app.history.render();
-                }
-            }
-            
-            // Update outstanding dues
-            if (window.app?.outstanding?.render) {
-                const dueTab = document.getElementById('due');
-                if (dueTab && dueTab.style.display !== 'none') {
-                    window.app.outstanding.render();
-                }
-            }
-            
-            // Update stock view if visible
-            if (window.app?.stock?.render) {
-                const stockTab = document.getElementById('stock');
-                if (stockTab && stockTab.style.display !== 'none') {
-                    window.app.stock.render();
-                }
-            }
-            
-            // Update finance overview if visible
-            if (window.app?.finance?.calculateOverview) {
-                const financeTab = document.getElementById('finance');
-                if (financeTab && financeTab.style.display !== 'none') {
-                    window.app.finance.calculateOverview();
-                }
-            }
-            
-            // Update analytics if visible
-            if (window.app?.analytics?.render) {
-                const analyticsTab = document.getElementById('analytics');
-                if (analyticsTab && analyticsTab.style.display !== 'none') {
-                    window.app.analytics.render();
-                }
-            }
-            
-            // Update reports if visible
-            if (window.app?.reports?.renderReports) {
-                const reportsTab = document.getElementById('reports');
-                if (reportsTab && reportsTab.style.display !== 'none') {
-                    window.app.reports.renderReports();
-                }
-            }
-        }, error => {
-            console.error('Purchases listener error:', error);
+        listen(db.collection(col('purchases')).orderBy('date', 'desc'), 'purchaseHistory', 'Purchases', {
+            views: ['billingDropdown', 'salesDropdown', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'],
+            affectsStock: true
         });
-        unsubscribeFunctions.push(unsubPurchases);
-        
-        // Listen to retail sales collection
-        const unsubRetailSales = getDb().collection(col('retailSales')).orderBy('date', 'desc').onSnapshot(async snapshot => {
-            AppState.retailSalesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            // Recalculate stock when retail sales change
-            try {
-                AppState.stock = await this.calculateStock();
-            } catch (e) {
-                console.error('Stock recalculation error:', e);
-            }
-            
-            // Update billing/sales dropdowns (stock availability changed)
-            if (window.app?.billing?.loadItemsDropdown) {
-                window.app.billing.loadItemsDropdown();
-            }
-            
-            // Update history view if visible
-            if (window.app?.history?.render) {
-                const historyTab = document.getElementById('history');
-                if (historyTab && historyTab.style.display !== 'none') {
-                    window.app.history.render();
-                }
-            }
-            
-            // Update outstanding dues
-            if (window.app?.outstanding?.render) {
-                const dueTab = document.getElementById('due');
-                if (dueTab && dueTab.style.display !== 'none') {
-                    window.app.outstanding.render();
-                }
-            }
-            
-            // Update stock view if visible
-            if (window.app?.stock?.render) {
-                const stockTab = document.getElementById('stock');
-                if (stockTab && stockTab.style.display !== 'none') {
-                    window.app.stock.render();
-                }
-            }
-            
-            // Update finance overview if visible
-            if (window.app?.finance?.calculateOverview) {
-                const financeTab = document.getElementById('finance');
-                if (financeTab && financeTab.style.display !== 'none') {
-                    window.app.finance.calculateOverview();
-                }
-            }
-            
-            // Update analytics if visible
-            if (window.app?.analytics?.render) {
-                const analyticsTab = document.getElementById('analytics');
-                if (analyticsTab && analyticsTab.style.display !== 'none') {
-                    window.app.analytics.render();
-                }
-            }
-            
-            // Update reports if visible
-            if (window.app?.reports?.renderReports) {
-                const reportsTab = document.getElementById('reports');
-                if (reportsTab && reportsTab.style.display !== 'none') {
-                    window.app.reports.renderReports();
-                }
-            }
-        }, error => {
-            console.error('Retail sales listener error:', error);
+        listen(db.collection(col('retailSales')).orderBy('date', 'desc'), 'retailSalesHistory', 'Retail sales', {
+            views: ['billingDropdown', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'],
+            affectsStock: true
         });
-        unsubscribeFunctions.push(unsubRetailSales);
-        
-        // Listen to wholesale sales collection
-        const unsubSales = getDb().collection(col('wholesaleSales')).orderBy('date', 'desc').onSnapshot(async snapshot => {
-            AppState.salesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            // Recalculate stock when sales change
-            try {
-                AppState.stock = await this.calculateStock();
-            } catch (e) {
-                console.error('Stock recalculation error:', e);
-            }
-            
-            // Update billing/sales dropdowns (stock availability changed)
-            if (window.app?.billing?.loadItemsDropdown) {
-                window.app.billing.loadItemsDropdown();
-            }
-            if (window.app?.sales?.loadItemsDropdown) {
-                window.app.sales.loadItemsDropdown();
-            }
-            
-            // Update wholesale sales tab if visible
-            if (window.app?.wholesaleSales?.renderHistory) {
-                const wholesaleTab = document.getElementById('wholesale-sales');
-                if (wholesaleTab && wholesaleTab.style.display !== 'none') {
-                    window.app.wholesaleSales.renderHistory();
-                }
-            }
-            
-            // Update history view if visible (sales tab)
-            if (window.app?.history?.render) {
-                const historyTab = document.getElementById('history');
-                if (historyTab && historyTab.style.display !== 'none') {
-                    window.app.history.render();
-                }
-            }
-            
-            // Update outstanding dues
-            if (window.app?.outstanding?.render) {
-                const dueTab = document.getElementById('due');
-                if (dueTab && dueTab.style.display !== 'none') {
-                    window.app.outstanding.render();
-                }
-            }
-            
-            // Update stock view if visible
-            if (window.app?.stock?.render) {
-                const stockTab = document.getElementById('stock');
-                if (stockTab && stockTab.style.display !== 'none') {
-                    window.app.stock.render();
-                }
-            }
-            
-            // Update finance overview if visible
-            if (window.app?.finance?.calculateOverview) {
-                const financeTab = document.getElementById('finance');
-                if (financeTab && financeTab.style.display !== 'none') {
-                    window.app.finance.calculateOverview();
-                }
-            }
-            
-            // Update analytics if visible
-            if (window.app?.analytics?.render) {
-                const analyticsTab = document.getElementById('analytics');
-                if (analyticsTab && analyticsTab.style.display !== 'none') {
-                    window.app.analytics.render();
-                }
-            }
-            
-            // Update reports if visible
-            if (window.app?.reports?.renderReports) {
-                const reportsTab = document.getElementById('reports');
-                if (reportsTab && reportsTab.style.display !== 'none') {
-                    window.app.reports.renderReports();
-                }
-            }
-        }, error => {
-            console.error('Sales listener error:', error);
+        listen(db.collection(col('wholesaleSales')).orderBy('date', 'desc'), 'salesHistory', 'Sales', {
+            views: ['billingDropdown', 'salesDropdown', 'wholesaleHistory', 'history', 'due', 'stockView', 'financeOverview', 'analytics', 'reports'],
+            affectsStock: true
         });
-        unsubscribeFunctions.push(unsubSales);
-        
-        // Listen to expenses collection
-        const unsubExpenses = getDb().collection(col('expenses')).orderBy('date', 'desc').onSnapshot(snapshot => {
-            AppState.expensesHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            // Update expenses view if visible
-            if (window.app?.expenses?.renderHistory) {
-                const expensesTab = document.getElementById('expenses');
-                if (expensesTab && expensesTab.style.display !== 'none') {
-                    window.app.expenses.renderHistory();
-                }
-            }
-            
-            // Update finance overview if visible
-            if (window.app?.finance?.calculateOverview) {
-                const financeTab = document.getElementById('finance');
-                if (financeTab && financeTab.style.display !== 'none') {
-                    window.app.finance.calculateOverview();
-                }
-            }
-            
-            // Update analytics if visible (expenses affect profit calculations)
-            if (window.app?.analytics?.render) {
-                const analyticsTab = document.getElementById('analytics');
-                if (analyticsTab && analyticsTab.style.display !== 'none') {
-                    window.app.analytics.render();
-                }
-            }
-            
-            // Update reports if visible
-            if (window.app?.reports?.renderReports) {
-                const reportsTab = document.getElementById('reports');
-                if (reportsTab && reportsTab.style.display !== 'none') {
-                    window.app.reports.renderReports();
-                }
-            }
-        }, error => {
-            console.error('Expenses listener error:', error);
+        listen(db.collection(col('expenses')).orderBy('date', 'desc'), 'expensesHistory', 'Expenses', {
+            views: ['expensesHistory', 'financeOverview', 'analytics', 'reports']
         });
-        unsubscribeFunctions.push(unsubExpenses);
-        
-        // Listen to stock adjustments collection
-        const unsubStockAdj = getDb().collection(col('stockAdjustments')).orderBy('date', 'desc').onSnapshot(async snapshot => {
-            AppState.stockAdjustments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            // Recalculate stock when adjustments change
-            try {
-                AppState.stock = await this.calculateStock();
-            } catch (e) {
-                console.error('Stock recalculation error:', e);
-            }
-            
-            // Update stock adjustment history if visible
-            if (window.app?.stock?.renderAdjustmentHistory) {
-                const stockTab = document.getElementById('stock');
-                if (stockTab && stockTab.style.display !== 'none') {
-                    window.app.stock.renderAdjustmentHistory();
-                    window.app.stock.render();
-                }
-            }
-        }, error => {
-            console.error('Stock adjustments listener error:', error);
+        listen(db.collection(col('stockAdjustments')).orderBy('date', 'desc'), 'stockAdjustments', 'Stock adjustments', {
+            views: ['stockAdjustmentHistory', 'stockView'],
+            affectsStock: true
         });
-        unsubscribeFunctions.push(unsubStockAdj);
-        
-        // Listen to withdrawals collection
-        const unsubWithdrawals = getDb().collection(col('withdrawals')).orderBy('date', 'desc').onSnapshot(snapshot => {
-            AppState.withdrawalsHistory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            // Update finance view if visible
-            if (window.app?.finance?.calculateOverview) {
-                const financeTab = document.getElementById('finance');
-                if (financeTab && financeTab.style.display !== 'none') {
-                    window.app.finance.calculateOverview();
-                }
-            }
-            if (window.app?.finance?.renderWithdrawalHistory) {
-                const financeTab = document.getElementById('finance');
-                if (financeTab && financeTab.style.display !== 'none') {
-                    window.app.finance.renderWithdrawalHistory();
-                }
-            }
-        }, error => {
-            console.error('Withdrawals listener error:', error);
+        listen(db.collection(col('withdrawals')).orderBy('date', 'desc'), 'withdrawalsHistory', 'Withdrawals', {
+            views: ['financeOverview', 'financeWithdrawals'],
+            optional: true
         });
-        unsubscribeFunctions.push(unsubWithdrawals);
-        
-        // Listen to cash sessions collection
-        const unsubCashSessions = getDb().collection(col('cashSessions')).orderBy('date', 'desc').onSnapshot(snapshot => {
-            // Update cash management if visible
-            if (window.app?.cashManagement?.init) {
-                const cashTab = document.getElementById('cashManagement');
-                if (cashTab && cashTab.style.display !== 'none') {
-                    window.app.cashManagement.loadTodaySession();
-                    window.app.cashManagement.renderHistory();
-                }
-            }
-        }, error => {
-            console.error('Cash sessions listener error:', error);
-        });
-        unsubscribeFunctions.push(unsubCashSessions);
-        
-        // Listen to users collection (for owner to see new registrations)
-        const unsubUsers = getDb().collection(col('users')).orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-            // Update users management view if visible (owner only)
-            if (AppState.userRole === 'owner' && window.app?.users?.loadUsers) {
-                const usersTab = document.getElementById('users');
-                if (usersTab && usersTab.style.display !== 'none') {
-                    window.app.users.loadUsers();
-                }
-            }
-        }, error => {
-            console.error('Users listener error:', error);
-        });
-        unsubscribeFunctions.push(unsubUsers);
+
+        // Note: the former `cashSessions` and `users` listeners were removed.
+        // Their callbacks targeted a non-existent element id / app method and
+        // never did anything, yet each re-read its whole collection on every
+        // app open.
         
         // Listen to notifications for current user (rate changes, etc.)
         if (AppState.currentUser?.uid) {
@@ -1122,6 +1064,8 @@ const FirebaseService = {
         } else {
             console.warn('No currentUser.uid, skipping notifications listener');
         }
+
+        return Promise.all(firstSnapshots).then(() => undefined);
     },
 
     /**
@@ -1136,8 +1080,8 @@ const FirebaseService = {
      */
     async notifyOwnersOfEdit(type, docId, oldData, newData) {
         try {
-            const usersSnapshot = await getDb().collection(col('users')).where('role', '==', 'owner').get();
-            const ownerIds = usersSnapshot.docs.map(doc => doc.id);
+            const users = await getUsersForNotifications();
+            const ownerIds = users.filter(u => u.role === 'owner').map(u => u.id);
             
             const notification = {
                 type: 'edit',
@@ -1151,12 +1095,7 @@ const FirebaseService = {
                 read: false
             };
             
-            for (const ownerId of ownerIds) {
-                await getDb().collection(col('notifications')).add({
-                    ...notification,
-                    userId: ownerId
-                });
-            }
+            await writeNotifications(ownerIds, notification);
         } catch (error) {
             console.error('Error notifying owners:', error);
         }
@@ -1166,6 +1105,7 @@ const FirebaseService = {
      * Notifies all users when an item rate is changed.
      * Creates notification documents for all users in the notifications collection.
      * Note: Wholesale rate changes only notify owners/managers (staff can't see wholesale rates)
+     * Callers need not await this; it never rejects.
      * @async
      * @param {Object} item - The item with changed rate
      * @param {string} rateType - Type of rate ('purchase', 'sale', 'wholesale')
@@ -1175,24 +1115,11 @@ const FirebaseService = {
      */
     async notifyRateChange(item, rateType, oldRate, newRate) {
         try {
-            // Get users based on rate type
             // Wholesale rates are only visible to owners/managers, so don't notify staff
-            let usersQuery;
-            if (rateType === 'wholesale') {
-                // Only notify owners and managers for wholesale rate changes
-                const ownersSnapshot = await getDb().collection(col('users')).where('role', '==', 'owner').get();
-                const managersSnapshot = await getDb().collection(col('users')).where('role', '==', 'manager').get();
-                const userIds = [
-                    ...ownersSnapshot.docs.map(doc => doc.id),
-                    ...managersSnapshot.docs.map(doc => doc.id)
-                ];
-                usersQuery = { docs: userIds.map(id => ({ id })) };
-            } else {
-                // Notify all users for purchase and sale rate changes
-                usersQuery = await getDb().collection(col('users')).get();
-            }
-            
-            const userIds = usersQuery.docs ? usersQuery.docs.map(doc => doc.id) : [];
+            const users = await getUsersForNotifications();
+            const recipients = rateType === 'wholesale'
+                ? users.filter(u => u.role === 'owner' || u.role === 'manager')
+                : users;
             
             const rateTypeLabels = {
                 'purchase': 'Purchase',
@@ -1215,22 +1142,11 @@ const FirebaseService = {
                 read: false
             };
             
-            console.log(`Notifying ${userIds.length} users about rate change, excluding current user: ${AppState.currentUser?.uid}`);
-            
             // Notify all relevant users except the one who made the change
-            let notifiedCount = 0;
-            for (const userId of userIds) {
-                if (userId !== AppState.currentUser?.uid) {
-                    await getDb().collection(col('notifications')).add({
-                        ...notification,
-                        userId: userId
-                    });
-                    notifiedCount++;
-                    console.log(`Notification saved for user: ${userId}`);
-                }
-            }
+            const userIds = recipients.map(u => u.id).filter(id => id !== AppState.currentUser?.uid);
+            await writeNotifications(userIds, notification);
             
-            console.log(`Rate change notification sent to ${notifiedCount} users: ${item.name} ${rateType} rate: ₹${oldRate} → ₹${newRate}`);
+            console.log(`Rate change notification sent to ${userIds.length} users: ${item.name} ${rateType} rate: ₹${oldRate} → ₹${newRate}`);
         } catch (error) {
             console.error('Error notifying rate change:', error);
         }

@@ -125,8 +125,21 @@ function setupEventListeners() {
     });
 }
 
-// Load user data and initialize app
-async function loadUserDataAndInitialize() {
+// Load user data and initialize app.
+// Login triggers this twice (onAuthStateChanged + AuthManager.handleLogin);
+// share one in-flight run so data isn't loaded (and billed) twice and the
+// second run's listener reset can't strand the first.
+let initInFlight = null;
+function loadUserDataAndInitialize() {
+    if (!initInFlight) {
+        initInFlight = initializeUserData().finally(() => {
+            initInFlight = null;
+        });
+    }
+    return initInFlight;
+}
+
+async function initializeUserData() {
     UIManager.showLoading();
     
     try {
@@ -171,34 +184,24 @@ async function loadUserDataAndInitialize() {
             }
         }
         
-        // Load all data from Firestore
-        const [items, purchases, wholesaleSales, retailSales, payments, stockAdjustments, withdrawals] = await Promise.all([
-            FirebaseService.loadItems(),
-            FirebaseService.loadPurchases(),
-            FirebaseService.loadSales(),
-            FirebaseService.loadRetailSales(),
-            FirebaseService.loadExpenses(),
-            FirebaseService.loadStockAdjustments(),
-            FirebaseService.loadWithdrawals(),
-            BillingManager.loadItemFrequency()
-        ]);
-        
-        AppState.items = items;
-        AppState.purchaseHistory = purchases;
-        AppState.salesHistory = wholesaleSales;
-        AppState.retailSalesHistory = retailSales;
-        AppState.expensesHistory = payments;
-        AppState.stockAdjustments = stockAdjustments;
-        AppState.withdrawalsHistory = withdrawals;
+        // Attach real-time listeners. Their first snapshots populate AppState,
+        // so every document is read once per app open (a separate .get() of
+        // each collection would read everything a second time).
+        try {
+            await Promise.all([
+                FirebaseService.setupRealtimeListeners(),
+                BillingManager.loadItemFrequency()
+            ]);
+        } catch (loadError) {
+            FirebaseService.cleanup();
+            throw loadError;
+        }
         
         // Calculate stock
-        AppState.stock = await FirebaseService.calculateStock();
+        await FirebaseService.getStock();
         
         // Initialize billing manager (connects purchase and retail-sale modules)
         BillingManager.init();
-        
-        // Set up real-time listeners
-        FirebaseService.setupRealtimeListeners();
         
         // Show app content
         const appContent = document.getElementById('appContent');
