@@ -233,6 +233,8 @@ const CHECKPOINT_DOC_ID = 'current';
 const LEGACY_SCAN_DOC_ID = 'legacyScan';
 /** Keep scanning a collection for timestamp-less docs this long after old clients last wrote one. */
 const LEGACY_RESCAN_MS = 14 * DAY_MS;
+/** ...but at most once per this interval across all devices. */
+const LEGACY_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 /** Bump when the legacy backfill learns a new field (2: openDue). */
 const LEGACY_SCAN_VERSION = 2;
 /** Owner/manager devices fully rebuild a checkpoint older than this (bounds drift from deletes by outdated apps). */
@@ -812,7 +814,10 @@ const legacyScanRef = () => getDb().collection(col(CHECKPOINT_COLLECTION)).doc(L
 /** Whether a collection may still hold documents without a numeric timestamp (old clients). */
 const needsLegacyScan = (key) => {
     const e = legacyScanDoc?.[key];
-    return !e || e.v !== LEGACY_SCAN_VERSION || e.complete !== true || Date.now() - (e.foundAt || 0) < LEGACY_RESCAN_MS;
+    if (!e || e.v !== LEGACY_SCAN_VERSION || e.complete !== true) return true;
+    // While outdated apps may still be writing, one device re-scans every few hours; its
+    // backfill makes those documents visible to every device's window listener.
+    return Date.now() - (e.foundAt || 0) < LEGACY_RESCAN_MS && Date.now() - (e.at || 0) > LEGACY_SCAN_INTERVAL_MS;
 };
 
 /**

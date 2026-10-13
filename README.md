@@ -80,7 +80,7 @@ Each app open reads only recent data (see the section comment above `HISTORY_COL
 
 - History collections are listened to from the 1st of the previous month (`timestamp >= liveFrom`); older bills with money due come from one listener per bill collection (`openDue == true && timestamp < liveFrom`). Older history is loaded on demand (`FirebaseService.ensureHistoryFrom()` / `loadOlderHistory()`).
 - Stock = `stockCheckpoints/current` (running stock before `asOf`) + replay of newer events; identical to a full replay. Only **owner/manager** devices rebuild it (full read: when missing/stale, and at least weekly) or roll it forward. Staff devices never write it; while it is stale they load full history instead (correct but costs a full read per open until an owner/manager opens the app).
-- Every stock-record write sets `clientVersion: 3`, bills also `openDue`, `timestamp`. Documents written by older app versions without `timestamp` are found by an unfiltered scan (while `stockCheckpoints/legacyScan` says so) and backfilled.
+- Every stock-record write sets `clientVersion: 3`, bills also `openDue`, `timestamp`. Documents written by older app versions without `timestamp` are found by an unfiltered scan and backfilled (`stockCheckpoints/legacyScan`: until complete, then by one device at most every 6 h for 14 days after an outdated app last wrote one).
 - Optional: set `settings/app.minClientVersion` to make older apps show "Please update the app".
 
 **Deployment order (CI never deploys rules/indexes):**
