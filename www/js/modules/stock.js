@@ -46,9 +46,10 @@ export class StockManager {
         this.hideAdjustmentTabForStaff();
 
         try {
-            // Use withLoading for the Firebase operation
+            // Reuse the stock computed by the data listeners when it is still
+            // current; only recalculate when the underlying data changed.
             const stock = await UIManager.withLoading(async () => {
-                return await FirebaseService.calculateStock();
+                return await FirebaseService.getStock();
             });
             AppState.stock = stock;
 
@@ -72,15 +73,30 @@ export class StockManager {
             // data discrepancies (e.g. a sale stored under a deleted item, or
             // a name typo) instead of seeing wrong totals.
             const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
+            // Index the catalogue once; a key resolves to the first item (in
+            // array order) whose id equals the key or whose normalized
+            // name/hindiName equals the normalized key — same as the former
+            // per-key AppState.items.find().
+            const indexById = new Map();
+            const indexByName = new Map();
+            AppState.items.forEach((i, idx) => {
+                if (!indexById.has(i.id)) indexById.set(i.id, idx);
+                const n = normalize(i.name);
+                if (!indexByName.has(n)) indexByName.set(n, idx);
+                const h = normalize(i.hindiName);
+                if (!indexByName.has(h)) indexByName.set(h, idx);
+            });
+            const findCatalogueItem = (key) => {
+                const byId = indexById.has(key) ? indexById.get(key) : Infinity;
+                const nk = normalize(key);
+                const byName = indexByName.has(nk) ? indexByName.get(nk) : Infinity;
+                const idx = Math.min(byId, byName);
+                return idx === Infinity ? undefined : AppState.items[idx];
+            };
             const consolidatedStock = {};
             const orphanKeys = [];
             Object.keys(stock).forEach(key => {
-                const normalizedKey = normalize(key);
-                const item = AppState.items.find(i =>
-                    i.id === key ||
-                    normalize(i.name) === normalizedKey ||
-                    normalize(i.hindiName) === normalizedKey
-                );
+                const item = findCatalogueItem(key);
 
                 if (!item) {
                     // Orphan: render under its raw key so the data stays visible.
@@ -512,8 +528,9 @@ export class StockManager {
         if (!container) return;
 
         try {
-            const adjustments = await FirebaseService.loadStockAdjustments();
-            AppState.stockAdjustments = adjustments;
+            // Kept current by the real-time listener; no need to re-read the
+            // whole collection on every render.
+            const adjustments = [...(AppState.stockAdjustments || [])];
             
             // Sort by timestamp/date (newest first)
             adjustments.sort((a, b) => {

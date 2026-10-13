@@ -19,6 +19,22 @@ const MAX_LOCAL_ERRORS = 50;
 const SYNC_DEBOUNCE = 5000;
 
 /**
+ * Pause after a failed sync before writing again (ms); doubles on each
+ * consecutive failure up to MAX_SYNC_BACKOFF.
+ * @constant {number}
+ */
+const SYNC_BACKOFF = 60 * 1000;
+const MAX_SYNC_BACKOFF = 60 * 60 * 1000;
+
+/**
+ * Errors caused by Firestore being unavailable/over quota. Reporting them
+ * to Firestore would only fail again (or burn more quota), so they are
+ * not captured.
+ * @constant {RegExp}
+ */
+const FIRESTORE_UNAVAILABLE_PATTERN = /resource-exhausted|quota exceeded|RESOURCE_EXHAUSTED/i;
+
+/**
  * Telemetry Service - Captures and stores application errors
  * @namespace TelemetryService
  */
@@ -40,6 +56,18 @@ const TelemetryService = {
      * @type {boolean}
      */
     initialized: false,
+
+    /**
+     * No sync attempts before this time (ms epoch) after failures
+     * @type {number}
+     */
+    backoffUntil: 0,
+
+    /**
+     * Current backoff duration (ms)
+     * @type {number}
+     */
+    backoffMs: 0,
 
     /**
      * Get Firestore database reference
@@ -138,6 +166,9 @@ const TelemetryService = {
      * @param {Object} errorData - Error data
      */
     captureError(errorData) {
+        if (FIRESTORE_UNAVAILABLE_PATTERN.test(String(errorData?.message || ''))) {
+            return;
+        }
         const error = {
             ...errorData,
             timestamp: Date.now(),
@@ -193,7 +224,8 @@ const TelemetryService = {
         if (this.syncTimer) {
             clearTimeout(this.syncTimer);
         }
-        this.syncTimer = setTimeout(() => this.syncToFirestore(), SYNC_DEBOUNCE);
+        const delay = Math.max(SYNC_DEBOUNCE, this.backoffUntil - Date.now());
+        this.syncTimer = setTimeout(() => this.syncToFirestore(), delay);
     },
 
     /**
@@ -202,13 +234,16 @@ const TelemetryService = {
     async syncToFirestore() {
         if (this.errorBuffer.length === 0) return;
         if (!AppState.currentUser) return;
+        if (Date.now() < this.backoffUntil) {
+            this.schedulSync();
+            return;
+        }
 
-        const errorsToSync = [...this.errorBuffer];
+        let errorsToSync = [...this.errorBuffer];
         this.errorBuffer = [];
 
         try {
             const db = this.getDb();
-            const batch = db.batch();
 
             // Group errors by fingerprint
             const grouped = {};
@@ -234,31 +269,43 @@ const TelemetryService = {
                 }
             });
 
-            // Upsert each grouped error
-            for (const [fingerprint, errorData] of Object.entries(grouped)) {
+            // Upsert each grouped error without reading it first: try an
+            // increment-update, and create the document only if it doesn't
+            // exist yet (update fails with 'not-found').
+            const entries = Object.entries(grouped);
+            const results = await Promise.allSettled(entries.map(async ([fingerprint, errorData]) => {
                 const docRef = db.collection(this.col('telemetry')).doc(fingerprint);
-                
-                // Try to get existing doc
-                const existing = await docRef.get();
-                if (existing.exists) {
-                    const data = existing.data();
-                    batch.update(docRef, {
+                try {
+                    await docRef.update({
                         count: firebase.firestore.FieldValue.increment(errorData.count),
                         lastSeen: errorData.lastSeen,
                         occurrences: firebase.firestore.FieldValue.arrayUnion(...errorData.occurrences.slice(-5))
                     });
-                } else {
-                    batch.set(docRef, {
+                } catch (error) {
+                    if (error?.code !== 'not-found') throw error;
+                    await docRef.set({
                         ...errorData,
                         firstSeen: errorData.timestamp
                     });
                 }
-            }
+            }));
 
-            await batch.commit();
+            const failedFingerprints = new Set(entries
+                .filter((entry, i) => results[i].status === 'rejected')
+                .map(([fingerprint]) => fingerprint));
+            if (failedFingerprints.size > 0) {
+                // Only the failed groups need to be retried later
+                errorsToSync = errorsToSync.filter(e => failedFingerprints.has(e.fingerprint));
+                throw results.find(r => r.status === 'rejected').reason;
+            }
+            this.backoffMs = 0;
+            this.backoffUntil = 0;
         } catch (error) {
             // Don't recursively log telemetry errors
-            console.warn('Telemetry sync failed:', error.message);
+            console.warn('Telemetry sync failed:', error?.message);
+            // Back off so a failing/over-quota Firestore isn't hammered
+            this.backoffMs = Math.min(this.backoffMs ? this.backoffMs * 2 : SYNC_BACKOFF, MAX_SYNC_BACKOFF);
+            this.backoffUntil = Date.now() + this.backoffMs;
             // Re-add errors to buffer
             this.errorBuffer = [...errorsToSync, ...this.errorBuffer].slice(0, MAX_LOCAL_ERRORS);
         }
