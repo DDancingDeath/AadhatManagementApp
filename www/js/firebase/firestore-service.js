@@ -1346,6 +1346,20 @@ const FirebaseService = {
     },
 
     /**
+     * Deletes a purchase / retail sale / wholesale sale shown in History, using its real
+     * Firestore document id (legacy docs may have an `id` field that differs from it).
+     * @param {'purchases'|'retailSales'|'wholesaleSales'} collKey
+     * @param {Object} bill - Record from the AppState history array
+     */
+    async deleteHistoryBill(collKey, bill) {
+        const docId = docIdOf(bill);
+        if (collKey === 'purchases') return this.deletePurchase(docId);
+        if (collKey === 'retailSales') return this.deleteRetailSale(docId);
+        if (collKey === 'wholesaleSales') return this.deleteWholesaleSale(docId);
+        throw new Error(`Unknown history collection: ${collKey}`);
+    },
+
+    /**
      * Loads all expenses from Firestore, ordered by date descending.
      * @async
      * @returns {Promise<Array<Object>>} Array of expense objects

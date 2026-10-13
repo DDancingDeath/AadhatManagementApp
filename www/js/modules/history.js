@@ -681,23 +681,19 @@ export class HistoryManager {
         }
 
         try {
+            // Previously only the bill's creator could delete it (others failed silently);
+            // keep that, and also allow owners
+            const uid = AppState.currentUser?.uid;
+            if (bill.userId && bill.userId !== uid && AppState.userRole !== 'owner') {
+                this.closeBillDetails();
+                UIManager.showToast('Only the person who created this bill or an owner can delete it');
+                return;
+            }
+
             UIManager.showLoading();
             
-            // Delete from Firebase
-            const userId = AppState.currentUser?.uid;
-            if (userId) {
-                const snapshot = await db.collection(collectionName)
-                    .where('userId', '==', userId)
-                    .where('timestamp', '==', bill.timestamp || bill.id)
-                    .get();
-                
-                // Delete all matching documents
-                const batch = db.batch();
-                snapshot.docs.forEach(doc => {
-                    batch.delete(doc.ref);
-                });
-                await batch.commit();
-            }
+            // Delete from Firebase by document id (the old query also ignored the dev_ prefix)
+            await FirebaseService.deleteHistoryBill(collectionName, bill);
             
             // Remove from local state (re-resolve: the array may have changed during the await)
             const currentIndex = history.indexOf(bill);
