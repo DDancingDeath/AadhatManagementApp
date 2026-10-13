@@ -28,8 +28,9 @@ and is wrapped in **Capacitor** for Android distribution.
    site and the Android build. Treat every change like a security patch:
    small, reviewed, reversible.
 2. **Never bypass `FirebaseService`.** All Firestore reads/writes must go
-   through the wrapper so collection prefixing (`prod_*` / `staging_*`)
-   stays correct. Several existing modules bypass it — those are bugs, not
+   through the wrapper (or `window.getCollection(name)`) so collection
+   prefixing stays correct: production uses unprefixed names (`purchases`),
+   development (localhost) uses `dev_` (`dev_purchases`). Several existing modules bypass it — those are bugs, not
    patterns to copy.
 3. **Don't add a build step or framework.** No webpack, no Vite, no React.
    Inline `<script>` tags + `window.app` globals are a deliberate choice and
@@ -37,14 +38,17 @@ and is wrapped in **Capacitor** for Android distribution.
 4. **Don't rename existing files casually.** Inline `onclick="window.app.x.y()"`
    handlers and `template-loader.js` reference paths and method names by
    exact string.
-5. **Always run `npm install --legacy-peer-deps`.** `canvas@^3.2.0` peer-
-   conflicts with `jest-environment-jsdom`. The dependency itself is unused
-   and slated for removal — until then, the legacy-peer-deps flag is
-   mandatory.
+5. **Install with `npm ci`** (CI uses `npm ci --legacy-peer-deps`; use that
+   flag if you hit a `canvas` / `jest-environment-jsdom` peer conflict).
+   Run `npm test` (Jest) and, after touching `firestore.rules`,
+   `npm run test:rules` (Firestore emulator; needs Java and
+   `cd rules-tests && npm install` once).
 6. **Money-related changes get extra care.** Bills mix top-level
    `dueAmount` with nested `payment.due`. Both can drift; both must be
-   read/written. Cash-management adjustments hit balance + audit log; both
-   must succeed atomically.
+   read/written — use `readPayment()` / `round2()` from
+   `www/js/utils/money.js`. Multi-device updates to the same document
+   (payments, cash sessions, counters) must use transactions, `arrayUnion`
+   or `FieldValue.increment`, never read-modify-write of the whole doc.
 7. **No secrets in the repo.** API keys belong in Firebase Functions config
    (`firebase functions:config:set`), not in any source file.
 
@@ -75,7 +79,7 @@ In order:
 | `printer.js` (modules) | `www/js/services/printer.js` |
 | `wholesaleSalesHistory` | `AppState.salesHistory` (just "salesHistory" means **wholesale** here) |
 | `retailSalesHistory` | `AppState.retailSalesHistory` (this one's normal) |
-| `chat.js` | does not exist in prod — the AI Assistant tab is wired but not implemented (a real chat module ships from the staging clone) |
+| `chat.js` | does not exist in this repo — `templates/chat.html` exists but no chat module is wired |
 | `bottom-nav.html` | doesn't exist — the "bottom" tabs are the bottom of the side nav in `navigation.html` |
 
 ### Conventions
@@ -84,15 +88,25 @@ In order:
   `window.app.*`. To expose a new module method to the UI, register it in
   `main.js` — never assume `app` (without `window.`) resolves correctly
   from an inline handler. (`firebaseConfig.js` used to declare
-  `let app = firebase.initializeApp(...)` at module top-level which
-  shadowed `window.app` for inline handlers; the staging clone fixed this
-  by renaming to `firebaseApp`.)
+  `let app = firebase.initializeApp(...)` at top level, which shadowed
+  `window.app` for inline handlers; it is now `firebaseApp` and
+  `firebase-app-shadow.test.js` guards against regressions.)
 - **All Firestore access goes through `FirebaseService`** so collection
   names get the env prefix.
 - **Templates live in `www/templates/`**. They are loaded by
   `template-loader.js` on demand and inserted into the SPA shell.
 - **Date strings**: bills mix ISO-8601 and `DD/MM/YYYY`. Use
-  `Helpers.parseDate()` — never raw `new Date(string)`.
+  `www/js/utils/dates.js` (`parseAnyBillDate`, `todayLocalISO`,
+  `parseLocalDate`) or `Helpers.parseDate()` — never raw
+  `new Date('YYYY-MM-DD')` or `toISOString().split('T')[0]` (UTC shifts the
+  day in IST).
+- **Escaping**: any Firestore/user text inserted via `innerHTML` must go
+  through `Helpers.escapeHtml()`; values inside `onclick="fn('…')"` need
+  `Helpers.escapeJsAttr()`.
+- **Service worker**: every app JS/CSS/template file must be listed in
+  `STATIC_ASSETS` in `www/service-worker.js` (`npm run check:sw`; a test
+  enforces it). Bump the `?v=` tokens in `index.html`, `BUILD_ID` in
+  `main.js` and `CACHE_NAME` in `service-worker.js` together when shipping.
 - **Money fields**: bills sometimes store `dueAmount` at top level *and*
   `payment.due` inside a nested object. Both can exist; both can drift.
   Read both, write both, treat the nested one as canonical when present.
@@ -101,7 +115,8 @@ In order:
 
 ### Things that look wrong but aren't
 
-- The `xlsx` global pollution warning in tests is expected (SheetJS).
+- SheetJS (`XLSX`) is loaded on demand via `ensureXLSX()` in
+  `www/js/utils/lazy-scripts.js`; don't add it back as a `<script>` tag.
 - `firebase` global is the compat-SDK style — modular SDK is intentionally
   not used.
 - Many functions are async but don't await — that's a real bug, but
@@ -117,8 +132,8 @@ In order:
    `docs/REVIEW_ISSUES.md` (most known bugs already are). If it isn't,
    add it there *first* — that file is the running master list.
 2. Make the change in `www/js/...`.
-3. Run `npm install --legacy-peer-deps && npm test`. Baseline must stay
-   green.
+3. Run `npm ci && npm test` (plus `npm run test:rules` for rules changes).
+   Baseline must stay green.
 4. Commit with a message like
    `fix(stock): refresh current-stock pane after adjustment (REVIEW_ISSUES WALK-25)`.
 5. Open a PR. Don't merge to `main` directly — Firebase Hosting auto-deploys
@@ -145,10 +160,11 @@ A separate private repo (`AadhatManagementApp-staging`) exists as a
 read-only safety mirror. It:
 
 - Connects to the same Firebase project (`aadhat-management`).
-- Cannot write to Firestore — three layers of write-blocking enforce this:
-  (1) a JS guard that monkey-patches the SDK, (2) a service worker that
-  403s every non-GET request to Firebase hosts, (3) an additive Firestore
-  rule that denies writes from a single dedicated `staging-readonly` user.
+- Is meant to be read-only via (1) a JS guard that monkey-patches the SDK
+  and (2) a service worker that 403s non-GET requests to Firebase hosts.
+  Note: this repo's `firestore.rules` does NOT contain a rule that blocks
+  writes from the `staging-readonly` account (that proposal, PR #1, was
+  closed) — server-side, it is an ordinary approved staff user.
 - Hosts at `https://aadhat-staging.web.app`.
 - Is where the AI Assistant is being designed (see staging
   `docs/CHAT_DESIGN.md`).
@@ -166,10 +182,16 @@ deployed rules. **Editing these without updating Rules Playground tests
 can break every user immediately**. Always:
 
 1. Edit the file.
-2. Run `firebase emulators:start --only firestore` and exercise the
-   Playground for: owner-creates-bill, staff-creates-bill,
-   staging-readonly-blocked.
-3. Only then `firebase deploy --only firestore:rules`.
+2. Add/adjust cases in `rules-tests/test.js` and run `npm run test:rules`
+   (Firestore emulator). Key cases: pending user denied, approved/legacy
+   (no `status`) users allowed, no self-promotion of `role`/`status`.
+3. Only then `firebase deploy --only firestore:rules` — CI deploys hosting
+   only, never rules.
+
+To run the whole app against local emulators:
+`npx firebase-tools emulators:start --only auth,firestore`, serve `www/`
+and open `http://localhost:<port>/?emulator=1` (uses `dev_` collections;
+seed a `dev_users/<uid>` profile with a role).
 
 ---
 
@@ -177,10 +199,10 @@ can break every user immediately**. Always:
 
 - **`firebase.firestore()` calls outside `FirebaseService`** — bypass the
   collection-prefix wrapper. Will write to the wrong collection in
-  staging. Always use `FirebaseService.getCollection(name)` instead.
+  environment. Always resolve names with `window.getCollection(name)`.
 - **`new Date(billDate)` where `billDate` is `DD/MM/YYYY`** — JS parses
   this as `MM/DD/YYYY` on most browsers and silently produces a wrong
-  date. Use `Helpers.parseDate()`.
+  date. Use `parseAnyBillDate()` (`utils/dates.js`) or `Helpers.parseDate()`.
 - **`alert(`...${userInput}...`)` and `innerHTML = ...userInput...`** —
   XSS. Use `Helpers.escapeHtml()` on every concatenated user value before
   it touches the DOM.
