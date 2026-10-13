@@ -93,6 +93,12 @@ const BillingManager = {
     editingBillType: undefined,
 
     /**
+     * Payment-state signature of the bill when the editor opened (see FirebaseService.loadedPaymentSignature)
+     * @type {?string|undefined}
+     */
+    editingBillPaymentSig: undefined,
+
+    /**
      * Initialize the billing manager
      */
     init() {
@@ -904,6 +910,9 @@ const BillingManager = {
             this.editingBillIndex = resolvedIndex;
             this.editingBillId = bill.id;
             this.editingBillType = billType;
+            // Payment state when the editor opened: a payment recorded elsewhere before
+            // saving must cause a conflict instead of being overwritten by the form values
+            this.editingBillPaymentSig = FirebaseService.loadedPaymentSignature(bill);
 
             // Retail bills use 'sale' mode, wholesale cannot be edited from billing tab
             const mode = billType === 'retail' ? 'sale' : 'purchase';
@@ -1072,6 +1081,7 @@ const BillingManager = {
                 };
 
                 // Wait for the server: only a committed edit is printed, kept and cleared from the editor.
+                FirebaseService.withLoadedPaymentSignature(updatedBill, this.editingBillPaymentSig);
                 await commitBillEdit(FirebaseService.updatePurchase(updatedBill));
                 if (typeof options.onWriteIssued === 'function') options.onWriteIssued(updatedBill);
                 const savedIndex = findBillIndex(AppState.purchaseHistory, bill.id, currentIndex);
@@ -1090,6 +1100,7 @@ const BillingManager = {
                 this.editingBillIndex = undefined;
                 this.editingBillId = undefined;
                 this.editingBillType = undefined;
+                this.editingBillPaymentSig = undefined;
                 PurchaseManager.clearBill();
                 
                 return updatedBill;
@@ -1126,6 +1137,7 @@ const BillingManager = {
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
                 };
 
+                FirebaseService.withLoadedPaymentSignature(updatedSale, this.editingBillPaymentSig);
                 await commitBillEdit(FirebaseService.updateRetailSale(updatedSale));
                 if (typeof options.onWriteIssued === 'function') options.onWriteIssued(updatedSale);
                 const saleIndex = AppState.retailSalesHistory.findIndex(s => s.id === bill.id);
@@ -1146,6 +1158,7 @@ const BillingManager = {
                 this.editingBillIndex = undefined;
                 this.editingBillId = undefined;
                 this.editingBillType = undefined;
+                this.editingBillPaymentSig = undefined;
                 RetailSaleManager.clearSale();
                 
                 return updatedSale;

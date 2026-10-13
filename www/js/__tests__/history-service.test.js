@@ -537,6 +537,27 @@ describe('review fixes (2)', () => {
         expect(fake.raw('purchases').get(bill.id)).toMatchObject({ comments: 'edited', payment: { due: 0 } });
     });
 
+    it('#6b an editor that re-reads the live copy at save time still detects a payment made after it opened', async () => {
+        install(36);
+        await open();
+        await rebuildSettled();
+        await quietScans();
+        await open();
+        const bill = AppState.purchaseHistory.find(p => typeof p.payment?.due === 'number' && p.payment.due > 1 && !p.cleared && p.items?.length);
+        // Editor opens: capture the payment state, as BillingManager.editBill does.
+        const openedSig = FirebaseService.loadedPaymentSignature(bill);
+        // Another device records a payment; the live listener refreshes the in-memory bill.
+        // Partial payment: the bill stays due, so it stays live in memory.
+        await fake.db.collection('purchases').doc(bill.id).update({ 'payment.due': 1, payments: [{ amount: bill.payment.due - 1 }], openDue: true, clientVersion: 3 });
+        await settle();
+        const live = AppState.purchaseHistory.find(p => p.id === bill.id);
+        expect(live.payment.due).toBe(1);
+        // Save builds the update from the live copy (as saveEditedBill does) with the form's old payment values.
+        const updated = FirebaseService.withLoadedPaymentSignature({ ...live, comments: 'edited', payment: { ...bill.payment } }, openedSig);
+        await expect(FirebaseService.updatePurchase(updated)).rejects.toThrow('changed on another device');
+        expect(fake.raw('purchases').get(bill.id).payment.due).toBe(1);
+    });
+
     it('B editing the same bill twice (edit copies spread from the saved bill) is not a false conflict', async () => {
         install(35);
         await open();

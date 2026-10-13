@@ -1549,6 +1549,27 @@ const FirebaseService = {
     },
 
     /**
+     * Payment-state signature of a bill as it was loaded. Bill editors capture it when they
+     * open so a later save can detect payments recorded on another device in the meantime.
+     * @param {Object} record
+     * @returns {?string}
+     */
+    loadedPaymentSignature(record) {
+        return record?.[LOADED_PAYMENT] ?? paymentSignature(record);
+    },
+
+    /**
+     * Sets the payment-state baseline the next update of `record` is checked against.
+     * @param {Object} record
+     * @param {?string} signature - Value from loadedPaymentSignature()
+     * @returns {Object} record
+     */
+    withLoadedPaymentSignature(record, signature) {
+        if (record && signature !== undefined) record[LOADED_PAYMENT] = signature;
+        return record;
+    },
+
+    /**
      * Deletes a purchase / retail sale / wholesale sale shown in History, using its real
      * Firestore document id (legacy docs may have an `id` field that differs from it).
      * @param {'purchases'|'retailSales'|'wholesaleSales'} collKey
