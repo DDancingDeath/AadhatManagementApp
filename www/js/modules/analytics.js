@@ -457,7 +457,7 @@ export class AnalyticsManager {
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: ${bgColor}; border-radius: 8px; margin-bottom: 8px;">
                     <div style="flex: 1;">
-                        <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);">${trend.item}</div>
+                        <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);">${Helpers.escapeHtml(trend.item)}</div>
                         <div style="font-size: 12px; color: var(--text-secondary);">₹${trend.currentRate.toFixed(2)}/kg • ${trend.purchases} purchases</div>
                     </div>
                     <div style="text-align: right;">
@@ -565,8 +565,8 @@ export class AnalyticsManager {
             <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 10px; margin-bottom: 10px; border-left: 4px solid ${rec.priority === 3 ? '#f59e0b' : rec.priority === 2 ? '#3b82f6' : '#6b7280'};">
                 <div style="font-size: 24px;">${rec.icon}</div>
                 <div style="flex: 1;">
-                    <div style="font-weight: 600; font-size: 15px; color: var(--text-primary); margin-bottom: 4px;">${rec.item}</div>
-                    <div style="font-size: 13px; color: var(--text-secondary);">${rec.reason}</div>
+                    <div style="font-weight: 600; font-size: 15px; color: var(--text-primary); margin-bottom: 4px;">${Helpers.escapeHtml(rec.item)}</div>
+                    <div style="font-size: 13px; color: var(--text-secondary);">${Helpers.escapeHtml(rec.reason)}</div>
                 </div>
             </div>
         `).join('');
@@ -608,7 +608,7 @@ export class AnalyticsManager {
             : topRevenue.map((item, idx) => `
                 <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
                     <div style="width: 22px; height: 22px; border-radius: 50%; background: ${idx === 0 ? '#fbbf24' : idx === 1 ? '#9ca3af' : idx === 2 ? '#cd7c32' : '#e5e7eb'}; color: ${idx < 3 ? 'white' : '#666'}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">${idx + 1}</div>
-                    <div style="flex: 1; font-size: 13px; color: var(--text-primary);">${item.name}</div>
+                    <div style="flex: 1; font-size: 13px; color: var(--text-primary);">${Helpers.escapeHtml(item.name)}</div>
                     <div style="font-weight: 600; font-size: 13px; color: #16a34a;">${formatCurrency(item.revenue)}</div>
                 </div>
             `).join('');
@@ -620,7 +620,7 @@ export class AnalyticsManager {
             : topQty.map((item, idx) => `
                 <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
                     <div style="width: 22px; height: 22px; border-radius: 50%; background: ${idx === 0 ? '#fbbf24' : idx === 1 ? '#9ca3af' : idx === 2 ? '#cd7c32' : '#e5e7eb'}; color: ${idx < 3 ? 'white' : '#666'}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">${idx + 1}</div>
-                    <div style="flex: 1; font-size: 13px; color: var(--text-primary);">${item.name}</div>
+                    <div style="flex: 1; font-size: 13px; color: var(--text-primary);">${Helpers.escapeHtml(item.name)}</div>
                     <div style="font-weight: 600; font-size: 13px; color: #2563eb;">${item.quantity.toFixed(1)} kg</div>
                 </div>
             `).join('');
@@ -678,7 +678,7 @@ export class AnalyticsManager {
                     ${topCustomers.map((c, idx) => `
                         <div style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
                             <div style="width: 24px; height: 24px; border-radius: 50%; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">${idx + 1}</div>
-                            <div style="flex: 1; font-size: 14px; color: var(--text-primary);">${c.name}</div>
+                            <div style="flex: 1; font-size: 14px; color: var(--text-primary);">${Helpers.escapeHtml(c.name)}</div>
                             <div style="font-weight: 600; font-size: 14px; color: #16a34a;">${formatCurrency(c.revenue)}</div>
                         </div>
                     `).join('')}
@@ -783,7 +783,7 @@ export class AnalyticsManager {
         container.innerHTML = suggestions.map(s => `
             <div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.2);">
                 <div style="font-size: 20px;">${s.icon}</div>
-                <div style="font-size: 14px; line-height: 1.4;">${s.text}</div>
+                <div style="font-size: 14px; line-height: 1.4;">${Helpers.escapeHtml(s.text)}</div>
             </div>
         `).join('');
     }

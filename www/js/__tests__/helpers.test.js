@@ -27,6 +27,36 @@ describe('Helpers.escapeHtml', () => {
     test('should handle string with no special characters', () => {
         expect(Helpers.escapeHtml('Hello World')).toBe('Hello World');
     });
+
+    test('should return empty string for null/undefined and stringify other values', () => {
+        expect(Helpers.escapeHtml(null)).toBe('');
+        expect(Helpers.escapeHtml(undefined)).toBe('');
+        expect(Helpers.escapeHtml(42)).toBe('42');
+    });
+});
+
+describe('Helpers.escapeJsAttr', () => {
+    // Simulates what the browser does: decode the attribute, then evaluate the JS string literal.
+    const roundTrip = (value) => {
+        const div = document.createElement('div');
+        div.innerHTML = `<button onclick="return ['${Helpers.escapeJsAttr(value)}', &quot;${Helpers.escapeJsAttr(value)}&quot;]"></button>`;
+        const handler = div.firstChild.getAttribute('onclick');
+        return new Function(handler)();
+    };
+
+    test('cannot break out of a quoted JS string inside an onclick attribute', () => {
+        const evil = `a');alert(1);('"\\<img src=x onerror=alert(2)>\n`;
+        expect(roundTrip(evil)).toEqual([evil, evil]);
+    });
+
+    test('output contains no raw quotes or angle brackets', () => {
+        expect(Helpers.escapeJsAttr(`x'"<>`)).not.toMatch(/['"<>]/);
+    });
+
+    test('handles null/undefined', () => {
+        expect(Helpers.escapeJsAttr(null)).toBe('');
+        expect(Helpers.escapeJsAttr(undefined)).toBe('');
+    });
 });
 
 describe('Helpers.formatDate', () => {

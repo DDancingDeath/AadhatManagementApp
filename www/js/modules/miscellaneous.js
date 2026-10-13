@@ -28,12 +28,12 @@ export class ExpensesManager {
         
         const businessDatalist = document.getElementById('businessExpensePersonOptions');
         if (businessDatalist) {
-            businessDatalist.innerHTML = uniquePersons.map(name => `<option value="${name}">`).join('');
+            businessDatalist.innerHTML = uniquePersons.map(name => `<option value="${Helpers.escapeHtml(name)}">`).join('');
         }
         
         const personalDatalist = document.getElementById('personalExpensePersonOptions');
         if (personalDatalist) {
-            personalDatalist.innerHTML = uniquePersons.map(name => `<option value="${name}">`).join('');
+            personalDatalist.innerHTML = uniquePersons.map(name => `<option value="${Helpers.escapeHtml(name)}">`).join('');
         }
     }
 
@@ -212,18 +212,18 @@ export class ExpensesManager {
             <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;"
                  onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'; this.style.transform='translateY(-2px)'"
                  onmouseout="this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'; this.style.transform='translateY(0)'"
-                 onclick="window.app.expenses.viewExpenseDetails('${payment.id}', 'business')">
+                 onclick="window.app.expenses.viewExpenseDetails('${Helpers.escapeJsAttr(payment.id)}', 'business')">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                     <div>
-                        ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${payment.personName}</div>` : ''}
-                        <div style="font-size: 13px; color: #666; margin-top: 4px;">${payment.type}</div>
+                        ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${Helpers.escapeHtml(payment.personName)}</div>` : ''}
+                        <div style="font-size: 13px; color: #666; margin-top: 4px;">${Helpers.escapeHtml(payment.type)}</div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${payment.amount}</div>
+                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${Helpers.escapeHtml(payment.amount)}</div>
                     </div>
                 </div>
-                ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${payment.remarks}</div>` : ''}
-                <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${payment.date}${payment.createdByName ? ` • By: ${payment.createdByName}` : ''}</div>
+                ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${Helpers.escapeHtml(payment.remarks)}</div>` : ''}
+                <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${Helpers.escapeHtml(payment.date)}${payment.createdByName ? ` • By: ${Helpers.escapeHtml(payment.createdByName)}` : ''}</div>
             </div>
         `).join('');
     }
@@ -247,18 +247,18 @@ export class ExpensesManager {
             <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;"
                  onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'; this.style.transform='translateY(-2px)'"
                  onmouseout="this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'; this.style.transform='translateY(0)'"
-                 onclick="window.app.expenses.viewExpenseDetails('${payment.id}', 'personal')">
+                 onclick="window.app.expenses.viewExpenseDetails('${Helpers.escapeJsAttr(payment.id)}', 'personal')">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                     <div>
-                        ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${payment.personName}</div>` : ''}
-                        <div style="font-size: 13px; color: #666; margin-top: 4px;">${payment.type}</div>
+                        ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${Helpers.escapeHtml(payment.personName)}</div>` : ''}
+                        <div style="font-size: 13px; color: #666; margin-top: 4px;">${Helpers.escapeHtml(payment.type)}</div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${payment.amount}</div>
+                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${Helpers.escapeHtml(payment.amount)}</div>
                     </div>
                 </div>
-                ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${payment.remarks}</div>` : ''}
-                <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${payment.date}${payment.createdByName ? ` • By: ${payment.createdByName}` : ''}</div>
+                ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${Helpers.escapeHtml(payment.remarks)}</div>` : ''}
+                <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${Helpers.escapeHtml(payment.date)}${payment.createdByName ? ` • By: ${Helpers.escapeHtml(payment.createdByName)}` : ''}</div>
             </div>
         `).join('');
     }
@@ -338,7 +338,7 @@ export class ExpensesManager {
                                 <span style="font-size: 20px; margin-right: 12px;">🏷️</span>
                                 <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Category</span>
                             </div>
-                            <span style="font-size: 15px; color: #333; font-weight: 600; text-transform: capitalize;">${category}</span>
+                            <span style="font-size: 15px; color: #333; font-weight: 600; text-transform: capitalize;">${Helpers.escapeHtml(category)}</span>
                         </div>
                         
                         <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
@@ -346,7 +346,7 @@ export class ExpensesManager {
                                 <span style="font-size: 20px; margin-right: 12px;">📅</span>
                                 <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Date</span>
                             </div>
-                            <span style="font-size: 14px; color: #333; font-weight: 500;">${expense.date}</span>
+                            <span style="font-size: 14px; color: #333; font-weight: 500;">${Helpers.escapeHtml(expense.date)}</span>
                         </div>
                         
                         ${expense.createdByName ? `
@@ -355,7 +355,7 @@ export class ExpensesManager {
                                 <span style="font-size: 20px; margin-right: 12px;">👨‍💼</span>
                                 <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Created By</span>
                             </div>
-                            <span style="font-size: 14px; color: #333; font-weight: 500;">${expense.createdByName}</span>
+                            <span style="font-size: 14px; color: #333; font-weight: 500;">${Helpers.escapeHtml(expense.createdByName)}</span>
                         </div>
                         ` : ''}
                     </div>
@@ -364,18 +364,18 @@ export class ExpensesManager {
                 <div style="background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #f0f0f0;">
                         <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Type</span>
-                        <span style="font-size: 18px; font-weight: 600; color: #2c3e50;">${expense.type}</span>
+                        <span style="font-size: 18px; font-weight: 600; color: #2c3e50;">${Helpers.escapeHtml(expense.type)}</span>
                     </div>
                     
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #f0f0f0;">
                         <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Amount</span>
-                        <span style="font-size: 36px; font-weight: bold; color: #667eea; letter-spacing: 1px;">₹${expense.amount}</span>
+                        <span style="font-size: 36px; font-weight: bold; color: #667eea; letter-spacing: 1px;">₹${Helpers.escapeHtml(expense.amount)}</span>
                     </div>
                     
                     ${expense.personName ? `
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Person Name</span>
-                        <span style="font-size: 18px; font-weight: 500; color: #2c3e50;">👤 ${expense.personName}</span>
+                        <span style="font-size: 18px; font-weight: 500; color: #2c3e50;">👤 ${Helpers.escapeHtml(expense.personName)}</span>
                     </div>
                     ` : ''}
                 </div>
@@ -383,7 +383,7 @@ export class ExpensesManager {
                 ${expense.remarks ? `
                 <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 16px; border-radius: 8px;">
                     <div style="font-size: 11px; color: #856404; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">📝 Remarks</div>
-                    <div style="font-size: 14px; color: #856404; line-height: 1.5;">${expense.remarks}</div>
+                    <div style="font-size: 14px; color: #856404; line-height: 1.5;">${Helpers.escapeHtml(expense.remarks)}</div>
                 </div>
                 ` : ''}
             </div>

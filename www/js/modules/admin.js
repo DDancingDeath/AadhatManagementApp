@@ -6,6 +6,7 @@
 
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
+import { Helpers } from '../utils/helpers.js';
 
 /**
  * Admin Manager - Unified admin panel
@@ -230,8 +231,8 @@ const AdminManager = {
             <div class="pending-user-card">
                 <div class="user-card-header">
                     <div>
-                        <div class="user-name">${user.name || 'Unknown'}</div>
-                        <div class="user-email">${user.email}</div>
+                        <div class="user-name">${Helpers.escapeHtml(user.name || 'Unknown')}</div>
+                        <div class="user-email">${Helpers.escapeHtml(user.email)}</div>
                     </div>
                     <span class="user-role-badge pending">Pending</span>
                 </div>
@@ -273,15 +274,15 @@ const AdminManager = {
 
         container.innerHTML = users.map(user => {
             const isCurrentUser = user.id === currentUserId;
-            const safeName = (user.name || '').replace(/'/g, "\\'");
-            const safeEmail = (user.email || '').replace(/'/g, "\\'");
+            const safeName = Helpers.escapeJsAttr(user.name || '');
+            const safeEmail = Helpers.escapeJsAttr(user.email || '');
             
             return `
             <div class="active-user-card">
                 <div class="user-card-header">
                     <div>
-                        <div class="user-name">${user.name || 'Unknown'} ${isCurrentUser ? '<span style="color: #999; font-size: 12px;">(You)</span>' : ''}</div>
-                        <div class="user-email">${user.email}</div>
+                        <div class="user-name">${Helpers.escapeHtml(user.name || 'Unknown')} ${isCurrentUser ? '<span style="color: #999; font-size: 12px;">(You)</span>' : ''}</div>
+                        <div class="user-email">${Helpers.escapeHtml(user.email)}</div>
                     </div>
                     <span class="user-role-badge ${user.role}">${user.role}</span>
                 </div>

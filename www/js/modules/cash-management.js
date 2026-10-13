@@ -873,7 +873,7 @@ export class CashManagementManager {
 
         datalist.innerHTML = Array.from(customers)
             .sort()
-            .map(name => `<option value="${name}">`)
+            .map(name => `<option value="${Helpers.escapeHtml(name)}">`)
             .join('');
     }
 
@@ -919,7 +919,7 @@ export class CashManagementManager {
             const cashAdded = session.transactions?.cashDeposits || 0;
 
             return `
-                <div onclick="window.app.cashManagement.showDetails('${session.date}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
+                <div onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(session.date)}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <strong style="font-size: 15px;">${date}</strong>
                         ${status}
@@ -984,7 +984,7 @@ export class CashManagementManager {
             const cashAdded = session.transactions?.cashDeposits || 0;
 
             return `
-                <div onclick="window.app.cashManagement.showDetails('${session.date}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
+                <div onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(session.date)}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <strong style="font-size: 15px;">${date}</strong>
                         ${status}
@@ -1167,11 +1167,11 @@ export class CashManagementManager {
                             ${session.cashDeposits.map(d => `
                                 <div style="background: white; padding: 8px; border-radius: 6px; border-left: 3px solid #10b981;">
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                                        <strong style="color: #333; font-size: 12px;">${d.reason || 'Cash added'}</strong>
+                                        <strong style="color: #333; font-size: 12px;">${Helpers.escapeHtml(d.reason || 'Cash added')}</strong>
                                         <strong style="color: #10b981; font-size: 13px;">₹${d.amount}</strong>
                                     </div>
                                     <div style="color: #6c757d; font-size: 10px;">
-                                        Added by ${d.addedBy}
+                                        Added by ${Helpers.escapeHtml(d.addedBy)}
                                     </div>
                                 </div>
                             `).join('')}
@@ -1191,11 +1191,11 @@ export class CashManagementManager {
                                 return `
                                     <div style="background: white; padding: 8px; border-radius: 6px; border-left: 3px solid ${borderColor};">
                                         <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                                            <strong style="color: #333; font-size: 12px;">${typeLabel} ${p.customer}</strong>
+                                            <strong style="color: #333; font-size: 12px;">${typeLabel} ${Helpers.escapeHtml(p.customer)}</strong>
                                             <strong style="color: ${amountColor}; font-size: 13px;">${isReceived ? '+' : '-'}₹${p.amount}</strong>
                                         </div>
                                         <div style="color: #6c757d; font-size: 10px;">
-                                            ${p.method} • ${p.notes || 'No notes'}
+                                            ${Helpers.escapeHtml(p.method)} • ${Helpers.escapeHtml(p.notes || 'No notes')}
                                         </div>
                                     </div>
                                 `;

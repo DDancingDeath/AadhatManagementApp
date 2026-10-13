@@ -168,7 +168,7 @@ export class StockManager {
                 div.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${qtyColor}; padding-left: 8px;">
                         <div>
-                            <div style="font-weight: 600; font-size: 15px;">${displayName}</div>
+                            <div style="font-weight: 600; font-size: 15px;">${Helpers.escapeHtml(displayName)}</div>
                             <div style="color: ${qtyColor}; font-size: 12px; margin-top: 4px;">
                                 ⚠ Unmatched — no catalogue item with this id/name
                             </div>
@@ -196,7 +196,7 @@ export class StockManager {
             div.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <div style="font-weight: 600; font-size: 15px;">${displayName}</div>
+                        <div style="font-weight: 600; font-size: 15px;">${Helpers.escapeHtml(displayName)}</div>
                         <div style="color: #666; font-size: 13px; margin-top: 4px;">
                             Rate: ₹${item.rate ? item.rate.toFixed(2) : '0.00'}/kg
                         </div>
@@ -557,18 +557,18 @@ export class StockManager {
                 
                 div.innerHTML = `
                     <div class="history-header">
-                        <strong>${displayName}</strong>
+                        <strong>${Helpers.escapeHtml(displayName)}</strong>
                         <span style="color: ${typeColor}; font-weight: 600;">
-                            ${typeLabel} ${quantity !== 'Unknown' ? quantity + ' kg' : ''}
+                            ${typeLabel} ${quantity !== 'Unknown' ? Helpers.escapeHtml(quantity) + ' kg' : ''}
                         </span>
                     </div>
-                    <div class="history-date">${adj.date || 'Unknown date'}${adj.createdByName ? ` • By: ${adj.createdByName}` : ''}</div>
+                    <div class="history-date">${Helpers.escapeHtml(adj.date || 'Unknown date')}${adj.createdByName ? ` • By: ${Helpers.escapeHtml(adj.createdByName)}` : ''}</div>
                     <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
                         ${displayRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${displayRate.toFixed(2)}/kg${valueImpact ? ` • Value: ₹${Math.round(valueImpact)}` : ''}</div>` : ''}
                         <div style="font-size: 13px; color: #666;">
                             ${(adj.previousStock || 0).toFixed(1)} kg → ${(adj.newStock || 0).toFixed(1)} kg
                         </div>
-                        ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${adj.reason}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
+                        ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${Helpers.escapeHtml(adj.reason)}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
                     </div>
                 `;
                 

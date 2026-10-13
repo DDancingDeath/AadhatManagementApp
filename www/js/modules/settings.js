@@ -8,6 +8,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AuditService } from '../services/audit.js';
+import { Helpers } from '../utils/helpers.js';
 
 /**
  * Settings Manager - Manages application settings
@@ -146,8 +147,8 @@ export class SettingsManager {
             
             deviceCard.innerHTML = `
                 <div>
-                    <strong>${name}</strong><br>
-                    <small style="color: #666;">${address}</small>
+                    <strong>${Helpers.escapeHtml(name)}</strong><br>
+                    <small style="color: #666;">${Helpers.escapeHtml(address)}</small>
                 </div>
                 <button class="add-item-btn" data-device-index="${index}">Connect</button>
             `;
@@ -211,7 +212,7 @@ export class SettingsManager {
         
         if (isConnected) {
             if (statusText) {
-                statusText.innerHTML = `<span style="color: #4CAF50;">● Connected to ${printerSettings.deviceName}</span>`;
+                statusText.innerHTML = `<span style="color: #4CAF50;">● Connected to ${Helpers.escapeHtml(printerSettings.deviceName)}</span>`;
             }
             if (disconnectBtn) disconnectBtn.style.display = 'block';
             if (testPrintBtn) testPrintBtn.style.display = 'block';
@@ -331,13 +332,13 @@ export class SettingsManager {
                     <span style="font-size: 20px;">${actionIcon}</span>
                     <div style="flex: 1;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <span style="font-weight: 600; color: ${actionColor};">${log.action.replace(/_/g, ' ')}</span>
+                            <span style="font-weight: 600; color: ${actionColor};">${Helpers.escapeHtml(log.action.replace(/_/g, ' '))}</span>
                             <span style="font-size: 11px; color: #888;">${formattedDate}</span>
                         </div>
                         <div style="font-size: 12px; color: #666;">
-                            <strong>${log.userName}</strong> (${log.userRole})
+                            <strong>${Helpers.escapeHtml(log.userName)}</strong> (${Helpers.escapeHtml(log.userRole)})
                         </div>
-                        ${details ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${details}</div>` : ''}
+                        ${details ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${Helpers.escapeHtml(details)}</div>` : ''}
                     </div>
                 </div>
             `;

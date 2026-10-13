@@ -12,18 +12,44 @@ export class Helpers {
     
     /**
      * Escape HTML to prevent XSS attacks
-     * @param {string} text - Text to escape
+     * @param {*} text - Text to escape (null/undefined become '', other values are stringified)
      * @returns {string} Escaped HTML string
      */
     static escapeHtml(text) {
+        if (text === null || text === undefined) return '';
         const map = {
             '&': '&amp;',
             '<': '&lt;',
             '>': '&gt;',
             '"': '&quot;',
-            "'": '&#039;'
+            "'": '&#039;',
+            '`': '&#096;'
         };
-        return text.replace(/[&<>"']/g, m => map[m]);
+        return String(text).replace(/[&<>"'`]/g, m => map[m]);
+    }
+
+    /**
+     * Escape a value for use inside a single- or double-quoted JS string literal that sits
+     * inside an HTML attribute, e.g. onclick="fn('${Helpers.escapeJsAttr(name)}')".
+     * HTML-escaping alone is not enough there: the browser decodes &#039; back to ' before
+     * running the handler, so the value is JS-escaped first and then HTML-escaped.
+     * @param {*} text - Value to escape
+     * @returns {string} Escaped string
+     */
+    static escapeJsAttr(text) {
+        if (text === null || text === undefined) return '';
+        const js = String(text)
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '\\"')
+            .replace(/`/g, '\\`')
+            .replace(/\r/g, '\\r')
+            .replace(/\n/g, '\\n')
+            .replace(/\u2028/g, '\\u2028')
+            .replace(/\u2029/g, '\\u2029')
+            .replace(/</g, '\\x3C')
+            .replace(/>/g, '\\x3E');
+        return Helpers.escapeHtml(js);
     }
 
     /**

@@ -249,7 +249,7 @@ const RetailSaleManager = {
                     return `
                         <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #22c55e;">
                             <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
-                                ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
+                                ${Helpers.escapeHtml(item.name)} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
                             </div>
                             <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
                                 ${weightLines.join('<br>')}
@@ -265,7 +265,7 @@ const RetailSaleManager = {
         // Render bill items table
         tbody.innerHTML = saleItems.map((item, index) => `
             <tr style="cursor: pointer;" onclick="window.app.retailSale.editSaleItem(${index})">
-                <td>${item.name}</td>
+                <td>${Helpers.escapeHtml(item.name)}</td>
                 <td>₹${item.rate.toFixed(2)}</td>
                 <td>${item.qty.toFixed(1)} kg</td>
                 <td>₹${Math.round(item.total)}</td>
