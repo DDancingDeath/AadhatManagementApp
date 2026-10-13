@@ -1,175 +1,141 @@
 /**
- * @fileoverview Tests for FirebaseService.setupRealtimeListeners: initial
- * state comes from the listeners' first snapshots (no duplicate .get()),
- * later snapshots are applied incrementally via docChanges(), and expensive
- * work (stock recalculation + re-render) is debounced and limited to the
- * visible tab, with hidden tabs refreshed when shown.
+ * @fileoverview Tests for FirebaseService.setupRealtimeListeners plumbing:
+ * initial state comes from the listeners' first snapshots (no .get() when a
+ * stock checkpoint is available), later snapshots are applied incrementally
+ * via docChanges(), and expensive work (stock recalculation + re-render) is
+ * debounced and limited to the visible tab, with hidden tabs refreshed when shown.
  */
 
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
+import { createFakeFirestore } from './__mocks__/fake-firestore.js';
+import { defaultWindowStart } from '../utils/history-range.js';
+import { itemsSignature } from '../utils/stock-replay.js';
 
-const doc = (id, data = {}) => ({ id, data: () => ({ ...data }) });
-const snap = (docs, changes = [], fromCache = false) => ({
-    docs,
-    size: docs.length,
-    metadata: { fromCache },
-    docChanges: () => changes
-});
+const NOW = Date.now();
+const ITEMS = [{ id: 'i1', name: 'Gehu' }];
 
-const DATA_COLLECTIONS = ['items', 'purchases', 'retailSales', 'wholesaleSales', 'expenses', 'stockAdjustments', 'withdrawals'];
+let fake;
 
-let listeners;
-let getCalls;
-
-function installFakeFirestore() {
-    listeners = {};
-    getCalls = 0;
-    const query = (name) => {
-        const q = {
-            orderBy: () => q,
-            where: () => q,
-            limit: () => q,
-            get: async () => { getCalls++; return snap([]); },
-            onSnapshot: (...args) => {
-                const fns = args.filter(a => typeof a === 'function');
-                listeners[name] = { next: fns[0], error: fns[1] };
-                return () => { delete listeners[name]; };
-            },
-            doc: () => ({ onSnapshot: () => () => {} })
-        };
-        return q;
-    };
-    global.firebase = { firestore: () => ({ collection: (name) => query(name) }) };
+function install(options) {
+    fake = createFakeFirestore(options);
+    global.firebase = fake.firebase;
+    fake.seed('items', ITEMS);
+    fake.seed('stockCheckpoints', [{
+        id: 'current', formatVersion: 1, asOf: defaultWindowStart(NOW), state: [], resolutions: [],
+        itemsSignature: itemsSignature(ITEMS), stale: false, staleCount: 0, builtAt: 1
+    }]);
 }
 
-function emitInitial(overrides = {}) {
-    DATA_COLLECTIONS.forEach(name => {
-        listeners[name].next(snap(overrides[name] || []));
-    });
-}
-
-const flushMicrotasks = async () => {
-    for (let i = 0; i < 5; i++) await Promise.resolve();
-};
+const bill = (id, t, extra = {}) => ({ id, timestamp: t, date: new Date(t).toISOString(), ...extra });
 
 describe('FirebaseService.setupRealtimeListeners', () => {
     beforeEach(() => {
-        installFakeFirestore();
         AppState.currentUser = null;
-        AppState.items = [];
-        AppState.purchaseHistory = [];
-        AppState.salesHistory = [];
-        AppState.retailSalesHistory = [];
-        AppState.stockAdjustments = [];
         AppState.stock = {};
         jest.spyOn(console, 'warn').mockImplementation(() => {});
+        jest.spyOn(console, 'info').mockImplementation(() => {});
     });
 
     afterEach(() => {
         FirebaseService.cleanup();
         jest.useRealTimers();
+        jest.restoreAllMocks();
         delete global.firebase;
         delete window.app;
         document.body.innerHTML = '';
     });
 
     it('populates AppState from first snapshots without any .get()', async () => {
-        const ready = FirebaseService.setupRealtimeListeners();
-        emitInitial({
-            items: [doc('i1', { name: 'Gehu' })],
-            purchases: [doc('p2', { date: 'b' }), doc('p1', { date: 'a' })]
-        });
-        await ready;
+        install();
+        fake.seed('purchases', [bill('p1', NOW - 2000), bill('p2', NOW - 1000)]);
+        await FirebaseService.setupRealtimeListeners();
+        await FirebaseService.getStock();
 
-        expect(getCalls).toBe(0);
+        expect(fake.stats.gets).toBe(0);
         expect(AppState.items).toEqual([{ id: 'i1', name: 'Gehu' }]);
         expect(AppState.purchaseHistory.map(p => p.id)).toEqual(['p2', 'p1']);
+        expect(AppState.historyLoadedFrom).toBe(defaultWindowStart(NOW));
     });
 
     it('waits for server data when the first snapshot comes from cache', async () => {
+        install({ holdServer: true });
         let resolved = false;
         const ready = FirebaseService.setupRealtimeListeners().then(() => { resolved = true; });
-        DATA_COLLECTIONS.forEach(name => listeners[name].next(snap([], [], true)));
-        await flushMicrotasks();
+        await fake.settle();
         expect(resolved).toBe(false);
 
-        DATA_COLLECTIONS.forEach(name => listeners[name].next(snap([], [], false)));
+        fake.releaseServer();
+        await fake.settle();
+        fake.releaseServer();
         await ready;
         expect(resolved).toBe(true);
     });
 
     it('rejects when a required listener fails first, but tolerates withdrawals failing', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
-        const ready = FirebaseService.setupRealtimeListeners();
-        listeners.withdrawals.error(new Error('withdrawals down'));
-        listeners.purchases.error(Object.assign(new Error('Quota exceeded.'), { code: 'resource-exhausted' }));
-        await expect(ready).rejects.toThrow('Quota exceeded.');
+        install({
+            failures: {
+                withdrawals: new Error('withdrawals down'),
+                purchases: Object.assign(new Error('Quota exceeded.'), { code: 'resource-exhausted' })
+            }
+        });
+        await expect(FirebaseService.setupRealtimeListeners()).rejects.toThrow('Quota exceeded.');
     });
 
-    it('applies docChanges incrementally in query order', async () => {
-        const ready = FirebaseService.setupRealtimeListeners();
-        const a = doc('a', { v: 1 });
-        const b = doc('b', { v: 1 });
-        const c = doc('c', { v: 1 });
-        emitInitial({ purchases: [a, b, c] });
-        await ready;
+    it('applies docChanges incrementally and keeps date-desc order', async () => {
+        install();
+        fake.seed('purchases', [bill('a', NOW - 3000, { v: 1 }), bill('b', NOW - 2000, { v: 1 }), bill('c', NOW - 1000, { v: 1 })]);
+        await FirebaseService.setupRealtimeListeners();
+        expect(AppState.purchaseHistory.map(p => p.id)).toEqual(['c', 'b', 'a']);
 
-        const d = doc('d', { v: 1 });
-        const b2 = doc('b', { v: 2 });
-        // [a,b,c] -> add d@0 -> [d,a,b,c] -> move b 2->0 -> [b,d,a,c] -> remove c@3 -> [b,d,a]
-        listeners.purchases.next(snap([b2, d, a], [
-            { type: 'added', oldIndex: -1, newIndex: 0, doc: d },
-            { type: 'modified', oldIndex: 2, newIndex: 0, doc: b2 },
-            { type: 'removed', oldIndex: 3, newIndex: -1, doc: c }
-        ]));
+        const db = fake.db;
+        await db.collection('purchases').doc('d').set(bill('d', NOW - 500, { v: 1 }));
+        await db.collection('purchases').doc('b').set(bill('b', NOW - 100, { v: 2 }));
+        await db.collection('purchases').doc('c').delete();
+        await fake.settle();
 
-        expect(AppState.purchaseHistory).toEqual([
-            { id: 'b', v: 2 }, { id: 'd', v: 1 }, { id: 'a', v: 1 }
-        ]);
+        expect(AppState.purchaseHistory.map(p => [p.id, p.v])).toEqual([['b', 2], ['d', 1], ['a', 1]]);
     });
 
     it('debounces stock recalculation and renders only the visible tab, deferring hidden tabs until shown', async () => {
-        jest.useFakeTimers();
+        install();
         document.body.innerHTML = '<div id="stock" class="tab active"></div><div id="history" class="tab"></div>';
         window.app = {
             stock: { render: jest.fn() },
             history: { refresh: jest.fn() }
         };
+        await FirebaseService.setupRealtimeListeners();
+        await fake.settle();
+        jest.useFakeTimers();
         const calcSpy = jest.spyOn(FirebaseService, 'calculateStock');
 
-        const ready = FirebaseService.setupRealtimeListeners();
-        emitInitial();
-        await ready;
-
-        const p1 = doc('p1', { items: [{ name: 'Gehu', qty: 5, rate: 10 }] });
-        const p2 = doc('p2', { items: [{ name: 'Gehu', qty: 3, rate: 10 }] });
-        listeners.purchases.next(snap([p1], [{ type: 'added', oldIndex: -1, newIndex: 0, doc: p1 }]));
-        listeners.wholesaleSales.next(snap([p2], [{ type: 'added', oldIndex: -1, newIndex: 0, doc: p2 }]));
+        await fake.db.collection('purchases').doc('p1').set(bill('p1', NOW, { items: [{ name: 'Gehu', qty: 5, rate: 10 }] }));
+        await fake.db.collection('wholesaleSales').doc('s1').set(bill('s1', NOW + 1, { items: [{ name: 'Gehu', qty: 3, rate: 10 }] }));
+        await fake.settle();
 
         expect(calcSpy).not.toHaveBeenCalled();
         jest.advanceTimersByTime(200);
-        await flushMicrotasks();
+        await fake.settle();
 
         expect(calcSpy).toHaveBeenCalledTimes(1);
-        expect(AppState.stock.gehu.quantity).toBe(2);
+        expect(AppState.stock.i1.quantity).toBe(2);
         expect(window.app.stock.render).toHaveBeenCalledTimes(1);
         expect(window.app.history.refresh).not.toHaveBeenCalled();
 
         document.getElementById('stock').classList.remove('active');
         document.getElementById('history').classList.add('active');
         window.dispatchEvent(new CustomEvent('aadhat:tabshown', { detail: { tabId: 'history' } }));
-        await flushMicrotasks();
+        await fake.settle();
 
         expect(window.app.history.refresh).toHaveBeenCalledTimes(1);
         expect(calcSpy).toHaveBeenCalledTimes(1);
     });
 
     it('getStock reuses the listener-computed stock until data changes', async () => {
-        const ready = FirebaseService.setupRealtimeListeners();
-        const p1 = doc('p1', { items: [{ name: 'Gehu', qty: 5, rate: 10 }] });
-        emitInitial({ purchases: [p1] });
-        await ready;
+        install();
+        fake.seed('purchases', [bill('p1', NOW, { items: [{ name: 'Gehu', qty: 5, rate: 10 }] })]);
+        await FirebaseService.setupRealtimeListeners();
         const calcSpy = jest.spyOn(FirebaseService, 'calculateStock');
 
         const first = await FirebaseService.getStock();
@@ -177,10 +143,10 @@ describe('FirebaseService.setupRealtimeListeners', () => {
         expect(second).toBe(first);
         expect(calcSpy).toHaveBeenCalledTimes(1);
 
-        const p2 = doc('p2', { items: [{ name: 'Gehu', qty: 1, rate: 10 }] });
-        listeners.purchases.next(snap([p2, p1], [{ type: 'added', oldIndex: -1, newIndex: 0, doc: p2 }]));
+        await fake.db.collection('purchases').doc('p2').set(bill('p2', NOW + 5, { items: [{ name: 'Gehu', qty: 1, rate: 10 }] }));
+        await fake.settle();
         const third = await FirebaseService.getStock();
         expect(calcSpy).toHaveBeenCalledTimes(2);
-        expect(third.gehu.quantity).toBe(6);
+        expect(third.i1.quantity).toBe(6);
     });
 });
