@@ -60,7 +60,7 @@ function defineSuite(prefix) {
         assertFails(as('noRole').collection(purchases).get()));
 
     t('approved staff can write and read purchases', async () => {
-        await assertSucceeds(as('staff1').collection(purchases).doc('b1').set({ total: 10 }));
+        await assertSucceeds(as('staff1').collection(purchases).doc('b1').set({ total: 10, clientVersion: 3 }));
         await assertSucceeds(as('staff1').collection(purchases).doc('b1').get());
         await assertSucceeds(as('staff1').collection(purchases).orderBy('total').get());
     });
@@ -75,17 +75,62 @@ function defineSuite(prefix) {
         assertFails(as('pending1').collection(counters).doc('x').get()));
 
     const checkpoints = `${prefix}stockCheckpoints`;
+    const seedCheckpoint = () => env.withSecurityRulesDisabled(ctx =>
+        ctx.firestore().collection(checkpoints).doc('current').set({ asOf: 1, state: [], stale: false, staleCount: 0 }));
 
-    t('approved staff can write and read the stock checkpoint', async () => {
-        await assertSucceeds(as('staff1').collection(checkpoints).doc('current').set({ asOf: 1, stale: false }));
-        await assertSucceeds(as('manager1').collection(checkpoints).doc('current').set({ stale: true }, { merge: true }));
-        await assertSucceeds(as('legacyOwner').collection(checkpoints).doc('current').get());
+    t('owner and manager can rebuild (write state/lease of) the stock checkpoint', async () => {
+        await assertSucceeds(as('manager1').collection(checkpoints).doc('current').set({ asOf: 5, state: [], stale: false }));
+        await assertSucceeds(as('legacyOwner').collection(checkpoints).doc('current').set({ rebuildingUntil: 9, rebuildingBy: 'x' }, { merge: true }));
+        await assertSucceeds(as('staff1').collection(checkpoints).doc('current').get());
     });
+
+    t('staff cannot write checkpoint state or take the rebuild lease', async () => {
+        await seedCheckpoint();
+        await assertFails(as('staff1').collection(checkpoints).doc('current').set({ asOf: 1, state: [], stale: false }));
+        await assertFails(as('staff1').collection(checkpoints).doc('current').set({ asOf: 2 }, { merge: true }));
+        await assertFails(as('staff1').collection(checkpoints).doc('current').set({ rebuildingUntil: 9, rebuildingBy: 'x' }, { merge: true }));
+        await assertFails(as('staff1').collection(checkpoints).doc('current').set({ stale: false }, { merge: true }));
+        await assertFails(as('staff1').collection(checkpoints).doc('current').delete());
+    });
+
+    t('staff can mark the checkpoint stale (only the stale fields)', async () => {
+        await seedCheckpoint();
+        await assertSucceeds(as('staff1').collection(checkpoints).doc('current').set(
+            { stale: true, staleCount: 1, staleAt: 2, staleReason: 'x', staleBy: 'staff1' }, { merge: true }));
+        await assertFails(as('staff1').collection(checkpoints).doc('current').set(
+            { stale: true, staleCount: 2, state: [{ k: 'x', q: 1, v: 1 }] }, { merge: true }));
+        await env.withSecurityRulesDisabled(ctx => ctx.firestore().collection(checkpoints).doc('current').delete());
+        await assertSucceeds(as('staff1').collection(checkpoints).doc('current').set({ stale: true, staleCount: 1 }, { merge: true }));
+    });
+
+    t('any approved user can write the legacy scan state', () =>
+        assertSucceeds(as('staff1').collection(checkpoints).doc('legacyScan').set({ expenses: { v: 2, complete: true } }, { merge: true })));
 
     t('pending/rejected/unauthenticated users cannot touch the stock checkpoint', async () => {
         await assertFails(as('pending1').collection(checkpoints).doc('current').get());
         await assertFails(as('rejected1').collection(checkpoints).doc('current').set({ stale: true }));
         await assertFails(anon().collection(checkpoints).doc('current').get());
+    });
+
+    t('stock records need clientVersion >= 3 (blocks outdated apps)', async () => {
+        const db = as('staff1');
+        for (const c of ['purchases', 'retailSales', 'wholesaleSales', 'stockAdjustments']) {
+            const coll = db.collection(`${prefix}${c}`);
+            await assertFails(coll.doc('old1').set({ total: 1 }));
+            await assertFails(coll.doc('old2').set({ total: 1, clientVersion: 2 }));
+            await assertSucceeds(coll.doc('new1').set({ total: 1, clientVersion: 3 }));
+        }
+        // Expenses etc. are not restricted.
+        await assertSucceeds(db.collection(`${prefix}expenses`).doc('e1').set({ amount: 1 }));
+    });
+
+    t('payment updates on current bills pass; overwriting with an old-app full set() fails; deletes pass', async () => {
+        const coll = as('staff1').collection(purchases);
+        await assertSucceeds(coll.doc('pay1').set({ total: 100, payment: { due: 100 }, clientVersion: 3 }));
+        await assertSucceeds(coll.doc('pay1').update({ payment: { due: 0, cash: 100 }, payments: [{ amount: 100 }], openDue: false, clientVersion: 3 }));
+        await assertSucceeds(coll.doc('pay1').update({ cleared: true, openDue: false }));
+        await assertFails(coll.doc('pay1').set({ total: 100, payment: { due: 0 } }));
+        await assertSucceeds(coll.doc('pay1').delete());
     });
 
     // ---- users collection ----
