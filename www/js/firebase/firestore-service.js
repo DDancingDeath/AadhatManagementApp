@@ -677,9 +677,16 @@ async function runBackfill(asOf) {
     });
     const commit = async (writes) => {
         for (let i = 0; i < writes.length; i += BACKFILL_BATCH_SIZE) {
+            const chunk = writes.slice(i, i + BACKFILL_BATCH_SIZE);
             const batch = db.batch();
-            writes.slice(i, i + BACKFILL_BATCH_SIZE).forEach(w => batch.update(w.ref, w.update));
-            await batch.commit();
+            chunk.forEach(w => batch.update(w.ref, w.update));
+            try {
+                await batch.commit();
+            } catch (e) {
+                // e.g. a security-rules access-call limit on large batches: retry one by one.
+                console.warn('Backfill batch failed, retrying documents individually:', e?.code || e);
+                for (const w of chunk) await w.ref.update(w.update);
+            }
         }
     };
     try {
@@ -1463,7 +1470,6 @@ const FirebaseService = {
         if (cp) {
             return computeStockFrom(cp.state, cp.asOf, currentSources(), AppState.items);
         }
-        if (!rebuildAttempted) requestRebuild();
         if (AppState.historyLoadedFrom !== 0) {
             try {
                 await this.ensureHistoryFrom(null);
@@ -1475,6 +1481,8 @@ const FirebaseService = {
                 return computeStockFrom(cp.state, cp.asOf, currentSources(), AppState.items);
             }
         }
+        // The rebuild reuses the full history just loaded.
+        if (!rebuildAttempted) requestRebuild();
         return computeStock(currentSources(), AppState.items);
     },
 
@@ -1603,10 +1611,8 @@ const FirebaseService = {
     async maintainStockCheckpoint(attempt = 0) {
         if (!windowState) return 'inactive';
         const cp = usableCheckpoint();
-        if (!cp) {
-            if (!rebuildAttempted) requestRebuild();
-            return 'rebuild';
-        }
+        // Without a usable checkpoint calculateStock() loads full history and then requests the rebuild.
+        if (!cp) return 'rebuild';
         const W = defaultWindowStart(Date.now());
         if (cp.asOf >= W - ROLL_FORWARD_SLACK_MS) return 'current';
         const result = await rollForwardCheckpoint(cp, W);
