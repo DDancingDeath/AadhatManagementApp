@@ -681,10 +681,10 @@ export class HistoryManager {
         }
 
         try {
-            // Previously only the bill's creator could delete it (others failed silently);
-            // keep that, and also allow owners
+            // Only the bill's creator or an owner may delete it (enforced by firestore.rules;
+            // legacy bills without a userId are owner-only)
             const uid = AppState.currentUser?.uid;
-            if (bill.userId && bill.userId !== uid && AppState.userRole !== 'owner') {
+            if (AppState.userRole !== 'owner' && (!bill.userId || bill.userId !== uid)) {
                 this.closeBillDetails();
                 UIManager.showToast('Only the person who created this bill or an owner can delete it');
                 return;

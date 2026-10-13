@@ -56,6 +56,21 @@ service cloud.firestore {
       ];
     }
 
+    // --- bills (purchases / retail / wholesale sales) ---
+
+    function billCollections() {
+      return ['purchases', 'retailSales', 'wholesaleSales'];
+    }
+
+    function devBillCollections() {
+      return ['dev_purchases', 'dev_retailSales', 'dev_wholesaleSales'];
+    }
+
+    function canDeleteBill(usersCol) {
+      return isOwnerIn(usersCol)
+        || (isApprovedIn(usersCol) && resource.data.get('userId', null) == request.auth.uid);
+    }
+
     // --- user profile rules (shared by users and dev_users) ---
 
     function canReadProfile(usersCol, userId) {
@@ -85,8 +100,14 @@ service cloud.firestore {
 
     // Business collections (production and dev_ mirrors) live under one wildcard match.
     match /{collection}/{docId} {
-      allow read, write: if (collection in businessCollections() && isApproved())
+      allow read, create, update: if (collection in businessCollections() && isApproved())
         || (collection in devBusinessCollections() && isApprovedIn('dev_users'));
+      // Bills can only be deleted by an owner or by the user who created them
+      // (matches the client check in history.js deleteBill).
+      allow delete: if (collection in businessCollections() && !(collection in billCollections()) && isApproved())
+        || (collection in devBusinessCollections() && !(collection in devBillCollections()) && isApprovedIn('dev_users'))
+        || (collection in billCollections() && canDeleteBill('users'))
+        || (collection in devBillCollections() && canDeleteBill('dev_users'));
     }
 
     match /users/{userId} {
