@@ -537,6 +537,49 @@ describe('review fixes (2)', () => {
         expect(fake.raw('purchases').get(bill.id)).toMatchObject({ comments: 'edited', payment: { due: 0 } });
     });
 
+    it('B editing the same bill twice (edit copies spread from the saved bill) is not a false conflict', async () => {
+        install(35);
+        await open();
+        await rebuildSettled();
+        await quietScans();
+        await open();
+        await FirebaseService.ensureHistoryFrom(null);
+        const bill = AppState.purchaseHistory.find(p => typeof p.payment?.due === 'number' && p.items?.length);
+        // billing.js: updatedBill = {...bill}; after success it replaces the AppState entry with updatedBill.
+        const first = { ...bill, comments: 'first' };
+        const saved = await FirebaseService.updatePurchase(first);
+        const idx = AppState.purchaseHistory.findIndex(p => p.id === bill.id);
+        AppState.purchaseHistory[idx] = saved;
+        const second = { ...AppState.purchaseHistory[idx], comments: 'second', payment: { ...saved.payment, cash: (saved.payment.cash || 0) + 1 } };
+        await FirebaseService.updatePurchase(second);
+        const third = { ...second, comments: 'third' };
+        await FirebaseService.updatePurchase(third);
+        expect(fake.raw('purchases').get(bill.id).comments).toBe('third');
+    });
+
+    it('C clearing a wholesale sale applies locally only after the transaction commits', async () => {
+        install(36);
+        await open();
+        await rebuildSettled();
+        await quietScans();
+        await open();
+        const { WholesaleSalesManager } = await import('../modules/wholesale-sales.js');
+        jest.spyOn(WholesaleSalesManager, 'renderSalesOutstanding').mockImplementation(() => {});
+        window.app = { outstanding: { renderDue: () => {} } };
+        const sale = AppState.salesHistory.find(s => !s.cleared);
+        const toast = jest.spyOn((await import('../ui/ui-manager.js')).UIManager, 'showToast').mockImplementation(() => {});
+        const runTx = fake.db.runTransaction;
+        fake.db.runTransaction = async () => { throw Object.assign(new Error('offline'), { code: 'unavailable' }); };
+        await WholesaleSalesManager.markSaleAsCleared(sale.id);
+        expect(sale.cleared).toBeFalsy();
+        expect(toast).toHaveBeenCalledWith('Internet required to clear a sale');
+        fake.db.runTransaction = runTx;
+        await WholesaleSalesManager.markSaleAsCleared(sale.id);
+        expect(sale.cleared).toBe(true);
+        expect(fake.raw('wholesaleSales').get(sale.id)).toMatchObject({ cleared: true, openDue: false });
+        delete window.app;
+    });
+
     it('#7 startup does not wait for the full-history read when the checkpoint is missing', async () => {
         install(33);
         FirebaseService.cleanup();

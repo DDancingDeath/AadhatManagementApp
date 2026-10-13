@@ -15,6 +15,36 @@ import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 import { PurchaseManager } from './purchase.js';
 import { RetailSaleManager } from './retail-sale.js';
 
+const EDIT_OFFLINE_MESSAGE = 'Internet required to edit a bill';
+const EDIT_TIMEOUT_MS = 20000;
+
+/** Who may edit a bill (rules: owner, manager or the bill's creator; legacy bills without userId: owner/manager). */
+export function canEditBill(bill) {
+    const role = AppState.userRole;
+    if (role === 'owner' || role === 'manager') return true;
+    const uid = AppState.currentUser?.uid;
+    return !!(uid && bill && bill.userId && bill.userId === uid);
+}
+export const EDIT_NOT_ALLOWED_MESSAGE = 'Only the person who created this bill, a manager or an owner can edit it';
+
+/** Waits for a bill edit transaction; gives up waiting after EDIT_TIMEOUT_MS. */
+async function commitBillEdit(writePromise) {
+    let timer = null;
+    try {
+        return await Promise.race([
+            writePromise,
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(Object.assign(
+                    new Error('Saving the edit is taking too long — check the internet connection and try again'),
+                    { code: 'edit-timeout' }
+                )), EDIT_TIMEOUT_MS);
+            })
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 /**
  * @type {number|null} Timer ID for auto-save functionality
  * @private
@@ -866,6 +896,10 @@ const BillingManager = {
                 UIManager.showToast('Bill not found');
                 return;
             }
+            if (!canEditBill(bill)) {
+                UIManager.showToast(EDIT_NOT_ALLOWED_MESSAGE);
+                return;
+            }
 
             this.editingBillIndex = resolvedIndex;
             this.editingBillId = bill.id;
@@ -969,6 +1003,11 @@ const BillingManager = {
             if (this.editingBillIndex === undefined) {
                 return this.currentMode === 'purchase' ? PurchaseManager._saveBill(options) : RetailSaleManager._completeSale(options);
             }
+            // Edits are checked against the server copy (transaction), so they need a connection.
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                UIManager.showToast(EDIT_OFFLINE_MESSAGE);
+                return undefined;
+            }
 
             const billIndex = this.editingBillIndex;
             const billType = this.editingBillType || 'purchase';
@@ -1032,9 +1071,9 @@ const BillingManager = {
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
                 };
 
-                const writePromise = FirebaseService.updatePurchase(updatedBill);
+                // Wait for the server: only a committed edit is printed, kept and cleared from the editor.
+                await commitBillEdit(FirebaseService.updatePurchase(updatedBill));
                 if (typeof options.onWriteIssued === 'function') options.onWriteIssued(updatedBill);
-                await FirebaseService.settleWrite(writePromise, 'updatePurchase');
                 const savedIndex = findBillIndex(AppState.purchaseHistory, bill.id, currentIndex);
                 if (savedIndex !== -1) AppState.purchaseHistory[savedIndex] = updatedBill;
                 
@@ -1087,9 +1126,8 @@ const BillingManager = {
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
                 };
 
-                const writePromise = FirebaseService.updateRetailSale(updatedSale);
+                await commitBillEdit(FirebaseService.updateRetailSale(updatedSale));
                 if (typeof options.onWriteIssued === 'function') options.onWriteIssued(updatedSale);
-                await FirebaseService.settleWrite(writePromise, 'updateRetailSale');
                 const saleIndex = AppState.retailSalesHistory.findIndex(s => s.id === bill.id);
                 if (saleIndex !== -1) {
                     AppState.retailSalesHistory[saleIndex] = updatedSale;
@@ -1115,6 +1153,15 @@ const BillingManager = {
             
         } catch (error) {
             console.error('Failed to update bill:', error);
+            // Known outcomes keep the editor open so nothing typed is lost.
+            if (error?.code === 'conflict' || error?.code === 'edit-timeout') {
+                UIManager.showToast(error.message);
+                return undefined;
+            }
+            if (error?.code === 'unavailable' || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+                UIManager.showToast(EDIT_OFFLINE_MESSAGE);
+                return undefined;
+            }
             UIManager.showToast('Failed to update bill: ' + error.message);
             throw error;
         }

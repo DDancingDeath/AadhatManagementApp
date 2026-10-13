@@ -524,17 +524,25 @@ export class WholesaleSalesManager {
             return;
         }
         
-        sale.cleared = true;
-        
+        const checkbox = document.getElementById(`clear_${saleId}`);
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            if (checkbox) checkbox.checked = false;
+            UIManager.showToast('Internet required to clear a sale');
+            return;
+        }
+
         try {
-            await FirebaseService.updateWholesaleSale(sale);
+            // Transactional update; apply locally only once it is committed.
+            const updated = await FirebaseService.updateWholesaleSale({ ...sale, cleared: true });
+            Object.assign(sale, updated);
             
             this.renderSalesOutstanding();
             window.app.outstanding.renderDue();
             UIManager.showToast('✓ Sale marked as cleared');
         } catch (error) {
             console.error('Error updating sale:', error, 'Sale ID:', saleId);
-            UIManager.showToast('Error: ' + error.message);
+            if (checkbox) checkbox.checked = false;
+            UIManager.showToast(error?.code === 'unavailable' ? 'Internet required to clear a sale' : 'Error: ' + error.message);
         }
     }
 

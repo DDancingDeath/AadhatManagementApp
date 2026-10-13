@@ -284,11 +284,20 @@ const docIds = new WeakMap();
  * server copy to refuse overwriting payments recorded on another device.
  */
 const LOADED_PAYMENT = Symbol('aadhatLoadedPayment');
+/** JSON with sorted object keys (Firestore returns map fields in its own order). */
+const stableJson = (v) => {
+    if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
+    if (v && typeof v === 'object' && !(typeof v.toMillis === 'function')) {
+        return `{${Object.keys(v).sort().map(k => `${JSON.stringify(k)}:${stableJson(v[k])}`).join(',')}}`;
+    }
+    if (v && typeof v.toMillis === 'function') return String(v.toMillis());
+    return JSON.stringify(v ?? null);
+};
 const paymentSignature = (d) => {
     if (!d) return null;
     const p = d.payment && typeof d.payment === 'object' ? d.payment : {};
     const payments = Array.isArray(d.payments) ? d.payments : [];
-    return JSON.stringify([
+    return stableJson([
         p.due ?? null, p.cash ?? null, p.online ?? null, p.total ?? null,
         payments.length, payments.length ? payments[payments.length - 1] : null,
         d.dueAmount ?? null, !!d.cleared
@@ -615,6 +624,8 @@ async function updateBillChecked(collKey, record) {
         }
         tx.set(ref, record);
     });
+    // The server now holds exactly this record: later edits must compare against it.
+    record[LOADED_PAYMENT] = paymentSignature(record);
     noteStockWrite(collKey, previous, record, { oldUnknown: true });
     noteLocalRecordWrite(collKey, String(record.id), record);
     return record;
