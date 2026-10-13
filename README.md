@@ -74,6 +74,21 @@ The app uses Firestore `onSnapshot` listeners for automatic UI synchronization:
 
 All listeners are set up via `FirebaseService.setupRealtimeListeners()` and cleaned up on logout via `FirebaseService.cleanup()`.
 
+### Recent-history window and stock checkpoint (free-plan reads)
+
+Each app open reads only recent data (see the section comment above `HISTORY_COLLECTIONS` in `www/js/firebase/firestore-service.js`):
+
+- History collections are listened to from the 1st of the previous month (`timestamp >= liveFrom`); older bills with money due come from one listener per bill collection (`openDue == true && timestamp < liveFrom`). Older history is loaded on demand (`FirebaseService.ensureHistoryFrom()` / `loadOlderHistory()`).
+- Stock = `stockCheckpoints/current` (running stock before `asOf`) + replay of newer events; identical to a full replay. Only **owner/manager** devices rebuild it (full read: when missing/stale, and at least weekly) or roll it forward. Staff devices never write it; while it is stale they load full history instead (correct but costs a full read per open until an owner/manager opens the app).
+- Every stock-record write sets `clientVersion: 3`, bills also `openDue`, `timestamp`. Documents written by older app versions without `timestamp` are found by an unfiltered scan and backfilled (`stockCheckpoints/legacyScan`: until complete, then by one device at most every 6 h for 14 days after an outdated app last wrote one).
+- Optional: set `settings/app.minClientVersion` to make older apps show "Please update the app".
+
+**Deployment order (CI never deploys rules/indexes):**
+
+1. Deploy `firestore.indexes.json` (`firebase deploy --only firestore:indexes`) — the dues listener needs the `openDue + timestamp` composite indexes.
+2. Ship the new app (APK + web) and make sure **every phone runs it**.
+3. Only then deploy `firestore.rules` (`firebase deploy --only firestore:rules`): it rejects bill/adjustment writes without `clientVersion >= 3` (blocks outdated apps, whose edits/deletes of old bills would otherwise not invalidate the stock checkpoint) and limits checkpoint state writes to owner/manager.
+
 ## Getting Started
 
 ### Prerequisites

@@ -72,17 +72,7 @@ export class ExpensesManager {
      * @param {Object} fields
      */
     static async updateExistingExpense(expenseId, fields) {
-        const name = window.getCollection ? window.getCollection('expenses') : 'expenses';
-        const coll = FirebaseService.db.collection(name);
-        let refs;
-        if (typeof expenseId === 'number' || !isNaN(Number(expenseId))) {
-            const snapshot = await coll.where('id', '==', Number(expenseId)).get();
-            refs = snapshot.docs.map(doc => doc.ref);
-        } else {
-            refs = [coll.doc(String(expenseId))];
-        }
-        if (refs.length === 0) throw new Error('Expense not found');
-        await Promise.all(refs.map(ref => ref.update(fields)));
+        await FirebaseService.updateExpense(expenseId, fields);
     }
 
     /**

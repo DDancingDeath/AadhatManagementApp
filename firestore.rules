@@ -43,7 +43,7 @@ service cloud.firestore {
         'purchases', 'retailSales', 'wholesaleSales', 'items', 'expenses',
         'stockAdjustments', 'withdrawals', 'cashManagement', 'cashSessions',
         'settings', 'itemFrequency', 'notifications', 'autoSaves', 'drafts',
-        'counters', 'stockCheckpoints'
+        'counters'
       ];
     }
 
@@ -52,7 +52,7 @@ service cloud.firestore {
         'dev_purchases', 'dev_retailSales', 'dev_wholesaleSales', 'dev_items', 'dev_expenses',
         'dev_stockAdjustments', 'dev_withdrawals', 'dev_cashManagement', 'dev_cashSessions',
         'dev_settings', 'dev_itemFrequency', 'dev_notifications', 'dev_autoSaves', 'dev_drafts',
-        'dev_counters', 'dev_stockCheckpoints'
+        'dev_counters'
       ];
     }
 
@@ -74,6 +74,44 @@ service cloud.firestore {
     function keepsBillOwner(usersCol) {
       return isOwnerIn(usersCol)
         || request.resource.data.get('userId', null) == resource.data.get('userId', null);
+    }
+
+    // Stock records: writes must come from an app version that maintains the stock
+    // checkpoint (sets clientVersion >= 3). Blocks outdated apps from creating or
+    // overwriting bills/adjustments. DEPLOY ONLY AFTER every phone runs the new app.
+    function stockCollections() {
+      return ['purchases', 'retailSales', 'wholesaleSales', 'stockAdjustments',
+              'dev_purchases', 'dev_retailSales', 'dev_wholesaleSales', 'dev_stockAdjustments'];
+    }
+
+    function writesCurrentClient() {
+      return request.resource.data.get('clientVersion', 0) >= 3;
+    }
+
+    function businessAccess(collection) {
+      return (collection in businessCollections() && isApproved())
+        || (collection in devBusinessCollections() && isApprovedIn('dev_users'));
+    }
+
+    // --- stock checkpoint (stockCheckpoints/current) ---
+
+    function isManagerIn(usersCol) {
+      return isApprovedIn(usersCol) && get(profilePath(usersCol)).data.get('role', '') in ['owner', 'manager'];
+    }
+
+    // Fields any approved user may write to mark the checkpoint stale.
+    function staleMarkOnly() {
+      return request.resource.data.get('stale', false) == true
+        && (resource == null
+            ? request.resource.data.keys().hasOnly(['stale', 'staleCount', 'staleAt', 'staleReason', 'staleBy'])
+            : request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['stale', 'staleCount', 'staleAt', 'staleReason', 'staleBy']));
+    }
+
+    function checkpointRules(usersCol, docId) {
+      return docId == 'current'
+        ? (isManagerIn(usersCol) || (isApprovedIn(usersCol) && staleMarkOnly()))
+        : isApprovedIn(usersCol);
     }
 
     // --- user profile rules (shared by users and dev_users) ---
@@ -105,20 +143,36 @@ service cloud.firestore {
 
     // Business collections (production and dev_ mirrors) live under one wildcard match.
     match /{collection}/{docId} {
-      allow read, create: if (collection in businessCollections() && isApproved())
-        || (collection in devBusinessCollections() && isApprovedIn('dev_users'));
+      allow read: if businessAccess(collection);
+      // Stock records need an up-to-date app (clientVersion >= 3) on create/update.
+      allow create: if businessAccess(collection)
+        && (!(collection in stockCollections()) || writesCurrentClient());
       // Anyone approved may update a bill (e.g. record payments on others' bills),
       // but only an owner may change who created it (it gates deletion below).
-      allow update: if (collection in businessCollections() && isApproved()
-            && (!(collection in billCollections()) || keepsBillOwner('users')))
-        || (collection in devBusinessCollections() && isApprovedIn('dev_users')
-            && (!(collection in devBillCollections()) || keepsBillOwner('dev_users')));
+      allow update: if businessAccess(collection)
+        && (!(collection in stockCollections()) || writesCurrentClient())
+        && ((collection in businessCollections() && (!(collection in billCollections()) || keepsBillOwner('users')))
+            || (collection in devBusinessCollections() && (!(collection in devBillCollections()) || keepsBillOwner('dev_users'))));
       // Bills can only be deleted by an owner or by the user who created them
       // (matches the client check in history.js deleteBill).
       allow delete: if (collection in businessCollections() && !(collection in billCollections()) && isApproved())
         || (collection in devBusinessCollections() && !(collection in devBillCollections()) && isApprovedIn('dev_users'))
         || (collection in billCollections() && canDeleteBill('users'))
         || (collection in devBillCollections() && canDeleteBill('dev_users'));
+    }
+
+    // State/lease writes: owner or manager only; anyone approved may mark it stale.
+    // Other docs (legacyScan): any approved user.
+    match /stockCheckpoints/{docId} {
+      allow read: if isApproved();
+      allow create, update: if checkpointRules('users', docId);
+      allow delete: if isManagerIn('users');
+    }
+
+    match /dev_stockCheckpoints/{docId} {
+      allow read: if isApprovedIn('dev_users');
+      allow create, update: if checkpointRules('dev_users', docId);
+      allow delete: if isManagerIn('dev_users');
     }
 
     match /users/{userId} {
