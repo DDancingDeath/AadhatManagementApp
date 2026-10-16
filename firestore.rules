@@ -1,175 +1,280 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check if user is authenticated
+
+    // ============================================
+    // HELPERS
+    // Production collections use the 'users' collection as the source of a
+    // caller's profile; development (dev_ prefix) collections use 'dev_users'.
+    // ============================================
+
     function isSignedIn() {
       return request.auth != null;
     }
-    
-    // Helper function to check user role from their user document
-    function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+
+    function profilePath(usersCol) {
+      return /databases/$(database)/documents/$(usersCol)/$(request.auth.uid);
     }
-    
-    // Helper function to check if user has admin/owner role
+
+    // Approved = has a profile whose status is not pending/rejected and whose role is known.
+    // Legacy approved profiles have status 'active', 'approved' or no status field at all.
+    function isApprovedIn(usersCol) {
+      return isSignedIn()
+        && exists(profilePath(usersCol))
+        && !(get(profilePath(usersCol)).data.get('status', '') in ['pending', 'rejected'])
+        && get(profilePath(usersCol)).data.get('role', '') in ['owner', 'manager', 'staff'];
+    }
+
+    function isOwnerIn(usersCol) {
+      return isApprovedIn(usersCol) && get(profilePath(usersCol)).data.get('role', '') == 'owner';
+    }
+
+    function isApproved() {
+      return isApprovedIn('users');
+    }
+
     function isAdmin() {
-      return isSignedIn() && getUserRole() == 'owner';
+      return isOwnerIn('users');
     }
-    
+
+    // Shared business data: every approved user (owner/manager/staff) can read/write.
+    function businessCollections() {
+      return [
+        'purchases', 'retailSales', 'wholesaleSales', 'items', 'expenses',
+        'stockAdjustments', 'withdrawals', 'cashManagement', 'cashSessions',
+        'settings', 'itemFrequency', 'notifications', 'autoSaves', 'drafts',
+        'counters'
+      ];
+    }
+
+    function devBusinessCollections() {
+      return [
+        'dev_purchases', 'dev_retailSales', 'dev_wholesaleSales', 'dev_items', 'dev_expenses',
+        'dev_stockAdjustments', 'dev_withdrawals', 'dev_cashManagement', 'dev_cashSessions',
+        'dev_settings', 'dev_itemFrequency', 'dev_notifications', 'dev_autoSaves', 'dev_drafts',
+        'dev_counters'
+      ];
+    }
+
+    // --- bills (purchases / retail / wholesale sales) ---
+
+    function billCollections() {
+      return ['purchases', 'retailSales', 'wholesaleSales'];
+    }
+
+    function devBillCollections() {
+      return ['dev_purchases', 'dev_retailSales', 'dev_wholesaleSales'];
+    }
+
+    function canDeleteBill(usersCol) {
+      // resource is null when deleting a doc that is already gone (no-op).
+      return isOwnerIn(usersCol)
+        || (isApprovedIn(usersCol)
+            && (resource == null || resource.data.get('userId', null) == request.auth.uid));
+    }
+
+    function keepsBillOwner(usersCol) {
+      return isOwnerIn(usersCol)
+        || request.resource.data.get('userId', null) == resource.data.get('userId', null);
+    }
+
+    // Full edits: owner/manager, or the bill's creator (legacy bills without
+    // userId: owner/manager only).
+    function canFullyEditBill(usersCol) {
+      return isManagerIn(usersCol)
+        || (resource.data.get('userId', null) != null
+            && resource.data.get('userId', null) == request.auth.uid);
+    }
+
+    // Everyone else may only touch payment/due bookkeeping written by the app:
+    // payments (outstanding.js applyPaymentTransaction), clearing (markAsCleared,
+    // wholesale markSaleAsCleared) and the legacy backfill (openDue, clientVersion,
+    // a missing numeric timestamp). `timestamp` and `id` may only be filled in,
+    // never changed.
+    function bookkeepingOnly(docId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly([
+          'payment', 'payments', 'dueAmount', 'openDue', 'clientVersion',
+          'cleared', 'clearedAt', 'clearedBy', 'clearedByName',
+          'timestamp', 'id'
+        ])
+        && (!changed.hasAny(['timestamp']) || !(resource.data.get('timestamp', null) is number))
+        && (!changed.hasAny(['id']) || (!('id' in resource.data) && request.resource.data.id == docId));
+    }
+
+    function canUpdateBill(usersCol, docId) {
+      return keepsBillOwner(usersCol) && (canFullyEditBill(usersCol) || bookkeepingOnly(docId));
+    }
+
+    // settings/app (minClientVersion) can lock every outdated phone out: owner only.
+    function appSettingsGuard(collection, docId) {
+      return !(docId == 'app' && collection in ['settings', 'dev_settings'])
+        || isOwnerIn(collection == 'settings' ? 'users' : 'dev_users');
+    }
+
+    // Stock records: writes must come from an app version that maintains the stock
+    // checkpoint (sets clientVersion >= 3). Blocks outdated apps from creating or
+    // overwriting bills/adjustments. DEPLOY ONLY AFTER every phone runs the new app.
+    function stockCollections() {
+      return ['purchases', 'retailSales', 'wholesaleSales', 'stockAdjustments',
+              'dev_purchases', 'dev_retailSales', 'dev_wholesaleSales', 'dev_stockAdjustments'];
+    }
+
+    // The clientVersion gate is switched on by the owner (settings/app.enforceClientVersion
+    // = true, dev_settings/app for dev_) once every phone runs the new app, so these rules
+    // can be deployed before the old APK is retired.
+    function clientGateOn(collection) {
+      let settingsPath = /databases/$(database)/documents/$(collection.matches('dev_.*') ? 'dev_settings' : 'settings')/app;
+      return exists(settingsPath) && get(settingsPath).data.get('enforceClientVersion', false) == true;
+    }
+
+    function writesCurrentClient(collection) {
+      return !clientGateOn(collection) || request.resource.data.get('clientVersion', 0) >= 3;
+    }
+
+    function businessAccess(collection) {
+      return (collection in businessCollections() && isApproved())
+        || (collection in devBusinessCollections() && isApprovedIn('dev_users'));
+    }
+
+    // --- stock checkpoint (stockCheckpoints/current) ---
+
+    function isManagerIn(usersCol) {
+      return isApprovedIn(usersCol) && get(profilePath(usersCol)).data.get('role', '') in ['owner', 'manager'];
+    }
+
+    // Fields any approved user may write to mark the checkpoint stale.
+    function staleMarkOnly() {
+      return request.resource.data.get('stale', false) == true
+        && (resource == null
+            ? request.resource.data.keys().hasOnly(['stale', 'staleCount', 'staleAt', 'staleReason', 'staleBy'])
+            : request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['stale', 'staleCount', 'staleAt', 'staleReason', 'staleBy']));
+    }
+
+    function checkpointRules(usersCol, docId) {
+      return docId == 'current'
+        ? (isManagerIn(usersCol) || (isApprovedIn(usersCol) && staleMarkOnly()))
+        : docId == 'legacyScan'
+          ? isManagerIn(usersCol)
+          : isApprovedIn(usersCol);
+    }
+
+    // --- user profile rules (shared by users and dev_users) ---
+
+    function canReadProfile(usersCol, userId) {
+      // A pending/rejected user must still be able to read their own profile at login.
+      return isApprovedIn(usersCol) || (isSignedIn() && request.auth.uid == userId);
+    }
+
+    function canCreateProfile(userId) {
+      // Self-registration only, and always as a pending staff member.
+      return isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.get('status', '') == 'pending'
+        && request.resource.data.get('role', '') == 'staff';
+    }
+
+    function canUpdateProfile(usersCol, userId) {
+      return isOwnerIn(usersCol)
+        || (isSignedIn()
+            && request.auth.uid == userId
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['role', 'status', 'approvedAt', 'approvedBy']));
+    }
+
     // ============================================
-    // SHARED BUSINESS DATA - All authenticated users can read/write
-    // This is a shared business app where staff need full access
+    // PRODUCTION COLLECTIONS
     // ============================================
-    
-    // Purchases collection (renamed from bills) - all authenticated users can read/write
-    match /purchases/{purchaseId} {
-      allow read, write: if isSignedIn();
+
+    // Business collections (production and dev_ mirrors) live under one wildcard match.
+    match /{collection}/{docId} {
+      allow read: if businessAccess(collection);
+      // Stock records need an up-to-date app (clientVersion >= 3) on create/update.
+      allow create: if businessAccess(collection)
+        && appSettingsGuard(collection, docId)
+        && (!(collection in stockCollections()) || writesCurrentClient(collection));
+      // Bills: full edits by owner/manager/creator; anyone else approved may only
+      // record payment/due bookkeeping. Only an owner may change userId.
+      allow update: if businessAccess(collection)
+        && appSettingsGuard(collection, docId)
+        && (!(collection in stockCollections()) || writesCurrentClient(collection))
+        && ((collection in businessCollections() && (!(collection in billCollections()) || canUpdateBill('users', docId)))
+            || (collection in devBusinessCollections() && (!(collection in devBillCollections()) || canUpdateBill('dev_users', docId))));
+      // Bills can only be deleted by an owner or by the user who created them
+      // (matches the client check in history.js deleteBill).
+      allow delete: if appSettingsGuard(collection, docId) && (
+           (collection in businessCollections() && !(collection in billCollections()) && isApproved())
+        || (collection in devBusinessCollections() && !(collection in devBillCollections()) && isApprovedIn('dev_users'))
+        || (collection in billCollections() && canDeleteBill('users'))
+        || (collection in devBillCollections() && canDeleteBill('dev_users')));
     }
-    
-    // Retail Sales collection - all authenticated users can read/write
-    match /retailSales/{saleId} {
-      allow read, write: if isSignedIn();
+
+    // State/lease writes: owner or manager only; anyone approved may mark it stale.
+    // legacyScan (backfill completion state): owner/manager only, so staff can't
+    // switch the backfill off; staff devices still backfill and ignore the denied
+    // state write. Other docs: any approved user.
+    match /stockCheckpoints/{docId} {
+      allow read: if isApproved();
+      allow create, update: if checkpointRules('users', docId);
+      allow delete: if isManagerIn('users');
     }
-    
-    // Wholesale Sales collection - all authenticated users can read/write
-    match /wholesaleSales/{saleId} {
-      allow read, write: if isSignedIn();
+
+    match /dev_stockCheckpoints/{docId} {
+      allow read: if isApprovedIn('dev_users');
+      allow create, update: if checkpointRules('dev_users', docId);
+      allow delete: if isManagerIn('dev_users');
     }
-    
-    // Items collection - all authenticated users can read/write
-    match /items/{itemId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Expenses collection - all authenticated users can read/write
-    match /expenses/{expenseId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Stock adjustments - all authenticated users can read/write
-    match /stockAdjustments/{adjustmentId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Withdrawals collection - all authenticated users can read/write
-    match /withdrawals/{withdrawalId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Cash management - all authenticated users can read/write
-    match /cashManagement/{sessionId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Cash sessions - all authenticated users can read/write
-    match /cashSessions/{sessionId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Settings collection - all authenticated users can read/write
-    match /settings/{settingId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // ============================================
-    // USER-SPECIFIC DATA - Users access their own data
-    // ============================================
-    
-    // Users collection - all can read (for user lists), but only admins can modify others
+
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update, delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow read: if canReadProfile('users', userId);
+      allow create: if canCreateProfile(userId);
+      allow update: if canUpdateProfile('users', userId);
+      allow delete: if isAdmin();
     }
-    
-    // Item frequency collection - all authenticated users can read/write (shared data)
-    match /itemFrequency/{docId} {
-      allow read, write: if isSignedIn();
+
+    match /users/{userId}/preferences/{prefId} {
+      allow read, write: if isApproved() && request.auth.uid == userId;
     }
-    
-    // Notifications collection - all authenticated users can read/write
-    match /notifications/{notificationId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Auto-save drafts - users can only access their own
-    match /autoSaves/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Bill drafts - users can only access their own  
-    match /drafts/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    // Audit logs - all can write (for logging), only owners can read
+
+    // Audit logs - approved users can write (for logging), only owners can read
     match /auditLogs/{logId} {
-      allow create: if isSignedIn();
-      allow read: if isSignedIn() && isAdmin();
+      allow create: if isApproved();
+      allow read: if isAdmin();
       allow update, delete: if false; // Never allow modification or deletion
     }
-    
-    // Telemetry - all can write (for error logging), only owners can read/delete
+
+    // Telemetry - approved users can write (for error logging), only owners can read/delete
     match /telemetry/{docId} {
-      allow create, update: if isSignedIn();
-      allow read, delete: if isSignedIn() && isAdmin();
+      allow create, update: if isApproved();
+      allow read, delete: if isAdmin();
     }
-    
+
     // ============================================
     // DEVELOPMENT ENVIRONMENT COLLECTIONS (dev_ prefix)
-    // Mirror all production rules for dev collections
+    // Same rules as production, with dev_users as the profile source.
     // ============================================
-    
-    match /dev_purchases/{docId} {
-      allow read, write: if isSignedIn();
+
+    match /dev_users/{userId} {
+      allow read: if canReadProfile('dev_users', userId);
+      allow create: if canCreateProfile(userId);
+      allow update: if canUpdateProfile('dev_users', userId);
+      allow delete: if isOwnerIn('dev_users');
     }
-    match /dev_retailSales/{docId} {
-      allow read, write: if isSignedIn();
+
+    match /dev_users/{userId}/preferences/{prefId} {
+      allow read, write: if isApprovedIn('dev_users') && request.auth.uid == userId;
     }
-    match /dev_wholesaleSales/{docId} {
-      allow read, write: if isSignedIn();
+
+    match /dev_auditLogs/{logId} {
+      allow create: if isApprovedIn('dev_users');
+      allow read: if isOwnerIn('dev_users');
+      allow update, delete: if false;
     }
-    match /dev_items/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_expenses/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_stockAdjustments/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_withdrawals/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_cashManagement/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_cashSessions/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_users/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_itemFrequency/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_notifications/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_autoSaves/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_drafts/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_auditLogs/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /dev_settings/{docId} {
-      allow read, write: if isSignedIn();
-    }
+
     match /dev_telemetry/{docId} {
-      allow read, write: if isSignedIn();
+      allow create, update: if isApprovedIn('dev_users');
+      allow read, delete: if isOwnerIn('dev_users');
     }
   }
 }

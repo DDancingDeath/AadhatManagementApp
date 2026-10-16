@@ -8,6 +8,30 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
+import { billTotal, outstandingDue } from '../utils/money.js';
+import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+import {
+    rangeStatus, retryRange, applyRangeState, isFullHistoryLoaded, needsHistoryFrom,
+    ensureHistoryFrom, historyLoadedFrom, monthStart
+} from '../utils/history-window.js';
+import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+
+/** Placeholder for all-time figures until the full history is loaded. */
+const NOT_LOADED = '—';
+
+const isShown = (el) => !!el && el.style.display !== 'none';
+
+/**
+ * 'YYYY-MM' of the first calendar month entirely at/after `ms`.
+ * @param {number} ms
+ * @returns {string}
+ */
+const firstFullMonthKey = (ms) => {
+    const d = new Date(ms);
+    const first = (d.getDate() === 1 && d.getHours() === 0 && d.getMinutes() === 0)
+        ? d : new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return `${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, '0')}`;
+};
 
 /**
  * Finance Manager - Manages financial operations and reporting
@@ -35,7 +59,7 @@ export class FinanceManager {
     static setDefaultDate() {
         const dateInput = document.getElementById('withdrawalDate');
         if (dateInput) {
-            dateInput.value = new Date().toISOString().split('T')[0];
+            dateInput.value = todayLocalISO();
         }
     }
 
@@ -167,7 +191,7 @@ export class FinanceManager {
             return;
         }
         
-        if (new Date(startDate) > new Date(endDate)) {
+        if (parseLocalDate(startDate) > parseLocalDate(endDate)) {
             UIManager.showToast('Start date must be before end date');
             return;
         }
@@ -178,12 +202,60 @@ export class FinanceManager {
     }
 
     /**
+     * Earliest date the current filter needs (local midnight; null = all time).
+     * Matches isInDateRange.
+     * @returns {Date|null}
+     */
+    static getRangeStart() {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        switch (this.currentDateFilter) {
+            case 'week':
+                return new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
+            case 'month': {
+                const d = new Date(today);
+                d.setMonth(d.getMonth() - 1);
+                return d;
+            }
+            case 'year': {
+                const d = new Date(today);
+                d.setFullYear(d.getFullYear() - 1);
+                return d;
+            }
+            case 'custom':
+                if (this.customStartDate && this.customEndDate) return parseLocalDate(this.customStartDate);
+                return null;
+            case 'all':
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Gate a finance view on its history range. Only kicks off a load when the
+     * view is on screen; hidden views just report 'loading'.
+     * @param {string} owner
+     * @param {Date|null} start
+     * @param {HTMLElement} sectionEl
+     * @param {Function} rerender
+     * @returns {'ready'|'loading'|'error'}
+     */
+    static gate(owner, start, sectionEl, rerender) {
+        if (!needsHistoryFrom(start)) {
+            retryRange(owner);
+            return 'ready';
+        }
+        if (!isShown(sectionEl)) return 'loading';
+        return rangeStatus(owner, start, rerender);
+    }
+
+    /**
      * Check if a date falls within the current filter
      * @param {Date|string} date - Date to check
      * @returns {boolean}
      */
     static isInDateRange(date) {
-        const d = new Date(date);
+        const d = parseAnyBillDate(date) || new Date(NaN);
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         
@@ -202,8 +274,8 @@ export class FinanceManager {
                 return d >= yearAgo;
             case 'custom':
                 if (this.customStartDate && this.customEndDate) {
-                    const start = new Date(this.customStartDate);
-                    const end = new Date(this.customEndDate);
+                    const start = parseLocalDate(this.customStartDate);
+                    const end = parseLocalDate(this.customEndDate);
                     end.setHours(23, 59, 59, 999);
                     return d >= start && d <= end;
                 }
@@ -225,8 +297,8 @@ export class FinanceManager {
             case 'year': return 'This Year';
             case 'custom': 
                 if (this.customStartDate && this.customEndDate) {
-                    const start = new Date(this.customStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-                    const end = new Date(this.customEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                    const start = parseLocalDate(this.customStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                    const end = parseLocalDate(this.customEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                     return `${start} - ${end}`;
                 }
                 return 'Custom';
@@ -239,6 +311,23 @@ export class FinanceManager {
      * Render the dashboard with financial overview
      */
     static renderDashboard() {
+        // Never show partial totals: wait until the selected period is loaded
+        const section = document.getElementById('financeDashboardSection');
+        const start = this.getRangeStart();
+        const status = this.gate('financeDashboard', start, section, () => this.renderDashboard());
+        if (section) {
+            const scopes = [...section.children].filter(el =>
+                !el.querySelector('.filter-buttons') && !el.classList.contains('history-range-notice'));
+            applyRangeState(scopes, isShown(section) ? status : 'ready', {
+                loadingText: start ? 'Loading older data for this period…' : 'Loading full history…',
+                onRetry: () => {
+                    retryRange('financeDashboard');
+                    this.renderDashboard();
+                }
+            });
+        }
+        if (status === 'loading') return;
+
         const salesHistory = AppState.salesHistory || [];
         const retailSalesHistory = AppState.retailSalesHistory || [];
         const purchaseHistory = AppState.purchaseHistory || [];
@@ -264,7 +353,7 @@ export class FinanceManager {
 
         // Investment (purchases)
         purchaseHistory.filter(p => this.isInDateRange(p.date)).forEach(purchase => {
-            investment += parseFloat(purchase.total) || 0;
+            investment += billTotal(purchase);
             investmentCount++;
         });
 
@@ -310,14 +399,68 @@ export class FinanceManager {
         updateElement('financePersonalExp', `₹${Math.round(personalExp).toLocaleString('en-IN')}`);
         updateElement('financePersonalExpCount', `${personalExpCount} entries`);
 
-        updateElement('financeTotalWithdrawn', `₹${Math.round(withdrawals).toLocaleString('en-IN')}`);
-        updateElement('financeAvailableBalance', `₹${Math.round(availableBalance).toLocaleString('en-IN')}`);
+        // Withdrawals are an all-time total: show it only once full history is loaded
+        const fullHistory = isFullHistoryLoaded();
+        updateElement('financeTotalWithdrawn', fullHistory ? `₹${Math.round(withdrawals).toLocaleString('en-IN')}` : NOT_LOADED);
+        updateElement('financeAvailableBalance', fullHistory ? `₹${Math.round(availableBalance).toLocaleString('en-IN')}` : NOT_LOADED);
+        this.renderFullHistoryPrompt(fullHistory);
 
         // Render breakdown table
-        this.renderProfitBreakdown(revenue, investment, businessExp, personalExp, withdrawals, profit, availableBalance);
+        this.renderProfitBreakdown(revenue, investment, businessExp, personalExp,
+            fullHistory ? withdrawals : null, profit, fullHistory ? availableBalance : null);
         
         // Render monthly chart
         this.renderMonthlyChart();
+    }
+
+    /**
+     * Prompt under the withdrawals summary while all-time figures show "—".
+     * @param {boolean} fullHistory
+     */
+    static renderFullHistoryPrompt(fullHistory) {
+        const anchor = document.getElementById('financeAvailableBalance');
+        const card = anchor?.closest('.card');
+        if (!card) return;
+        let prompt = card.querySelector('.finance-full-history-prompt');
+        if (fullHistory) {
+            prompt?.remove();
+            return;
+        }
+        if (!prompt) {
+            prompt = document.createElement('div');
+            prompt.className = 'history-search-footer finance-full-history-prompt';
+            card.appendChild(prompt);
+        }
+        prompt.textContent = '';
+        const text = document.createElement('span');
+        text.textContent = 'All-time figures need the full history.';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'history-search-older-btn';
+        btn.disabled = !!this.loadingFullHistory;
+        btn.textContent = this.loadingFullHistory ? 'Loading full history…' : 'Load full history';
+        btn.addEventListener('click', () => this.loadFullHistory());
+        prompt.append(text, ' ', btn);
+    }
+
+    /**
+     * Load every older record (explicit user action), then re-render.
+     * @async
+     */
+    static async loadFullHistory() {
+        if (this.loadingFullHistory) return;
+        this.loadingFullHistory = true;
+        this.renderFullHistoryPrompt(false);
+        try {
+            const covered = await ensureHistoryFrom(null);
+            if (!covered) UIManager.showToast("Couldn't load full history");
+        } catch (error) {
+            console.error('Loading full history failed:', error);
+            UIManager.showToast("Couldn't load full history");
+        } finally {
+            this.loadingFullHistory = false;
+            this.renderDashboard();
+        }
     }
 
     /**
@@ -326,6 +469,10 @@ export class FinanceManager {
     static renderProfitBreakdown(revenue, investment, businessExp, personalExp, withdrawals, profit, balance) {
         const tbody = document.getElementById('financeProfitBreakdown');
         if (!tbody) return;
+        // withdrawals/balance are null until full history is loaded
+        const withdrawalsText = withdrawals === null ? NOT_LOADED : `-₹${Math.round(withdrawals).toLocaleString('en-IN')}`;
+        const balanceText = balance === null ? NOT_LOADED : `₹${Math.round(balance).toLocaleString('en-IN')}`;
+        const balanceClass = balance === null || balance >= 0 ? 'amount-positive' : 'amount-negative';
 
         tbody.innerHTML = `
             <tr>
@@ -350,11 +497,11 @@ export class FinanceManager {
             </tr>
             <tr>
                 <td>💸 Total Withdrawals</td>
-                <td class="amount-negative">-₹${Math.round(withdrawals).toLocaleString('en-IN')}</td>
+                <td class="amount-negative">${withdrawalsText}</td>
             </tr>
             <tr class="breakdown-total">
                 <td><strong>Available Balance</strong></td>
-                <td class="${balance >= 0 ? 'amount-positive' : 'amount-negative'}"><strong>₹${Math.round(balance).toLocaleString('en-IN')}</strong></td>
+                <td class="${balanceClass}"><strong>${balanceText}</strong></td>
             </tr>
         `;
     }
@@ -363,6 +510,21 @@ export class FinanceManager {
      * Render monthly profit chart
      */
     static renderMonthlyChart() {
+        const container = document.getElementById('financeMonthlyChart');
+        if (!container) return;
+
+        // The chart shows the last 6 calendar months: load them first
+        const chartStart = monthStart(5);
+        const status = this.gate('financeChart', chartStart,
+            document.getElementById('financeDashboardSection'), () => this.renderMonthlyChart());
+        if (status === 'loading') {
+            container.innerHTML = '<p class="empty-state">Loading older months…</p>';
+            return;
+        }
+        // Only months fully inside the loaded window (older due-only bills
+        // would otherwise show up as tiny, wrong bars)
+        const minMonthKey = isFullHistoryLoaded() ? null : firstFullMonthKey(historyLoadedFrom());
+
         const salesHistory = AppState.salesHistory || [];
         const retailSalesHistory = AppState.retailSalesHistory || [];
         const purchaseHistory = AppState.purchaseHistory || [];
@@ -372,29 +534,32 @@ export class FinanceManager {
         const monthlyData = {};
 
         [...salesHistory, ...retailSalesHistory].forEach(sale => {
-            const date = new Date(sale.date);
+            const date = parseAnyBillDate(sale.date);
+            if (!date) return;
             const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
             monthlyData[key].revenue += parseFloat(sale.total) || 0;
         });
 
         purchaseHistory.forEach(purchase => {
-            const date = new Date(purchase.date);
+            const date = parseAnyBillDate(purchase.date);
+            if (!date) return;
             const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
-            monthlyData[key].costs += parseFloat(purchase.total) || 0;
+            monthlyData[key].costs += billTotal(purchase);
         });
 
         expensesHistory.forEach(expense => {
-            const date = new Date(expense.date);
+            const date = parseAnyBillDate(expense.date);
+            if (!date) return;
             const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
             monthlyData[key].costs += parseFloat(expense.amount) || 0;
         });
 
-        const sortedMonths = Object.keys(monthlyData).sort().slice(-6);
-        const container = document.getElementById('financeMonthlyChart');
-        if (!container) return;
+        const sortedMonths = Object.keys(monthlyData)
+            .filter(m => !minMonthKey || m >= minMonthKey)
+            .sort().slice(-6);
 
         if (sortedMonths.length === 0) {
             container.innerHTML = '<p class="empty-state">No data available yet</p>';
@@ -434,8 +599,15 @@ export class FinanceManager {
         // Calculate outstanding amounts
         const { dueToReceive, dueToPay } = this.calculateOutstanding();
         
-        // Calculate business balance (profit - withdrawals)
-        const businessBalance = this.calculateBusinessBalance();
+        // Calculate business balance (profit - withdrawals) — needs all history
+        const section = document.getElementById('financeAssetsSection');
+        const allStatus = this.gate('financeAssets', null, section, () => this.renderAssets());
+        this.applyAllTimeState(section, allStatus, () => {
+            retryRange('financeAssets');
+            this.renderAssets();
+        });
+        const allTimeReady = allStatus === 'ready';
+        const businessBalance = allTimeReady ? this.calculateBusinessBalance() : 0;
         
         // Calculate custom accounts total
         let customAssetsTotal = 0;
@@ -457,11 +629,11 @@ export class FinanceManager {
             if (el) el.textContent = value;
         };
 
-        updateElement('financeNetWorth', `₹${Math.round(netWorth).toLocaleString('en-IN')}`);
+        updateElement('financeNetWorth', allTimeReady ? `₹${Math.round(netWorth).toLocaleString('en-IN')}` : NOT_LOADED);
         updateElement('assetStockValue', `₹${Math.round(stockValue).toLocaleString('en-IN')}`);
         updateElement('assetDueReceive', `₹${Math.round(dueToReceive).toLocaleString('en-IN')}`);
         updateElement('assetDuePay', `-₹${Math.round(dueToPay).toLocaleString('en-IN')}`);
-        updateElement('assetBusinessBalance', `₹${Math.round(businessBalance).toLocaleString('en-IN')}`);
+        updateElement('assetBusinessBalance', allTimeReady ? `₹${Math.round(businessBalance).toLocaleString('en-IN')}` : NOT_LOADED);
         
         // Render custom accounts
         this.renderCustomAccounts();
@@ -490,27 +662,20 @@ export class FinanceManager {
      */
     static calculateOutstanding() {
         const salesHistory = AppState.salesHistory || [];
+        const retailSalesHistory = AppState.retailSalesHistory || [];
         const purchaseHistory = AppState.purchaseHistory || [];
         
         let dueToReceive = 0;
         let dueToPay = 0;
         
-        // Due from sales
-        salesHistory.forEach(sale => {
-            const total = parseFloat(sale.total) || 0;
-            const paid = parseFloat(sale.amountPaid) || parseFloat(sale.cashPayment) || 0;
-            const online = parseFloat(sale.onlinePayment) || 0;
-            const due = total - paid - online;
-            if (due > 0) dueToReceive += due;
+        // Due from sales (wholesale + retail), same rule as the Outstanding screen
+        [...salesHistory, ...retailSalesHistory].forEach(sale => {
+            dueToReceive += outstandingDue(sale);
         });
         
         // Due for purchases
         purchaseHistory.forEach(purchase => {
-            const total = parseFloat(purchase.total) || 0;
-            const paid = parseFloat(purchase.amountPaid) || parseFloat(purchase.cashPayment) || 0;
-            const online = parseFloat(purchase.onlinePayment) || 0;
-            const due = total - paid - online;
-            if (due > 0) dueToPay += due;
+            dueToPay += outstandingDue(purchase);
         });
         
         return { dueToReceive, dueToPay };
@@ -531,7 +696,7 @@ export class FinanceManager {
         [...salesHistory, ...retailSalesHistory].forEach(s => revenue += parseFloat(s.total) || 0);
         
         let costs = 0;
-        purchaseHistory.forEach(p => costs += parseFloat(p.total) || 0);
+        purchaseHistory.forEach(p => costs += billTotal(p));
         expensesHistory.forEach(e => costs += parseFloat(e.amount) || 0);
         
         let withdrawals = 0;
@@ -558,9 +723,9 @@ export class FinanceManager {
             html += `
                 <div class="asset-item" onclick="window.app.finance.editAccount(${index})">
                     <div class="asset-info">
-                        <span class="asset-icon">${acc.icon}</span>
+                        <span class="asset-icon">${Helpers.escapeHtml(acc.icon)}</span>
                         <div>
-                            <div class="asset-name">${acc.name}</div>
+                            <div class="asset-name">${Helpers.escapeHtml(acc.name)}</div>
                             <div class="asset-desc">${isAsset ? 'Asset' : 'Liability'}</div>
                         </div>
                     </div>
@@ -694,10 +859,35 @@ export class FinanceManager {
     }
 
     /**
+     * Loading/error notice for views whose figures need the full history.
+     * @param {HTMLElement|null} section
+     * @param {'ready'|'loading'|'error'} status
+     * @param {Function} onRetry
+     */
+    static applyAllTimeState(section, status, onRetry) {
+        if (!section) return;
+        const first = [...section.children].find(el => !el.classList.contains('history-range-notice'));
+        applyRangeState(first, isShown(section) ? status : 'ready', {
+            loadingText: 'Loading full history…',
+            errorText: "Couldn't load full history, so all-time totals are hidden.",
+            onRetry
+        });
+    }
+
+    /**
      * Render withdrawals section
      */
     static renderWithdrawals() {
         const withdrawalsHistory = AppState.withdrawalsHistory || [];
+
+        // Totals are all-time: load full history when this view is opened
+        const section = document.getElementById('financeWithdrawalsSection');
+        const allStatus = this.gate('financeWithdrawals', null, section, () => this.renderWithdrawals());
+        this.applyAllTimeState(section, allStatus, () => {
+            retryRange('financeWithdrawals');
+            this.renderWithdrawals();
+        });
+        const allTimeReady = allStatus === 'ready';
         
         let totalWithdrawn = 0;
         withdrawalsHistory.forEach(w => totalWithdrawn += parseFloat(w.amount) || 0);
@@ -711,7 +901,7 @@ export class FinanceManager {
         let revenue = 0;
         [...salesHistory, ...retailSalesHistory].forEach(s => revenue += parseFloat(s.total) || 0);
         let costs = 0;
-        purchaseHistory.forEach(p => costs += parseFloat(p.total) || 0);
+        purchaseHistory.forEach(p => costs += billTotal(p));
         expensesHistory.forEach(e => costs += parseFloat(e.amount) || 0);
         
         const profit = revenue - costs;
@@ -722,8 +912,8 @@ export class FinanceManager {
             if (el) el.textContent = value;
         };
 
-        updateElement('withdrawalTotal', `₹${Math.round(totalWithdrawn).toLocaleString('en-IN')}`);
-        updateElement('withdrawalAvailable', `₹${Math.round(available).toLocaleString('en-IN')}`);
+        updateElement('withdrawalTotal', allTimeReady ? `₹${Math.round(totalWithdrawn).toLocaleString('en-IN')}` : NOT_LOADED);
+        updateElement('withdrawalAvailable', allTimeReady ? `₹${Math.round(available).toLocaleString('en-IN')}` : NOT_LOADED);
         
         // Populate person datalist
         this.populateWithdrawalPersons();
@@ -741,7 +931,7 @@ export class FinanceManager {
         
         const datalist = document.getElementById('withdrawalPersonOptions');
         if (datalist) {
-            datalist.innerHTML = persons.map(p => `<option value="${p}">`).join('');
+            datalist.innerHTML = persons.map(p => `<option value="${Helpers.escapeHtml(p)}">`).join('');
         }
     }
 
@@ -793,7 +983,7 @@ export class FinanceManager {
                 createdAt: new Date().toISOString()
             };
             
-            await FirebaseService.addWithdrawal(withdrawal);
+            await FirebaseService.saveWithdrawal(withdrawal);
             
             // Clear form
             document.getElementById('withdrawalAmount').value = '';
@@ -819,9 +1009,14 @@ export class FinanceManager {
         if (!container) return;
         
         const withdrawalsHistory = AppState.withdrawalsHistory || [];
-        
+
+        // Older withdrawals load one month at a time as the user scrolls
+        attachOlderHistoryScroll(container, { noun: 'withdrawals', onLoaded: () => this.renderWithdrawalHistory() });
+
         if (withdrawalsHistory.length === 0) {
-            container.innerHTML = '<p class="empty-state">No withdrawals recorded yet</p>';
+            container.innerHTML = isFullHistoryLoaded()
+                ? '<p class="empty-state">No withdrawals recorded yet</p>'
+                : '<p class="empty-state">No recent withdrawals</p>';
             return;
         }
         
@@ -834,8 +1029,8 @@ export class FinanceManager {
             html += `
                 <div class="withdrawal-item">
                     <div class="withdrawal-info">
-                        <div class="withdrawal-person">💸 ${w.person}</div>
-                        <div class="withdrawal-purpose">${w.purpose}</div>
+                        <div class="withdrawal-person">💸 ${Helpers.escapeHtml(w.person)}</div>
+                        <div class="withdrawal-purpose">${Helpers.escapeHtml(w.purpose)}</div>
                         <div class="withdrawal-date">${date}</div>
                     </div>
                     <div class="withdrawal-amount">-₹${Math.round(w.amount).toLocaleString('en-IN')}</div>

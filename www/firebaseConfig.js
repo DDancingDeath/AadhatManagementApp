@@ -95,12 +95,27 @@ if (APP_ENV !== 'production') {
 }
 
 // Initialize Firebase
-let app;
+//
+// IMPORTANT: variable is intentionally NOT named `app`. A `let app`
+// declared at the top level of a classic <script> creates a binding in
+// the global lexical environment that SHADOWS `window.app` for inline
+// event handlers (`onclick="app.x()"`) — even though it is not visible
+// as a `window.app` property in DevTools. That broke every
+// `onclick="app.chat.X()"` button in www/templates/chat.html: the AI
+// Assistant Send button silently threw `Cannot read properties of
+// undefined (reading 'sendFromInput')` because inline handlers
+// resolved `app` to *this* Firebase App instance instead of the
+// application's `window.app` object.
+//
+// Found via Playwright interaction-driver in the staging clone repo
+// (DDancingDeath/AadhatManagementApp-staging). Full RCA in that repo's
+// docs/REVIEW_ISSUES.md → STG-WALK-5.
+let firebaseApp;
 try {
-  app = firebase.initializeApp(firebaseConfig);
+  firebaseApp = firebase.initializeApp(firebaseConfig);
 } catch (error) {
   if (error.code === 'app/duplicate-app') {
-    app = firebase.app();
+    firebaseApp = firebase.app();
   } else {
     console.error('Firebase initialization error:', error);
     throw error;
@@ -112,6 +127,15 @@ const auth = firebase.auth();
 
 // Initialize Cloud Firestore
 const db = firebase.firestore();
+
+// Local testing against the Firebase emulators: only on localhost with ?emulator=1
+// (ports match firebase.json "emulators"). Never active in production or the APK.
+if (['localhost', '127.0.0.1'].includes(window.location.hostname) &&
+    new URLSearchParams(window.location.search).get('emulator') === '1') {
+  auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
+  db.useEmulator('127.0.0.1', 8181);
+  console.log('🧪 Using Firebase emulators (auth:9099, firestore:8181)');
+}
 
 // Enable offline persistence (Note: Using compat API for simplicity)
 db.enablePersistence({ synchronizeTabs: true })

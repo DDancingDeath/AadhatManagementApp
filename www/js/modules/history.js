@@ -10,6 +10,19 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
+import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import {
+    ensureHistoryFrom, isFullHistoryLoaded, historyLoadedFrom, formatWindowDate, findBillIndex
+} from '../utils/history-window.js';
+
+/**
+ * Stable reference to a bill for inline onclick handlers. Indices into the
+ * history arrays shift when live sync or older-history loads add records, so
+ * handlers pass the bill id instead ("id:<id>"); viewBill resolves it.
+ * @param {Object} bill
+ * @returns {string} JS-and-HTML-escaped string literal body
+ */
+const billRef = (bill) => Helpers.escapeJsAttr(`id:${bill.id}`);
 
 /**
  * History Manager - Manages transaction history
@@ -22,6 +35,12 @@ export class HistoryManager {
      * @static
      */
     static viewMode = 'card';
+
+    /** Search term of the last render (infinite scroll is off while searching). */
+    static activeSearch = '';
+
+    /** True while "Search older bills" is loading full history. */
+    static searchingOlder = false;
 
     /**
      * Save current bill to history with loading indicator
@@ -138,7 +157,7 @@ export class HistoryManager {
         
         const datalist = document.getElementById('customerOptions');
         if (datalist) {
-            datalist.innerHTML = uniqueCustomers.map(name => `<option value="${name}">`).join('');
+            datalist.innerHTML = uniqueCustomers.map(name => `<option value="${Helpers.escapeHtml(name)}">`).join('');
         }
     }
 
@@ -193,31 +212,22 @@ export class HistoryManager {
         });
         
         // Check view mode and render accordingly
+        this.activeSearch = (searchTerm || '').trim();
         if (this.viewMode === 'table') {
             this.renderHistoryTable(sortedBills, type);
+            this.updateOlderHistoryUi();
             return;
         }
 
         if (sortedBills.length === 0) {
-            const message = searchTerm ? `No results found for "${searchTerm}"` : `No ${type} history yet`;
-            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(this.emptyMessage(type, searchTerm))}</p>`;
+            this.updateOlderHistoryUi();
             return;
         }
 
         container.innerHTML = "";
 
-        sortedBills.forEach((bill, sortedIndex) => {
-            // Find correct index based on bill type
-            let billIndex;
-            if (bill.type === 'purchase') {
-                billIndex = purchaseHistory.findIndex(b => b.id === bill.id);
-            } else if (bill.type === 'retail') {
-                billIndex = retailSalesHistory.findIndex(s => s.id === bill.id);
-            } else if (bill.type === 'wholesale') {
-                billIndex = salesHistory.findIndex(s => s.id === bill.id);
-            } else {
-                billIndex = -1;
-            }
+        sortedBills.forEach((bill) => {
             const div = document.createElement("div");
             div.className = "history-item";
             div.setAttribute('data-type', bill.type);
@@ -251,18 +261,108 @@ export class HistoryManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill(${billIndex}, '${bill.type}')">#${billNumber}</span>${bill.customerName ? ` <strong>${bill.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill('${billRef(bill)}', '${Helpers.escapeJsAttr(bill.type)}')">#${Helpers.escapeHtml(billNumber)}</span>${bill.customerName ? ` <strong>${Helpers.escapeHtml(bill.customerName)}</strong>` : ''}
                     <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
                 </div>
-                <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${bill.createdByName || bill.userName}</strong>` : ''}</div>
+                <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${Helpers.escapeHtml(bill.createdByName || bill.userName)}</strong>` : ''}</div>
                 <div class="history-summary">
-                    ${bill.items.map(item => item.name).join(', ')} • ${totalPackets} packets
+                    ${Helpers.escapeHtml(bill.items.map(item => item.name).join(', '))} • ${Helpers.escapeHtml(totalPackets)} packets
                 </div>
                 ${paymentHTML}
             `;
             
             container.appendChild(div);
         });
+        this.updateOlderHistoryUi();
+    }
+
+    /**
+     * Empty-list message; mentions the loaded window when older bills may exist.
+     * @param {string} type
+     * @param {string} searchTerm
+     * @returns {string} plain text (caller escapes)
+     */
+    static emptyMessage(type, searchTerm) {
+        if (searchTerm && searchTerm.trim()) return `No results found for "${searchTerm}"`;
+        if (!isFullHistoryLoaded()) {
+            return `No ${type} history since ${formatWindowDate(historyLoadedFrom())}`;
+        }
+        return `No ${type} history yet`;
+    }
+
+    /**
+     * Infinite scroll sentinel (loads one older month at a time) and the
+     * "Search older bills" footer shown while searching a partial window.
+     */
+    static updateOlderHistoryUi() {
+        const list = document.getElementById('historyList');
+        if (!list) return;
+
+        attachOlderHistoryScroll(list, {
+            noun: 'bills',
+            enabled: () => !this.activeSearch,
+            onLoaded: () => this.refreshHistory()
+        });
+
+        let footer = document.getElementById('historySearchFooter');
+        if (!footer) {
+            footer = document.createElement('div');
+            footer.id = 'historySearchFooter';
+            footer.className = 'history-search-footer';
+            list.parentNode?.appendChild(footer);
+        }
+        if (!this.activeSearch || (isFullHistoryLoaded() && !this.searchingOlder)) {
+            footer.style.display = 'none';
+            footer.textContent = '';
+            return;
+        }
+        footer.style.display = '';
+        footer.textContent = '';
+        const text = document.createElement('span');
+        text.textContent = `Showing matches from bills since ${formatWindowDate(historyLoadedFrom())}.`;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'history-search-older-btn';
+        btn.disabled = this.searchingOlder;
+        btn.textContent = this.searchingOlder ? 'Searching older bills…' : 'Search older bills';
+        btn.addEventListener('click', () => this.searchOlderBills());
+        footer.append(text, ' ', btn);
+    }
+
+    /**
+     * Load the full history (explicit user action — expensive) and re-run
+     * the current search over it.
+     * @async
+     */
+    static async searchOlderBills() {
+        if (this.searchingOlder) return;
+        this.searchingOlder = true;
+        this.updateOlderHistoryUi();
+        try {
+            const covered = await ensureHistoryFrom(null);
+            if (!covered) UIManager.showToast("Couldn't load older bills");
+        } catch (error) {
+            console.error('Loading full history failed:', error);
+            UIManager.showToast("Couldn't load older bills");
+        } finally {
+            this.searchingOlder = false;
+            this.refreshHistory();
+        }
+    }
+
+    /**
+     * Resolve a viewBill reference ("id:<id>" from the list, or a legacy
+     * numeric index) to the bill's current index in `history`.
+     * @param {Array<Object>} history
+     * @param {string|number} ref
+     * @returns {number}
+     */
+    static resolveBillIndex(history, ref) {
+        if (typeof ref === 'string' && ref.startsWith('id:')) {
+            return findBillIndex(history, ref.slice(3));
+        }
+        const index = Number(ref);
+        return Number.isInteger(index) ? index : -1;
     }
 
     /* Removed - retail sales now integrated in billing
@@ -277,7 +377,7 @@ export class HistoryManager {
         const itemsHTML = sale.items.map(item => {
             return `
                 <tr>
-                    <td>${item.name}</td>
+                    <td>${Helpers.escapeHtml(item.name)}</td>
                     <td style="text-align: center;">${item.weights?.length || 1}</td>
                     <td>${item.qty || 0} kg</td>
                     <td>₹${item.rate}</td>
@@ -301,17 +401,17 @@ export class HistoryManager {
                 ${sale.customerName ? `
                     <div class="bill-info-row">
                         <div class="bill-info-label">Customer:</div>
-                        <div class="bill-info-value"><strong>${sale.customerName}</strong></div>
+                        <div class="bill-info-value"><strong>${Helpers.escapeHtml(sale.customerName)}</strong></div>
                     </div>
                 ` : ''}
                 <div class="bill-info-row">
                     <div class="bill-info-label">Date:</div>
-                    <div class="bill-info-value" style="display: inline;">${sale.date}</div>
+                    <div class="bill-info-value" style="display: inline;">${Helpers.escapeHtml(sale.date)}</div>
                 </div>
                 ${sale.userName ? `
                     <div class="bill-info-row">
                         <div class="bill-info-label">Created By:</div>
-                        <div class="bill-info-value" style="display: inline;">${sale.userName}</div>
+                        <div class="bill-info-value" style="display: inline;">${Helpers.escapeHtml(sale.userName)}</div>
                     </div>
                 ` : ''}
             </div>
@@ -346,7 +446,7 @@ export class HistoryManager {
     }
     */
 
-    static async viewBill(index, type = 'purchase') {
+    static async viewBill(ref, type = 'purchase') {
         // Determine which history array to use based on type
         let history;
         if (type === 'purchase') {
@@ -359,6 +459,7 @@ export class HistoryManager {
             UIManager.showModal(`Unknown bill type: ${type}`);
             return;
         }
+        const index = this.resolveBillIndex(history, ref);
         const bill = history[index];
         
         if (!bill) {
@@ -366,8 +467,10 @@ export class HistoryManager {
             return;
         }
         
-        // Store bill index and type for edit/delete functionality
+        // Store bill index, id and type for edit/delete (id re-resolves the
+        // index later in case the arrays shifted in between)
         window.currentBillIndex = index;
+        window.currentBillId = bill.id;
         window.currentBillType = type;
         
         const totalPackets = bill.totalPackets || 0;
@@ -382,7 +485,7 @@ export class HistoryManager {
                 const weightsDisplay = item.weights.map(w => parseFloat(w).toFixed(1)).join('&nbsp;&nbsp;');
                 weightBreakdownHTML += `
                     <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid ${billColor};">
-                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${item.name} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
+                        <div style="font-weight: 600; color: #495057; margin-bottom: 6px;">${Helpers.escapeHtml(item.name)} (${item.weights.length} packets, ${(item.qty || 0).toFixed(1)}kg)</div>
                         <div style="color: #6c757d; font-size: 14px; white-space: pre;">${weightsDisplay}</div>
                     </div>
                 `;
@@ -392,10 +495,10 @@ export class HistoryManager {
         // Build items table
         const itemsHTML = bill.items.map(item => `
             <tr>
-                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
-                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${Helpers.escapeHtml(item.name)}</td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Helpers.escapeHtml(item.rate)}</td>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)}</td>
-                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${item.total}</strong></td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${Helpers.escapeHtml(item.total)}</strong></td>
             </tr>
         `).join('');
         
@@ -433,7 +536,7 @@ export class HistoryManager {
                 <div class="bill-info-section">
                     <div class="bill-info-row">
                         <div class="bill-info-label">Bill No:</div>
-                        <div class="bill-info-value"><strong style="color: ${billColor};">#${billNumber}</strong></div>
+                        <div class="bill-info-value"><strong style="color: ${billColor};">#${Helpers.escapeHtml(billNumber)}</strong></div>
                     </div>
                     <div class="bill-info-row">
                         <div class="bill-info-label">Date:</div>
@@ -442,13 +545,13 @@ export class HistoryManager {
                     ${bill.createdByName || bill.userName ? `
                         <div class="bill-info-row">
                             <div class="bill-info-label">Created By:</div>
-                            <div class="bill-info-value">${bill.createdByName || bill.userName}</div>
+                            <div class="bill-info-value">${Helpers.escapeHtml(bill.createdByName || bill.userName)}</div>
                         </div>
                     ` : ''}
                     ${bill.customerName ? `
                         <div class="bill-info-row">
                             <div class="bill-info-label">Customer:</div>
-                            <div class="bill-info-value"><strong>${bill.customerName}</strong></div>
+                            <div class="bill-info-value"><strong>${Helpers.escapeHtml(bill.customerName)}</strong></div>
                         </div>
                     ` : ''}
                 </div>
@@ -456,7 +559,7 @@ export class HistoryManager {
                 ${bill.comments ? `
                     <div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
                         <span style="color: #6c757d; font-size: 14px;">Comments:</span>
-                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${bill.comments}</div>
+                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${Helpers.escapeHtml(bill.comments)}</div>
                     </div>
                 ` : ''}
                 
@@ -483,7 +586,7 @@ export class HistoryManager {
                 </table>
                 
                 <div style="text-align: right; padding: 8px 0; font-size: 14px; color: #6c757d; margin-bottom: 12px;">
-                    Total Packets: <strong style="color: #212529; font-size: 15px;">${totalPackets}</strong>
+                    Total Packets: <strong style="color: #212529; font-size: 15px;">${Helpers.escapeHtml(totalPackets)}</strong>
                 </div>
                 
                 <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6;">
@@ -568,7 +671,8 @@ export class HistoryManager {
             collectionName = isSale ? 'wholesaleSales' : 'purchases';
         }
         
-        const bill = history[index];
+        const billIndex = findBillIndex(history, window.currentBillId, index);
+        const bill = history[billIndex];
         
         if (!bill) {
             this.closeBillDetails();
@@ -577,26 +681,23 @@ export class HistoryManager {
         }
 
         try {
+            // Only the bill's creator or an owner may delete it (enforced by firestore.rules;
+            // legacy bills without a userId are owner-only)
+            const uid = AppState.currentUser?.uid;
+            if (AppState.userRole !== 'owner' && (!bill.userId || bill.userId !== uid)) {
+                this.closeBillDetails();
+                UIManager.showToast('Only the person who created this bill or an owner can delete it');
+                return;
+            }
+
             UIManager.showLoading();
             
-            // Delete from Firebase
-            const userId = AppState.currentUser?.uid;
-            if (userId) {
-                const snapshot = await db.collection(collectionName)
-                    .where('userId', '==', userId)
-                    .where('timestamp', '==', bill.timestamp || bill.id)
-                    .get();
-                
-                // Delete all matching documents
-                const batch = db.batch();
-                snapshot.docs.forEach(doc => {
-                    batch.delete(doc.ref);
-                });
-                await batch.commit();
-            }
+            // Delete from Firebase by document id (the old query also ignored the dev_ prefix)
+            await FirebaseService.deleteHistoryBill(collectionName, bill);
             
-            // Remove from local state
-            history.splice(index, 1);
+            // Remove from local state (re-resolve: the array may have changed during the await)
+            const currentIndex = history.indexOf(bill);
+            if (currentIndex !== -1) history.splice(currentIndex, 1);
             
             // Log audit entry
             const isSale = billType !== 'purchase';
@@ -623,10 +724,8 @@ export class HistoryManager {
             // Close the details overlay
             this.closeBillDetails();
             
-            // Refresh the history view
-            const activeFilterBtn = document.querySelector('#history .filter-btn.active');
-            const currentType = activeFilterBtn?.classList.contains('filter-sale') ? 'sale' : 'purchase';
-            this.renderHistory(currentType);
+            // Refresh the history view (keeps filter and search)
+            this.refreshHistory();
             
             UIManager.hideLoading();
             UIManager.showToast('Bill deleted successfully');
@@ -642,6 +741,11 @@ export class HistoryManager {
         const currentType = activeFilterBtn?.classList.contains('filter-sale') ? 'sale' : 'purchase';
         
         this.renderHistory(currentType, searchTerm);
+    }
+
+    static refreshHistory() {
+        const searchInput = document.getElementById('historySearch');
+        this.searchHistory(searchInput ? searchInput.value : '');
     }
 
     static filterHistory(type, event) {
@@ -679,12 +783,10 @@ export class HistoryManager {
         if (bills.length === 0) {
             const searchInput = document.getElementById('historySearch');
             const searchTerm = searchInput ? searchInput.value : '';
-            const message = searchTerm ? `No results found for "${searchTerm}"` : `No ${type} history yet`;
-            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(this.emptyMessage(type, searchTerm))}</p>`;
             return;
         }
 
-        const purchaseHistory = AppState.purchaseHistory || [];
         const itemColor = type === 'sale' ? '#28a745' : '#007bff';
         
         // Define alternating colors for different days - creative gradient backgrounds
@@ -714,18 +816,6 @@ export class HistoryManager {
         `;
 
         bills.forEach(bill => {
-            // Use bill.type (retail/wholesale/purchase) to determine correct history array
-            let history;
-            if (bill.type === 'purchase') {
-                history = purchaseHistory;
-            } else if (bill.type === 'retail') {
-                history = AppState.retailSalesHistory || [];
-            } else if (bill.type === 'wholesale') {
-                history = AppState.salesHistory || [];
-            } else {
-                history = purchaseHistory;
-            }
-            const billIndex = history.findIndex(b => b.id === bill.id);
             const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
             
@@ -757,14 +847,14 @@ export class HistoryManager {
                     <tr style="border-bottom: 1px solid #e5e7eb; background: ${rowBackground}; cursor: pointer; transition: all 0.3s ease;" 
                         onmouseover="this.style.background='${hoverBackground}'; this.style.transform='scale(1.01)'" 
                         onmouseout="this.style.background='${rowBackground}'; this.style.transform='scale(1)'"
-                        onclick="window.app.history.viewBill(${billIndex}, '${bill.type}')">
+                        onclick="window.app.history.viewBill('${billRef(bill)}', '${Helpers.escapeJsAttr(bill.type)}')">
                         ${isFirstRow ? `
                             <td rowspan="${rowspan}" style="padding: 12px 8px; border-right: 1px solid #e5e7eb; font-weight: 500;">
-                                ${bill.customerName || '-'}
+                                ${Helpers.escapeHtml(bill.customerName || '-')}
                             </td>
                         ` : ''}
-                        <td style="padding: 12px 8px;">${item.name}</td>
-                        <td style="padding: 12px 8px; text-align: right;">₹${item.rate}</td>
+                        <td style="padding: 12px 8px;">${Helpers.escapeHtml(item.name)}</td>
+                        <td style="padding: 12px 8px; text-align: right;">₹${Helpers.escapeHtml(item.rate)}</td>
                         <td style="padding: 12px 8px; text-align: right;">${(item.qty || 0).toFixed(1)}</td>
                         ${isFirstRow ? `
                             <td rowspan="${rowspan}" style="padding: 12px 8px; text-align: right; border-left: 1px solid #e5e7eb; font-weight: 700; color: ${itemColor}; font-size: 15px;">

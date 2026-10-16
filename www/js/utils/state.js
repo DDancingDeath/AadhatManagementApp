@@ -47,6 +47,8 @@ export const AppState = {
     currentWeights: [],
     /** @type {Object<string, {quantity: number, rate: number}>} Stock by item ID */
     stock: {},
+    /** @type {boolean} false while stock is being (re)computed from full history; AppState.stock is not final then */
+    stockReady: true,
     /** @type {Array<Object>} Current sale items (temporary) */
     salesItems: [],
     /** @type {Array<Object>} Wholesale sales history */
@@ -57,6 +59,14 @@ export const AppState = {
     stockAdjustments: [],
     /** @type {Array<Object>} Cash withdrawal history */
     withdrawalsHistory: [],
+    /**
+     * Start (ms epoch) of the history guaranteed to be loaded: the history
+     * arrays above contain every record whose event time >= this value
+     * (they may also hold older records, e.g. old bills with dues).
+     * 0 = full history. Extend with FirebaseService.ensureHistoryFrom().
+     * @type {number}
+     */
+    historyLoadedFrom: 0,
     
     // UI State
     /** @type {string} Current date filter: 'today', 'week', 'month', 'custom', 'all' */

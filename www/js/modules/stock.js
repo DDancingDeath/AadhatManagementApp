@@ -9,6 +9,8 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
+import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 
 /**
  * Stock Manager - Manages inventory stock operations
@@ -46,10 +48,19 @@ export class StockManager {
         this.hideAdjustmentTabForStaff();
 
         try {
-            // Use withLoading for the Firebase operation
-            const stock = await UIManager.withLoading(async () => {
-                return await FirebaseService.calculateStock();
-            });
+            // Reuse the stock computed by the data listeners when it is still
+            // current; only recalculate when the underlying data changed.
+            // While stock is computed from full history in the background, show a
+            // placeholder instead of blocking the whole app.
+            let stock;
+            if (AppState.stockReady === false) {
+                container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">Stock updating…</p>';
+                stock = await FirebaseService.getStock();
+            } else {
+                stock = await UIManager.withLoading(async () => {
+                    return await FirebaseService.getStock();
+                });
+            }
             AppState.stock = stock;
 
             if (Object.keys(stock).length === 0) {
@@ -72,15 +83,30 @@ export class StockManager {
             // data discrepancies (e.g. a sale stored under a deleted item, or
             // a name typo) instead of seeing wrong totals.
             const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
+            // Index the catalogue once; a key resolves to the first item (in
+            // array order) whose id equals the key or whose normalized
+            // name/hindiName equals the normalized key — same as the former
+            // per-key AppState.items.find().
+            const indexById = new Map();
+            const indexByName = new Map();
+            AppState.items.forEach((i, idx) => {
+                if (!indexById.has(i.id)) indexById.set(i.id, idx);
+                const n = normalize(i.name);
+                if (!indexByName.has(n)) indexByName.set(n, idx);
+                const h = normalize(i.hindiName);
+                if (!indexByName.has(h)) indexByName.set(h, idx);
+            });
+            const findCatalogueItem = (key) => {
+                const byId = indexById.has(key) ? indexById.get(key) : Infinity;
+                const nk = normalize(key);
+                const byName = indexByName.has(nk) ? indexByName.get(nk) : Infinity;
+                const idx = Math.min(byId, byName);
+                return idx === Infinity ? undefined : AppState.items[idx];
+            };
             const consolidatedStock = {};
             const orphanKeys = [];
             Object.keys(stock).forEach(key => {
-                const normalizedKey = normalize(key);
-                const item = AppState.items.find(i =>
-                    i.id === key ||
-                    normalize(i.name) === normalizedKey ||
-                    normalize(i.hindiName) === normalizedKey
-                );
+                const item = findCatalogueItem(key);
 
                 if (!item) {
                     // Orphan: render under its raw key so the data stays visible.
@@ -168,7 +194,7 @@ export class StockManager {
                 div.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: center; border-left: 3px solid ${qtyColor}; padding-left: 8px;">
                         <div>
-                            <div style="font-weight: 600; font-size: 15px;">${displayName}</div>
+                            <div style="font-weight: 600; font-size: 15px;">${Helpers.escapeHtml(displayName)}</div>
                             <div style="color: ${qtyColor}; font-size: 12px; margin-top: 4px;">
                                 ⚠ Unmatched — no catalogue item with this id/name
                             </div>
@@ -196,7 +222,7 @@ export class StockManager {
             div.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <div style="font-weight: 600; font-size: 15px;">${displayName}</div>
+                        <div style="font-weight: 600; font-size: 15px;">${Helpers.escapeHtml(displayName)}</div>
                         <div style="color: #666; font-size: 13px; margin-top: 4px;">
                             Rate: ₹${item.rate ? item.rate.toFixed(2) : '0.00'}/kg
                         </div>
@@ -512,8 +538,9 @@ export class StockManager {
         if (!container) return;
 
         try {
-            const adjustments = await FirebaseService.loadStockAdjustments();
-            AppState.stockAdjustments = adjustments;
+            // Kept current by the real-time listener; no need to re-read the
+            // whole collection on every render.
+            const adjustments = [...(AppState.stockAdjustments || [])];
             
             // Sort by timestamp/date (newest first)
             adjustments.sort((a, b) => {
@@ -522,8 +549,12 @@ export class StockManager {
                 return timeB - timeA;
             });
 
+            // Older adjustments load one month at a time as the user scrolls
+            attachOlderHistoryScroll(container, { noun: 'adjustments', onLoaded: () => this.renderAdjustmentHistory() });
+
             if (adjustments.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 20px;">No adjustments yet</p>';
+                const message = isFullHistoryLoaded() ? 'No adjustments yet' : `No adjustments since ${formatWindowDate(historyLoadedFrom())}`;
+                container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 20px;">${Helpers.escapeHtml(message)}</p>`;
                 return;
             }
 
@@ -557,18 +588,18 @@ export class StockManager {
                 
                 div.innerHTML = `
                     <div class="history-header">
-                        <strong>${displayName}</strong>
+                        <strong>${Helpers.escapeHtml(displayName)}</strong>
                         <span style="color: ${typeColor}; font-weight: 600;">
-                            ${typeLabel} ${quantity !== 'Unknown' ? quantity + ' kg' : ''}
+                            ${typeLabel} ${quantity !== 'Unknown' ? Helpers.escapeHtml(quantity) + ' kg' : ''}
                         </span>
                     </div>
-                    <div class="history-date">${adj.date || 'Unknown date'}${adj.createdByName ? ` • By: ${adj.createdByName}` : ''}</div>
+                    <div class="history-date">${Helpers.escapeHtml(adj.date || 'Unknown date')}${adj.createdByName ? ` • By: ${Helpers.escapeHtml(adj.createdByName)}` : ''}</div>
                     <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
                         ${displayRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${displayRate.toFixed(2)}/kg${valueImpact ? ` • Value: ₹${Math.round(valueImpact)}` : ''}</div>` : ''}
                         <div style="font-size: 13px; color: #666;">
                             ${(adj.previousStock || 0).toFixed(1)} kg → ${(adj.newStock || 0).toFixed(1)} kg
                         </div>
-                        ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${adj.reason}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
+                        ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${Helpers.escapeHtml(adj.reason)}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
                     </div>
                 `;
                 

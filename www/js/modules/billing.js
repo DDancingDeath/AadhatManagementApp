@@ -10,9 +10,40 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
+import { findBillIndex } from '../utils/history-window.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 import { PurchaseManager } from './purchase.js';
 import { RetailSaleManager } from './retail-sale.js';
+
+const EDIT_OFFLINE_MESSAGE = 'Internet required to edit a bill';
+const EDIT_TIMEOUT_MS = 20000;
+
+/** Who may edit a bill (rules: owner, manager or the bill's creator; legacy bills without userId: owner/manager). */
+export function canEditBill(bill) {
+    const role = AppState.userRole;
+    if (role === 'owner' || role === 'manager') return true;
+    const uid = AppState.currentUser?.uid;
+    return !!(uid && bill && bill.userId && bill.userId === uid);
+}
+export const EDIT_NOT_ALLOWED_MESSAGE = 'Only the person who created this bill, a manager or an owner can edit it';
+
+/** Waits for a bill edit transaction; gives up waiting after EDIT_TIMEOUT_MS. */
+async function commitBillEdit(writePromise) {
+    let timer = null;
+    try {
+        return await Promise.race([
+            writePromise,
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(Object.assign(
+                    new Error('Saving the edit is taking too long — check the internet connection and try again'),
+                    { code: 'edit-timeout' }
+                )), EDIT_TIMEOUT_MS);
+            })
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 /**
  * @type {number|null} Timer ID for auto-save functionality
@@ -60,6 +91,12 @@ const BillingManager = {
      * @type {'purchase'|'sale'|undefined}
      */
     editingBillType: undefined,
+
+    /**
+     * Payment-state signature of the bill when the editor opened (see FirebaseService.loadedPaymentSignature)
+     * @type {?string|undefined}
+     */
+    editingBillPaymentSig: undefined,
 
     /**
      * Initialize the billing manager
@@ -182,48 +219,75 @@ const BillingManager = {
     async updateItemFrequency(items, mode = 'purchase') {
         try {
             const now = Date.now();
+            if (!this.itemFrequency[mode]) this.itemFrequency[mode] = {};
             
-            items.forEach(item => {
+            // Aggregate per item so a bill with repeated items sends one increment each.
+            const deltas = {};
+            (items || []).forEach(item => {
                 const itemId = item.itemId || item.name;
-                if (!this.itemFrequency[mode]) this.itemFrequency[mode] = {};
-                
+                if (!itemId) return;
                 const baseScore = 100;
                 const quantityBonus = (item.qty || 0) / 10;
                 const recencyMultiplier = 1.0;
-                
                 const score = (baseScore + quantityBonus) * recencyMultiplier;
-                
-                if (!this.itemFrequency[mode][itemId]) {
-                    this.itemFrequency[mode][itemId] = { score: 0, lastUsed: 0, count: 0 };
-                }
-                
-                this.itemFrequency[mode][itemId].score += score;
-                this.itemFrequency[mode][itemId].lastUsed = now;
-                this.itemFrequency[mode][itemId].count += 1;
+                if (!deltas[itemId]) deltas[itemId] = { score: 0, count: 0 };
+                deltas[itemId].score += score;
+                deltas[itemId].count += 1;
             });
             
-            // Apply time decay
-            Object.keys(this.itemFrequency[mode]).forEach(itemId => {
-                const itemData = this.itemFrequency[mode][itemId];
-                const daysSinceLastUse = (now - itemData.lastUsed) / TIME_MS.DAY;
-                const decayFactor = Math.max(0.1, 1 - (daysSinceLastUse / 90));
-                itemData.effectiveScore = itemData.score * decayFactor;
+            const FieldValue = firebase.firestore.FieldValue;
+            const modeUpdate = {};
+            Object.entries(deltas).forEach(([itemId, delta]) => {
+                // Optimistic local update so dropdown ordering reflects the sale immediately
+                const existing = this.itemFrequency[mode][itemId];
+                const local = (existing && typeof existing === 'object') ? existing : { score: 0, lastUsed: 0, count: 0 };
+                local.score = (local.score || 0) + delta.score;
+                local.count = (local.count || 0) + delta.count;
+                local.lastUsed = now;
+                local.effectiveScore = local.score;
+                this.itemFrequency[mode][itemId] = local;
+                
+                // Atomic increments: concurrent devices no longer overwrite each other.
+                // effectiveScore is only a ranking hint (decay is applied on read).
+                modeUpdate[itemId] = {
+                    score: FieldValue.increment(delta.score),
+                    count: FieldValue.increment(delta.count),
+                    lastUsed: now,
+                    effectiveScore: local.score
+                };
             });
+            if (Object.keys(modeUpdate).length === 0) return;
             
-            // Save to global document instead of per-user
-            await db.collection(window.getCollection ? window.getCollection('itemFrequency') : 'itemFrequency').doc('global').set(this.itemFrequency);
+            // Nested object + merge (not dotted update paths) so item IDs containing
+            // '.', '/', etc. are treated as literal map keys.
+            await db.collection(window.getCollection ? window.getCollection('itemFrequency') : 'itemFrequency').doc('global')
+                .set({ [mode]: modeUpdate }, { merge: true });
         } catch (error) {
             console.error('Failed to update item frequency:', error);
         }
     },
 
     /**
-     * Get item frequency for a mode
+     * Get item frequency for a mode, with time decay applied to effectiveScore
+     * (items unused for 90 days keep 10% of their score).
      * @param {'purchase'|'sale'} mode - The mode
      * @returns {Object} Frequency data
      */
     getItemFrequency(mode = 'purchase') {
-        return this.itemFrequency[mode] || {};
+        const source = this.itemFrequency[mode] || {};
+        const now = Date.now();
+        const result = {};
+        Object.keys(source).forEach(itemId => {
+            const itemData = source[itemId];
+            if (itemData && typeof itemData === 'object' && typeof itemData.score === 'number') {
+                const daysSinceLastUse = (now - (itemData.lastUsed || 0)) / TIME_MS.DAY;
+                const decayFactor = Math.max(0.1, 1 - (daysSinceLastUse / 90));
+                result[itemId] = { ...itemData, effectiveScore: itemData.score * decayFactor };
+            } else {
+                result[itemId] = itemData;
+            }
+        });
+        return result;
     },
 
     // -------------------- DROPDOWNS --------------------
@@ -478,13 +542,13 @@ const BillingManager = {
                             <span style="font-weight: 600;">${draft.mode === 'purchase' ? '🔵 Purchase' : '🟢 Sale'} Draft</span>
                             <span style="color: #666; font-size: 14px;">${draft.items?.length || 0} items${draft.weights?.length > 0 ? ` + ${draft.weights.length} weights` : ''}</span>
                         </div>
-                        <div class="history-date">${draft.date}</div>
-                        ${draft.customerName ? `<div style="color: #666; font-size: 13px; margin-top: 4px;">Customer: ${draft.customerName}</div>` : ''}
+                        <div class="history-date">${Helpers.escapeHtml(draft.date)}</div>
+                        ${draft.customerName ? `<div style="color: #666; font-size: 13px; margin-top: 4px;">Customer: ${Helpers.escapeHtml(draft.customerName)}</div>` : ''}
                         <div style="display: flex; gap: 8px; margin-top: 8px;">
-                            <button onclick="window.app.billing.loadDraft('${draft.id}')" style="flex: 1; padding: 8px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                            <button onclick="window.app.billing.loadDraft('${Helpers.escapeJsAttr(draft.id)}')" style="flex: 1; padding: 8px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                 Load
                             </button>
-                            <button onclick="window.app.billing.deleteDraft('${draft.id}')" style="flex: 1; padding: 8px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                            <button onclick="window.app.billing.deleteDraft('${Helpers.escapeJsAttr(draft.id)}')" style="flex: 1; padding: 8px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                 Delete
                             </button>
                         </div>
@@ -831,15 +895,24 @@ const BillingManager = {
                 UIManager.showToast(`Unknown bill type: ${billType}`);
                 return;
             }
-            const bill = history[billIndex];
+            // Prefer the id stored by viewBill: indices shift when records are added
+            const resolvedIndex = findBillIndex(history, window.currentBillId, billIndex);
+            const bill = history[resolvedIndex];
             if (!bill) {
                 UIManager.showToast('Bill not found');
                 return;
             }
+            if (!canEditBill(bill)) {
+                UIManager.showToast(EDIT_NOT_ALLOWED_MESSAGE);
+                return;
+            }
 
-            this.editingBillIndex = billIndex;
+            this.editingBillIndex = resolvedIndex;
             this.editingBillId = bill.id;
             this.editingBillType = billType;
+            // Payment state when the editor opened: a payment recorded elsewhere before
+            // saving must cause a conflict instead of being overwritten by the form values
+            this.editingBillPaymentSig = FirebaseService.loadedPaymentSignature(bill);
 
             // Retail bills use 'sale' mode, wholesale cannot be edited from billing tab
             const mode = billType === 'retail' ? 'sale' : 'purchase';
@@ -927,14 +1000,22 @@ const BillingManager = {
     },
 
     /**
-     * Save edited bill
+     * Save edited bill. Called from inside the purchase/retail save locks.
      * @async
+     * @param {Object} [options]
+     * @param {Function} [options.onWriteIssued] - Called with the updated bill as soon
+     *   as the Firestore write is issued (used to start printing early)
      * @returns {Promise<Object>} Updated bill
      */
-    async saveEditedBill() {
+    async saveEditedBill(options = {}) {
         try {
             if (this.editingBillIndex === undefined) {
-                return this.currentMode === 'purchase' ? PurchaseManager.saveBillToHistory() : RetailSaleManager.completeSale();
+                return this.currentMode === 'purchase' ? PurchaseManager._saveBill(options) : RetailSaleManager._completeSale(options);
+            }
+            // Edits are checked against the server copy (transaction), so they need a connection.
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                UIManager.showToast(EDIT_OFFLINE_MESSAGE);
+                return undefined;
             }
 
             const billIndex = this.editingBillIndex;
@@ -952,7 +1033,8 @@ const BillingManager = {
                 UIManager.showToast(`Unknown bill type: ${billType}`);
                 return;
             }
-            const bill = history[billIndex];
+            const currentIndex = findBillIndex(history, this.editingBillId, billIndex);
+            const bill = history[currentIndex];
             
             if (!bill) {
                 UIManager.showToast('Original bill not found');
@@ -998,30 +1080,27 @@ const BillingManager = {
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
                 };
 
-                await FirebaseService.updatePurchase(updatedBill);
-                AppState.purchaseHistory[billIndex] = updatedBill;
+                // Wait for the server: only a committed edit is printed, kept and cleared from the editor.
+                FirebaseService.withLoadedPaymentSignature(updatedBill, this.editingBillPaymentSig);
+                await commitBillEdit(FirebaseService.updatePurchase(updatedBill));
+                if (typeof options.onWriteIssued === 'function') options.onWriteIssued(updatedBill);
+                const savedIndex = findBillIndex(AppState.purchaseHistory, bill.id, currentIndex);
+                if (savedIndex !== -1) AppState.purchaseHistory[savedIndex] = updatedBill;
                 
-                await AuditService.log(AuditService.ACTIONS.EDIT_BILL, {
+                AuditService.log(AuditService.ACTIONS.EDIT_BILL, {
                     billNumber: updatedBill.billNumber || 'N/A',
                     amount: billTotal,
                     supplier: customerName
                 });
                 
-                AppState.stock = await FirebaseService.calculateStock();
-                
-                if (typeof window.app.finance?.calculateOverview === 'function') {
-                    window.app.finance.calculateOverview();
-                }
-                
-                if (typeof window.app.outstanding?.renderDue === 'function') {
-                    window.app.outstanding.renderDue();
-                }
+                this._refreshAfterEdit();
                 
                 UIManager.showToast('✓ Bill updated successfully!');
                 
                 this.editingBillIndex = undefined;
                 this.editingBillId = undefined;
                 this.editingBillType = undefined;
+                this.editingBillPaymentSig = undefined;
                 PurchaseManager.clearBill();
                 
                 return updatedBill;
@@ -1058,33 +1137,28 @@ const BillingManager = {
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
                 };
 
-                await FirebaseService.updateRetailSale(updatedSale);
+                FirebaseService.withLoadedPaymentSignature(updatedSale, this.editingBillPaymentSig);
+                await commitBillEdit(FirebaseService.updateRetailSale(updatedSale));
+                if (typeof options.onWriteIssued === 'function') options.onWriteIssued(updatedSale);
                 const saleIndex = AppState.retailSalesHistory.findIndex(s => s.id === bill.id);
                 if (saleIndex !== -1) {
                     AppState.retailSalesHistory[saleIndex] = updatedSale;
                 }
                 
-                await AuditService.log(AuditService.ACTIONS.EDIT_SALE, {
+                AuditService.log(AuditService.ACTIONS.EDIT_SALE, {
                     billNumber: updatedSale.billNumber || 'N/A',
                     amount: salesTotal,
                     customer: saleCustomer
                 });
                 
-                AppState.stock = await FirebaseService.calculateStock();
-                
-                if (typeof window.app.finance?.calculateOverview === 'function') {
-                    window.app.finance.calculateOverview();
-                }
-                
-                if (typeof window.app.outstanding?.renderDue === 'function') {
-                    window.app.outstanding.renderDue();
-                }
+                this._refreshAfterEdit();
                 
                 UIManager.showToast('✓ Sale updated successfully!');
                 
                 this.editingBillIndex = undefined;
                 this.editingBillId = undefined;
                 this.editingBillType = undefined;
+                this.editingBillPaymentSig = undefined;
                 RetailSaleManager.clearSale();
                 
                 return updatedSale;
@@ -1092,9 +1166,37 @@ const BillingManager = {
             
         } catch (error) {
             console.error('Failed to update bill:', error);
+            // Known outcomes keep the editor open so nothing typed is lost.
+            if (error?.code === 'conflict' || error?.code === 'edit-timeout') {
+                UIManager.showToast(error.message);
+                return undefined;
+            }
+            if (error?.code === 'unavailable' || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+                UIManager.showToast(EDIT_OFFLINE_MESSAGE);
+                return undefined;
+            }
             UIManager.showToast('Failed to update bill: ' + error.message);
             throw error;
         }
+    },
+
+    /**
+     * Refresh derived views after an edit without blocking the save.
+     * @private
+     */
+    _refreshAfterEdit() {
+        Promise.resolve()
+            .then(() => FirebaseService.calculateStock())
+            .then(stock => { AppState.stock = stock; })
+            .catch(error => console.error('Stock recalculation after edit failed:', error))
+            .finally(() => {
+                if (typeof window.app?.finance?.calculateOverview === 'function') {
+                    window.app.finance.calculateOverview();
+                }
+                if (typeof window.app?.outstanding?.renderDue === 'function') {
+                    window.app.outstanding.renderDue();
+                }
+            });
     },
 
     // -------------------- DELEGATE METHODS --------------------
@@ -1112,7 +1214,8 @@ const BillingManager = {
     updateTotals: (heavy) => PurchaseManager.updateTotals(heavy),
     updatePaymentTotal: () => PurchaseManager.updatePaymentTotal(),
     fillPayableAmount: (type) => PurchaseManager.fillPayableAmount(type),
-    saveBillToHistory: () => PurchaseManager.saveBillToHistory(),
+    saveBillToHistory: (options) => PurchaseManager.saveBillToHistory(options),
+    printBill: () => PurchaseManager.printBill(),
     shareWhatsApp: () => PurchaseManager.shareWhatsApp(),
     pickContact: () => Helpers.pickContact('customerName'),
     getBillItems: () => PurchaseManager.getBillItems(),

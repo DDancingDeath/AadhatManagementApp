@@ -74,6 +74,21 @@ The app uses Firestore `onSnapshot` listeners for automatic UI synchronization:
 
 All listeners are set up via `FirebaseService.setupRealtimeListeners()` and cleaned up on logout via `FirebaseService.cleanup()`.
 
+### Recent-history window and stock checkpoint (free-plan reads)
+
+Each app open reads only recent data (see the section comment above `HISTORY_COLLECTIONS` in `www/js/firebase/firestore-service.js`):
+
+- History collections are listened to from the 1st of the previous month (`timestamp >= liveFrom`); older bills with money due come from one listener per bill collection (`openDue == true && timestamp < liveFrom`). Older history is loaded on demand (`FirebaseService.ensureHistoryFrom()` / `loadOlderHistory()`).
+- Stock = `stockCheckpoints/current` (running stock before `asOf`) + replay of newer events; identical to a full replay. Only **owner/manager** devices rebuild it (full read: when missing/stale, and at least weekly) or roll it forward. Staff devices never write it; while it is stale they load full history instead (correct but costs a full read per open until an owner/manager opens the app).
+- Every stock-record write sets `clientVersion: 3`, bills also `openDue`, `timestamp`. Documents written by older app versions without `timestamp` are found by an unfiltered scan and backfilled (`stockCheckpoints/legacyScan`: until complete, then by one device at most every 6 h for 14 days after an outdated app last wrote one).
+- Optional: set `settings/app.minClientVersion` to make older apps show "Please update the app".
+
+**Deployment order (CI deploys hosting only, never rules/indexes):**
+
+1. Deploy indexes and rules **before** the new web app goes live: `firebase deploy --only firestore:indexes,firestore:rules`. The dues listener needs the `openDue + timestamp` composite indexes, and the stock checkpoint (`stockCheckpoints`) is only writable under the new rules. Wait until the indexes show "Enabled" in the Firebase console.
+2. Merge / deploy hosting, then install the new APK on every phone.
+3. Once **every phone runs the new app**, the owner sets `settings/app.enforceClientVersion = true` in the Firebase console (no redeploy). From then on bill/adjustment writes without `clientVersion >= 3` are rejected — outdated apps' edits/deletes of old bills would otherwise not invalidate the stock checkpoint. Until then, owner/manager devices rebuild the checkpoint from full history at least weekly to bound any drift. Optionally also set `settings/app.minClientVersion = 3` so outdated apps show "Please update the app".
+
 ## Getting Started
 
 ### Prerequisites
@@ -177,6 +192,15 @@ describe('Validator', () => {
 
 - **Jest Config**: `jest.config.js` - Test environment, patterns, coverage settings
 - **Babel Config**: `babel.config.js` - ES6 module transformation for Node.js
+
+### Firestore Security Rules Tests
+
+`firestore.rules` only lets *approved* users (profile in `users`/`dev_users` with role owner/manager/staff and status not `pending`/`rejected`; a missing status counts as approved) touch business data, and stops users from changing their own `role`/`status`/`approvedAt`/`approvedBy`. The rules are tested against the Firestore emulator (needs Java 11+ on `PATH`/`JAVA_HOME`):
+
+```bash
+cd rules-tests && npm install && cd ..   # one-time: separate deps for the rules tests
+npm run test:rules                       # starts the emulator (demo-aadhat project, port 8181) and runs rules-tests/test.js
+```
 
 ## Validation
 

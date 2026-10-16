@@ -9,6 +9,17 @@
 
 import { AppState } from '../utils/state.js';
 
+// #toast and #loadingOverlay are declared inside #appContent, which is hidden until login.
+// Move them to <body> so they are also visible on the login/register screen.
+function attachToBody(el) {
+    if (el && el.parentElement !== document.body) {
+        document.body.appendChild(el);
+    }
+    return el;
+}
+
+let toastTimer = null;
+
 /**
  * UI Manager object containing all UI utility functions.
  * @namespace UIManager
@@ -19,7 +30,7 @@ const UIManager = {
      * @returns {void}
      */
     showLoading() {
-        const overlay = document.getElementById('loadingOverlay');
+        const overlay = attachToBody(document.getElementById('loadingOverlay'));
         if (overlay) overlay.classList.add('active');
     },
 
@@ -80,10 +91,13 @@ const UIManager = {
             return this.showToast(message, duration); // Retry
         }
         
+        attachToBody(toast);
         toast.textContent = message;
         toast.classList.add('show');
         
-        setTimeout(() => {
+        // Restart the timer so an earlier toast's timeout doesn't hide this one early
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
             toast.classList.remove('show');
         }, duration);
     },

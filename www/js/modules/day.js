@@ -4,6 +4,8 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
+import { readPayment } from '../utils/money.js';
+import { parseAnyBillDate } from '../utils/dates.js';
 
 // Use helper functions
 const formatCurrency = (amount) => Helpers.formatCurrency(amount);
@@ -76,25 +78,25 @@ export const DayManager = {
 
         // Filter today's purchases
         const todayPurchases = (AppState.purchaseHistory || []).filter(p => {
-            const date = Helpers.parseDate(p.date);
+            const date = parseAnyBillDate(p.date);
             return date && date >= today && date < tomorrow;
         });
 
         // Filter today's wholesale sales
         const todayWholesaleSales = (AppState.salesHistory || []).filter(s => {
-            const date = Helpers.parseDate(s.date);
+            const date = parseAnyBillDate(s.date);
             return date && date >= today && date < tomorrow;
         });
 
         // Filter today's retail sales
         const todayRetailSales = (AppState.retailSalesHistory || []).filter(s => {
-            const date = Helpers.parseDate(s.date);
+            const date = parseAnyBillDate(s.date);
             return date && date >= today && date < tomorrow;
         });
 
         // Filter today's expenses
         const todayExpenses = (AppState.expensesHistory || []).filter(e => {
-            const date = Helpers.parseDate(e.date);
+            const date = parseAnyBillDate(e.date);
             return date && date >= today && date < tomorrow;
         });
 
@@ -150,22 +152,24 @@ export const DayManager = {
 
         // From purchases (cash/online paid out, due to pay)
         todayPurchases.forEach(p => {
-            cashPaid += (p.cashPayment || p.payment?.cash || 0);
-            onlinePaid += (p.onlinePayment || p.payment?.online || 0);
-            dueToPay += (p.due || p.payment?.due || 0);
+            const pay = readPayment(p);
+            cashPaid += pay.cash;
+            onlinePaid += pay.online;
+            dueToPay += pay.due;
         });
 
         // From sales (cash/online received, due to receive)
         [...todayWholesaleSales, ...todayRetailSales].forEach(s => {
-            cashReceived += (s.cashPayment || s.payment?.cash || 0);
-            onlineReceived += (s.onlinePayment || s.payment?.online || 0);
-            dueToReceive += (s.due || s.payment?.due || 0);
+            const pay = readPayment(s);
+            cashReceived += pay.cash;
+            onlineReceived += pay.online;
+            dueToReceive += pay.due;
         });
 
         // Calculate due paid and due received from cash management transactions
         let duePaid = 0, dueReceived = 0;
         const todayCashTransactions = (AppState.cashManagement || []).filter(t => {
-            const date = Helpers.parseDate(t.date);
+            const date = parseAnyBillDate(t.date);
             return date && date >= today && date < tomorrow;
         });
         
@@ -290,7 +294,7 @@ export const DayManager = {
             
             return `
                 <div class="stat-card ${cardClass}" style="text-align: left; padding: 14px;">
-                    <div style="font-weight: 600; color: var(--text-primary); font-size: 15px; margin-bottom: 8px;">${item.name}</div>
+                    <div style="font-weight: 600; color: var(--text-primary); font-size: 15px; margin-bottom: 8px;">${Helpers.escapeHtml(item.name)}</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 13px;">
                         <div><span style="color: var(--text-secondary);">${type === 'purchase' ? 'Purchases:' : 'Sales:'}</span> <strong>${item.count}x</strong></div>
                         <div><span style="color: var(--text-secondary);">Qty:</span> <strong>${item.quantity.toFixed(2)} kg</strong></div>
@@ -376,8 +380,8 @@ export const DayManager = {
 
         // Sort by date (newest first)
         transactions.sort((a, b) => {
-            const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
-            const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
+            const dateA = parseAnyBillDate(a.date) || 0;
+            const dateB = parseAnyBillDate(b.date) || 0;
             return dateB - dateA;
         });
 
@@ -387,8 +391,8 @@ export const DayManager = {
         }
 
         container.innerHTML = transactions.map(t => {
-            const time = t.date?.toDate ? t.date.toDate() : new Date(t.date);
-            const timeStr = time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+            const time = parseAnyBillDate(t.date);
+            const timeStr = time ? time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
             
             return `
                 <div style="display: flex; align-items: center; gap: 12px; padding: 12px; border-bottom: 1px solid #f3f4f6;">
@@ -396,8 +400,8 @@ export const DayManager = {
                         ${t.icon}
                     </div>
                     <div style="flex: 1; min-width: 0;">
-                        <div style="font-weight: 600; color: #374151; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${t.party}</div>
-                        <div style="font-size: 12px; color: #9ca3af;">${t.label} • ${timeStr}</div>
+                        <div style="font-weight: 600; color: #374151; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${Helpers.escapeHtml(t.party)}</div>
+                        <div style="font-size: 12px; color: #9ca3af;">${Helpers.escapeHtml(t.label)} • ${timeStr}</div>
                     </div>
                     <div style="font-weight: 700; color: ${t.color}; font-size: 15px;">
                         ${t.type === 'expense' || t.type === 'purchase' ? '-' : '+'}${formatCurrency(t.amount)}

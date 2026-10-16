@@ -11,25 +11,49 @@
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23667eea' width='100' height='100' rx='20'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-weight='bold'>A</text></svg>">
     
-    <link rel="stylesheet" href="styles.css?v=20261011a">
+    <!-- Preconnect to origins needed during startup -->
+    <link rel="preconnect" href="https://www.gstatic.com">
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+
+    <!-- Styles (listed directly instead of @import chains so they download in parallel; order = cascade order) -->
+    <link rel="stylesheet" href="css/variables.css?v=20261014d">
+    <link rel="stylesheet" href="css/auth.css?v=20261014d">
+    <link rel="stylesheet" href="css/hamburger.css?v=20261014d">
+    <link rel="stylesheet" href="css/navigation.css?v=20261014d">
+    <link rel="stylesheet" href="css/overlay.css?v=20261014d">
+    <link rel="stylesheet" href="css/tabs.css?v=20261014d">
+    <link rel="stylesheet" href="css/loading.css?v=20261014d">
+    <link rel="stylesheet" href="css/toast.css?v=20261014d">
+    <link rel="stylesheet" href="css/buttons.css?v=20261014d">
+    <link rel="stylesheet" href="css/tables.css?v=20261014d">
+    <link rel="stylesheet" href="css/items.css?v=20261014d">
+    <link rel="stylesheet" href="css/billing.css?v=20261014d">
+    <link rel="stylesheet" href="css/totals.css?v=20261014d">
+    <link rel="stylesheet" href="css/history.css?v=20261014d">
+    <link rel="stylesheet" href="css/stock.css?v=20261014d">
+    <link rel="stylesheet" href="css/reports.css?v=20261014d">
+    <link rel="stylesheet" href="css/datefilter.css?v=20261014d">
+    <link rel="stylesheet" href="css/charts.css?v=20261014d">
+    <link rel="stylesheet" href="css/settings.css?v=20261014d">
+    <link rel="stylesheet" href="css/day.css?v=20261014d">
+    <link rel="stylesheet" href="css/finance.css?v=20261014d">
+    <link rel="stylesheet" href="css/analytics.css?v=20261014d">
     
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    
-    <!-- SheetJS for Excel import/export -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- Firebase SDK (deferred: deferred classic scripts and module scripts run
+         in document order after parsing, so firebaseConfig.js and js/main.js
+         still see `firebase` ready. Nothing inline uses `firebase`.) -->
+    <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <!-- SheetJS (Excel) is loaded on demand via js/utils/lazy-scripts.js -->
 </head>
 <body>
     <!-- All HTML content is dynamically loaded from templates/ directory -->
     <!-- See templates/*.html for all readable HTML templates -->
     
     <!-- Firebase Configuration -->
-    <script src="firebaseConfig.js"></script>
-    
-    <!-- Chart.js for reports -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="firebaseConfig.js"></script>
     
     <!-- Service Worker Registration + auto-reload on new version.
          When a new SW takes control (after deploy), reload the page so the
@@ -74,7 +98,7 @@
     </script>
     
     <!-- ES6 Modular Architecture (loads and injects all templates) -->
-    <script type="module" src="js/main.js?v=20261011a"></script>
+    <script type="module" src="js/main.js?v=20261014d"></script>
 
 </body>
 </html>

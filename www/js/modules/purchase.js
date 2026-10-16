@@ -8,7 +8,11 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
+import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
+
+/** Buttons disabled while a purchase save/print is in flight */
+const PURCHASE_BUTTONS = '#saveBillBtn, #printBillBtn';
 
 /**
  * @type {Array<Object>} Current bill items for purchase mode
@@ -239,7 +243,7 @@ const PurchaseManager = {
                     return `
                         <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #007bff;">
                             <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
-                                ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
+                                ${Helpers.escapeHtml(item.name)} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
                             </div>
                             <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
                                 ${weightLines.join('<br>')}
@@ -256,7 +260,7 @@ const PurchaseManager = {
         tbody.innerHTML = billItems.map((item, index) => {
             return `
                 <tr style="cursor: pointer;" onclick="window.app.purchase.editBillItem(${index})">
-                    <td>${item.name}</td>
+                    <td>${Helpers.escapeHtml(item.name)}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
                     <td>₹${Math.round(item.total)}</td>
@@ -452,14 +456,56 @@ const PurchaseManager = {
     },
 
     /**
-     * Save bill to history
+     * Save bill to history. A second tap while a save is in flight is ignored.
      * @async
-     * @returns {Promise<Object>} The saved bill
+     * @param {Object} [options] - See _saveBill
+     * @returns {Promise<Object|undefined>} The saved bill
      */
-    async saveBillToHistory() {
+    async saveBillToHistory(options = {}) {
+        return Helpers.runExclusive('purchase', PURCHASE_BUTTONS, () => this._saveBill(options));
+    },
+
+    /**
+     * Save the bill and print it. Printing starts as soon as the bill write is
+     * issued, using the exact bill object being saved.
+     * @async
+     */
+    async printBill() {
+        if (Helpers.isBusy('purchase')) return;
+        if (billItems.length === 0) {
+            UIManager.showToast('No items in bill');
+            return;
+        }
+        
+        let printPromise = null;
+        try {
+            const savedBill = await Helpers.runExclusive('purchase', PURCHASE_BUTTONS, () => this._saveBill({
+                onWriteIssued: (bill) => { printPromise = PrinterService.printBill(bill); }
+            }));
+            
+            if (!printPromise) return;
+            await printPromise;
+            if (savedBill) {
+                UIManager.showToast('Bill saved and printed!');
+            }
+        } catch (error) {
+            console.error('Print error:', error);
+            UIManager.showToast('Error: ' + (error?.message || error));
+        }
+    },
+
+    /**
+     * Save bill (unguarded; callers must hold the 'purchase' lock)
+     * @async
+     * @param {Object} [options]
+     * @param {Function} [options.onWriteIssued] - Called with the bill once its write is issued
+     * @returns {Promise<Object|undefined>} The saved bill
+     * @private
+     */
+    async _saveBill(options = {}) {
         // Check if in edit mode
         if (this.billingManager?.editingBillIndex !== undefined) {
-            return this.billingManager.saveEditedBill();
+            return this.billingManager.saveEditedBill(options);
         }
         
         if (billItems.length === 0) {
@@ -490,51 +536,57 @@ const PurchaseManager = {
             ? laborCalculationSpan?.textContent || null 
             : null;
         
-        const billNumber = await Helpers.generateBillNumber('P', 'purchases');
-        
-        const bill = {
-            id: Helpers.generateId(),
-            billNumber,
-            items: billItems,
-            billTotal,
-            laborCharges,
-            laborCalc,
-            totalPackets,
-            grandTotal,
-            amountPayable: grandTotal,
-            onlinePayment,
-            cashPayment,
-            dueAmount,
-            customerName,
-            comments,
-            printComments,
-            type: 'purchase',
-            isPurchase: true,
-            date: new Date().toISOString(),
-            userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
-            timestamp: Date.now(),
-            payment: {
-                online: onlinePayment,
-                cash: cashPayment,
-                due: dueAmount,
-                total: onlinePayment + cashPayment + dueAmount
-            }
-        };
-        
         try {
             UIManager.showLoading();
-            await FirebaseService.savePurchase(bill);
+            const billNumber = await Helpers.generateBillNumber('P', 'purchases');
             
-            await AuditService.log(AuditService.ACTIONS.CREATE_BILL, {
-                billNumber: bill.billNumber,
-                total: bill.billTotal,
-                customerName: bill.customerName || 'N/A',
-                itemCount: bill.items.length
-            });
+            const bill = {
+                id: Helpers.generateId(),
+                billNumber,
+                items: billItems,
+                billTotal,
+                laborCharges,
+                laborCalc,
+                totalPackets,
+                grandTotal,
+                amountPayable: grandTotal,
+                onlinePayment,
+                cashPayment,
+                dueAmount,
+                customerName,
+                comments,
+                printComments,
+                type: 'purchase',
+                isPurchase: true,
+                date: new Date().toISOString(),
+                userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
+                timestamp: Date.now(),
+                payment: {
+                    online: onlinePayment,
+                    cash: cashPayment,
+                    due: dueAmount,
+                    total: onlinePayment + cashPayment + dueAmount
+                }
+            };
             
-            if (this.billingManager) {
-                await this.billingManager.updateItemFrequency(billItems, 'purchase');
+            const writePromise = FirebaseService.savePurchase(bill);
+            if (typeof options.onWriteIssued === 'function') {
+                options.onWriteIssued(bill);
             }
+            await writePromise;
+            
+            const savedItems = bill.items;
+            const billingManager = this.billingManager;
+            Helpers.runInBackground([
+                () => AuditService.log(AuditService.ACTIONS.CREATE_BILL, {
+                    billNumber: bill.billNumber,
+                    total: bill.billTotal,
+                    customerName: bill.customerName || 'N/A',
+                    itemCount: bill.items.length
+                }),
+                () => billingManager?.updateItemFrequency(savedItems, 'purchase'),
+                () => billingManager?.deleteAutoSave()
+            ]);
             
             // Clear bill
             billItems = [];
@@ -544,11 +596,6 @@ const PurchaseManager = {
             
             // Reset form
             this.resetForm();
-            
-            // Delete auto-save
-            if (this.billingManager) {
-                await this.billingManager.deleteAutoSave();
-            }
             
             UIManager.hideLoading();
             UIManager.showToast('Bill saved successfully!');

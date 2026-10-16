@@ -26,12 +26,14 @@ export class UsersManager {
         
         try {
             const db = firebase.firestore();
-            const usersSnapshot = await db.collection(window.getCollection ? window.getCollection('users') : 'users').orderBy('createdAt', 'desc').get();
+            const usersSnapshot = await db.collection(window.getCollection ? window.getCollection('users') : 'users').get();
             
             const pendingUsers = [];
             const activeUsers = [];
             
-            usersSnapshot.forEach(doc => {
+            // Sorted client-side: orderBy('createdAt') would drop legacy profiles without createdAt
+            const createdMs = (d) => { const c = d.data().createdAt; return c?.toMillis ? c.toMillis() : (c ? new Date(c).getTime() || 0 : 0); };
+            [...usersSnapshot.docs].sort((a, b) => createdMs(b) - createdMs(a)).forEach(doc => {
                 const userData = { id: doc.id, ...doc.data() };
                 if (userData.status === 'pending' || !userData.role) {
                     pendingUsers.push(userData);
@@ -69,16 +71,16 @@ export class UsersManager {
                     <p style="color: #999; font-size: 12px;">Registered: ${user.createdAt ? new Date(user.createdAt.toDate()).toLocaleDateString() : 'Recently'}</p>
                 </div>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button onclick="window.app.users.approveUser('${user.id}', 'owner')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    <button onclick="window.app.users.approveUser('${Helpers.escapeJsAttr(user.id)}', 'owner')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         👑 Owner
                     </button>
-                    <button onclick="window.app.users.approveUser('${user.id}', 'manager')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #764ba2; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    <button onclick="window.app.users.approveUser('${Helpers.escapeJsAttr(user.id)}', 'manager')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #764ba2; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         👔 Manager
                     </button>
-                    <button onclick="window.app.users.approveUser('${user.id}', 'staff')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    <button onclick="window.app.users.approveUser('${Helpers.escapeJsAttr(user.id)}', 'staff')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         👤 Staff
                     </button>
-                    <button onclick="window.app.users.rejectUser('${user.id}')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #f56565; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    <button onclick="window.app.users.rejectUser('${Helpers.escapeJsAttr(user.id)}')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #f56565; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         ❌ Reject
                     </button>
                 </div>
@@ -109,9 +111,9 @@ export class UsersManager {
             const isCurrentUser = user.id === (AppState.currentUser ? AppState.currentUser.uid : null);
             
             // Escape for use in onclick attributes
-            const safeId = user.id;
-            const safeName = (user.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            const safeEmail = (user.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const safeId = Helpers.escapeJsAttr(user.id);
+            const safeName = Helpers.escapeJsAttr(user.name || '');
+            const safeEmail = Helpers.escapeJsAttr(user.email || '');
             
             return `
                 <div style="background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
@@ -119,15 +121,15 @@ export class UsersManager {
                         <div style="flex: 1;">
                             <strong style="font-size: 16px;">${Helpers.escapeHtml(user.name)}</strong>
                             <p style="color: #666; margin: 4px 0;">${Helpers.escapeHtml(user.email)}</p>
-                            <span style="display: inline-block; padding: 4px 12px; background: ${roleColors[user.role]}; color: white; border-radius: 12px; font-size: 12px; margin-top: 4px;">
-                                ${roleIcons[user.role]} ${user.role.toUpperCase()}
+                            <span style="display: inline-block; padding: 4px 12px; background: ${Helpers.escapeHtml(roleColors[user.role])}; color: white; border-radius: 12px; font-size: 12px; margin-top: 4px;">
+                                ${Helpers.escapeHtml(roleIcons[user.role])} ${Helpers.escapeHtml(String(user.role).toUpperCase())}
                             </span>
                         </div>
                         ${isCurrentUser ? '<span style="color: #999; font-size: 12px; padding: 8px;">(You)</span>' : ''}
                     </div>
                     ${!isCurrentUser ? `
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid #eee; padding-top: 12px;">
-                        <button onclick="window.app.users.showChangeRoleDialog('${safeId}', '${safeName}', '${user.role}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #f7fafc; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; font-size: 13px;">
+                        <button onclick="window.app.users.showChangeRoleDialog('${safeId}', '${safeName}', '${Helpers.escapeJsAttr(user.role)}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #f7fafc; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; font-size: 13px;">
                             ✏️ Edit Role
                         </button>
                         <button onclick="window.app.users.resetUserPassword('${safeId}', '${safeEmail}')" style="flex: 1; min-width: 80px; padding: 8px 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; cursor: pointer; font-size: 13px; color: #92400e;">

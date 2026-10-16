@@ -9,12 +9,72 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
+import { AuditService } from '../services/audit.js';
+import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 
 /**
  * Expenses Manager - Manages expense operations
  * @class ExpensesManager
  */
 export class ExpensesManager {
+    /**
+     * Expense currently loaded into a form for editing ({ id, category }), or null.
+     * While set, saving that category updates the existing document in place.
+     * @type {{id: string, category: string}|null}
+     */
+    static editingExpense = null;
+
+    /**
+     * Create a new expense, or update the one being edited (same doc, no delete).
+     * @param {Object} expense - Expense built from the form
+     * @returns {Promise<boolean>} true if an existing expense was updated
+     */
+    static async persistExpense(expense) {
+        const editing = this.editingExpense;
+        if (!editing || editing.category !== expense.category) {
+            await FirebaseService.saveExpense(expense);
+            return false;
+        }
+
+        const original = (AppState.expensesHistory || []).find(e => String(e.id) === String(editing.id)) || {};
+        const fields = {
+            type: expense.type,
+            personName: expense.personName,
+            amount: expense.amount,
+            remarks: expense.remarks,
+            updatedAt: Helpers.getCurrentDateTime(),
+            updatedBy: expense.createdBy,
+            updatedByName: expense.createdByName
+        };
+        await this.updateExistingExpense(editing.id, fields);
+        this.cancelExpenseEdit();
+
+        // Keep original creation info on the object used for printing
+        if (original.date) expense.date = original.date;
+        if (original.createdByName) expense.createdByName = original.createdByName;
+
+        await AuditService.log(AuditService.ACTIONS.EDIT_EXPENSE || 'EDIT_EXPENSE', {
+            expenseId: String(editing.id),
+            category: expense.category,
+            oldAmount: original.amount,
+            newAmount: expense.amount,
+            oldType: original.type,
+            newType: expense.type
+        });
+        return true;
+    }
+
+    /**
+     * Update an expense document in place. Resolves docs the same way as
+     * FirebaseService.deleteExpense: numeric ids are legacy `id` fields, others are doc ids.
+     * @param {string|number} expenseId
+     * @param {Object} fields
+     */
+    static async updateExistingExpense(expenseId, fields) {
+        await FirebaseService.updateExpense(expenseId, fields);
+    }
+
     /**
      * Update expense person autocomplete options
      * Extracts unique person names from expense history
@@ -28,12 +88,12 @@ export class ExpensesManager {
         
         const businessDatalist = document.getElementById('businessExpensePersonOptions');
         if (businessDatalist) {
-            businessDatalist.innerHTML = uniquePersons.map(name => `<option value="${name}">`).join('');
+            businessDatalist.innerHTML = uniquePersons.map(name => `<option value="${Helpers.escapeHtml(name)}">`).join('');
         }
         
         const personalDatalist = document.getElementById('personalExpensePersonOptions');
         if (personalDatalist) {
-            personalDatalist.innerHTML = uniquePersons.map(name => `<option value="${name}">`).join('');
+            personalDatalist.innerHTML = uniquePersons.map(name => `<option value="${Helpers.escapeHtml(name)}">`).join('');
         }
     }
 
@@ -43,6 +103,7 @@ export class ExpensesManager {
      * @param {Event} [evt] - Optional click event for button styling
      */
     static filterExpenseTab(view, evt) {
+        this.cancelExpenseEdit();
         const buttons = document.querySelectorAll('#expenses .filter-btn');
         buttons.forEach(btn => btn.classList.remove('active'));
         if (evt) evt.target.classList.add('active');
@@ -93,16 +154,17 @@ export class ExpensesManager {
         };
 
         // Use withLoading for the Firebase operation
+        let updated = false;
         await UIManager.withLoading(async () => {
-            await FirebaseService.saveExpense(expense);
+            updated = await this.persistExpense(expense);
         });
         
         // Add to AppState for immediate reflection
         if (!AppState.expenseHistory) AppState.expenseHistory = [];
-        AppState.expenseHistory.push(expense);
+        if (!updated) AppState.expenseHistory.push(expense);
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('✓ Business expense saved');
+        UIManager.showToast(updated ? '✓ Business expense updated' : '✓ Business expense saved');
         
         document.getElementById('businessExpenseType').value = '';
         document.getElementById('businessExpensePerson').value = '';
@@ -116,7 +178,7 @@ export class ExpensesManager {
         // Refresh cash management if available
         if (window.app.cashManagement) {
             window.app.cashManagement.calculateTodayTransactions();
-            window.app.cashManagement.render();
+            window.app.cashManagement.updateUI();
         }
     }
 
@@ -154,16 +216,17 @@ export class ExpensesManager {
         };
 
         // Use withLoading for the Firebase operation
+        let updated = false;
         await UIManager.withLoading(async () => {
-            await FirebaseService.saveExpense(expense);
+            updated = await this.persistExpense(expense);
         });
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('✓ Personal expense saved');
+        UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');
         
         // Add to AppState for immediate reflection
         if (!AppState.expenseHistory) AppState.expenseHistory = [];
-        AppState.expenseHistory.push(expense);
+        if (!updated) AppState.expenseHistory.push(expense);
         
         document.getElementById('personalExpenseType').value = '';
         document.getElementById('personalExpenseAmount').value = '';
@@ -177,7 +240,7 @@ export class ExpensesManager {
         // Refresh cash management if available
         if (window.app.cashManagement) {
             window.app.cashManagement.calculateTodayTransactions();
-            window.app.cashManagement.render();
+            window.app.cashManagement.updateUI();
         }
     }
 
@@ -203,8 +266,10 @@ export class ExpensesManager {
                 return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
             });
         
+        this.attachExpenseScroll(container);
+
         if (businessExpenses.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No business expenses recorded yet</p>';
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(this.emptyExpenseMessage('business'))}</p>`;
             return;
         }
 
@@ -212,20 +277,37 @@ export class ExpensesManager {
             <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;"
                  onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'; this.style.transform='translateY(-2px)'"
                  onmouseout="this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'; this.style.transform='translateY(0)'"
-                 onclick="window.app.expenses.viewExpenseDetails('${payment.id}', 'business')">
+                 onclick="window.app.expenses.viewExpenseDetails('${Helpers.escapeJsAttr(payment.id)}', 'business')">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                     <div>
-                        ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${payment.personName}</div>` : ''}
-                        <div style="font-size: 13px; color: #666; margin-top: 4px;">${payment.type}</div>
+                        ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${Helpers.escapeHtml(payment.personName)}</div>` : ''}
+                        <div style="font-size: 13px; color: #666; margin-top: 4px;">${Helpers.escapeHtml(payment.type)}</div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${payment.amount}</div>
+                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${Helpers.escapeHtml(payment.amount)}</div>
                     </div>
                 </div>
-                ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${payment.remarks}</div>` : ''}
-                <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${payment.date}${payment.createdByName ? ` • By: ${payment.createdByName}` : ''}</div>
+                ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${Helpers.escapeHtml(payment.remarks)}</div>` : ''}
+                <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${Helpers.escapeHtml(payment.date)}${payment.createdByName ? ` • By: ${Helpers.escapeHtml(payment.createdByName)}` : ''}</div>
             </div>
         `).join('');
+    }
+
+    /**
+     * Older expenses load one month at a time as the user scrolls the list.
+     * @param {HTMLElement} container
+     */
+    static attachExpenseScroll(container) {
+        attachOlderHistoryScroll(container, { noun: 'expenses', onLoaded: () => this.renderexpensesHistory() });
+    }
+
+    /**
+     * @param {'business'|'personal'} category
+     * @returns {string} plain text
+     */
+    static emptyExpenseMessage(category) {
+        if (isFullHistoryLoaded()) return `No ${category} expenses recorded yet`;
+        return `No ${category} expenses since ${formatWindowDate(historyLoadedFrom())}`;
     }
 
     static renderPersonalExpenseHistory() {
@@ -238,8 +320,10 @@ export class ExpensesManager {
                 return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
             });
         
+        this.attachExpenseScroll(container);
+
         if (personalExpenses.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No personal expenses recorded yet</p>';
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(this.emptyExpenseMessage('personal'))}</p>`;
             return;
         }
 
@@ -247,18 +331,18 @@ export class ExpensesManager {
             <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;"
                  onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'; this.style.transform='translateY(-2px)'"
                  onmouseout="this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'; this.style.transform='translateY(0)'"
-                 onclick="window.app.expenses.viewExpenseDetails('${payment.id}', 'personal')">
+                 onclick="window.app.expenses.viewExpenseDetails('${Helpers.escapeJsAttr(payment.id)}', 'personal')">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                     <div>
-                        ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${payment.personName}</div>` : ''}
-                        <div style="font-size: 13px; color: #666; margin-top: 4px;">${payment.type}</div>
+                        ${payment.personName ? `<div style="font-weight: 600; font-size: 16px; color: #333;">${Helpers.escapeHtml(payment.personName)}</div>` : ''}
+                        <div style="font-size: 13px; color: #666; margin-top: 4px;">${Helpers.escapeHtml(payment.type)}</div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${payment.amount}</div>
+                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">₹${Helpers.escapeHtml(payment.amount)}</div>
                     </div>
                 </div>
-                ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${payment.remarks}</div>` : ''}
-                <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${payment.date}${payment.createdByName ? ` • By: ${payment.createdByName}` : ''}</div>
+                ${payment.remarks ? `<div style="font-size: 13px; color: #777; font-style: italic; margin-top: 8px;">📝 ${Helpers.escapeHtml(payment.remarks)}</div>` : ''}
+                <div style="font-size: 12px; color: #999; margin-top: 8px;">📅 ${Helpers.escapeHtml(payment.date)}${payment.createdByName ? ` • By: ${Helpers.escapeHtml(payment.createdByName)}` : ''}</div>
             </div>
         `).join('');
     }
@@ -299,10 +383,10 @@ export class ExpensesManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.saveExpense(expense);
+        const updated = await this.persistExpense(expense);
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('✓ Business expense saved');
+        UIManager.showToast(updated ? '✓ Business expense updated' : '✓ Business expense saved');
         
         document.getElementById('businessExpenseType').value = '';
         document.getElementById('businessExpensePerson').value = '';
@@ -338,7 +422,7 @@ export class ExpensesManager {
                                 <span style="font-size: 20px; margin-right: 12px;">🏷️</span>
                                 <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Category</span>
                             </div>
-                            <span style="font-size: 15px; color: #333; font-weight: 600; text-transform: capitalize;">${category}</span>
+                            <span style="font-size: 15px; color: #333; font-weight: 600; text-transform: capitalize;">${Helpers.escapeHtml(category)}</span>
                         </div>
                         
                         <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
@@ -346,7 +430,7 @@ export class ExpensesManager {
                                 <span style="font-size: 20px; margin-right: 12px;">📅</span>
                                 <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Date</span>
                             </div>
-                            <span style="font-size: 14px; color: #333; font-weight: 500;">${expense.date}</span>
+                            <span style="font-size: 14px; color: #333; font-weight: 500;">${Helpers.escapeHtml(expense.date)}</span>
                         </div>
                         
                         ${expense.createdByName ? `
@@ -355,7 +439,7 @@ export class ExpensesManager {
                                 <span style="font-size: 20px; margin-right: 12px;">👨‍💼</span>
                                 <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Created By</span>
                             </div>
-                            <span style="font-size: 14px; color: #333; font-weight: 500;">${expense.createdByName}</span>
+                            <span style="font-size: 14px; color: #333; font-weight: 500;">${Helpers.escapeHtml(expense.createdByName)}</span>
                         </div>
                         ` : ''}
                     </div>
@@ -364,18 +448,18 @@ export class ExpensesManager {
                 <div style="background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #f0f0f0;">
                         <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Type</span>
-                        <span style="font-size: 18px; font-weight: 600; color: #2c3e50;">${expense.type}</span>
+                        <span style="font-size: 18px; font-weight: 600; color: #2c3e50;">${Helpers.escapeHtml(expense.type)}</span>
                     </div>
                     
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #f0f0f0;">
                         <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Amount</span>
-                        <span style="font-size: 36px; font-weight: bold; color: #667eea; letter-spacing: 1px;">₹${expense.amount}</span>
+                        <span style="font-size: 36px; font-weight: bold; color: #667eea; letter-spacing: 1px;">₹${Helpers.escapeHtml(expense.amount)}</span>
                     </div>
                     
                     ${expense.personName ? `
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span style="font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Person Name</span>
-                        <span style="font-size: 18px; font-weight: 500; color: #2c3e50;">👤 ${expense.personName}</span>
+                        <span style="font-size: 18px; font-weight: 500; color: #2c3e50;">👤 ${Helpers.escapeHtml(expense.personName)}</span>
                     </div>
                     ` : ''}
                 </div>
@@ -383,7 +467,7 @@ export class ExpensesManager {
                 ${expense.remarks ? `
                 <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 16px; border-radius: 8px;">
                     <div style="font-size: 11px; color: #856404; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">📝 Remarks</div>
-                    <div style="font-size: 14px; color: #856404; line-height: 1.5;">${expense.remarks}</div>
+                    <div style="font-size: 14px; color: #856404; line-height: 1.5;">${Helpers.escapeHtml(expense.remarks)}</div>
                 </div>
                 ` : ''}
             </div>
@@ -465,6 +549,7 @@ export class ExpensesManager {
     }
 
     static async editExpense(expenseId, category) {
+        this.cancelExpenseEdit();
         const expense = AppState.expensesHistory.find(p => p.id == expenseId);
         if (!expense) {
             UIManager.showToast('Expense not found');
@@ -484,10 +569,28 @@ export class ExpensesManager {
             document.getElementById('personalExpenseRemarks').value = expense.remarks || '';
         }
 
-        // Delete the old expense
-        await this.deleteExpense(expenseId, category, false);
+        // Edit in place: saving this category updates the same document (nothing is deleted)
+        this.editingExpense = { id: String(expense.id), category };
+
+        // Abandoning the edit (clearing the amount, switching expense tab or app tab) must
+        // turn the next save back into a new expense instead of overwriting this one.
+        const amountInput = document.getElementById(category === 'business' ? 'businessExpenseAmount' : 'personalExpenseAmount');
+        const editing = this.editingExpense;
+        const onAmountInput = () => {
+            if (amountInput.value.trim() === '' && this.editingExpense === editing) {
+                this.cancelExpenseEdit();
+            }
+        };
+        amountInput?.addEventListener('input', onAmountInput);
+        editing.cleanup = () => amountInput?.removeEventListener('input', onAmountInput);
         
         UIManager.showToast('Edit expense and save to update');
+    }
+
+    /** Stops editing: the next save creates a new expense. */
+    static cancelExpenseEdit() {
+        this.editingExpense?.cleanup?.();
+        this.editingExpense = null;
     }
 
     static async deleteExpense(expenseId, category, showConfirm = true) {
@@ -502,7 +605,17 @@ export class ExpensesManager {
         }
 
         try {
+            const existing = (AppState.expensesHistory || []).find(e => String(e.id) === String(expenseId));
             await FirebaseService.deleteExpense(String(expenseId));
+            if (this.editingExpense && String(this.editingExpense.id) === String(expenseId)) {
+                this.cancelExpenseEdit();
+            }
+            await AuditService.log(AuditService.ACTIONS.DELETE_EXPENSE || 'DELETE_EXPENSE', {
+                expenseId: String(expenseId),
+                category: existing?.category || category,
+                amount: existing?.amount,
+                type: existing?.type
+            });
             UIManager.hapticFeedback('medium');
             UIManager.showToast('✓ Expense deleted');
             
@@ -542,10 +655,10 @@ export class ExpensesManager {
             createdByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
 
-        await FirebaseService.saveExpense(expense);
+        const updated = await this.persistExpense(expense);
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('✓ Personal expense saved');
+        UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');
         
         document.getElementById('personalExpenseType').value = '';
         document.getElementById('personalExpenseAmount').value = '';
@@ -559,4 +672,11 @@ export class ExpensesManager {
         // Print the expense
         this.printExpenseReceipt(expense);
     }
+}
+
+// Leaving the Expenses tab abandons any in-progress edit
+if (typeof window !== 'undefined') {
+    window.addEventListener('aadhat:tabshown', (event) => {
+        if (event.detail?.tabId !== 'expenses') ExpensesManager.cancelExpenseEdit();
+    });
 }

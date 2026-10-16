@@ -1,0 +1,76 @@
+/**
+ * @fileoverview Guards first-load performance plumbing:
+ *  - every service-worker precache entry exists (a single 404 used to abort
+ *    the whole precache), and every app file is precached;
+ *  - index.html links the same stylesheets, in the same order, as styles.css;
+ *  - the on-demand script loader injects a library only once.
+ */
+const fs = require('fs');
+const path = require('path');
+const { check } = require('../../../scripts/check-sw-assets.js');
+import { loadScriptOnce, ensureXLSX, XLSX_URL, XLSX_INTEGRITY } from '../utils/lazy-scripts.js';
+
+const WWW = path.join(__dirname, '..', '..');
+
+describe('service worker precache list', () => {
+    test('all entries exist and all app files are listed', () => {
+        const { missingOnDisk, notListed, duplicates } = check();
+        expect(missingOnDisk).toEqual([]);
+        expect(notListed).toEqual([]);
+        expect(duplicates).toEqual([]);
+    });
+});
+
+describe('index.html stylesheets', () => {
+    test('match styles.css @import order', () => {
+        const html = fs.readFileSync(path.join(WWW, 'index.html'), 'utf8');
+        const css = fs.readFileSync(path.join(WWW, 'styles.css'), 'utf8');
+        const imported = [...css.matchAll(/@import url\('([^']+)'\)/g)].map((m) => m[1]);
+        const linked = [...html.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)].map((m) => m[1]);
+        expect(imported.length).toBeGreaterThan(0);
+        expect(linked).toEqual(imported);
+    });
+});
+
+describe('loadScriptOnce', () => {
+    afterEach(() => {
+        document.head.innerHTML = '';
+        delete window.FakeLib;
+    });
+
+    test('injects a script once and resolves with the global', async () => {
+        const src = 'https://example.test/fake-lib.js';
+        const p1 = loadScriptOnce(src, 'FakeLib');
+        const p2 = loadScriptOnce(src, 'FakeLib');
+        const scripts = document.head.querySelectorAll(`script[src="${src}"]`);
+        expect(scripts).toHaveLength(1);
+
+        window.FakeLib = { ok: true };
+        scripts[0].onload();
+        await expect(p1).resolves.toEqual({ ok: true });
+        expect(p2).toBe(p1);
+        await expect(loadScriptOnce(src, 'FakeLib')).resolves.toEqual({ ok: true });
+    });
+
+    test('allows retry after a load error', async () => {
+        const src = 'https://example.test/flaky-lib.js';
+        const p1 = loadScriptOnce(src, 'FakeLib');
+        document.head.querySelector(`script[src="${src}"]`).onerror();
+        await expect(p1).rejects.toThrow('Failed to load script');
+        const p2 = loadScriptOnce(src, 'FakeLib');
+        expect(p2).not.toBe(p1);
+        expect(document.head.querySelectorAll(`script[src="${src}"]`)).toHaveLength(2);
+        p2.catch(() => {});
+    });
+
+    test('ensureXLSX pins the CDN script with Subresource Integrity', () => {
+        const p = ensureXLSX();
+        const script = document.head.querySelector(`script[src="${XLSX_URL}"]`);
+        expect(XLSX_URL).toMatch(/xlsx-\d+\.\d+\.\d+\//);
+        expect(script.integrity).toBe(XLSX_INTEGRITY);
+        expect(XLSX_INTEGRITY).toMatch(/^sha384-[A-Za-z0-9+/]{64}$/);
+        expect(script.crossOrigin).toBe('anonymous');
+        script.onerror();
+        p.catch(() => {});
+    });
+});

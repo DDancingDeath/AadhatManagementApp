@@ -9,6 +9,8 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
+import { Helpers } from '../utils/helpers.js';
+import { ensureXLSX } from '../utils/lazy-scripts.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -61,7 +63,7 @@ const ItemsManager = {
             const purchaseRatesHTML = item.rates.map((rate, rateIndex) => `
                 <div class="rate-group">
                     <input type="number" class="rate-input purchase" 
-                           value="${rate}" 
+                           value="${Helpers.escapeHtml(rate)}" 
                            oninput="window.app.items.updateRate(${index}, ${rateIndex}, this.value)"
                            placeholder="Rate">
                     <button class="delete-rate" onclick="window.app.items.deleteRate(${index}, ${rateIndex})">×</button>
@@ -72,7 +74,7 @@ const ItemsManager = {
             const saleRatesHTML = item.saleRates.map((rate, rateIndex) => `
                 <div class="rate-group">
                     <input type="number" class="rate-input sale" 
-                           value="${rate}" 
+                           value="${Helpers.escapeHtml(rate)}" 
                            oninput="window.app.items.updateSaleRate(${index}, ${rateIndex}, this.value)"
                            placeholder="Rate">
                     <button class="delete-rate" onclick="window.app.items.deleteSaleRate(${index}, ${rateIndex})">×</button>
@@ -83,7 +85,7 @@ const ItemsManager = {
             const wholesaleRatesHTML = item.wholesaleRates.map((rate, rateIndex) => `
                 <div class="rate-group">
                     <input type="number" class="rate-input wholesale" 
-                           value="${rate}" 
+                           value="${Helpers.escapeHtml(rate)}" 
                            oninput="window.app.items.updateWholesaleRate(${index}, ${rateIndex}, this.value)"
                            placeholder="Rate">
                     <button class="delete-rate" onclick="window.app.items.deleteWholesaleRate(${index}, ${rateIndex})">×</button>
@@ -93,7 +95,7 @@ const ItemsManager = {
             itemCard.innerHTML = `
                 <div class="item-header">
                     <input type="text" class="item-name-input" 
-                           value="${item.name}" 
+                           value="${Helpers.escapeHtml(item.name)}" 
                            oninput="window.app.items.updateName(${index}, this.value)"
                            placeholder="Enter item name (English)">
                     <button class="delete-item-btn" onclick="window.app.items.deleteItem(${index})">Delete</button>
@@ -101,7 +103,7 @@ const ItemsManager = {
                 <div style="margin-bottom: 12px;">
                     <label style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px; display: block;">Hindi Name:</label>
                     <input type="text" 
-                           value="${item.hindiName || ''}" 
+                           value="${Helpers.escapeHtml(item.hindiName || '')}" 
                            oninput="window.app.items.updateHindiName(${index}, this.value)"
                            placeholder="हिंदी नाम"
                            style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 8px; font-size: 15px;">
@@ -201,9 +203,9 @@ const ItemsManager = {
         this.updateTimers[`rate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
             try {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
-                // Notify all users about rate change
+                // Notify all users about rate change (fire-and-forget; never rejects)
                 if (oldRate !== newRate && newRate > 0) {
-                    await FirebaseService.notifyRateChange(AppState.items[itemIndex], 'purchase', oldRate, newRate);
+                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'purchase', oldRate, newRate);
                 }
             } catch (error) {
                 console.error('Error updating rate:', error);
@@ -241,9 +243,9 @@ const ItemsManager = {
         this.updateTimers[`salerate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
             try {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
-                // Notify all users about rate change
+                // Notify all users about rate change (fire-and-forget; never rejects)
                 if (oldRate !== newRate && newRate > 0) {
-                    await FirebaseService.notifyRateChange(AppState.items[itemIndex], 'sale', oldRate, newRate);
+                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'sale', oldRate, newRate);
                 }
             } catch (error) {
                 console.error('Error updating sale rate:', error);
@@ -283,9 +285,9 @@ const ItemsManager = {
         this.updateTimers[`wholesalerate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
             try {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
-                // Notify all users about rate change
+                // Notify all users about rate change (fire-and-forget; never rejects)
                 if (oldRate !== newRate && newRate > 0) {
-                    await FirebaseService.notifyRateChange(AppState.items[itemIndex], 'wholesale', oldRate, newRate);
+                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'wholesale', oldRate, newRate);
                 }
             } catch (error) {
                 console.error('Error updating wholesale rate:', error);
@@ -337,6 +339,7 @@ const ItemsManager = {
     // Export items to Excel
     async exportToExcel() {
         try {
+            await ensureXLSX();
             const workbook = XLSX.utils.book_new();
             
             const data = AppState.items.map(item => ({
@@ -378,6 +381,7 @@ const ItemsManager = {
         UIManager.showLoading();
         
         try {
+            await ensureXLSX();
             const data = await file.arrayBuffer();
             const workbook = XLSX.read(data);
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -589,21 +593,21 @@ const ItemsManager = {
             if (isStaff) {
                 row.innerHTML = `
                     <td style="padding: 16px; font-weight: 600; color: #1f2937; font-size: 15px; border-right: 1px solid #f3f4f6;">
-                        ${displayName || item.name || '-'}
-                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
+                        ${Helpers.escapeHtml(displayName || item.name || '-')}
+                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${Helpers.escapeHtml(itemFrequency)}</span>` : ''}
                     </td>
-                    <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${purchaseRates}</td>
-                    <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600;">${saleRates}</td>
+                    <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${Helpers.escapeHtml(purchaseRates)}</td>
+                    <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600;">${Helpers.escapeHtml(saleRates)}</td>
                 `;
             } else {
                 row.innerHTML = `
                     <td style="padding: 16px; font-weight: 600; color: #1f2937; font-size: 15px; border-right: 1px solid #f3f4f6;">
-                        ${displayName || item.name || '-'}
-                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${itemFrequency}</span>` : ''}
+                        ${Helpers.escapeHtml(displayName || item.name || '-')}
+                        ${itemFrequency > 0 ? `<span style="margin-left: 8px; padding: 3px 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);">${Helpers.escapeHtml(itemFrequency)}</span>` : ''}
                     </td>
-                    <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${purchaseRates}</td>
-                    <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${saleRates}</td>
-                    <td class="wholesale-column" style="padding: 16px; color: #9333ea; font-size: 14px; font-weight: 600;">${wholesaleRates}</td>
+                    <td style="padding: 16px; color: #007bff; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${Helpers.escapeHtml(purchaseRates)}</td>
+                    <td style="padding: 16px; color: #28a745; font-size: 14px; font-weight: 600; border-right: 1px solid #f3f4f6;">${Helpers.escapeHtml(saleRates)}</td>
+                    <td class="wholesale-column" style="padding: 16px; color: #9333ea; font-size: 14px; font-weight: 600;">${Helpers.escapeHtml(wholesaleRates)}</td>
                 `;
             }
             tbody.appendChild(row);
@@ -656,7 +660,7 @@ const ItemsManager = {
         purchaseContainer.innerHTML = this.modalRates.purchase.map((rate, idx) => `
             <div class="rate-group">
                 <input type="number" class="rate-input purchase" 
-                       value="${rate}" 
+                       value="${Helpers.escapeHtml(rate)}" 
                        oninput="window.app.items.updateModalRate('purchase', ${idx}, this.value)"
                        placeholder="Rate">
                 <button class="delete-rate" onclick="window.app.items.deleteModalRate('purchase', ${idx})">×</button>
@@ -668,7 +672,7 @@ const ItemsManager = {
         wholesaleContainer.innerHTML = this.modalRates.wholesale.map((rate, idx) => `
             <div class="rate-group">
                 <input type="number" class="rate-input wholesale" 
-                       value="${rate}" 
+                       value="${Helpers.escapeHtml(rate)}" 
                        oninput="window.app.items.updateModalRate('wholesale', ${idx}, this.value)"
                        placeholder="Rate">
                 <button class="delete-rate" onclick="window.app.items.deleteModalRate('wholesale', ${idx})">×</button>
@@ -680,7 +684,7 @@ const ItemsManager = {
         saleContainer.innerHTML = this.modalRates.sale.map((rate, idx) => `
             <div class="rate-group">
                 <input type="number" class="rate-input sale" 
-                       value="${rate}" 
+                       value="${Helpers.escapeHtml(rate)}" 
                        oninput="window.app.items.updateModalRate('sale', ${idx}, this.value)"
                        placeholder="Rate">
                 <button class="delete-rate" onclick="window.app.items.deleteModalRate('sale', ${idx})">×</button>

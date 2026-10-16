@@ -104,3 +104,6 @@ build/
 # Firebase sensitive config (if you have API keys)
 # www/firebaseConfig.js
 scripts/auth-state.json
+
+# Firestore rules test dependencies
+rules-tests/node_modules/

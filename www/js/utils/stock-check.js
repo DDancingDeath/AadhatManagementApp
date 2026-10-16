@@ -95,6 +95,8 @@ function findCatalogueEntry(item) {
  */
 export function computeStockShortfalls(saleItems) {
     if (!Array.isArray(saleItems) || saleItems.length === 0) return [];
+    // Stock is still being computed from full history: no reliable figure to warn against.
+    if (AppState.stockReady === false) return [];
 
     // Aggregate requested quantity per canonical key. A bill may have
     // several line items for the same physical item (e.g. two weight

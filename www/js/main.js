@@ -35,7 +35,7 @@ import { Helpers } from './utils/helpers.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261011a-regfix';
+const BUILD_ID = '20261014d-edit-conflict';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -125,15 +125,33 @@ function setupEventListeners() {
     });
 }
 
-// Load user data and initialize app
-async function loadUserDataAndInitialize() {
+// Load user data and initialize app.
+// Login triggers this twice (onAuthStateChanged + AuthManager.handleLogin);
+// share one in-flight run so data isn't loaded (and billed) twice and the
+// second run's listener reset can't strand the first.
+let initInFlight = null;
+function loadUserDataAndInitialize() {
+    if (!initInFlight) {
+        initInFlight = initializeUserData().finally(() => {
+            initInFlight = null;
+        });
+    }
+    return initInFlight;
+}
+
+async function initializeUserData() {
     UIManager.showLoading();
     
     try {
         // Fetch user data
         const userId = AppState.currentUser?.uid || firebase.auth().currentUser?.uid;
         if (userId) {
-            const userDoc = await firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).get();
+            const userRef = firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId);
+            let userDoc = await userRef.get();
+            // A stale offline-cache copy must not lock out a user who has since been approved
+            if (!userDoc.exists || userDoc.data().status === 'pending') {
+                userDoc = await userRef.get({ source: 'server' }).catch(() => userDoc);
+            }
             if (userDoc.exists) {
                 const userData = userDoc.data();
                 
@@ -166,34 +184,36 @@ async function loadUserDataAndInitialize() {
             }
         }
         
-        // Load all data from Firestore
-        const [items, purchases, wholesaleSales, retailSales, payments, stockAdjustments, withdrawals] = await Promise.all([
-            FirebaseService.loadItems(),
-            FirebaseService.loadPurchases(),
-            FirebaseService.loadSales(),
-            FirebaseService.loadRetailSales(),
-            FirebaseService.loadExpenses(),
-            FirebaseService.loadStockAdjustments(),
-            FirebaseService.loadWithdrawals(),
-            BillingManager.loadItemFrequency()
-        ]);
+        // Outdated app check (settings/app.minClientVersion), read alongside the listeners.
+        const versionCheck = FirebaseService.isClientVersionSupported();
+
+        // Attach real-time listeners. Their first snapshots populate AppState,
+        // so every document is read once per app open (a separate .get() of
+        // each collection would read everything a second time).
+        try {
+            await Promise.all([
+                FirebaseService.setupRealtimeListeners(),
+                BillingManager.loadItemFrequency()
+            ]);
+        } catch (loadError) {
+            FirebaseService.cleanup();
+            throw loadError;
+        }
         
-        AppState.items = items;
-        AppState.purchaseHistory = purchases;
-        AppState.salesHistory = wholesaleSales;
-        AppState.retailSalesHistory = retailSales;
-        AppState.expensesHistory = payments;
-        AppState.stockAdjustments = stockAdjustments;
-        AppState.withdrawalsHistory = withdrawals;
-        
-        // Calculate stock
-        AppState.stock = await FirebaseService.calculateStock();
+        if (!(await versionCheck)) {
+            FirebaseService.cleanup();
+            UIManager.hideLoading();
+            UIManager.showModal('This app version is outdated. Please update the app to continue.');
+            return;
+        }
+
+        // Stock: immediate when the checkpoint covers it, otherwise computed in
+        // the background (screens show "Stock updating…") so startup never waits
+        // on a full-history read.
+        await FirebaseService.prepareStock();
         
         // Initialize billing manager (connects purchase and retail-sale modules)
         BillingManager.init();
-        
-        // Set up real-time listeners
-        FirebaseService.setupRealtimeListeners();
         
         // Show app content
         const appContent = document.getElementById('appContent');
@@ -252,6 +272,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (typeof firebase !== 'undefined' && firebase.auth) {
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
+                // Registration signs in temporarily to create/recover the profile and then signs
+                // out; don't start loading the app (and showing its errors) for that sign-in.
+                if (AuthManager.authFlowInProgress) return;
                 // Set current user in AppState
                 AppState.currentUser = user;
                 const authScreen = document.getElementById('authScreen');
@@ -322,6 +345,8 @@ async function debugStockForName(query) {
     };
 
     const computed = await FirebaseService.calculateStock();
+    // The timeline below replays AppState directly, so it needs all history.
+    await FirebaseService.ensureHistoryFrom(null);
 
     for (const item of matches) {
         const events = [];
@@ -646,32 +671,8 @@ window.app = {
         fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
         completeSale: () => BillingManager.completeSale(),
         
-        // Print bill (saves and prints)
-        printBill: async () => {
-            const billItems = BillingManager.getBillItems();
-            if (billItems.length === 0) {
-                UIManager.showToast('No items in bill');
-                return;
-            }
-            
-            try {
-                // Save the bill first and wait for it to complete
-                const savedBill = await BillingManager.saveBillToHistory();
-                
-                if (!savedBill) {
-                    // Save failed or was cancelled
-                    return;
-                }
-                
-                // Only print after successful save
-                await PrinterService.printBill(savedBill);
-                
-                UIManager.showToast('Bill saved and printed!');
-            } catch (error) {
-                console.error('Print error:', error);
-                UIManager.showToast('Error: ' + error.message);
-            }
-        },
+        // Print bill (saves and prints; printing starts as soon as the save is issued)
+        printBill: () => BillingManager.printBill(),
         
         // Mode toggle between Purchase and Sale
         switchMode: (mode, event) => BillingManager.switchMode(mode, event),
@@ -799,6 +800,8 @@ window.app = {
     history: {
         saveBillToHistory: () => HistoryManager.saveBillToHistory(),
         render: () => HistoryManager.renderHistory(),
+        // Re-render keeping the selected Purchase/Sale filter and search text (used by live sync)
+        refresh: () => HistoryManager.refreshHistory(),
         viewBill: (index, type) => HistoryManager.viewBill(index, type),
         
         closeBillDetails: () => HistoryManager.closeBillDetails(),

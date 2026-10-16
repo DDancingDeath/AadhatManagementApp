@@ -160,6 +160,9 @@ const NavigationManager = {
             buttons.forEach(btn => btn.classList.remove('active'));
             evt.currentTarget.classList.add('active');
         }
+        
+        // Lets data listeners refresh views that changed while this tab was hidden
+        window.dispatchEvent(new CustomEvent('aadhat:tabshown', { detail: { tabId } }));
     }
 };
 

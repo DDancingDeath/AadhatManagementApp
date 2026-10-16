@@ -1,6 +1,12 @@
 // Reports Module - Comprehensive Business Reports
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
+import { Helpers } from '../utils/helpers.js';
+import { readPayment, outstandingDue } from '../utils/money.js';
+import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+import {
+    rangeStatus, retryRange, applyRangeState, needsHistoryFrom, ensureHistoryFrom
+} from '../utils/history-window.js';
 
 export class ReportsManager {
     static currentTab = 'overview';
@@ -75,18 +81,59 @@ export class ReportsManager {
         const toInput = document.getElementById('reportsDateTo');
 
         if (fromInput && toInput && fromInput.value && toInput.value) {
-            this.customStartDate = new Date(fromInput.value);
-            this.customEndDate = new Date(toInput.value);
+            this.customStartDate = parseLocalDate(fromInput.value);
+            this.customEndDate = parseLocalDate(toInput.value);
             this.customEndDate.setHours(23, 59, 59, 999);
             this.renderReports();
         }
+    }
+
+    /**
+     * Earliest date the current period needs (local midnight; null = all time).
+     * Rounded to a day so the value is stable between renders.
+     * @returns {Date|null}
+     */
+    static getRangeStart() {
+        const now = new Date();
+        switch (this.currentDateFilter) {
+            case 'today':
+                return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            case 'week':
+                return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+            case 'month':
+                return new Date(now.getFullYear(), now.getMonth(), 1);
+            case 'year':
+                return new Date(now.getFullYear(), 0, 1);
+            case 'custom':
+                return (this.customStartDate && this.customEndDate) ? this.customStartDate : null;
+            case 'all':
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Load older history for an export of the selected period first.
+     * @returns {Promise<boolean>} false if the period couldn't be loaded
+     */
+    static async ensureRangeLoaded() {
+        const start = this.getRangeStart();
+        if (!needsHistoryFrom(start)) return true;
+        let covered = false;
+        try {
+            covered = await UIManager.withLoading(() => ensureHistoryFrom(start));
+        } catch (error) {
+            console.error('Loading older history failed:', error);
+        }
+        if (!covered) UIManager.showToast("Couldn't load older data for this period");
+        return covered;
     }
 
     static filterByDate(bills) {
         const now = new Date();
         
         return bills.filter(bill => {
-            const billDate = new Date(bill.date);
+            const billDate = parseAnyBillDate(bill.date) || new Date(NaN);
             
             switch(this.currentDateFilter) {
                 case 'today':
@@ -217,6 +264,18 @@ export class ReportsManager {
 
     // ==================== MAIN RENDER ====================
     static renderReports() {
+        // Never show partial totals: wait for the period's history to load
+        const start = this.getRangeStart();
+        const status = rangeStatus('reports', start, () => this.renderReports());
+        applyRangeState([...document.querySelectorAll('#reports .reports-section')], status, {
+            loadingText: start ? 'Loading older data for this period…' : 'Loading full history…',
+            onRetry: () => {
+                retryRange('reports');
+                this.renderReports();
+            }
+        });
+        if (status === 'loading') return;
+
         this.populateFilters();
 
         switch(this.currentTab) {
@@ -256,23 +315,23 @@ export class ReportsManager {
                           filteredSales.reduce((sum, s) => sum + (s.laborCharges || 0), 0);
 
         // Payment calculations
-        const purchaseCash = filteredPurchases.reduce((sum, p) => sum + (p.payment?.cash || 0), 0);
-        const purchaseOnline = filteredPurchases.reduce((sum, p) => sum + (p.payment?.online || 0), 0);
-        const salesCash = filteredSales.reduce((sum, s) => sum + (s.payment?.cash || 0), 0);
-        const salesOnline = filteredSales.reduce((sum, s) => sum + (s.payment?.online || 0), 0);
+        const purchaseCash = filteredPurchases.reduce((sum, p) => sum + readPayment(p).cash, 0);
+        const purchaseOnline = filteredPurchases.reduce((sum, p) => sum + readPayment(p).online, 0);
+        const salesCash = filteredSales.reduce((sum, s) => sum + readPayment(s).cash, 0);
+        const salesOnline = filteredSales.reduce((sum, s) => sum + readPayment(s).online, 0);
         const totalCash = purchaseCash + salesCash;
         const totalOnline = purchaseOnline + salesOnline;
 
         // Outstanding calculations
         let dueToPay = 0;
         purchaseHistory.forEach(p => {
-            const outstanding = p.payment?.due || 0;
+            const outstanding = outstandingDue(p);
             if (outstanding > 0) dueToPay += outstanding;
         });
 
         let dueToReceive = 0;
         allSalesHistory.forEach(s => {
-            const outstanding = s.payment?.due || 0;
+            const outstanding = outstandingDue(s);
             if (outstanding > 0) dueToReceive += outstanding;
         });
 
@@ -312,18 +371,22 @@ export class ReportsManager {
         const dailyData = {};
         
         purchases.forEach(p => {
-            const date = new Date(p.date).toLocaleDateString('en-IN');
+            const parsedDate = parseAnyBillDate(p.date);
+            if (!parsedDate) return;
+            const date = parsedDate.toLocaleDateString('en-IN');
             if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
             dailyData[date].purchases += p.billTotal || p.grandTotal || p.total || 0;
         });
 
         sales.forEach(s => {
-            const date = new Date(s.date).toLocaleDateString('en-IN');
+            const parsedDate = parseAnyBillDate(s.date);
+            if (!parsedDate) return;
+            const date = parsedDate.toLocaleDateString('en-IN');
             if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
             dailyData[date].sales += s.total || s.grandTotal || 0;
         });
 
-        const dates = Object.keys(dailyData).sort((a, b) => new Date(a) - new Date(b)).slice(-7);
+        const dates = Object.keys(dailyData).sort((a, b) => parseAnyBillDate(a) - parseAnyBillDate(b)).slice(-7);
         
         if (dates.length === 0) {
             ctx.font = '14px Arial';
@@ -405,8 +468,8 @@ export class ReportsManager {
             <div class="top-item">
                 <span class="top-item-rank">${index + 1}</span>
                 <div class="top-item-info">
-                    <div class="top-item-name">${name}</div>
-                    <div class="top-item-stats">${data.count} transactions • ${data.qty.toFixed(1)} kg</div>
+                    <div class="top-item-name">${Helpers.escapeHtml(name)}</div>
+                    <div class="top-item-stats">${Helpers.escapeHtml(data.count)} transactions • ${data.qty.toFixed(1)} kg</div>
                 </div>
                 <span class="top-item-value">₹${this.formatNumber(data.value)}</span>
             </div>
@@ -424,12 +487,12 @@ export class ReportsManager {
         const billCount = filteredPurchases.length;
         const avgBill = billCount > 0 ? totalAmount / billCount : 0;
         const totalLabor = filteredPurchases.reduce((sum, p) => sum + (p.laborCharges || 0), 0);
-        const cashPaid = filteredPurchases.reduce((sum, p) => sum + (p.payment?.cash || 0), 0);
-        const onlinePaid = filteredPurchases.reduce((sum, p) => sum + (p.payment?.online || 0), 0);
+        const cashPaid = filteredPurchases.reduce((sum, p) => sum + readPayment(p).cash, 0);
+        const onlinePaid = filteredPurchases.reduce((sum, p) => sum + readPayment(p).online, 0);
         
         let outstanding = 0;
         purchaseHistory.forEach(p => {
-            const due = p.payment?.due || 0;
+            const due = outstandingDue(p);
             if (due > 0) outstanding += due;
         });
 
@@ -463,12 +526,12 @@ export class ReportsManager {
         const billCount = filteredSales.length;
         const avgBill = billCount > 0 ? totalAmount / billCount : 0;
         const totalLabor = filteredSales.reduce((sum, s) => sum + (s.laborCharges || 0), 0);
-        const cashReceived = filteredSales.reduce((sum, s) => sum + (s.payment?.cash || 0), 0);
-        const onlineReceived = filteredSales.reduce((sum, s) => sum + (s.payment?.online || 0), 0);
+        const cashReceived = filteredSales.reduce((sum, s) => sum + readPayment(s).cash, 0);
+        const onlineReceived = filteredSales.reduce((sum, s) => sum + readPayment(s).online, 0);
 
         let outstanding = 0;
         allSalesHistory.forEach(s => {
-            const due = s.payment?.due || 0;
+            const due = outstandingDue(s);
             if (due > 0) outstanding += due;
         });
 
@@ -512,20 +575,20 @@ export class ReportsManager {
         const purchaseLabor = filteredPurchases.reduce((sum, p) => sum + (p.laborCharges || 0), 0);
         const salesLabor = filteredSales.reduce((sum, s) => sum + (s.laborCharges || 0), 0);
 
-        const purchaseCash = filteredPurchases.reduce((sum, p) => sum + (p.payment?.cash || 0), 0);
-        const salesCash = filteredSales.reduce((sum, s) => sum + (s.payment?.cash || 0), 0);
-        const purchaseOnline = filteredPurchases.reduce((sum, p) => sum + (p.payment?.online || 0), 0);
-        const salesOnline = filteredSales.reduce((sum, s) => sum + (s.payment?.online || 0), 0);
+        const purchaseCash = filteredPurchases.reduce((sum, p) => sum + readPayment(p).cash, 0);
+        const salesCash = filteredSales.reduce((sum, s) => sum + readPayment(s).cash, 0);
+        const purchaseOnline = filteredPurchases.reduce((sum, p) => sum + readPayment(p).online, 0);
+        const salesOnline = filteredSales.reduce((sum, s) => sum + readPayment(s).online, 0);
 
         let purchaseOutstanding = 0;
         purchaseHistory.forEach(p => {
-            const due = p.payment?.due || 0;
+            const due = outstandingDue(p);
             if (due > 0) purchaseOutstanding += due;
         });
 
         let salesOutstanding = 0;
         allSalesHistory.forEach(s => {
-            const due = s.payment?.due || 0;
+            const due = outstandingDue(s);
             if (due > 0) salesOutstanding += due;
         });
 
@@ -582,18 +645,22 @@ export class ReportsManager {
         const dailyData = {};
         
         purchases.forEach(p => {
-            const date = new Date(p.date).toLocaleDateString('en-IN');
+            const parsedDate = parseAnyBillDate(p.date);
+            if (!parsedDate) return;
+            const date = parsedDate.toLocaleDateString('en-IN');
             if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
             dailyData[date].purchases += p.billTotal || p.grandTotal || p.total || 0;
         });
 
         sales.forEach(s => {
-            const date = new Date(s.date).toLocaleDateString('en-IN');
+            const parsedDate = parseAnyBillDate(s.date);
+            if (!parsedDate) return;
+            const date = parsedDate.toLocaleDateString('en-IN');
             if (!dailyData[date]) dailyData[date] = { purchases: 0, sales: 0 };
             dailyData[date].sales += s.total || s.grandTotal || 0;
         });
 
-        const dates = Object.keys(dailyData).sort((a, b) => new Date(a) - new Date(b)).slice(-7);
+        const dates = Object.keys(dailyData).sort((a, b) => parseAnyBillDate(a) - parseAnyBillDate(b)).slice(-7);
         
         if (dates.length === 0) {
             ctx.font = '14px Arial';
@@ -711,7 +778,7 @@ export class ReportsManager {
 
         container.innerHTML = items.map(([name, data]) => `
             <div class="item-comparison-row">
-                <div class="item-comparison-name">${name}</div>
+                <div class="item-comparison-name">${Helpers.escapeHtml(name)}</div>
                 <div class="item-comparison-bars">
                     <div class="comparison-bar">
                         <span class="bar-label">Purchases</span>
@@ -759,8 +826,8 @@ export class ReportsManager {
         container.innerHTML = items.map(([name, data]) => `
             <div class="item-breakdown-row">
                 <div class="item-breakdown-info">
-                    <div class="item-breakdown-name">${name}</div>
-                    <div class="item-breakdown-stats">${data.count} times • ${data.qty.toFixed(1)} kg</div>
+                    <div class="item-breakdown-name">${Helpers.escapeHtml(name)}</div>
+                    <div class="item-breakdown-stats">${Helpers.escapeHtml(data.count)} times • ${data.qty.toFixed(1)} kg</div>
                 </div>
                 <div class="item-breakdown-value">
                     <div class="item-breakdown-amount">₹${this.formatNumber(data.value)}</div>
@@ -774,7 +841,7 @@ export class ReportsManager {
         const container = document.getElementById(containerId);
         if (!container) return;
 
-        const recentBills = bills.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
+        const recentBills = bills.slice().sort((a, b) => (parseAnyBillDate(b.date) || 0) - (parseAnyBillDate(a.date) || 0)).slice(0, 10);
 
         if (recentBills.length === 0) {
             container.innerHTML = `<p class="no-data">No recent ${type === 'purchase' ? 'purchases' : 'sales'}</p>`;
@@ -784,9 +851,9 @@ export class ReportsManager {
         container.innerHTML = recentBills.map(bill => `
             <div class="transaction-item">
                 <div class="transaction-info">
-                    <div class="transaction-customer">${bill.customerName || 'Unknown'}</div>
+                    <div class="transaction-customer">${Helpers.escapeHtml(bill.customerName || 'Unknown')}</div>
                     <div class="transaction-date">${new Date(bill.date).toLocaleDateString('en-IN')}</div>
-                    <div class="transaction-items">${(bill.items || []).map(i => i.name).join(', ')}</div>
+                    <div class="transaction-items">${Helpers.escapeHtml((bill.items || []).map(i => i.name).join(', '))}</div>
                 </div>
                 <span class="transaction-amount">₹${this.formatNumber(bill.billTotal || bill.grandTotal || bill.total || 0)}</span>
             </div>
@@ -794,7 +861,8 @@ export class ReportsManager {
     }
 
     // ==================== EXPORT FUNCTIONS ====================
-    static exportCSV() {
+    static async exportCSV() {
+        if (!(await this.ensureRangeLoaded())) return;
         const purchaseHistory = AppState.purchaseHistory || [];
         const retailSalesHistory = AppState.retailSalesHistory || [];
         const wholesaleSalesHistory = AppState.salesHistory || [];
@@ -811,14 +879,15 @@ export class ReportsManager {
         let csv = "Bill ID,Date,Time,Type,Customer,Item,Quantity (kg),Rate (₹/kg),Amount (₹),Labor (₹),Total (₹),Cash (₹),Online (₹),Due (₹)\n";
 
         const processTransaction = (bill, type) => {
-            const date = new Date(bill.date);
+            const date = parseAnyBillDate(bill.date) || new Date(NaN);
             const dateStr = date.toLocaleDateString('en-IN');
             const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
             const customer = bill.customerName || '-';
             const billTotal = bill.billTotal || bill.grandTotal || bill.total || 0;
+            const pay = readPayment(bill);
 
             (bill.items || []).forEach(item => {
-                csv += `${bill.id},"${dateStr}","${timeStr}","${type}","${customer}","${item.name}",${item.qty || 0},${item.rate || 0},${item.total || 0},${bill.laborCharges || 0},${billTotal},${bill.payment?.cash || 0},${bill.payment?.online || 0},${bill.payment?.due || 0}\n`;
+                csv += `${bill.id},"${dateStr}","${timeStr}","${type}","${customer}","${item.name}",${item.qty || 0},${item.rate || 0},${item.total || 0},${bill.laborCharges || 0},${billTotal},${pay.cash},${pay.online},${pay.due}\n`;
             });
         };
 
@@ -837,7 +906,7 @@ export class ReportsManager {
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
-        const filename = `Aadhat_Report_${new Date().toISOString().split('T')[0]}.csv`;
+        const filename = `Aadhat_Report_${todayLocalISO()}.csv`;
 
         link.setAttribute('href', url);
         link.setAttribute('download', filename);
@@ -850,7 +919,8 @@ export class ReportsManager {
         UIManager.showToast(`Exported ${filteredPurchases.length + filteredSales.length} transactions to CSV`);
     }
 
-    static exportPDF() {
+    static async exportPDF() {
+        if (!(await this.ensureRangeLoaded())) return;
         const purchaseHistory = AppState.purchaseHistory || [];
         const retailSalesHistory = AppState.retailSalesHistory || [];
         const wholesaleSalesHistory = AppState.salesHistory || [];
@@ -925,11 +995,11 @@ export class ReportsManager {
     <div class="summary-grid">
         <div class="summary-card">
             <h4>Total Purchases</h4>
-            <div class="value">₹${totalPurchases.toLocaleString('en-IN')}</div>
+            <div class="value">₹${Helpers.escapeHtml(totalPurchases.toLocaleString('en-IN'))}</div>
         </div>
         <div class="summary-card success">
             <h4>Total Sales</h4>
-            <div class="value">₹${totalSales.toLocaleString('en-IN')}</div>
+            <div class="value">₹${Helpers.escapeHtml(totalSales.toLocaleString('en-IN'))}</div>
         </div>
         <div class="summary-card ${netProfit >= 0 ? 'success' : 'danger'}">
             <h4>Net ${netProfit >= 0 ? 'Profit' : 'Loss'}</h4>
@@ -958,10 +1028,10 @@ export class ReportsManager {
                     .sort((a, b) => b[1].value - a[1].value)
                     .map(([name, data]) => `
                         <tr>
-                            <td>${name}</td>
-                            <td class="text-right">${data.count}</td>
+                            <td>${Helpers.escapeHtml(name)}</td>
+                            <td class="text-right">${Helpers.escapeHtml(data.count)}</td>
                             <td class="text-right">${data.qty.toFixed(2)}</td>
-                            <td class="text-right">₹${data.value.toLocaleString('en-IN')}</td>
+                            <td class="text-right">₹${Helpers.escapeHtml(data.value.toLocaleString('en-IN'))}</td>
                             <td class="text-right">₹${(data.value / data.qty).toFixed(2)}</td>
                         </tr>
                     `).join('')}
@@ -989,9 +1059,9 @@ export class ReportsManager {
                         <tr>
                             <td>${new Date(bill.date).toLocaleDateString('en-IN')}</td>
                             <td>${bill.type}</td>
-                            <td>${bill.customerName || '-'}</td>
-                            <td>${(bill.items || []).map(i => i.name).join(', ')}</td>
-                            <td class="text-right">₹${(bill.total || 0).toLocaleString('en-IN')}</td>
+                            <td>${Helpers.escapeHtml(bill.customerName || '-')}</td>
+                            <td>${Helpers.escapeHtml((bill.items || []).map(i => i.name).join(', '))}</td>
+                            <td class="text-right">₹${Helpers.escapeHtml((bill.total || 0).toLocaleString('en-IN'))}</td>
                         </tr>
                     `).join('')}
             </tbody>

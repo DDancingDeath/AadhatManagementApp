@@ -56,7 +56,10 @@ export class AuditService {
                 date: new Date().toISOString()
             };
             
-            await db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs').add(auditEntry);
+            // Fire-and-forget: the entry is queued locally (offline persistence)
+            // and synced in the background, so callers never wait on the network.
+            db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs').add(auditEntry)
+                .catch(error => console.error('[AUDIT ERROR]', error));
             
         } catch (error) {
             // Don't let audit failures break the app
@@ -130,6 +133,14 @@ export class AuditService {
             if (AppState.userRole !== 'owner') {
                 return { deleted: 0, skipped: true };
             }
+            
+            // Run at most once per day per device: each run costs up to 100 reads.
+            const CLEANUP_KEY = 'auditCleanupLastRun';
+            const lastRun = Number(localStorage.getItem(CLEANUP_KEY)) || 0;
+            if (Date.now() - lastRun < 24 * 60 * 60 * 1000) {
+                return { deleted: 0, skipped: true };
+            }
+            localStorage.setItem(CLEANUP_KEY, String(Date.now()));
             
             const db = firebase.firestore();
             const cutoffDate = Date.now() - (this.RETENTION_DAYS * 24 * 60 * 60 * 1000);

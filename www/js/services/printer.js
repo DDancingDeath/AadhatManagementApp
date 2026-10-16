@@ -5,10 +5,109 @@ import { UIManager } from '../ui/ui-manager.js';
 import { DEFAULT_SETTINGS } from '../utils/constants.js';
 import { getAndroidMajorVersion } from '../utils/helpers.js';
 
+/** Dots darker than this (average of R,G,B) print black */
+const RASTER_THRESHOLD = 128;
+
+/**
+ * Pack RGBA pixels into a 1-bit ESC/POS raster (MSB = leftmost dot, 1 = black).
+ * A pixel prints black when (r + g + b) / 3 < threshold.
+ * @param {Uint8ClampedArray|Uint8Array} pixels - RGBA data (ImageData.data), row-major
+ * @param {number} width - Image width in pixels
+ * @param {number} height - Image height in pixels
+ * @param {number} [threshold=128]
+ * @returns {Uint8Array} ceil(width / 8) * height bytes
+ */
+export function packMonochromeRaster(pixels, width, height, threshold = RASTER_THRESHOLD) {
+    const bytesPerLine = (width + 7) >> 3;
+    const out = new Uint8Array(bytesPerLine * height);
+    // (r + g + b) / 3 < threshold  <=>  r + g + b < 3 * threshold (exact for integers)
+    const limit = threshold * 3;
+    let p = 0;
+    for (let y = 0; y < height; y++) {
+        const rowStart = y * bytesPerLine;
+        for (let x = 0; x < width; x++, p += 4) {
+            if (pixels[p] + pixels[p + 1] + pixels[p + 2] < limit) {
+                out[rowStart + (x >> 3)] |= 0x80 >> (x & 7);
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * Wrap a packed raster in the ESC/POS commands used for printing:
+ * ESC @, ESC a 1 (center), GS v 0 raster, ESC d 3 (feed), GS V A 3 (partial cut).
+ * Returns a standalone Uint8Array (byteOffset 0) because bluetoothSerial.write
+ * sends `data.buffer`.
+ * @param {Uint8Array} raster - Output of packMonochromeRaster
+ * @param {number} bytesPerLine
+ * @param {number} height - Height in dots
+ * @returns {Uint8Array}
+ */
+export function buildRasterPrintCommand(raster, bytesPerLine, height) {
+    const header = [
+        0x1B, 0x40,
+        0x1B, 0x61, 0x01,
+        0x1D, 0x76, 0x30, 0x00,
+        bytesPerLine & 0xFF, (bytesPerLine >> 8) & 0xFF,
+        height & 0xFF, (height >> 8) & 0xFF
+    ];
+    const trailer = [
+        0x1B, 0x64, 0x03,
+        0x1D, 0x56, 0x41, 0x03
+    ];
+    const out = new Uint8Array(header.length + raster.length + trailer.length);
+    out.set(header, 0);
+    out.set(raster, header.length);
+    out.set(trailer, header.length + raster.length);
+    return out;
+}
+
+/**
+ * Convert the top `height` rows of a canvas into a ready-to-send ESC/POS buffer.
+ * @param {HTMLCanvasElement} canvas
+ * @param {number} [height=canvas.height]
+ * @returns {Uint8Array}
+ */
+function canvasToEscPos(canvas, height = canvas.height) {
+    const width = canvas.width;
+    const { data } = canvas.getContext('2d').getImageData(0, 0, width, height);
+    const raster = packMonochromeRaster(data, width, height);
+    return buildRasterPrintCommand(raster, (width + 7) >> 3, height);
+}
+
 class BluetoothPrinterManager {
     constructor() {
         this.device = null;
         this.printerName = null;
+        this._printQueue = Promise.resolve();
+    }
+
+    /**
+     * Serialize print jobs so two bills never interleave on the Bluetooth link.
+     * @private
+     */
+    _enqueue(job) {
+        const run = this._printQueue.then(job, job);
+        this._printQueue = run.catch(() => {});
+        return run;
+    }
+
+    /**
+     * Send raw bytes to the connected printer.
+     * @private
+     */
+    _send(bytes, label) {
+        return new Promise((resolve, reject) => {
+            window.bluetoothSerial.write(
+                bytes,
+                () => resolve(true),
+                (error) => {
+                    console.error(`[${label}] Print failed:`, error);
+                    reject(error instanceof Error ? error : new Error(error || 'Print failed'));
+                }
+            );
+        });
     }
 
     async scan() {
@@ -432,6 +531,26 @@ class BluetoothPrinterManager {
     }
 
     async generateBillCanvas(billData) {
+        const { canvas, height } = this._renderBillCanvas(billData);
+        
+        // Crop to the used height (needed for the on-screen preview / PNG)
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = canvas.width;
+        finalCanvas.height = height;
+        const finalCtx = finalCanvas.getContext('2d');
+        
+        // Copy only the used portion from temp canvas
+        finalCtx.drawImage(canvas, 0, 0, canvas.width, height, 0, 0, canvas.width, height);
+        
+        return finalCanvas;
+    }
+
+    /**
+     * Draw the receipt onto an oversized canvas.
+     * @returns {{canvas: HTMLCanvasElement, height: number}} canvas and used height
+     * @private
+     */
+    _renderBillCanvas(billData) {
         const config = {
             width: 384, // 58mm thermal printer width
             padding: { left: 0, right: 0, side: 0 },
@@ -472,16 +591,7 @@ class BluetoothPrinterManager {
         y = this._drawItemsTable(tempCtx, billData, config, utils, y);
         y = this._drawTotalsSection(tempCtx, billData, config, utils, y);
         
-        // Copy to final canvas with exact height
-        const finalCanvas = document.createElement('canvas');
-        finalCanvas.width = config.width;
-        finalCanvas.height = y;
-        const finalCtx = finalCanvas.getContext('2d');
-        
-        // Copy only the used portion from temp canvas
-        finalCtx.drawImage(tempCanvas, 0, 0, config.width, y, 0, 0, config.width, y);
-        
-        return finalCanvas;
+        return { canvas: tempCanvas, height: y };
     }
 
     async write(billData) {
@@ -493,94 +603,17 @@ class BluetoothPrinterManager {
             throw new Error('Bluetooth Serial plugin not available');
         }
         
-        try {
-            const finalCanvas = await this.generateBillCanvas(billData);
-            const finalCtx = finalCanvas.getContext('2d');
-            
-            // Get image data from FINAL canvas
-            const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
-            const pixels = imageData.data;
-            
-            // Convert to 1-bit monochrome bitmap
-            const threshold = 128;
-            const bytesPerLine = Math.ceil(finalCanvas.width / 8);
-            const bitmapData = [];
-            
-            for (let y = 0; y < finalCanvas.height; y++) {
-                const line = new Array(bytesPerLine).fill(0);
-                
-                for (let x = 0; x < finalCanvas.width; x++) {
-                    const pixelIndex = (y * finalCanvas.width + x) * 4;
-                    const r = pixels[pixelIndex];
-                    const g = pixels[pixelIndex + 1];
-                    const b = pixels[pixelIndex + 2];
-                    
-                    // Convert to grayscale and apply threshold
-                    const gray = (r + g + b) / 3;
-                    
-                    // Black pixels on canvas should print as black
-                    // ESC/POS: bit 1 = black dot, bit 0 = white/no print
-                    if (gray < threshold) {
-                        const byteIndex = Math.floor(x / 8);
-                        const bitIndex = 7 - (x % 8);
-                        line[byteIndex] |= (1 << bitIndex);
-                    }
-                }
-                
-                bitmapData.push(...line);
+        return this._enqueue(async () => {
+            try {
+                // Read the used rows straight from the render canvas (no cropped copy)
+                const { canvas, height } = this._renderBillCanvas(billData);
+                const commandBytes = canvasToEscPos(canvas, height);
+                return await this._send(commandBytes, 'WRITE');
+            } catch (error) {
+                console.error('[WRITE] Print failed:', error);
+                throw error;
             }
-            
-            // Build ESC/POS commands for image printing
-            const commands = [];
-            
-            // Initialize printer
-            commands.push(0x1B, 0x40); // ESC @
-            
-            // Center align
-            commands.push(0x1B, 0x61, 0x01); // ESC a 1
-            
-            // Use GS v 0 command for raster bitmap printing
-            // Format: GS v 0 m xL xH yL yH d1...dk
-            // m = mode (0 = normal)
-            // xL xH = width in bytes (little endian)
-            // yL yH = height in dots (little endian)
-            
-            commands.push(0x1D, 0x76, 0x30, 0x00); // GS v 0 m
-            
-            // Width in bytes (little endian)
-            commands.push(bytesPerLine & 0xFF);
-            commands.push((bytesPerLine >> 8) & 0xFF);
-            
-            // Height in dots (little endian)
-            commands.push(finalCanvas.height & 0xFF);
-            commands.push((finalCanvas.height >> 8) & 0xFF);
-            
-            // Add bitmap data
-            commands.push(...bitmapData);
-            
-            // Feed paper and cut
-            commands.push(0x1B, 0x64, 0x03); // ESC d 3 - feed 3 lines
-            commands.push(0x1D, 0x56, 0x41, 0x03); // GS V A 3 - partial cut
-            
-            // Convert to Uint8Array for binary transmission
-            const commandBytes = new Uint8Array(commands);
-            
-            return new Promise((resolve, reject) => {
-                window.bluetoothSerial.write(
-                    commandBytes,
-                    () => {
-                        resolve(true);
-                    },
-                    (error) => {
-                        console.error('[WRITE] Print failed:', error);
-                        reject(error);
-                    }
-                );
-            });
-        } catch (error) {
-            console.error('[WRITE] Print failed:', error);
-            throw error;
-        }
+        });
     }
     
     async generateExpenseCanvas(expense) {
@@ -698,75 +731,16 @@ class BluetoothPrinterManager {
             throw new Error('Bluetooth Serial plugin not available');
         }
         
-        try {
-            const finalCanvas = await this.generateExpenseCanvas(expense);
-            const finalCtx = finalCanvas.getContext('2d');
-            
-            // Get image data
-            const imageData = finalCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
-            const pixels = imageData.data;
-            
-            // Convert to 1-bit monochrome bitmap
-            const threshold = 128;
-            const bytesPerLine = Math.ceil(finalCanvas.width / 8);
-            const bitmapData = [];
-            
-            for (let y = 0; y < finalCanvas.height; y++) {
-                const line = new Array(bytesPerLine).fill(0);
-                
-                for (let x = 0; x < finalCanvas.width; x++) {
-                    const pixelIndex = (y * finalCanvas.width + x) * 4;
-                    const r = pixels[pixelIndex];
-                    const g = pixels[pixelIndex + 1];
-                    const b = pixels[pixelIndex + 2];
-                    
-                    const gray = (r + g + b) / 3;
-                    
-                    if (gray < threshold) {
-                        const byteIndex = Math.floor(x / 8);
-                        const bitIndex = 7 - (x % 8);
-                        line[byteIndex] |= (1 << bitIndex);
-                    }
-                }
-                
-                bitmapData.push(...line);
+        return this._enqueue(async () => {
+            try {
+                const finalCanvas = await this.generateExpenseCanvas(expense);
+                const commandBytes = canvasToEscPos(finalCanvas);
+                return await this._send(commandBytes, 'WRITE EXPENSE');
+            } catch (error) {
+                console.error('[WRITE EXPENSE] Print failed:', error);
+                throw error;
             }
-            
-            // Build ESC/POS commands
-            const commands = [];
-            
-            commands.push(0x1B, 0x40); // Initialize
-            commands.push(0x1B, 0x61, 0x01); // Center align
-            commands.push(0x1D, 0x76, 0x30, 0x00); // GS v 0 m
-            
-            commands.push(bytesPerLine & 0xFF);
-            commands.push((bytesPerLine >> 8) & 0xFF);
-            commands.push(finalCanvas.height & 0xFF);
-            commands.push((finalCanvas.height >> 8) & 0xFF);
-            
-            commands.push(...bitmapData);
-            
-            commands.push(0x1B, 0x64, 0x03); // Feed 3 lines
-            commands.push(0x1D, 0x56, 0x41, 0x03); // Partial cut
-            
-            const commandBytes = new Uint8Array(commands);
-            
-            return new Promise((resolve, reject) => {
-                window.bluetoothSerial.write(
-                    commandBytes,
-                    () => {
-                        resolve(true);
-                    },
-                    (error) => {
-                        console.error('[WRITE EXPENSE] Print failed:', error);
-                        reject(error);
-                    }
-                );
-            });
-        } catch (error) {
-            console.error('[WRITE EXPENSE] Print failed:', error);
-            throw error;
-        }
+        });
     }
 }
 

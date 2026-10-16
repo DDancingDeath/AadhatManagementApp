@@ -12,6 +12,9 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
 
+/** Buttons disabled while a retail save/print is in flight */
+const RETAIL_BUTTONS = '#saveSaleBtn, #printSaleBtn';
+
 /**
  * @type {Array<Object>} Current items for sale mode
  * @private
@@ -249,7 +252,7 @@ const RetailSaleManager = {
                     return `
                         <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #22c55e;">
                             <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
-                                ${item.name} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
+                                ${Helpers.escapeHtml(item.name)} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
                             </div>
                             <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
                                 ${weightLines.join('<br>')}
@@ -265,7 +268,7 @@ const RetailSaleManager = {
         // Render bill items table
         tbody.innerHTML = saleItems.map((item, index) => `
             <tr style="cursor: pointer;" onclick="window.app.retailSale.editSaleItem(${index})">
-                <td>${item.name}</td>
+                <td>${Helpers.escapeHtml(item.name)}</td>
                 <td>₹${item.rate.toFixed(2)}</td>
                 <td>${item.qty.toFixed(1)} kg</td>
                 <td>₹${Math.round(item.total)}</td>
@@ -433,14 +436,27 @@ const RetailSaleManager = {
     },
 
     /**
-     * Complete the sale
+     * Complete the sale. A second tap while a save is in flight is ignored.
      * @async
-     * @returns {Promise<Object>} The saved sale
+     * @param {Object} [options] - See _completeSale
+     * @returns {Promise<Object|undefined>} The saved sale
      */
-    async completeSale() {
+    async completeSale(options = {}) {
+        return Helpers.runExclusive('retail', RETAIL_BUTTONS, () => this._completeSale(options));
+    },
+
+    /**
+     * Complete the sale (unguarded; callers must hold the 'retail' lock)
+     * @async
+     * @param {Object} [options]
+     * @param {Function} [options.onWriteIssued] - Called with the sale once its write is issued
+     * @returns {Promise<Object|undefined>} The saved sale
+     * @private
+     */
+    async _completeSale(options = {}) {
         // Check if in edit mode
         if (this.billingManager?.editingBillIndex !== undefined) {
-            return this.billingManager.saveEditedBill();
+            return this.billingManager.saveEditedBill(options);
         }
         
         if (saleItems.length === 0) {
@@ -476,49 +492,55 @@ const RetailSaleManager = {
         
         const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
         
-        const billNumber = await Helpers.generateBillNumber('S', 'retailSales');
-        
-        const sale = {
-            id: Helpers.generateId(),
-            billNumber,
-            items: saleItems,
-            total: salesTotal,
-            totalPackets: totalPackets,
-            onlinePayment: saleOnline,
-            cashPayment: saleCash,
-            dueAmount: saleDue,
-            customerName: saleCustomer,
-            comments: saleComments,
-            printComments: printComments,
-            type: 'retail',
-            isPurchase: false,
-            date: new Date().toISOString(),
-            userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
-            userName: AppState.userName || 'User',
-            timestamp: Date.now(),
-            payment: {
-                online: saleOnline,
-                cash: saleCash,
-                due: saleDue,
-                total: saleOnline + saleCash + saleDue
-            }
-        };
-        
         try {
             UIManager.showLoading();
-            await FirebaseService.saveRetailSale(sale);
+            const billNumber = await Helpers.generateBillNumber('S', 'retailSales');
             
-            await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
-                billNumber: sale.billNumber,
-                total: sale.total,
-                customerName: sale.customerName || 'N/A',
-                itemCount: sale.items.length,
-                source: 'billing-tab'
-            });
+            const sale = {
+                id: Helpers.generateId(),
+                billNumber,
+                items: saleItems,
+                total: salesTotal,
+                totalPackets: totalPackets,
+                onlinePayment: saleOnline,
+                cashPayment: saleCash,
+                dueAmount: saleDue,
+                customerName: saleCustomer,
+                comments: saleComments,
+                printComments: printComments,
+                type: 'retail',
+                isPurchase: false,
+                date: new Date().toISOString(),
+                userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
+                userName: AppState.userName || 'User',
+                timestamp: Date.now(),
+                payment: {
+                    online: saleOnline,
+                    cash: saleCash,
+                    due: saleDue,
+                    total: saleOnline + saleCash + saleDue
+                }
+            };
             
-            if (this.billingManager) {
-                await this.billingManager.updateItemFrequency(saleItems, 'sale');
+            const writePromise = FirebaseService.saveRetailSale(sale);
+            if (typeof options.onWriteIssued === 'function') {
+                options.onWriteIssued(sale);
             }
+            await writePromise;
+            
+            const soldItems = sale.items;
+            const billingManager = this.billingManager;
+            Helpers.runInBackground([
+                () => AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
+                    billNumber: sale.billNumber,
+                    total: sale.total,
+                    customerName: sale.customerName || 'N/A',
+                    itemCount: sale.items.length,
+                    source: 'billing-tab'
+                }),
+                () => billingManager?.updateItemFrequency(soldItems, 'sale'),
+                () => billingManager?.deleteAutoSave()
+            ]);
             
             // Clear sale
             saleItems = [];
@@ -526,11 +548,6 @@ const RetailSaleManager = {
             
             // Reset form
             this.resetForm();
-            
-            // Delete auto-save
-            if (this.billingManager) {
-                await this.billingManager.deleteAutoSave();
-            }
             
             UIManager.hideLoading();
             UIManager.showToast('Sale completed successfully!');
@@ -613,24 +630,30 @@ const RetailSaleManager = {
      * @async
      */
     async printSale() {
+        if (Helpers.isBusy('retail')) return;
         if (saleItems.length === 0) {
             UIManager.showToast('No items in sale');
             return;
         }
         
+        let printPromise = null;
         try {
-            const savedSale = await this.completeSale();
+            const savedSale = await Helpers.runExclusive('retail', RETAIL_BUTTONS, () => this._completeSale({
+                onWriteIssued: (sale) => { printPromise = PrinterService.printBill(sale); }
+            }));
             
-            if (!savedSale) {
+            if (!printPromise) {
                 return;
             }
             
-            await PrinterService.printBill(savedSale);
+            await printPromise;
             
-            UIManager.showToast('Sale saved and printed!');
+            if (savedSale) {
+                UIManager.showToast('Sale saved and printed!');
+            }
         } catch (error) {
             console.error('Print sale error:', error);
-            UIManager.showToast('Error: ' + error.message);
+            UIManager.showToast('Error: ' + (error?.message || error));
         }
     },
 

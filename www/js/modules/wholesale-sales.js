@@ -6,6 +6,15 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
+import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
+import { OutstandingManager } from './outstanding.js';
+import { readPayment, round2 } from '../utils/money.js';
+
+const PAYMENT_TOLERANCE = 0.01;
+
+/** Buttons disabled while a wholesale save/print is in flight */
+const WHOLESALE_BUTTONS = '[onclick*="wholesaleSales.completeSale"], [onclick*="wholesaleSales.printWholesaleSale"]';
 
 let wholesaleSaleItems = [];
 
@@ -24,13 +33,20 @@ export class WholesaleSalesManager {
         
         select.innerHTML = '<option value="">Select item</option>';
 
+        // While stock is still being calculated in the background, list every item
+        // (the dropdown is refreshed with the stock filter once it is ready)
+        const stockReady = AppState.stockReady !== false;
+        if (!stockReady) {
+            select.options[0].textContent = 'Select item (stock updating…)';
+        }
+
         // Load only items that have stock
         AppState.items.forEach(item => {
             // Check stock by itemId first, then by name
             const stockData = AppState.stock[item.id] || AppState.stock[item.name];
             
             // Only show items with positive stock quantity
-            if (stockData && stockData.quantity > 0) {
+            if (!stockReady || (stockData && stockData.quantity > 0)) {
                 const opt = document.createElement('option');
                 opt.value = item.name;
                 const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
@@ -66,16 +82,19 @@ export class WholesaleSalesManager {
         
         // Check stock by itemId first, then by name
         const stockData = AppState.stock[item.id] || AppState.stock[itemName];
-        
-        if (!stockData) {
+
+        if (AppState.stockReady === false) {
+            availableStockEl.textContent = "updating…";
+            avgRateEl.textContent = "-";
+        } else if (!stockData) {
             availableStockEl.textContent = "0.00";
             avgRateEl.textContent = "-";
             sellRateEl.value = "";
             return;
+        } else {
+            availableStockEl.textContent = (stockData.quantity || 0).toFixed(2);
+            avgRateEl.textContent = (stockData.rate || 0).toFixed(2);
         }
-        
-        availableStockEl.textContent = (stockData.quantity || 0).toFixed(2);
-        avgRateEl.textContent = (stockData.rate || 0).toFixed(2);
         
         // Check if item has predefined wholesale rates
         if (item.wholesaleRates && item.wholesaleRates.length > 0) {
@@ -115,6 +134,10 @@ export class WholesaleSalesManager {
         }
         
         // Check stock
+        if (AppState.stockReady === false) {
+            UIManager.showToast('Stock is still updating — please try again in a moment');
+            return;
+        }
         const stockData = AppState.stock[item.id] || AppState.stock[itemName];
         if (!stockData || stockData.quantity < quantity) {
             const available = stockData?.quantity || 0;
@@ -162,7 +185,7 @@ export class WholesaleSalesManager {
         tbody.innerHTML = wholesaleSaleItems.map((item, index) => {
             return `
                 <tr>
-                    <td>${item.name}</td>
+                    <td>${Helpers.escapeHtml(item.name)}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
                     <td>₹${Math.round(item.total)}</td>
@@ -226,7 +249,13 @@ export class WholesaleSalesManager {
         UIManager.hapticFeedback();
     }
 
-    static async completeSale() {
+    static async completeSale(options = {}) {
+        return Helpers.runExclusive('wholesale', WHOLESALE_BUTTONS, () => this._completeSale(options));
+    }
+
+    // Unguarded save; callers must hold the 'wholesale' lock.
+    // options.onWriteIssued(saleData) is called as soon as the write is issued.
+    static async _completeSale(options = {}) {
         if (wholesaleSaleItems.length === 0) {
             UIManager.showToast('Please add items to the bill');
             return;
@@ -253,50 +282,55 @@ export class WholesaleSalesManager {
         const profit = Helpers.getElementInt('salesProfitAmount');
         const profitPercent = Helpers.getElementNumber('salesProfitPercent');
         
-        // Generate bill number
-        const billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
-        
-        const saleData = {
-            id: Date.now(),
-            billNumber,
-            customerName,
-            items: wholesaleSaleItems.map(item => ({
-                itemId: item.itemId,
-                name: item.name,
-                rate: item.rate,
-                quantity: item.qty,
-                total: item.total
-            })),
-            total,
-            expenses,
-            profit,
-            profitPercent,
-            comments,
-            type: 'wholesale',
-            payment: {
-                online: 0,
-                cash: 0,
-                total: 0,
-                due: total
-            },
-            date: Helpers.getCurrentDateTime(),
-            timestamp: Date.now(),
-            createdBy: AppState.currentUser?.uid || 'unknown',
-            createdByName: AppState.userName || 'User',
-            source: 'sales-tab'
-        };
-        
         try {
-            await FirebaseService.saveWholesaleSale(saleData);
+            // Generate bill number
+            const billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
             
-            // Audit log
-            await AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
-                billNumber: saleData.billNumber,
-                total: saleData.total,
-                customerName: saleData.customerName || 'N/A',
-                itemCount: saleData.items.length,
+            const saleData = {
+                id: Date.now(),
+                billNumber,
+                customerName,
+                items: wholesaleSaleItems.map(item => ({
+                    itemId: item.itemId,
+                    name: item.name,
+                    rate: item.rate,
+                    quantity: item.qty,
+                    total: item.total
+                })),
+                total,
+                expenses,
+                profit,
+                profitPercent,
+                comments,
+                type: 'wholesale',
+                payment: {
+                    online: 0,
+                    cash: 0,
+                    total: 0,
+                    due: total
+                },
+                date: Helpers.getCurrentDateTime(),
+                timestamp: Date.now(),
+                createdBy: AppState.currentUser?.uid || 'unknown',
+                createdByName: AppState.userName || 'User',
                 source: 'sales-tab'
-            });
+            };
+            
+            const writePromise = FirebaseService.saveWholesaleSale(saleData);
+            if (typeof options.onWriteIssued === 'function') {
+                options.onWriteIssued(saleData);
+            }
+            await writePromise;
+            
+            Helpers.runInBackground([
+                () => AuditService.log(AuditService.ACTIONS.CREATE_SALE, {
+                    billNumber: saleData.billNumber,
+                    total: saleData.total,
+                    customerName: saleData.customerName || 'N/A',
+                    itemCount: saleData.items.length,
+                    source: 'sales-tab'
+                })
+            ]);
             
             // Update customer options
             this.updateWholesaleCustomerOptions(customerName);
@@ -316,12 +350,14 @@ export class WholesaleSalesManager {
             this.renderWholesaleBill();
             this.renderSalesHistory();
             
-            // Recalculate stock
-            AppState.stock = await FirebaseService.calculateStock();
-            this.loadItemsDropdown(); // Refresh dropdown to show updated stock
+            // Stock is not recalculated here: the wholesaleSales realtime listener
+            // fires on the local write, recalculates AppState.stock and refreshes
+            // this dropdown. The item detail fields were cleared above so no stale
+            // per-item stock is shown in the meantime.
             
             UIManager.showToast('✓ Sale completed successfully');
             UIManager.hapticFeedback();
+            return saleData;
         } catch (error) {
             console.error('Error completing sale:', error);
             UIManager.showToast('Error: ' + error.message);
@@ -329,44 +365,28 @@ export class WholesaleSalesManager {
     }
 
     static async printWholesaleSale() {
+        if (Helpers.isBusy('wholesale')) return;
         if (wholesaleSaleItems.length === 0) {
             UIManager.showToast('No items to print');
             return;
         }
         
-        // Collect sale data before saving (since save will clear the bill)
-        const customerName = Helpers.getInputText('wholesaleCustomerName');
-        const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
-        const expenses = Helpers.getInputInt('salesExpensesAmount');
-        const profit = Helpers.getElementInt('salesProfitAmount');
-        const comments = Helpers.getInputText('salesComments');
-        
-        const saleData = {
-            customerName,
-            items: wholesaleSaleItems.map(item => ({
-                name: item.name,
-                rate: item.rate,
-                qty: item.qty,
-                total: item.total
-            })),
-            total,
-            expenses,
-            profit,
-            comments,
-            date: Helpers.getCurrentDateTime()
-        };
-        
+        let printPromise = null;
         try {
-            // Save the sale first
-            await this.completeSale();
+            // Print the exact sale being saved, as soon as its write is issued
+            const savedSale = await Helpers.runExclusive('wholesale', WHOLESALE_BUTTONS, () => this._completeSale({
+                onWriteIssued: (sale) => { printPromise = PrinterService.printWholesaleSale(sale); }
+            }));
             
-            // Then print with the data we collected
-            await PrinterService.printWholesaleSale(saleData);
+            if (!printPromise) return;
+            await printPromise;
             
-            UIManager.showToast('Sale saved and printed!');
+            if (savedSale) {
+                UIManager.showToast('Sale saved and printed!');
+            }
         } catch (error) {
             console.error('Print error:', error);
-            UIManager.showToast('Error: ' + error.message);
+            UIManager.showToast('Error: ' + (error?.message || error));
         }
     }
 
@@ -433,7 +453,7 @@ export class WholesaleSalesManager {
         
         const datalist = document.getElementById('wholesaleCustomerOptions');
         if (datalist) {
-            datalist.innerHTML = uniqueCustomers.map(name => `<option value="${name}">`).join('');
+            datalist.innerHTML = uniqueCustomers.map(name => `<option value="${Helpers.escapeHtml(name)}">`).join('');
         }
     }
 
@@ -446,45 +466,52 @@ export class WholesaleSalesManager {
         }
         
         const paymentInput = document.getElementById(`payment_${saleId}`);
-        const paymentAmount = Number(paymentInput.value) || 0;
+        const paymentAmount = round2(Number(paymentInput?.value) || 0);
         
         if (paymentAmount <= 0) {
             UIManager.showToast('Please enter a valid payment amount');
             return;
         }
         
-        const currentReceived = (sale.payment.online || 0) + (sale.payment.cash || 0);
-        const outstanding = sale.payment.due || 0;
+        const outstanding = readPayment(sale).due;
         
-        if (paymentAmount > outstanding) {
+        if (paymentAmount > outstanding + PAYMENT_TOLERANCE) {
             UIManager.showToast('Payment amount exceeds outstanding amount');
             return;
         }
         
-        if (!sale.payments) sale.payments = [];
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            UIManager.showToast('Internet required to record payment');
+            return;
+        }
         
         const payment = {
             amount: paymentAmount,
-            date: new Date().toLocaleString(),
+            date: Helpers.getCurrentDateTime(),
             recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
         };
         
-        sale.payments.push(payment);
-        sale.payment.cash = (sale.payment.cash || 0) + paymentAmount;
-        sale.payment.total = (sale.payment.online || 0) + sale.payment.cash;
-        sale.payment.due = sale.total - sale.payment.total;
-        
         try {
-            await FirebaseService.updateWholesaleSale(sale);
+            // Same server-side transaction as the Due screen, so a payment recorded
+            // concurrently on another device is never overwritten by a full-document write
+            const written = await OutstandingManager.applyPaymentTransaction('wholesale', sale, paymentAmount, payment);
+            Object.assign(sale, written);
             
-            paymentInput.value = '';
+            if (paymentInput) paymentInput.value = '';
             this.renderSalesOutstanding();
             this.renderSalesHistory();
-            window.app.outstanding.renderDue();
+            window.app?.outstanding?.renderDue?.();
             UIManager.showToast(`✓ Payment of ₹${paymentAmount} recorded`);
         } catch (error) {
             console.error('Error recording payment:', error);
-            UIManager.showToast('Error: ' + error.message);
+            if (error && error.code === 'exceeds-due') {
+                UIManager.showToast(`Payment amount exceeds outstanding amount (₹${error.due})`);
+                this.renderSalesOutstanding();
+            } else if (OutstandingManager.isOfflineError(error)) {
+                UIManager.showToast('Internet required to record payment');
+            } else {
+                UIManager.showToast('Error: ' + error.message);
+            }
         }
     }
 
@@ -497,17 +524,25 @@ export class WholesaleSalesManager {
             return;
         }
         
-        sale.cleared = true;
-        
+        const checkbox = document.getElementById(`clear_${saleId}`);
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            if (checkbox) checkbox.checked = false;
+            UIManager.showToast('Internet required to clear a sale');
+            return;
+        }
+
         try {
-            await FirebaseService.updateWholesaleSale(sale);
+            // Transactional update; apply locally only once it is committed.
+            const updated = await FirebaseService.updateWholesaleSale({ ...sale, cleared: true });
+            Object.assign(sale, updated);
             
             this.renderSalesOutstanding();
             window.app.outstanding.renderDue();
             UIManager.showToast('✓ Sale marked as cleared');
         } catch (error) {
             console.error('Error updating sale:', error, 'Sale ID:', saleId);
-            UIManager.showToast('Error: ' + error.message);
+            if (checkbox) checkbox.checked = false;
+            UIManager.showToast(error?.code === 'unavailable' ? 'Internet required to clear a sale' : 'Error: ' + error.message);
         }
     }
 
@@ -558,10 +593,10 @@ export class WholesaleSalesManager {
                 const billNumber = sale.billNumber || sale.id;
                 div.innerHTML = `
                     <div class="history-header">
-                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${sale.id}')">#${billNumber}</span>${sale.customerName ? `  <strong>${sale.customerName}</strong>` : ''}</span>
+                        <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${Helpers.escapeHtml(billNumber)}</span>${sale.customerName ? `  <strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}</span>
                         <span style="color: #dc3545; font-weight: 700;">Due: ₹${Math.round(sale.outstanding)}</span>
                     </div>
-                    <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
+                    <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
                     <div style="background: #d1ecf1; border-left: 4px solid #22c55e; padding: 12px; margin: 12px 0; border-radius: 4px;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                             <span>Total Receivable:</span>
@@ -578,12 +613,12 @@ export class WholesaleSalesManager {
                         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #17a2b8;">
                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                                 <label style="font-weight: 500;">Payment (₹):</label>
-                                <input type="number" inputmode="decimal" id="payment_${sale.id}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
-                                <button onclick="window.app.wholesaleSales.recordPayment('${sale.id}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
+                                <input type="number" inputmode="decimal" id="payment_${Helpers.escapeHtml(sale.id)}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
+                                <button onclick="window.app.wholesaleSales.recordPayment('${Helpers.escapeJsAttr(sale.id)}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
                             </div>
                             <div style="display: flex; align-items: center;">
-                                <input type="checkbox" id="clear_${sale.id}" onchange="window.app.wholesaleSales.markSaleAsCleared('${sale.id}')" style="margin-right: 8px; transform: scale(1.2);" />
-                                <label for="clear_${sale.id}" style="cursor: pointer; font-weight: 500;">Mark as Cleared</label>
+                                <input type="checkbox" id="clear_${Helpers.escapeHtml(sale.id)}" onchange="window.app.wholesaleSales.markSaleAsCleared('${Helpers.escapeJsAttr(sale.id)}')" style="margin-right: 8px; transform: scale(1.2);" />
+                                <label for="clear_${Helpers.escapeHtml(sale.id)}" style="cursor: pointer; font-weight: 500;">Mark as Cleared</label>
                             </div>
                         </div>
                     </div>
@@ -601,14 +636,18 @@ export class WholesaleSalesManager {
             .filter(sale => sale.source === 'sales-tab')
             .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         
+        // Older sales load one month at a time as the user scrolls
+        attachOlderHistoryScroll(container, { noun: 'sales', onLoaded: () => this.renderSalesHistory() });
+
         if (salesTabHistory.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No sales yet</p>';
+            const message = isFullHistoryLoaded() ? 'No sales yet' : `No sales since ${formatWindowDate(historyLoadedFrom())}`;
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(message)}</p>`;
             return;
         }
 
         container.innerHTML = "";
 
-        salesTabHistory.forEach((sale, saleIndex) => {
+        salesTabHistory.forEach((sale) => {
             const div = document.createElement("div");
             div.className = "history-item";
             
@@ -628,12 +667,12 @@ export class WholesaleSalesManager {
             
             div.innerHTML = `
                 <div class="history-header">
-                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSale(${saleIndex})">#${sale.billNumber || sale.id}</span>${sale.customerName ? `<strong>${sale.customerName}</strong>` : ''}
+                    <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${Helpers.escapeHtml(sale.billNumber || sale.id)}</span>${sale.customerName ? `<strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}
                     <span style="color: #28a745; font-weight: 700;">₹ ${Math.round(sale.total)}</span>
                 </div>
-                <div class="history-date">${sale.date}${sale.createdByName ? ` • By: <strong>${sale.createdByName}</strong>` : ''}</div>
+                <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
                 <div class="history-summary">
-                    ${sale.items.map(item => item.name).join(', ')}
+                    ${Helpers.escapeHtml(sale.items.map(item => item.name).join(', '))}
                 </div>
                 ${paymentHTML}
             `;
@@ -652,15 +691,16 @@ export class WholesaleSalesManager {
         
         // Store index and type for edit/delete functionality
         window.currentBillIndex = index;
+        window.currentBillId = sale.id;
         window.currentBillType = 'wholesale';
         
         const itemsHTML = sale.items.map(item => {
             const qty = item.qty || item.quantity || 0;
             return `
                 <tr>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.rate}</td>
-                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${qty}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${Helpers.escapeHtml(item.name)}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Helpers.escapeHtml(item.rate)}</td>
+                    <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Helpers.escapeHtml(qty)}</td>
                     <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${Math.round(item.total)}</strong></td>
                 </tr>
             `;
@@ -696,7 +736,7 @@ export class WholesaleSalesManager {
                 <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #155724;">Payment History</h4>
                 ${sale.payments.map(p => `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                        <span>• ${p.date}${p.recordedBy ? ` by ${p.recordedBy}` : ''}</span>
+                        <span>• ${Helpers.escapeHtml(p.date)}${p.recordedBy ? ` by ${Helpers.escapeHtml(p.recordedBy)}` : ''}</span>
                         <strong>₹${Math.round(p.amount)}</strong>
                     </div>
                 `).join('')}
@@ -710,22 +750,22 @@ export class WholesaleSalesManager {
                 <div class="bill-info-section">
                     <div class="bill-info-row">
                         <div class="bill-info-label">Bill No:</div>
-                        <div class="bill-info-value"><strong style="color: #28a745;">#${billNumber}</strong></div>
+                        <div class="bill-info-value"><strong style="color: #28a745;">#${Helpers.escapeHtml(billNumber)}</strong></div>
                     </div>
                     <div class="bill-info-row">
                         <div class="bill-info-label">Date:</div>
-                        <div class="bill-info-value">${sale.date}</div>
+                        <div class="bill-info-value">${Helpers.escapeHtml(sale.date)}</div>
                     </div>
                     ${sale.createdByName ? `
                         <div class="bill-info-row">
                             <div class="bill-info-label">Created By:</div>
-                            <div class="bill-info-value">${sale.createdByName}</div>
+                            <div class="bill-info-value">${Helpers.escapeHtml(sale.createdByName)}</div>
                         </div>
                     ` : ''}
                     ${sale.customerName ? `
                         <div class="bill-info-row">
                             <div class="bill-info-label">Customer:</div>
-                            <div class="bill-info-value"><strong>${sale.customerName}</strong></div>
+                            <div class="bill-info-value"><strong>${Helpers.escapeHtml(sale.customerName)}</strong></div>
                         </div>
                     ` : ''}
                 </div>
@@ -733,7 +773,7 @@ export class WholesaleSalesManager {
                 ${sale.comments ? `
                     <div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
                         <span style="color: #6c757d; font-size: 14px;">Comments:</span>
-                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${sale.comments}</div>
+                        <div style="font-size: 14px; color: #212529; margin-top: 4px;">${Helpers.escapeHtml(sale.comments)}</div>
                     </div>
                 ` : ''}
                 

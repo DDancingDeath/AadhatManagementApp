@@ -9,6 +9,18 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
+import { todayLocalISO, localISODaysAgo, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+import { needsHistoryFrom, ensureHistoryFrom } from '../utils/history-window.js';
+
+const sessionRef = (sessionId) => {
+    const name = window.getCollection ? window.getCollection('cashManagement') : 'cashManagement';
+    return FirebaseService.db.collection(name).doc(String(sessionId));
+};
+
+const billTime = (value) => {
+    const d = parseAnyBillDate(value);
+    return d ? d.getTime() : NaN;
+};
 
 /**
  * Cash Management Manager - Manages daily cash operations
@@ -115,51 +127,90 @@ export class CashManagementManager {
      */
     static async autoSignOutPreviousDays(sessions) {
         try {
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const today = todayLocalISO(); // YYYY-MM-DD (local day, not UTC)
             
-            // Find any sessions that are not today and not signed out
-            const unclosedSessions = sessions.filter(s => s.date !== today && !s.signedOut);
+            // Find any sessions from earlier days that are not signed out
+            let unclosedSessions = sessions.filter(s => s.date && s.date < today && !s.signedOut);
+
+            // Closing figures are computed from that day's bills/expenses, which
+            // may be older than the loaded history window: load that range first,
+            // and skip (retry next time) any day we couldn't load rather than
+            // writing wrong totals.
+            const dayStart = (s) => parseLocalDate(s.date)?.getTime();
+            const isOlder = (s) => Number.isFinite(dayStart(s)) && needsHistoryFrom(dayStart(s));
+            const needOlder = unclosedSessions.filter(isOlder);
+            if (needOlder.length > 0) {
+                const oldest = Math.min(...needOlder.map(dayStart));
+                let covered = false;
+                try {
+                    covered = await ensureHistoryFrom(oldest);
+                } catch (err) {
+                    console.warn('Could not load older history for auto sign-out:', err?.message || err);
+                }
+                if (!covered) {
+                    unclosedSessions = unclosedSessions.filter(s => !isOlder(s));
+                }
+            }
             
             // Update all unclosed sessions in parallel
             const updatePromises = unclosedSessions.map(async (session) => {
-                // Calculate transactions for that specific date
-                const transactions = this.calculateTransactionsForDate(session.date, session);
-                
-                // Calculate expected balance
-                const opening = session.openingBalance || 0;
-                const expectedBalance = opening 
-                    + transactions.cashSales 
-                    + transactions.dueReceived 
-                    + transactions.cashDeposits
-                    - transactions.cashPurchases 
-                    - transactions.businessExpenses 
-                    - transactions.personalExpenses 
-                    - transactions.duePaid;
-                
-                const updatedSession = {
-                    ...session,
-                    closingBalance: 0, // Actual cash in hand = 0 (no one counted)
-                    expectedBalance: expectedBalance,
-                    difference: 0 - expectedBalance, // Difference = actual - expected
-                    signOutTime: new Date(session.date + 'T23:59:59').toISOString(),
-                    signedOut: true,
-                    autoSignedOut: true,
-                    autoSignOutReason: 'Session not closed by end of day',
-                    transactions: transactions
-                };
-                
-                await FirebaseService.updateCashSession(updatedSession);
-                // Update in cache too
-                const idx = sessions.findIndex(s => s.id === session.id);
-                if (idx !== -1) sessions[idx] = updatedSession;
-                
-                console.log(`Auto signed-out session for ${session.date} with expected ₹${expectedBalance}`);
+                try {
+                    const ref = sessionRef(session.id);
+                    // Re-read inside a transaction so we never clobber a session that was
+                    // signed out (or otherwise changed) on another device after we loaded it.
+                    const updatedSession = await FirebaseService.db.runTransaction(async (tx) => {
+                        const snap = await tx.get(ref);
+                        if (!snap.exists) return null;
+                        const fresh = { id: snap.id, ...snap.data() };
+                        if (fresh.signedOut || fresh.date !== session.date) return null;
+
+                        // Calculate transactions for that specific date
+                        const transactions = this.calculateTransactionsForDate(fresh.date, fresh);
+                        
+                        // Calculate expected balance
+                        const opening = fresh.openingBalance || 0;
+                        const expectedBalance = opening 
+                            + transactions.cashSales 
+                            + transactions.dueReceived 
+                            + transactions.cashDeposits
+                            - transactions.cashPurchases 
+                            - transactions.businessExpenses 
+                            - transactions.personalExpenses 
+                            - transactions.duePaid;
+                        
+                        const closingFields = {
+                            closingBalance: 0, // Actual cash in hand = 0 (no one counted)
+                            expectedBalance: expectedBalance,
+                            difference: 0 - expectedBalance, // Difference = actual - expected
+                            signOutTime: new Date(fresh.date + 'T23:59:59').toISOString(),
+                            signedOut: true,
+                            autoSignedOut: true,
+                            autoSignOutReason: 'Session not closed by end of day',
+                            transactions: transactions
+                        };
+                        tx.update(ref, closingFields);
+                        return { ...fresh, ...closingFields };
+                    });
+                    if (!updatedSession) return false;
+
+                    // Update in cache too
+                    const idx = sessions.findIndex(s => s.id === session.id);
+                    if (idx !== -1) sessions[idx] = updatedSession;
+                    
+                    console.log(`Auto signed-out session for ${session.date} with expected ₹${updatedSession.expectedBalance}`);
+                    return true;
+                } catch (err) {
+                    // Transactions need the server; offline we simply retry on next load
+                    console.warn(`Auto sign-out skipped for ${session.date}:`, err?.message || err);
+                    return false;
+                }
             });
             
-            await Promise.all(updatePromises);
+            const results = await Promise.all(updatePromises);
+            const closedCount = results.filter(Boolean).length;
             
-            if (unclosedSessions.length > 0) {
-                UIManager.showToast(`Auto-closed ${unclosedSessions.length} previous session(s)`);
+            if (closedCount > 0) {
+                UIManager.showToast(`Auto-closed ${closedCount} previous session(s)`);
             }
         } catch (error) {
             console.error('Error auto signing out previous sessions:', error);
@@ -174,8 +225,9 @@ export class CashManagementManager {
      * @returns {Object} Transaction totals
      */
     static calculateTransactionsForDate(dateStr, session) {
-        const dateStart = new Date(dateStr).getTime();
-        const dateEnd = dateStart + (24 * 60 * 60 * 1000);
+        const dayStart = parseLocalDate(dateStr);
+        const dateStart = dayStart ? dayStart.getTime() : NaN;
+        const dateEnd = dayStart ? new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1).getTime() : NaN;
 
         const transactions = {
             cashSales: 0,
@@ -192,8 +244,7 @@ export class CashManagementManager {
         const retailSales = AppState.retailSalesHistory || [];
         
         sales.forEach(sale => {
-            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
-            const saleTime = saleDate.getTime();
+            const saleTime = billTime(sale.date);
             if (saleTime >= dateStart && saleTime < dateEnd) {
                 const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
                 if (cashAmount > 0) transactions.cashSales += cashAmount;
@@ -201,8 +252,7 @@ export class CashManagementManager {
         });
         
         retailSales.forEach(sale => {
-            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
-            const saleTime = saleDate.getTime();
+            const saleTime = billTime(sale.date);
             if (saleTime >= dateStart && saleTime < dateEnd) {
                 const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
                 if (cashAmount > 0) transactions.cashSales += cashAmount;
@@ -212,8 +262,7 @@ export class CashManagementManager {
         // Calculate cash purchases
         const purchases = AppState.purchaseHistory || [];
         purchases.forEach(purchase => {
-            const purchaseDate = purchase.date?.toDate ? purchase.date.toDate() : new Date(purchase.date);
-            const purchaseTime = purchaseDate.getTime();
+            const purchaseTime = billTime(purchase.date);
             if (purchaseTime >= dateStart && purchaseTime < dateEnd) {
                 const cashAmount = Number(purchase.cashPayment) || Number(purchase.payment?.cash) || 0;
                 if (cashAmount > 0) transactions.cashPurchases += cashAmount;
@@ -266,7 +315,7 @@ export class CashManagementManager {
      * @param {Array} sessions - Cached sessions array
      */
     static loadTodaySessionFromCache(sessions) {
-        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const today = todayLocalISO(); // YYYY-MM-DD (local day)
         this.todaySession = sessions.find(s => s.date === today) || null;
     }
 
@@ -278,7 +327,7 @@ export class CashManagementManager {
      */
     static async loadTodaySession() {
         try {
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const today = todayLocalISO(); // YYYY-MM-DD (local day)
             const sessions = await FirebaseService.loadCashSessions();
             
             this.todaySession = sessions.find(s => s.date === today);
@@ -299,9 +348,9 @@ export class CashManagementManager {
      * @returns {Promise<void>}
      */
     static async calculateTodayTransactions() {
-        const today = new Date().toISOString().split('T')[0];
-        const todayStart = new Date(today).getTime();
-        const todayEnd = todayStart + (24 * 60 * 60 * 1000);
+        const today = todayLocalISO();
+        const todayStart = parseLocalDate(today).getTime();
+        const todayEnd = parseLocalDate(localISODaysAgo(-1)).getTime();
 
         // Reset transactions
         this.todayTransactions = {
@@ -320,8 +369,7 @@ export class CashManagementManager {
         
         // Process wholesale sales
         sales.forEach(sale => {
-            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
-            const saleTime = saleDate.getTime();
+            const saleTime = billTime(sale.date);
             if (saleTime >= todayStart && saleTime < todayEnd) {
                 const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
                 if (cashAmount > 0) {
@@ -332,8 +380,7 @@ export class CashManagementManager {
         
         // Process retail sales
         retailSales.forEach(sale => {
-            const saleDate = sale.date?.toDate ? sale.date.toDate() : new Date(sale.date);
-            const saleTime = saleDate.getTime();
+            const saleTime = billTime(sale.date);
             if (saleTime >= todayStart && saleTime < todayEnd) {
                 const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
                 if (cashAmount > 0) {
@@ -345,8 +392,7 @@ export class CashManagementManager {
         // Calculate cash purchases
         const purchases = AppState.purchaseHistory || [];
         purchases.forEach(purchase => {
-            const purchaseDate = purchase.date?.toDate ? purchase.date.toDate() : new Date(purchase.date);
-            const purchaseTime = purchaseDate.getTime();
+            const purchaseTime = billTime(purchase.date);
             if (purchaseTime >= todayStart && purchaseTime < todayEnd) {
                 const cashAmount = Number(purchase.cashPayment) || Number(purchase.payment?.cash) || 0;
                 if (cashAmount > 0) {
@@ -379,7 +425,7 @@ export class CashManagementManager {
                     paymentTime = NaN;
                 }
             } else {
-                paymentTime = new Date(payment.date).getTime();
+                paymentTime = billTime(payment.date);
             }
             
             // Separate business and personal expenses
@@ -667,9 +713,7 @@ export class CashManagementManager {
 
         try {
             // Check if yesterday's closing matches today's opening
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayDate = yesterday.toISOString().split('T')[0];
+            const yesterdayDate = localISODaysAgo(1);
             
             const sessions = await FirebaseService.loadCashSessions();
             const yesterdaySession = sessions.find(s => s.date === yesterdayDate);
@@ -688,7 +732,7 @@ export class CashManagementManager {
 
             const session = {
                 id: Helpers.generateId(),
-                date: new Date().toISOString().split('T')[0],
+                date: todayLocalISO(),
                 openingBalance: amount,
                 signInTime: new Date().toISOString(),
                 userId: AppState.currentUser?.uid || 'unknown',
@@ -734,8 +778,7 @@ export class CashManagementManager {
             if (!confirmed) return;
         }
 
-        const updatedSession = {
-            ...this.todaySession,
+        const closingFields = {
             closingBalance: actualAmount,
             expectedBalance: expected,
             difference: difference,
@@ -751,9 +794,11 @@ export class CashManagementManager {
                 cashDeposits: this.todayTransactions.cashDeposits
             }
         };
+        const updatedSession = { ...this.todaySession, ...closingFields };
 
         try {
-            await FirebaseService.updateCashSession(updatedSession);
+            // Field-level update: never overwrite deposits/due payments added on another device
+            await sessionRef(this.todaySession.id).update(closingFields);
             this.todaySession = updatedSession;
             this.updateUI();
             this.renderHistory();
@@ -799,7 +844,9 @@ export class CashManagementManager {
             };
 
             try {
-                await FirebaseService.updateCashSession(updatedSession);
+                await sessionRef(this.todaySession.id).update({
+                    cashDeposits: firebase.firestore.FieldValue.arrayUnion(deposit)
+                });
                 this.todaySession = updatedSession;
                 await this.calculateTodayTransactions();
                 this.updateUI();
@@ -835,7 +882,9 @@ export class CashManagementManager {
             };
 
             try {
-                await FirebaseService.updateCashSession(updatedSession);
+                await sessionRef(this.todaySession.id).update({
+                    duePayments: firebase.firestore.FieldValue.arrayUnion(payment)
+                });
                 this.todaySession = updatedSession;
                 await this.calculateTodayTransactions();
                 this.updateUI();
@@ -873,7 +922,7 @@ export class CashManagementManager {
 
         datalist.innerHTML = Array.from(customers)
             .sort()
-            .map(name => `<option value="${name}">`)
+            .map(name => `<option value="${Helpers.escapeHtml(name)}">`)
             .join('');
     }
 
@@ -895,7 +944,7 @@ export class CashManagementManager {
         }
 
         container.innerHTML = sessions.map(session => {
-            const date = new Date(session.date).toLocaleDateString('en-IN', { 
+            const date = (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', { 
                 weekday: 'short', 
                 day: 'numeric', 
                 month: 'short' 
@@ -919,17 +968,17 @@ export class CashManagementManager {
             const cashAdded = session.transactions?.cashDeposits || 0;
 
             return `
-                <div onclick="window.app.cashManagement.showDetails('${session.date}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
+                <div onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(session.date)}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <strong style="font-size: 15px;">${date}</strong>
                         ${status}
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; color: #6c757d;">
-                        <div>Opening: <strong>₹${session.openingBalance}</strong></div>
+                        <div>Opening: <strong>₹${Helpers.escapeHtml(session.openingBalance)}</strong></div>
                         ${session.signedOut ? `
-                            <div>Closing: <strong>₹${session.closingBalance}</strong></div>
-                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${cashAdded}</strong></div>` : ''}
-                            <div>Expected: <strong>₹${session.expectedBalance || 0}</strong></div>
+                            <div>Closing: <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
+                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
+                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
                             <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
                             ` : '<div>In Progress...</div>'}
                         </div>
@@ -960,7 +1009,7 @@ export class CashManagementManager {
         }
 
         container.innerHTML = sessions.map(session => {
-            const date = new Date(session.date).toLocaleDateString('en-IN', { 
+            const date = (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', { 
                 weekday: 'short', 
                 day: 'numeric', 
                 month: 'short' 
@@ -984,17 +1033,17 @@ export class CashManagementManager {
             const cashAdded = session.transactions?.cashDeposits || 0;
 
             return `
-                <div onclick="window.app.cashManagement.showDetails('${session.date}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
+                <div onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(session.date)}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <strong style="font-size: 15px;">${date}</strong>
                         ${status}
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; color: #6c757d;">
-                        <div>Opening: <strong>₹${session.openingBalance}</strong></div>
+                        <div>Opening: <strong>₹${Helpers.escapeHtml(session.openingBalance)}</strong></div>
                         ${session.signedOut ? `
-                            <div>Closing: <strong>₹${session.closingBalance}</strong></div>
-                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${cashAdded}</strong></div>` : ''}
-                            <div>Expected: <strong>₹${session.expectedBalance || 0}</strong></div>
+                            <div>Closing: <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
+                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
+                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
                             <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
                             ` : '<div>In Progress...</div>'}
                         </div>
@@ -1022,7 +1071,7 @@ export class CashManagementManager {
                 return;
             }
 
-        const date = new Date(session.date).toLocaleDateString('en-IN', { 
+        const date = (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', { 
             weekday: 'long', 
             day: 'numeric', 
             month: 'long',
@@ -1057,19 +1106,19 @@ export class CashManagementManager {
                     <!-- Expenses & Others -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expenses & Others</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashOut}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashOut)}</div>
                     </div>
                     
                     <!-- Expected Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Balance</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.expectedBalance || 0}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.expectedBalance || 0)}</div>
                     </div>
                     
                     <!-- Actual Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Actual Balance</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.closingBalance}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.closingBalance)}</div>
                     </div>
                     
                     <!-- Difference -->
@@ -1083,25 +1132,25 @@ export class CashManagementManager {
                     <!-- Opening Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Opening Balance</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.openingBalance || 0}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.openingBalance || 0)}</div>
                     </div>
                     
                     <!-- Cash In -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Cash In</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashIn - (session.openingBalance || 0)}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashIn - (session.openingBalance || 0))}</div>
                     </div>
                     
                     <!-- Cash Out -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Cash Out</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${totalCashOut}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashOut)}</div>
                     </div>
                     
                     <!-- Expected Cash -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Cash</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${session.expectedBalance || 0}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.expectedBalance || 0)}</div>
                     </div>
                 </div>
                 `}
@@ -1112,23 +1161,23 @@ export class CashManagementManager {
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
                             <span>Opening Balance:</span>
-                            <strong style="color: #6366f1;">₹${session.openingBalance}</strong>
+                            <strong style="color: #6366f1;">₹${Helpers.escapeHtml(session.openingBalance)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Added:</span>
-                            <strong style="color: #10b981;">₹${session.transactions?.cashDeposits || 0}</strong>
+                            <strong style="color: #10b981;">₹${Helpers.escapeHtml(session.transactions?.cashDeposits || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Sales:</span>
-                            <strong style="color: #22c55e;">₹${session.transactions?.cashSales || 0}</strong>
+                            <strong style="color: #22c55e;">₹${Helpers.escapeHtml(session.transactions?.cashSales || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Due Received:</span>
-                            <strong style="color: #3b82f6;">₹${session.transactions?.dueReceived || 0}</strong>
+                            <strong style="color: #3b82f6;">₹${Helpers.escapeHtml(session.transactions?.dueReceived || 0)}</strong>
                         </div>
                         <div style="border-top: 2px solid #059669; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; font-weight: 600;">
                             <span>Total Cash In:</span>
-                            <strong style="color: #059669;">₹${totalCashIn}</strong>
+                            <strong style="color: #059669;">₹${Helpers.escapeHtml(totalCashIn)}</strong>
                         </div>
                     </div>
                 </div>
@@ -1139,23 +1188,23 @@ export class CashManagementManager {
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Purchases:</span>
-                            <strong style="color: #ef4444;">₹${session.transactions?.cashPurchases || 0}</strong>
+                            <strong style="color: #ef4444;">₹${Helpers.escapeHtml(session.transactions?.cashPurchases || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Due Paid:</span>
-                            <strong style="color: #dc2626;">₹${session.transactions?.duePaid || 0}</strong>
+                            <strong style="color: #dc2626;">₹${Helpers.escapeHtml(session.transactions?.duePaid || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Business Expenses:</span>
-                            <strong style="color: #f97316;">₹${session.transactions?.businessExpenses || 0}</strong>
+                            <strong style="color: #f97316;">₹${Helpers.escapeHtml(session.transactions?.businessExpenses || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Personal Expenses:</span>
-                            <strong style="color: #f59e0b;">₹${session.transactions?.personalExpenses || 0}</strong>
+                            <strong style="color: #f59e0b;">₹${Helpers.escapeHtml(session.transactions?.personalExpenses || 0)}</strong>
                         </div>
                         <div style="border-top: 2px solid #dc2626; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; font-weight: 600;">
                             <span>Total Cash Out:</span>
-                            <strong style="color: #dc2626;">₹${totalCashOut}</strong>
+                            <strong style="color: #dc2626;">₹${Helpers.escapeHtml(totalCashOut)}</strong>
                         </div>
                     </div>
                 </div>
@@ -1167,11 +1216,11 @@ export class CashManagementManager {
                             ${session.cashDeposits.map(d => `
                                 <div style="background: white; padding: 8px; border-radius: 6px; border-left: 3px solid #10b981;">
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                                        <strong style="color: #333; font-size: 12px;">${d.reason || 'Cash added'}</strong>
-                                        <strong style="color: #10b981; font-size: 13px;">₹${d.amount}</strong>
+                                        <strong style="color: #333; font-size: 12px;">${Helpers.escapeHtml(d.reason || 'Cash added')}</strong>
+                                        <strong style="color: #10b981; font-size: 13px;">₹${Helpers.escapeHtml(d.amount)}</strong>
                                     </div>
                                     <div style="color: #6c757d; font-size: 10px;">
-                                        Added by ${d.addedBy}
+                                        Added by ${Helpers.escapeHtml(d.addedBy)}
                                     </div>
                                 </div>
                             `).join('')}
@@ -1191,11 +1240,11 @@ export class CashManagementManager {
                                 return `
                                     <div style="background: white; padding: 8px; border-radius: 6px; border-left: 3px solid ${borderColor};">
                                         <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                                            <strong style="color: #333; font-size: 12px;">${typeLabel} ${p.customer}</strong>
-                                            <strong style="color: ${amountColor}; font-size: 13px;">${isReceived ? '+' : '-'}₹${p.amount}</strong>
+                                            <strong style="color: #333; font-size: 12px;">${typeLabel} ${Helpers.escapeHtml(p.customer)}</strong>
+                                            <strong style="color: ${amountColor}; font-size: 13px;">${isReceived ? '+' : '-'}₹${Helpers.escapeHtml(p.amount)}</strong>
                                         </div>
                                         <div style="color: #6c757d; font-size: 10px;">
-                                            ${p.method} • ${p.notes || 'No notes'}
+                                            ${Helpers.escapeHtml(p.method)} • ${Helpers.escapeHtml(p.notes || 'No notes')}
                                         </div>
                                     </div>
                                 `;
@@ -1208,8 +1257,8 @@ export class CashManagementManager {
                 <!-- Notes -->
                 <div style="background: #fffbeb; padding: 12px; border-radius: 8px; border-left: 3px solid #f59e0b;">
                     <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #92400e;">📝 Notes</h4>
-                    ${session.openingNotes ? `<div style="font-size: 12px; color: #78350f; margin-bottom: 6px;"><strong>Sign In:</strong> ${session.openingNotes}</div>` : ''}
-                    ${session.closingNotes ? `<div style="font-size: 12px; color: #78350f;"><strong>Sign Out:</strong> ${session.closingNotes}</div>` : ''}
+                    ${session.openingNotes ? `<div style="font-size: 12px; color: #78350f; margin-bottom: 6px;"><strong>Sign In:</strong> ${Helpers.escapeHtml(session.openingNotes)}</div>` : ''}
+                    ${session.closingNotes ? `<div style="font-size: 12px; color: #78350f;"><strong>Sign Out:</strong> ${Helpers.escapeHtml(session.closingNotes)}</div>` : ''}
                 </div>
                 ` : ''}
             </div>
