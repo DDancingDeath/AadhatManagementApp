@@ -234,6 +234,12 @@
     min-width: 120px;
   }
 
+  /* ---------- Android update banner: keep clear of the permanent sidebar ---------- */
+  .app-update-banner {
+    left: calc(var(--desktop-nav-width) + 16px);
+    right: 16px;
+  }
+
   /* ---------- Keyboard shortcuts help ---------- */
   .kbd-help-overlay {
     position: fixed;
