@@ -30,6 +30,7 @@ import { AppUpdatesManager } from './modules/app-updates.js';
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
 import { Helpers } from './utils/helpers.js';
+import { InstallManager } from './services/install-prompt.js';
 
 // Build stamp — bumped on every deploy that ships new JS so you can verify
 // in the browser console whether the latest code is actually running. If
@@ -43,6 +44,8 @@ console.log(
 );
 // Expose on window so the user can copy/paste it back to us when debugging.
 window.__AADHAT_BUILD__ = BUILD_ID;
+
+InstallManager.init();
 
 // Load and inject HTML templates from separate .html files
 async function injectTemplates() {
@@ -268,6 +271,7 @@ async function initializeUserData() {
 document.addEventListener('DOMContentLoaded', async function() {
     // STEP 1: Load and inject all HTML templates from .html files
     await injectTemplates();
+    InstallManager.refresh();
     
     // STEP 2: Initialize auth tabs after templates are loaded
     AuthManager.initAuthTabs();
@@ -939,6 +943,12 @@ window.app = {
         loadAuditLogs: () => SettingsManager.loadAuditLogs(),
         filterAuditLogs: () => SettingsManager.filterAuditLogs(),
         loadStorageStats: () => SettingsManager.loadStorageStats()
+    },
+
+    // PWA install (Settings)
+    install: {
+        prompt: () => InstallManager.prompt(),
+        refresh: () => InstallManager.refresh()
     },
     
     // Date Filter

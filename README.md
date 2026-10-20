@@ -247,6 +247,17 @@ entry), `package.json`, `www/js/version.js` and `android/app/build.gradle`.
 
 After updating, each user sees a one-time "What's new" sheet (Settings → App
 updates reopens it and has "Share on WhatsApp" for sending the download link).
+
+## Install as an app (PWA)
+
+`www/manifest.webmanifest` plus the icons in `www/icons/` make the web app
+installable on desktop (Chrome/Edge) and Android/iOS home screens. In a
+browser tab, **Settings → Install App / ऐप इंस्टॉल करें** shows an install
+button when the browser offers one, or a short hint otherwise (Safari/Firefox).
+The card is hidden inside the Capacitor Android app and when already running
+installed. New icons/manifest changes must stay in `STATIC_ASSETS`
+(`npm run check:sw`).
+
 ## Documentation
 
 - **Module Documentation**: [www/js/README.md](www/js/README.md)

@@ -46,6 +46,17 @@
             </div>
         </div>
 
+        <div class="settings-card" id="installAppCard" style="display: none;">
+            <h3>Install App / ऐप इंस्टॉल करें</h3>
+            <button class="add-item-btn" id="installAppBtn" onclick="window.app.install.prompt()" style="display: none;">
+                📲 Install app on this device / ऐप इंस्टॉल करें
+            </button>
+            <p class="setting-description" id="installAppHint" style="display: none;">
+                Chrome/Edge: address bar → Install icon. iPhone/iPad Safari: Share → Add to Home Screen.<br>
+                Chrome/Edge: एड्रेस बार में Install आइकन दबाएँ। iPhone/iPad Safari: Share → Add to Home Screen।
+            </p>
+        </div>
+
         <div class="settings-card">
             <h3>App updates / ऐप अपडेट</h3>
             <p><strong>Version:</strong> <span id="appVersionText">-</span></p>
