@@ -10,7 +10,11 @@ const STATIC_ASSETS = [
     '/',
     '/index.html',
     '/firebaseConfig.js',
+    '/download.html',
+    '/changelog.json',
+    '/img/download-qr.svg',
     '/css/analytics.css',
+    '/css/app-updates.css',
     '/css/auth.css',
     '/css/billing.css',
     '/css/buttons.css',
@@ -37,6 +41,7 @@ const STATIC_ASSETS = [
     '/js/main.js',
     '/js/modules/admin.js',
     '/js/modules/analytics.js',
+    '/js/modules/app-updates.js',
     '/js/modules/billing.js',
     '/js/modules/cash-management.js',
     '/js/modules/datefilter.js',
@@ -67,11 +72,13 @@ const STATIC_ASSETS = [
     '/js/utils/history-window.js',
     '/js/utils/lazy-scripts.js',
     '/js/utils/money.js',
+    '/js/utils/release-info.js',
     '/js/utils/state.js',
     '/js/utils/stock-check.js',
     '/js/utils/stock-replay.js',
     '/js/utils/template-loader.js',
     '/js/utils/validator.js',
+    '/js/version.js',
     '/templates/admin.html',
     '/templates/analytics.html',
     '/templates/auth.html',
@@ -188,7 +195,11 @@ self.addEventListener('fetch', (event) => {
     const isNavigation = event.request.mode === 'navigate'
         || url.pathname === '/'
         || url.pathname === '/index.html';
-    if (isNavigation) {
+    // changelog.json drives "What's new" and the download page: network-first
+    // so a new release's notes are never hidden behind a stale cached copy.
+    if (isNavigation || url.pathname === '/changelog.json') {
+        const isDownloadPage = url.pathname === '/download' || url.pathname === '/download.html';
+        const fallback = isDownloadPage ? '/download.html' : '/index.html';
         event.respondWith(
             fetch(event.request)
                 .then((response) => {
@@ -198,7 +209,10 @@ self.addEventListener('fetch', (event) => {
                     }
                     return response;
                 })
-                .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/index.html')))
+                .catch(() => caches.match(event.request).then((cached) => {
+                    if (cached || !isNavigation) return cached || new Response('', { status: 504, statusText: 'Offline' });
+                    return caches.match(fallback);
+                }))
         );
         return;
     }

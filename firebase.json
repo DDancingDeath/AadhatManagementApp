@@ -12,6 +12,10 @@
     ],
     "rewrites": [
       {
+        "source": "/download",
+        "destination": "/download.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -27,7 +31,7 @@
         ]
       },
       {
-        "source": "/@(index.html|service-worker.js)",
+        "source": "/@(index.html|service-worker.js|download|download.html|changelog.json)",
         "headers": [
           {
             "key": "Cache-Control",

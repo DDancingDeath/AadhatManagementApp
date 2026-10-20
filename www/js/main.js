@@ -25,6 +25,7 @@ import { AuditService } from './services/audit.js';
 import { TelemetryService } from './services/telemetry.js';
 import { DiagnosticsManager } from './modules/diagnostics.js';
 import { AdminManager } from './modules/admin.js';
+import { AppUpdatesManager } from './modules/app-updates.js';
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
@@ -252,6 +253,9 @@ async function initializeUserData() {
         AuditService.cleanupOldLogs();
         
         UIManager.hideLoading();
+
+        // What's new + Android update banner (non-blocking, best effort)
+        AppUpdatesManager.onAppReady();
         
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -919,7 +923,10 @@ window.app = {
     
     // Settings
     settings: {
-        load: () => SettingsManager.loadSettings(),
+        load: () => {
+            AppUpdatesManager.renderSettings();
+            SettingsManager.loadSettings();
+        },
         save: () => SettingsManager.saveSettings(),
         toggleDarkMode: () => SettingsManager.toggleDarkMode(),
         clearAllData: () => SettingsManager.clearAllData(),
@@ -972,6 +979,14 @@ window.app = {
         clearAllData: () => AdminManager.clearAllData()
     },
     
+    // What's new / update banner / share app
+    updates: {
+        showWhatsNew: () => AppUpdatesManager.showWhatsNew(),
+        shareOnWhatsApp: () => AppUpdatesManager.shareOnWhatsApp(),
+        shareNative: () => AppUpdatesManager.shareNative(),
+        openDownloadPage: () => AppUpdatesManager.openDownloadPage()
+    },
+
     // UI
     ui: {
         showLoading: () => UIManager.showLoading(),

@@ -7,7 +7,7 @@
  *
  * Fails if any entry does not exist on disk (a 404 during precache used to make
  * cache.addAll reject, silently disabling offline caching) or if an app file
- * (js/css/templates) is missing from the list.
+ * (js/css/templates/img, download.html, changelog.json) is missing from the list.
  */
 const fs = require('fs');
 const path = require('path');
@@ -32,8 +32,9 @@ function expectedAssets() {
         ...walk(path.join(WWW, 'js')).filter((f) => f.endsWith('.js')),
         ...walk(path.join(WWW, 'css')).filter((f) => f.endsWith('.css')),
         ...walk(path.join(WWW, 'templates')).filter((f) => f.endsWith('.html')),
+        ...(fs.existsSync(path.join(WWW, 'img')) ? walk(path.join(WWW, 'img')) : []),
     ].map(toUrl).sort();
-    return ['/', '/index.html', '/firebaseConfig.js', ...files];
+    return ['/', '/index.html', '/firebaseConfig.js', '/download.html', '/changelog.json', ...files];
 }
 
 function readStaticAssets(source = fs.readFileSync(SW_PATH, 'utf8')) {
