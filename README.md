@@ -228,6 +228,25 @@ The app includes a service worker (`www/service-worker.js`) that:
 - Uses network-first strategy for Firebase API calls
 - Enables basic offline functionality
 
+## Releasing a new version
+
+The version lives in four places that must agree: `www/changelog.json` (top
+entry), `package.json`, `www/js/version.js` and `android/app/build.gradle`.
+
+1. Add the new release at the **top** of `www/changelog.json` with `version`
+   (x.y.z), `date` (YYYY-MM-DD), `androidVersionCode` (previous + 1) and short
+   `notes.en` / `notes.hi` lists written for shop staff.
+2. Run `npm run release -- 1.4.0 --code 5` (same version/code). It refuses to
+   run until the changelog entry exists and the code increases.
+3. `npm run check:release` verifies everything is consistent (CI-friendly).
+4. Build the APK and publish a GitHub Release tagged `v1.4.0` with the APK
+   attached as **`AadhatManagement.apk`**. Installed Android apps check
+   `releases/latest` (at most every 12 h) and show an "Update available"
+   banner; https://aadhat-management.web.app/download always links to the
+   latest APK.
+
+After updating, each user sees a one-time "What's new" sheet (Settings → App
+updates reopens it and has "Share on WhatsApp" for sending the download link).
 ## Documentation
 
 - **Module Documentation**: [www/js/README.md](www/js/README.md)

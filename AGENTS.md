@@ -107,6 +107,12 @@ In order:
   `STATIC_ASSETS` in `www/service-worker.js` (`npm run check:sw`; a test
   enforces it). Bump the `?v=` tokens in `index.html`, `BUILD_ID` in
   `main.js` and `CACHE_NAME` in `service-worker.js` together when shipping.
+- **Versions / release notes**: `www/changelog.json` (newest first, `en` +
+  `hi` notes) is the source of truth. Never hand-edit version numbers — run
+  `npm run release -- <x.y.z> --code <n>` after adding the changelog entry;
+  `npm run check:release` must pass. `www/download.html` (public, no Firebase)
+  and the in-app "What's new"/update banner (`js/modules/app-updates.js`,
+  pure logic in `js/utils/release-info.js`) read that file.
 - **Money fields**: bills sometimes store `dueAmount` at top level *and*
   `payment.due` inside a nested object. Both can exist; both can drift.
   Read both, write both, treat the nested one as canonical when present.
