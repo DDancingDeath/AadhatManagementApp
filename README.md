@@ -136,6 +136,47 @@ cd android
 Release signing: create `android/keystore.properties` (git-ignored) with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`,
 or set `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
+### Releasing (Android APK + GitHub Release)
+
+`.github/workflows/android-release.yml` builds, signs and publishes the APK when a `v<version>` tag is pushed.
+Pull requests that touch `android/**`, `capacitor.config.json`, `package*.json`, `www/changelog.json`,
+`www/js/version.js` or the release scripts run the tests and `check:release` and build an unsigned debug APK
+(uploaded as a workflow artifact) to catch breakage — nothing is published.
+
+The version lives in four places that must agree: `www/changelog.json` (top entry), `package.json`,
+`www/js/version.js` and `android/app/build.gradle`.
+
+1. Add the new entry at the **top** of `www/changelog.json`: `version` (x.y.z), `date` (YYYY-MM-DD),
+   `androidVersionCode` (previous + 1) and short `notes.en` / `notes.hi` lists written for shop staff.
+2. Bump every version in one go: `npm run release -- <ver> --code <n>` (e.g. `npm run release -- 1.3.0 --code 4`).
+   It refuses to run until the changelog entry exists and the code increases; `npm run check:release` must pass.
+3. Open a PR, get it reviewed, merge to `main`.
+4. Owner tags the merged commit: `git tag v<ver> && git push origin v<ver>`.
+5. The workflow runs the tests and `check:release`, checks the tag equals `package.json` `version`, builds the signed
+   APK, verifies its signing certificate, and creates the GitHub Release "Aadhat Management v<ver>" (marked latest)
+   with notes from `www/changelog.json` and two assets: `AadhatManagement.apk` (stable name used by
+   `releases/latest/download/AadhatManagement.apk`, the app and the download page) and `AadhatManagement-v<ver>.apk`.
+   The web app still deploys on merge to `main` as before.
+
+Installed Android apps check `releases/latest` (at most every 12 h) and show an "Update available" banner;
+https://aadhat-management.web.app/download always links to the latest APK. After updating, each user sees a one-time
+"What's new" sheet (Settings → App updates reopens it and has "Share on WhatsApp" for sending the download link).
+
+To re-publish an existing tag (e.g. after fixing a secret), run the workflow manually (Actions → Android release →
+Run workflow) with `tag` = `v<ver>`; assets are replaced (`--clobber`).
+
+**One-time owner setup** (Settings → Secrets and variables → Actions):
+
+- Secrets (all four are required; tag builds fail without them rather than publish an unsigned APK):
+  - `ANDROID_KEYSTORE_BASE64` — the release keystore, base64-encoded. In PowerShell:
+    `[Convert]::ToBase64String([IO.File]::ReadAllBytes('aadhat-release.keystore')) | Set-Clipboard`
+  - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
+- Variable (recommended) `ANDROID_CERT_SHA256` — SHA-256 of the production signing certificate. The workflow refuses to
+  publish an APK signed with any other key (phones cannot update an app signed with a different key). Current production
+  value: `2bce82fc9b7f006e070be664185084c2703a83d209e308ba21cc939c25887738`. To re-derive it:
+  `keytool -list -v -keystore aadhat-release.keystore -alias <alias>` (the "SHA256" line; colons are ignored) or
+  `apksigner verify --print-certs AadhatManagement-v1.2-android11plus-release.apk` ("certificate SHA-256 digest").
+
 
 ## Testing
 
@@ -227,26 +268,6 @@ The app includes a service worker (`www/service-worker.js`) that:
 - Uses cache-first strategy for static files
 - Uses network-first strategy for Firebase API calls
 - Enables basic offline functionality
-
-## Releasing a new version
-
-The version lives in four places that must agree: `www/changelog.json` (top
-entry), `package.json`, `www/js/version.js` and `android/app/build.gradle`.
-
-1. Add the new release at the **top** of `www/changelog.json` with `version`
-   (x.y.z), `date` (YYYY-MM-DD), `androidVersionCode` (previous + 1) and short
-   `notes.en` / `notes.hi` lists written for shop staff.
-2. Run `npm run release -- 1.4.0 --code 5` (same version/code). It refuses to
-   run until the changelog entry exists and the code increases.
-3. `npm run check:release` verifies everything is consistent (CI-friendly).
-4. Build the APK and publish a GitHub Release tagged `v1.4.0` with the APK
-   attached as **`AadhatManagement.apk`**. Installed Android apps check
-   `releases/latest` (at most every 12 h) and show an "Update available"
-   banner; https://aadhat-management.web.app/download always links to the
-   latest APK.
-
-After updating, each user sees a one-time "What's new" sheet (Settings → App
-updates reopens it and has "Share on WhatsApp" for sending the download link).
 
 ## Install as an app (PWA)
 
