@@ -80,8 +80,10 @@
     padding: 24px max(32px, calc((100vw - var(--desktop-nav-width) - var(--desktop-content-max)) / 2)) 48px;
   }
 
-  .tab > .filter-buttons:first-child {
-    max-width: 520px;
+  /* Top-of-page segmented toggles (Purchase | Sale etc.) span the content
+     width (no max-width) and match Today's .sub-tabs bar height. */
+  .tab > .filter-buttons:first-child > .filter-btn {
+    padding: 14px 20px;
   }
 
   /* ---------- Billing: entry left, sticky bill summary right ---------- */
