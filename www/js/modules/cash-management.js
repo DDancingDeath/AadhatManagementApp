@@ -11,6 +11,8 @@ import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { todayLocalISO, localISODaysAgo, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
 import { needsHistoryFrom, ensureHistoryFrom } from '../utils/history-window.js';
+import { sessionTotals } from '../utils/cash-session.js';
+import { round2 } from '../utils/money.js';
 
 const sessionRef = (sessionId) => {
     const name = window.getCollection ? window.getCollection('cashManagement') : 'cashManagement';
@@ -622,17 +624,7 @@ export class CashManagementManager {
 
     static calculateExpectedCash() {
         if (!this.todaySession) return 0;
-        
-        const opening = this.todaySession?.openingBalance || 0;
-        const sales = this.todayTransactions.cashSales || 0;
-        const purchases = this.todayTransactions.cashPurchases || 0;
-        const businessExpenses = this.todayTransactions.businessExpenses || 0;
-        const personalExpenses = this.todayTransactions.personalExpenses || 0;
-        const dueReceived = this.todayTransactions.dueReceived || 0;
-        const duePaid = this.todayTransactions.duePaid || 0;
-        const deposits = this.todayTransactions.cashDeposits || 0;
-        
-        return opening + sales - purchases - businessExpenses - personalExpenses + dueReceived + deposits - duePaid;
+        return sessionTotals(this.todaySession, this.todayTransactions).expected;
     }
 
     static updateSignOutSummary() {
@@ -657,8 +649,9 @@ export class CashManagementManager {
         const duePaid = this.todayTransactions.duePaid || 0;
         const deposits = this.todayTransactions.cashDeposits || 0;
         
-        const totalCashIn = opening + sales + dueReceived + deposits;
-        const totalCashOut = purchases + duePaid + businessExpenses + personalExpenses;
+        const totals = sessionTotals(this.todaySession, this.todayTransactions);
+        const totalCashIn = round2(totals.opening + totals.cashIn);
+        const totalCashOut = totals.cashOut;
         
         if (openingBalanceEl) openingBalanceEl.textContent = `₹${opening}`;
         if (cashSalesEl) cashSalesEl.textContent = `₹${sales}`;
@@ -1085,8 +1078,12 @@ export class CashManagementManager {
         else if (absDiff >= 50) diffColor = '#f59e0b'; // yellow
         const diffText = absDiff < 1 ? 'Matched' : (diff >= 0 ? `+₹${diff.toFixed(2)}` : `₹${diff.toFixed(2)}`);
 
-        const totalCashIn = (session.openingBalance || 0) + (session.transactions?.cashDeposits || 0) + (session.transactions?.cashSales || 0) + (session.transactions?.duePayments || 0);
-        const totalCashOut = (session.transactions?.cashPurchases || 0) + (session.transactions?.cashExpenses || 0);
+        // An open session has no saved snapshot yet: use today's live totals.
+        const isLiveToday = !session.signedOut && this.todaySession && this.todaySession.date === session.date;
+        const txns = (isLiveToday ? this.todayTransactions : session.transactions) || {};
+        const totals = sessionTotals(session, txns);
+        const totalCashIn = totals.opening + totals.cashIn;
+        const totalCashOut = totals.cashOut;
         const difference = session.signedOut ? (session.closingBalance - session.expectedBalance) : 0;
         const absDifference = Math.abs(difference);
         
@@ -1150,7 +1147,7 @@ export class CashManagementManager {
                     <!-- Expected Cash -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Cash</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.expectedBalance || 0)}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(isLiveToday ? totals.expected : (session.expectedBalance || 0))}</div>
                     </div>
                 </div>
                 `}
@@ -1165,15 +1162,15 @@ export class CashManagementManager {
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Added:</span>
-                            <strong style="color: #10b981;">₹${Helpers.escapeHtml(session.transactions?.cashDeposits || 0)}</strong>
+                            <strong style="color: #10b981;">₹${Helpers.escapeHtml(txns.cashDeposits || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Sales:</span>
-                            <strong style="color: #22c55e;">₹${Helpers.escapeHtml(session.transactions?.cashSales || 0)}</strong>
+                            <strong style="color: #22c55e;">₹${Helpers.escapeHtml(txns.cashSales || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Due Received:</span>
-                            <strong style="color: #3b82f6;">₹${Helpers.escapeHtml(session.transactions?.dueReceived || 0)}</strong>
+                            <strong style="color: #3b82f6;">₹${Helpers.escapeHtml(txns.dueReceived || 0)}</strong>
                         </div>
                         <div style="border-top: 2px solid #059669; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; font-weight: 600;">
                             <span>Total Cash In:</span>
@@ -1188,19 +1185,19 @@ export class CashManagementManager {
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
                             <span>Cash Purchases:</span>
-                            <strong style="color: #ef4444;">₹${Helpers.escapeHtml(session.transactions?.cashPurchases || 0)}</strong>
+                            <strong style="color: #ef4444;">₹${Helpers.escapeHtml(txns.cashPurchases || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Due Paid:</span>
-                            <strong style="color: #dc2626;">₹${Helpers.escapeHtml(session.transactions?.duePaid || 0)}</strong>
+                            <strong style="color: #dc2626;">₹${Helpers.escapeHtml(txns.duePaid || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Business Expenses:</span>
-                            <strong style="color: #f97316;">₹${Helpers.escapeHtml(session.transactions?.businessExpenses || 0)}</strong>
+                            <strong style="color: #f97316;">₹${Helpers.escapeHtml(txns.businessExpenses || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
                             <span>Personal Expenses:</span>
-                            <strong style="color: #f59e0b;">₹${Helpers.escapeHtml(session.transactions?.personalExpenses || 0)}</strong>
+                            <strong style="color: #f59e0b;">₹${Helpers.escapeHtml(txns.personalExpenses || 0)}</strong>
                         </div>
                         <div style="border-top: 2px solid #dc2626; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; font-weight: 600;">
                             <span>Total Cash Out:</span>

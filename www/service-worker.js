@@ -77,6 +77,7 @@ const STATIC_ASSETS = [
     '/js/ui/navigation.js',
     '/js/ui/ui-manager.js',
     '/js/utils/bill-share.js',
+    '/js/utils/cash-session.js',
     '/js/utils/constants.js',
     '/js/utils/data-export.js',
     '/js/utils/dates.js',
