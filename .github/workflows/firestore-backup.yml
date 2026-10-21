@@ -31,7 +31,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/backup/package-lock.json
 
       - name: Check secrets
         env:
@@ -47,9 +49,12 @@ jobs:
             exit 1
           fi
 
-      - name: Install firebase-admin (job only)
+      # firebase-admin 14 needs Node >= 22 and only lists @google-cloud/firestore as an
+      # optionalDependency, which npm silently skips on older Node. It is a direct
+      # dependency in the committed lockfile so npm ci always installs it.
+      - name: Install backup tool dependencies (job only)
         working-directory: tools/backup
-        run: npm install --no-save --no-package-lock --no-audit --no-fund --omit=dev
+        run: npm ci --no-audit --no-fund
 
       - name: Export Firestore
         id: export
