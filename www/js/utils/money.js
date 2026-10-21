@@ -172,6 +172,21 @@ export function computeWholesaleTotals(items, stock = {}, expenses = 0) {
     return { total, cost, profit, profitPercent };
 }
 
+/** Message shown when a bill with an unpaid part has no party name. */
+export const NAME_REQUIRED_FOR_DUE_MESSAGE =
+    'Enter the name — a bill with Due needs a customer/supplier name. / नाम लिखें — उधार वाले बिल पर ग्राहक/व्यापारी का नाम ज़रूरी है।';
+
+/**
+ * Whether a bill must carry a party name: anything left due must be
+ * attributable to someone.
+ * @param {number} due
+ * @param {string} name
+ * @returns {boolean} true when the save must be blocked
+ */
+export function dueNeedsName(due, name) {
+    return round2(due) > 0 && !String(name ?? '').trim();
+}
+
 /**
  * Average price per unit, or null when the quantity is 0/invalid
  * (callers show "—" instead of Infinity/NaN).

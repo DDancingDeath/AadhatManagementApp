@@ -10,7 +10,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
-import { computePurchaseTotals, round2 } from '../utils/money.js';
+import { computePurchaseTotals, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, round2 } from '../utils/money.js';
 
 /** Buttons disabled while a purchase save/print is in flight */
 const PURCHASE_BUTTONS = '#saveBillBtn, #printBillBtn';
@@ -532,6 +532,12 @@ const PurchaseManager = {
         
         if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {
             UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
+            return;
+        }
+        
+        if (dueNeedsName(dueAmount, customerName)) {
+            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
+            document.getElementById('customerName')?.focus();
             return;
         }
         

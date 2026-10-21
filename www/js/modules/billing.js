@@ -10,7 +10,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
-import { round2, sumMoney } from '../utils/money.js';
+import { dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, round2, sumMoney } from '../utils/money.js';
 import { findBillIndex } from '../utils/history-window.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 import { PurchaseManager } from './purchase.js';
@@ -1070,6 +1070,12 @@ const BillingManager = {
                 const comments = Helpers.getInputText('billComments');
                 const printComments = readPrintComments('billPrintComments');
                 
+                if (dueNeedsName(dueAmount, customerName)) {
+                    UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
+                    document.getElementById('customerName')?.focus();
+                    return undefined;
+                }
+                
                 const laborCalculationSpan = document.getElementById('laborCalculation');
                 const laborCalc = laborCalculationSpan?.textContent || null;
 
@@ -1132,6 +1138,12 @@ const BillingManager = {
                 const saleCustomer = Helpers.getInputText('saleCustomerName');
                 const saleComments = Helpers.getInputText('saleComments');
                 const printComments = readPrintComments('salePrintComments');
+
+                if (dueNeedsName(saleDue, saleCustomer)) {
+                    UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
+                    document.getElementById('saleCustomerName')?.focus();
+                    return undefined;
+                }
 
                 const updatedSale = {
                     ...bill,

@@ -17,7 +17,7 @@ import { AuditService } from '../services/audit.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { AppState } from '../utils/state.js';
-import { readPayment } from '../utils/money.js';
+import { readPayment, NAME_REQUIRED_FOR_DUE_MESSAGE } from '../utils/money.js';
 import { createFakeFirestore } from './__mocks__/fake-firestore.js';
 import { sampleItems } from '../../../tests/fixtures/sample-items.js';
 
@@ -139,6 +139,19 @@ describe('new purchase save', () => {
         expect(document.getElementById('amountPayable').textContent).toBe('2580');
     });
 
+    test('refuses a purchase with Due but no supplier name; fully paid saves without one (#68)', async () => {
+        await buildBill();
+        setVal('dueAmount', 2568);
+        expect(await PurchaseManager.saveBillToHistory()).toBeUndefined();
+        expect(savePurchase).not.toHaveBeenCalled();
+        expect(toast).toHaveBeenCalledWith(NAME_REQUIRED_FOR_DUE_MESSAGE);
+
+        setVal('dueAmount', 0);
+        setVal('cashPayment', 2568);
+        expect(await PurchaseManager.saveBillToHistory()).toMatchObject({ customerName: '', dueAmount: 0 });
+        expect(savePurchase).toHaveBeenCalledTimes(1);
+    });
+
     test('refuses to save without any payment', async () => {
         await buildBill();
         expect(await PurchaseManager.saveBillToHistory()).toBeUndefined();
@@ -235,12 +248,20 @@ describe('new retail sale save', () => {
         expect(saveRetailSale).not.toHaveBeenCalled();
     });
 
-    // BUG: see #68 — a credit (due) sale can be saved with no customer name.
-    test.skip('refuses a credit sale without a customer name', async () => {
+    test('refuses a credit sale without a customer name (#68)', async () => {
         await addLine(0, 36, [10]);
         setVal('saleDueAmount', 360);
+        setVal('saleCustomerName', '   ');
         expect(await RetailSaleManager.completeSale()).toBeUndefined();
         expect(saveRetailSale).not.toHaveBeenCalled();
+        expect(toast).toHaveBeenCalledWith(NAME_REQUIRED_FOR_DUE_MESSAGE);
+    });
+
+    test('a fully paid walk-in sale still saves without a name (#68)', async () => {
+        await addLine(0, 36, [10]);
+        setVal('saleCashPayment', 360);
+        expect(await RetailSaleManager.completeSale()).toMatchObject({ customerName: '', dueAmount: 0 });
+        expect(saveRetailSale).toHaveBeenCalledTimes(1);
     });
 
     // BUG: see #23 — the payment split is not checked against the sale total.

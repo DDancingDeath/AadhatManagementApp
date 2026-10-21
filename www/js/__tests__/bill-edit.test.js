@@ -8,6 +8,7 @@ import { BillingManager, PurchaseManager, canEditBill, EDIT_NOT_ALLOWED_MESSAGE 
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AppState } from '../utils/state.js';
+import { NAME_REQUIRED_FOR_DUE_MESSAGE } from '../utils/money.js';
 
 const BILL = { id: 'b1', userId: 'creator', items: [{ itemId: 'x', qty: 1, rate: 1 }], payment: { due: 0 } };
 
@@ -59,6 +60,16 @@ describe('saveEditedBill', () => {
         expect(AppState.purchaseHistory[0]).toEqual(BILL);
         expect(toast).toHaveBeenCalledWith(expect.stringContaining('changed on another device'));
         expect(BillingManager.editingBillIndex).toBe(0);
+    });
+
+    it('refuses an edit that leaves a Due without a name (#68)', async () => {
+        document.body.innerHTML = '<input id="dueAmount" value="50"><input id="customerName" value=" ">';
+        const update = jest.spyOn(FirebaseService, 'updatePurchase');
+        expect(await BillingManager.saveEditedBill()).toBeUndefined();
+        expect(update).not.toHaveBeenCalled();
+        expect(toast).toHaveBeenCalledWith(NAME_REQUIRED_FOR_DUE_MESSAGE);
+        expect(BillingManager.editingBillIndex).toBe(0);
+        document.body.innerHTML = '';
     });
 
     it('prints, replaces and clears only after the transaction committed', async () => {

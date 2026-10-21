@@ -11,7 +11,7 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
-import { round2, sumMoney } from '../utils/money.js';
+import { dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, round2, sumMoney } from '../utils/money.js';
 
 /** Buttons disabled while a retail save/print is in flight */
 const RETAIL_BUTTONS = '#saveSaleBtn, #printSaleBtn';
@@ -488,6 +488,12 @@ const RetailSaleManager = {
         
         if (saleOnline === 0 && saleCash === 0 && saleDue === 0) {
             UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
+            return;
+        }
+        
+        if (dueNeedsName(saleDue, saleCustomer)) {
+            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
+            document.getElementById('saleCustomerName')?.focus();
             return;
         }
         
