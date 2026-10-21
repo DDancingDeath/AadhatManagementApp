@@ -7,6 +7,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
+import { FirebaseService } from '../firebase/firestore-service.js';
 
 /**
  * Admin Manager - Unified admin panel
@@ -184,17 +185,12 @@ const AdminManager = {
      */
     async loadUsers() {
         try {
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            const snapshot = await db.collection(col).get();
+            const users = await FirebaseService.loadUsers();
             
             const pendingUsers = [];
             const activeUsers = [];
             
-            // Sorted client-side: orderBy('createdAt') would drop legacy profiles without createdAt
-            const createdMs = (d) => { const c = d.data().createdAt; return c?.toMillis ? c.toMillis() : (c ? new Date(c).getTime() || 0 : 0); };
-            [...snapshot.docs].sort((a, b) => createdMs(b) - createdMs(a)).forEach(doc => {
-                const user = { id: doc.id, ...doc.data() };
+            users.forEach(user => {
                 // Match logic from users.js: pending if status is pending OR no role assigned
                 if (user.status === 'pending' || !user.role) {
                     pendingUsers.push(user);
@@ -315,13 +311,10 @@ const AdminManager = {
 
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            
-            await db.collection(col).doc(userId).update({
+            await FirebaseService.updateUser(userId, {
                 status: 'active',
                 role: role,
-                approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                approvedAt: FirebaseService.serverTimestamp(),
                 approvedBy: AppState.currentUser?.uid
             });
 
@@ -349,10 +342,7 @@ const AdminManager = {
 
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            
-            await db.collection(col).doc(userId).delete();
+            await FirebaseService.deleteUserProfile(userId);
 
             UIManager.showToast('User rejected');
             await this.loadUsers();
@@ -383,10 +373,7 @@ const AdminManager = {
 
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            
-            await db.collection(col).doc(userId).update({
+            await FirebaseService.updateUser(userId, {
                 role: newRole
             });
 
@@ -442,11 +429,8 @@ const AdminManager = {
         
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            
             // Delete user document from Firestore
-            await db.collection(col).doc(userId).delete();
+            await FirebaseService.deleteUserProfile(userId);
             
             UIManager.showToast(`User "${userName}" has been deleted`);
             await this.loadUsers();
@@ -496,7 +480,6 @@ const AdminManager = {
     async loadStorageStats() {
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
             
             const collections = [
                 { name: 'items', label: 'Items', icon: '📦' },
@@ -517,9 +500,7 @@ const AdminManager = {
 
             for (const col of collections) {
                 try {
-                    const colName = window.getCollection ? window.getCollection(col.name) : col.name;
-                    const snapshot = await db.collection(colName).get();
-                    const count = snapshot.size;
+                    const count = await FirebaseService.countDocuments(col.name);
                     totalDocs += count;
                     breakdown.push({
                         ...col,
@@ -669,7 +650,6 @@ const AdminManager = {
         UIManager.showLoading();
         
         try {
-            const db = firebase.firestore();
             const user = firebase.auth().currentUser;
             
             if (!user) {
@@ -678,18 +658,11 @@ const AdminManager = {
                 return;
             }
             
-            // Delete selected collections (with environment prefix)
+            // Delete selected collections (FirebaseService adds the environment prefix)
             let deletedCount = 0;
-            const getCol = window.getCollection || ((name) => name); // Fallback if not defined
             
             for (const collectionId of selectedCollections) {
-                const prefixedCollection = getCol(collectionId);
-                const snapshot = await db.collection(prefixedCollection).get();
-                if (snapshot.size > 0) {
-                    const deletePromises = snapshot.docs.map(doc => doc.ref.delete());
-                    await Promise.all(deletePromises);
-                    deletedCount += snapshot.size;
-                }
+                deletedCount += await FirebaseService.clearCollection(collectionId);
             }
             
             // Clear local storage

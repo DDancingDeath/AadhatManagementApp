@@ -8,6 +8,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
+import { FirebaseService } from '../firebase/firestore-service.js';
 
 /**
  * Users Manager - Manages user operations
@@ -25,16 +26,12 @@ export class UsersManager {
         if (userRole !== 'owner') return;
         
         try {
-            const db = firebase.firestore();
-            const usersSnapshot = await db.collection(window.getCollection ? window.getCollection('users') : 'users').get();
+            const users = await FirebaseService.loadUsers();
             
             const pendingUsers = [];
             const activeUsers = [];
             
-            // Sorted client-side: orderBy('createdAt') would drop legacy profiles without createdAt
-            const createdMs = (d) => { const c = d.data().createdAt; return c?.toMillis ? c.toMillis() : (c ? new Date(c).getTime() || 0 : 0); };
-            [...usersSnapshot.docs].sort((a, b) => createdMs(b) - createdMs(a)).forEach(doc => {
-                const userData = { id: doc.id, ...doc.data() };
+            users.forEach(userData => {
                 if (userData.status === 'pending' || !userData.role) {
                     pendingUsers.push(userData);
                 } else {
@@ -147,11 +144,10 @@ export class UsersManager {
 
     static async approveUser(userId, role) {
         try {
-            const db = firebase.firestore();
-            await db.collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).update({
+            await FirebaseService.updateUser(userId, {
                 role: role,
                 status: 'active',
-                approvedAt: firebase.firestore.FieldValue.serverTimestamp()
+                approvedAt: FirebaseService.serverTimestamp()
             });
             
             UIManager.hapticFeedback('medium');
@@ -168,8 +164,7 @@ export class UsersManager {
         if (!confirmed) return;
         
         try {
-            const db = firebase.firestore();
-            await db.collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).delete();
+            await FirebaseService.deleteUserProfile(userId);
             
             UIManager.hapticFeedback('light');
             UIManager.showToast('Registration rejected');
@@ -210,10 +205,9 @@ export class UsersManager {
 
     static async changeUserRole(userId, newRole) {
         try {
-            const db = firebase.firestore();
-            await db.collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).update({
+            await FirebaseService.updateUser(userId, {
                 role: newRole,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                updatedAt: FirebaseService.serverTimestamp()
             });
             
             UIManager.hapticFeedback('medium');
@@ -273,9 +267,8 @@ export class UsersManager {
         if (!doubleConfirm) return;
         
         try {
-            const db = firebase.firestore();
             // Delete user document from Firestore
-            await db.collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId).delete();
+            await FirebaseService.deleteUserProfile(userId);
             
             UIManager.hapticFeedback('medium');
             UIManager.showToast(`User "${userName}" has been deleted`);
