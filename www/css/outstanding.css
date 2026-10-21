@@ -1,0 +1,219 @@
+/* Outstanding: dues aging panel and party rows (#46, #77) */
+
+.aging-panel {
+    margin-bottom: 12px;
+}
+
+.aging-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.aging-title {
+    font-weight: 600;
+    color: #374151;
+}
+
+.aging-total {
+    font-size: 18px;
+    color: #dc3545;
+}
+
+.aging-buckets {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.aging-bucket {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 6px;
+    border: 2px solid transparent;
+    border-left-width: 5px;
+    border-radius: 8px;
+    background: #f9fafb;
+    cursor: pointer;
+    text-align: left;
+    min-width: 0;
+    font: inherit;
+    color: #111827;
+}
+
+.aging-bucket.active {
+    border-color: currentColor;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
+}
+
+.aging-bucket-label,
+.aging-bucket-count {
+    font-size: 12px;
+    color: #4b5563;
+}
+
+.aging-bucket-amount {
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+/* Bucket colours: fresh → old */
+.aging-bucket.aging-b0 { border-left-color: #16a34a; }
+.aging-bucket.aging-b1 { border-left-color: #ca8a04; }
+.aging-bucket.aging-b2 { border-left-color: #ea580c; }
+.aging-bucket.aging-b3 { border-left-color: #dc2626; }
+.aging-bucket.aging-b0.active { border-color: #16a34a; background: #f0fdf4; }
+.aging-bucket.aging-b1.active { border-color: #ca8a04; background: #fefce8; }
+.aging-bucket.aging-b2.active { border-color: #ea580c; background: #fff7ed; }
+.aging-bucket.aging-b3.active { border-color: #dc2626; background: #fef2f2; }
+
+.aging-age {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.aging-age.aging-b0 { background: #dcfce7; color: #166534; }
+.aging-age.aging-b1 { background: #fef9c3; color: #854d0e; }
+.aging-age.aging-b2 { background: #ffedd5; color: #9a3412; }
+.aging-age.aging-b3 { background: #fee2e2; color: #991b1b; }
+
+.aging-filter-note {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.aging-subtitle {
+    font-weight: 600;
+    color: #374151;
+    margin: 12px 0 6px;
+}
+
+.aging-chase ol {
+    margin: 0;
+    padding-left: 22px;
+}
+
+.aging-chase li {
+    margin: 4px 0;
+}
+
+.aging-empty {
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.aging-parties {
+    margin-top: 12px;
+}
+
+.aging-parties > summary {
+    font-weight: 600;
+    color: #374151;
+    cursor: pointer;
+    padding: 4px 0;
+}
+
+.aging-sort {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0;
+    font-size: 13px;
+    color: #4b5563;
+}
+
+.aging-sort-btn {
+    padding: 4px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 14px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.aging-sort-btn.active {
+    background: #1f2937;
+    border-color: #1f2937;
+    color: #fff;
+}
+
+.aging-party {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+    align-items: center;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-left: 5px solid #16a34a;
+    border-radius: 8px;
+}
+
+.aging-party.aging-b1 { border-left-color: #ca8a04; }
+.aging-party.aging-b2 { border-left-color: #ea580c; }
+.aging-party.aging-b3 { border-left-color: #dc2626; }
+
+.aging-party-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.aging-party-meta {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+}
+
+.aging-party-total {
+    color: #dc3545;
+    white-space: nowrap;
+}
+
+.aging-party-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.aging-btn {
+    padding: 6px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.aging-btn.aging-remind {
+    background: #25d366;
+    border-color: #25d366;
+    color: #fff;
+}
+
+.aging-badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: #dc2626;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    vertical-align: middle;
+}
+
+.aging-bills-title {
+    margin-top: 14px;
+}

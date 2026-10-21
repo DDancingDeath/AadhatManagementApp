@@ -745,6 +745,77 @@ class BluetoothPrinterManager {
             }
         });
     }
+
+    /**
+     * Draw a read-only party statement (#77) on a 58 mm receipt canvas.
+     * @param {Object} statement From buildStatement() in utils/due-reminder.js
+     * @returns {HTMLCanvasElement} cropped to the used height
+     */
+    generateStatementCanvas(statement) {
+        const width = 384;
+        const side = 4;
+        const rows = statement.rows || [];
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = 340 + rows.length * 26;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, canvas.height);
+        ctx.fillStyle = '#000000';
+
+        const center = (text, y, size, bold = false) => {
+            ctx.font = `${bold ? 'bold ' : ''}${size}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.fillText(text, width / 2, y);
+            ctx.textAlign = 'left';
+            return y + size + 8;
+        };
+        const leftRight = (left, right, y, size, bold = false) => {
+            ctx.font = `${bold ? 'bold ' : ''}${size}px Arial`;
+            ctx.textAlign = 'left';
+            ctx.fillText(left, side, y);
+            ctx.textAlign = 'right';
+            ctx.fillText(right, width - side, y);
+            ctx.textAlign = 'left';
+            return y + size + 8;
+        };
+        const rule = (y) => {
+            ctx.fillRect(side, y, width - side * 2, 2);
+            return y + 10;
+        };
+        const rupees = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+
+        let y = 30;
+        if (statement.shopName) y = center(statement.shopName, y, 24, true);
+        y = center(statement.title, y, 22, true);
+        y = center(statement.partyName, y, 20, true);
+        if (statement.asOf) y = center(`As on / दिनांक: ${statement.asOf}`, y, 17);
+        y = rule(y + 2);
+        y = leftRight('Bill / बिल · Date / तारीख', 'Due / बकाया', y + 8, 16, true);
+        rows.forEach(r => {
+            const left = [r.billNumber ? `#${r.billNumber}` : '', r.date].filter(Boolean).join('  ');
+            y = leftRight(left.slice(0, 30), rupees(r.due), y, 17);
+        });
+        y = rule(y);
+        y = leftRight(statement.totalLabel, rupees(statement.total), y + 12, 20, true);
+        if (statement.footer) y = center(statement.footer, y + 6, 15);
+        y += 6;
+
+        const out = document.createElement('canvas');
+        out.width = width;
+        out.height = Math.min(y, canvas.height);
+        const outCtx = out.getContext('2d');
+        outCtx.fillStyle = '#ffffff';
+        outCtx.fillRect(0, 0, width, out.height);
+        outCtx.drawImage(canvas, 0, 0);
+        return out;
+    }
+
+    async writeStatement(statement) {
+        if (!this.device) throw new Error('Not connected to device');
+        if (!window.bluetoothSerial) throw new Error('Bluetooth Serial plugin not available');
+        return this._enqueue(() => this._send(canvasToEscPos(this.generateStatementCanvas(statement)), 'WRITE STATEMENT'));
+    }
 }
 
 const PrinterService = {
@@ -865,7 +936,52 @@ const PrinterService = {
         try {
             // Generate canvas using the same method as Bluetooth printing
             const canvas = await this.manager.generateBillCanvas(billData);
-            
+            const billType = billData.isPurchase ? 'purchase' : 'sale';
+            const filename = `${billType}_bill_${billData.billNumber || billData.id || Date.now()}${billData.isCopy ? '_copy' : ''}.png`;
+            return this.showImagePreview(canvas, filename, 'Bill');
+        } catch (error) {
+            console.error('Preview generation failed:', error);
+            UIManager.showToast('Failed to generate bill preview');
+            return false;
+        }
+    },
+
+    /**
+     * Read-only party statement (#77): print on the Bluetooth printer when
+     * connected, otherwise show it as an image to save/share.
+     * @param {Object} statement From buildStatement() in utils/due-reminder.js
+     * @returns {Promise<boolean>}
+     */
+    async printStatement(statement) {
+        if (this.manager.device && window.bluetoothSerial) {
+            try {
+                await this.manager.writeStatement(statement);
+                UIManager.showToast('✓ Printed successfully');
+                return true;
+            } catch (error) {
+                console.error('Bluetooth statement print failed:', error);
+                UIManager.showToast('Print failed: ' + (error.message || error));
+            }
+        }
+        try {
+            const canvas = this.manager.generateStatementCanvas(statement);
+            return this.showImagePreview(canvas, statement.filename || 'statement.png', 'Statement');
+        } catch (error) {
+            console.error('Statement preview failed:', error);
+            UIManager.showToast('Failed to generate statement');
+            return false;
+        }
+    },
+
+    /**
+     * Full-screen image preview with Download (share sheet on phones) / Close.
+     * @param {HTMLCanvasElement} canvas
+     * @param {string} filename
+     * @param {string} [shareTitle='Bill']
+     * @returns {boolean}
+     */
+    showImagePreview(canvas, filename, shareTitle = 'Bill') {
+        try {
             // Convert canvas to data URL
             const dataUrl = canvas.toDataURL('image/png');
             
@@ -929,9 +1045,6 @@ const PrinterService = {
                 paddedCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
                 paddedCtx.drawImage(canvas, padding, padding);
                 
-                const billType = billData.isPurchase ? 'purchase' : 'sale';
-                const filename = `${billType}_bill_${billData.billNumber || billData.id || Date.now()}${billData.isCopy ? '_copy' : ''}.png`;
-                
                 // Convert canvas to blob for better mobile support
                 paddedCanvas.toBlob(async (blob) => {
                     if (!blob) {
@@ -945,7 +1058,7 @@ const PrinterService = {
                             const file = new File([blob], filename, { type: 'image/png' });
                             await navigator.share({
                                 files: [file],
-                                title: 'Bill'
+                                title: shareTitle
                             });
                             return;
                         } catch (e) {
@@ -991,8 +1104,8 @@ const PrinterService = {
             
             return true;
         } catch (error) {
-            console.error('Preview generation failed:', error);
-            UIManager.showToast('Failed to generate bill preview');
+            console.error('Preview failed:', error);
+            UIManager.showToast('Failed to generate preview');
             return false;
         }
     },
