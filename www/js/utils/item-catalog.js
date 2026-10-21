@@ -100,3 +100,153 @@ export function sortItemsByUsage(items, frequency) {
         return (a.name || '').localeCompare(b.name || '');
     });
 }
+/** Spreadsheet column names (export writes these; import reads them). */
+export const ITEM_SHEET_COLUMNS = {
+    id: 'ID',
+    name: 'Item Name',
+    hindiName: 'Hindi Name',
+    contactPerson: 'Contact Person',
+    rates: 'Purchase Rates',
+    saleRates: 'Retail-Sale Rates',
+    wholesaleRates: 'Wholesale Rates'
+};
+
+/** Older sheets used these headers for retail rates. */
+const SALE_RATE_ALIASES = ['Retail-Sale Rates', 'Retail Sale Rates', 'Sale Rates'];
+
+const RATE_FIELDS = ['rates', 'saleRates', 'wholesaleRates'];
+const RATE_LABELS = { rates: 'purchase', saleRates: 'retail-sale', wholesaleRates: 'wholesale' };
+
+const cellText = (v) => (v == null ? '' : String(v).trim());
+const has = (row, key) => Object.prototype.hasOwnProperty.call(row, key);
+
+/**
+ * Parses a "41, 42" rate cell. Empty → []. Any non-positive / non-numeric
+ * part is an error (returned, not silently dropped).
+ * @param {*} value
+ * @returns {{rates: number[], error: string|null}}
+ */
+export function parseRateCell(value) {
+    const text = cellText(value);
+    if (!text) return { rates: [], error: null };
+    const rates = [];
+    for (const part of text.split(',').map(s => s.trim()).filter(Boolean)) {
+        const n = Number(part);
+        if (!Number.isFinite(n) || n <= 0) return { rates: [], error: `"${part}"` };
+        rates.push(n);
+    }
+    return { rates, error: null };
+}
+
+/** Item row for export (round-trips through planItemImport). */
+export function itemToSheetRow(item) {
+    const C = ITEM_SHEET_COLUMNS;
+    return {
+        [C.id]: item.id || '',
+        [C.name]: item.name || '',
+        [C.hindiName]: item.hindiName || '',
+        [C.contactPerson]: item.contactPerson || '',
+        [C.rates]: (item.rates || []).join(', '),
+        [C.saleRates]: (item.saleRates || []).join(', '),
+        [C.wholesaleRates]: (item.wholesaleRates || []).join(', ')
+    };
+}
+
+const sameRates = (a, b) => {
+    const x = (a || []).map(Number).filter(n => n > 0);
+    const y = (b || []).map(Number).filter(n => n > 0);
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+};
+
+/**
+ * Plans a MERGE import of spreadsheet rows into the catalogue. Nothing is
+ * ever deleted: items missing from the sheet are left untouched. Each row is
+ * matched by its ID column when present, otherwise by case/space-insensitive
+ * English or Hindi name. Only columns present in the sheet are updated.
+ *
+ * Rows must come from SheetJS `sheet_to_json(ws, { defval: '' })` so that a
+ * blank cell (clear the field) is distinguishable from a missing column
+ * (leave the field alone).
+ *
+ * @param {Array<Object>} rows
+ * @param {Array<Object>} items current catalogue
+ * @returns {{
+ *   updates: Array<{id: string, rowNumber: number, before: Object, fields: Object}>,
+ *   adds: Array<{rowNumber: number, fields: Object}>,
+ *   unchanged: Array<{id: string, rowNumber: number}>,
+ *   errors: Array<{rowNumber: number, reason: string}>,
+ *   skipped: number
+ * }}
+ */
+export function planItemImport(rows, items) {
+    const C = ITEM_SHEET_COLUMNS;
+    const plan = { updates: [], adds: [], unchanged: [], errors: [], skipped: 0 };
+    const catalogue = items || [];
+    const claimedIds = new Set();
+    const sheetNames = new Set();
+
+    (rows || []).forEach((row, i) => {
+        // Row 1 is the header, so data row i is spreadsheet row i + 2.
+        const rowNumber = i + 2;
+        if (!row || Object.values(row).every(v => cellText(v) === '')) {
+            plan.skipped++;
+            return;
+        }
+        const fail = (reason) => plan.errors.push({ rowNumber, reason });
+
+        const fields = {};
+        const name = cellText(row[C.name]);
+        if (!name) return fail('Item Name is empty');
+        fields.name = name;
+        if (has(row, C.hindiName)) fields.hindiName = cellText(row[C.hindiName]);
+        if (has(row, C.contactPerson)) fields.contactPerson = cellText(row[C.contactPerson]);
+
+        const rateSources = {
+            rates: has(row, C.rates) ? row[C.rates] : undefined,
+            saleRates: SALE_RATE_ALIASES.map(k => (has(row, k) ? row[k] : undefined)).find(v => v !== undefined && cellText(v) !== '')
+                ?? (SALE_RATE_ALIASES.some(k => has(row, k)) ? '' : undefined),
+            wholesaleRates: has(row, C.wholesaleRates) ? row[C.wholesaleRates] : undefined
+        };
+        for (const f of RATE_FIELDS) {
+            if (rateSources[f] === undefined) continue;
+            const { rates, error } = parseRateCell(rateSources[f]);
+            if (error) return fail(`Invalid ${RATE_LABELS[f]} rate ${error}`);
+            fields[f] = rates;
+        }
+
+        const rowId = cellText(row[C.id]);
+        let target = null;
+        if (rowId) {
+            target = findItemById(catalogue, rowId);
+            if (!target) return fail(`ID "${rowId}" not found in the app`);
+        } else {
+            const byName = findDuplicateItem(catalogue, { name });
+            target = byName ? byName.item : null;
+        }
+
+        // The (new) names must not belong to a different item.
+        const clash = findDuplicateItem(catalogue, { name, hindiName: fields.hindiName }, target ? target.id : null);
+        if (clash) return fail(`Name "${clash.name}" belongs to another item`);
+
+        if (target && claimedIds.has(target.id)) return fail(`Item "${target.name}" appears more than once in the sheet`);
+        const keys = [name, fields.hindiName].map(normalizeItemName).filter(Boolean);
+        if (keys.some(k => sheetNames.has(k))) return fail(`"${name}" appears more than once in the sheet`);
+        keys.forEach(k => sheetNames.add(k));
+
+        if (target) {
+            claimedIds.add(target.id);
+            const changed = Object.keys(fields).some(f => (RATE_FIELDS.includes(f)
+                ? !sameRates(target[f], fields[f])
+                : cellText(target[f]) !== fields[f]));
+            if (changed) plan.updates.push({ id: target.id, rowNumber, before: target, fields });
+            else plan.unchanged.push({ id: target.id, rowNumber });
+            return;
+        }
+
+        plan.adds.push({
+            rowNumber,
+            fields: { hindiName: '', contactPerson: '', rates: [], saleRates: [], wholesaleRates: [], ...fields }
+        });
+    });
+    return plan;
+}

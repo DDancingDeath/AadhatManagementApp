@@ -11,7 +11,8 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { ensureXLSX } from '../utils/lazy-scripts.js';
-import { findItemById, findDuplicateItem, duplicateItemMessage, itemUsageFrequency, sortItemsByUsage } from '../utils/item-catalog.js';
+import { findItemById, findDuplicateItem, duplicateItemMessage, itemUsageFrequency, sortItemsByUsage, itemToSheetRow, planItemImport } from '../utils/item-catalog.js';
+import { todayLocalISO } from '../utils/dates.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -336,25 +337,23 @@ const ItemsManager = {
         this.renderItemsTable(this.currentSearchQuery());
     },
 
+    /**
+     * Downloads the catalogue as Excel. The ID column lets a later import
+     * update the same items instead of creating new ones.
+     * @param {string} [fileName]
+     */
+    async downloadItemsWorkbook(fileName) {
+        await ensureXLSX();
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(AppState.items.map(itemToSheetRow));
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Items');
+        XLSX.writeFile(workbook, fileName || `items_${todayLocalISO()}.xlsx`);
+    },
+
     // Export items to Excel
     async exportToExcel() {
         try {
-            await ensureXLSX();
-            const workbook = XLSX.utils.book_new();
-            
-            const data = AppState.items.map(item => ({
-                'Item Name': item.name,
-                'Hindi Name': item.hindiName || '',
-                'Contact Person': item.contactPerson || '',
-                'Purchase Rates': (item.rates || []).join(', '),
-                'Retail-Sale Rates': (item.saleRates || []).join(', '),
-                'Wholesale Rates': (item.wholesaleRates || []).join(', ')
-            }));
-            
-            const worksheet = XLSX.utils.json_to_sheet(data);
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Items');
-            
-            XLSX.writeFile(workbook, `items_${new Date().toISOString().split('T')[0]}.xlsx`);
+            await this.downloadItemsWorkbook();
             UIManager.showToast('Items exported successfully!');
         } catch (error) {
             console.error('Export error:', error);
@@ -362,100 +361,89 @@ const ItemsManager = {
         }
     },
 
-    // Import items from Excel
+    /**
+     * Preview text for an import plan (escaped HTML).
+     * @param {ReturnType<typeof planItemImport>} plan
+     * @returns {string}
+     */
+    importPreviewHtml(plan) {
+        const e = (v) => Helpers.escapeHtml(v);
+        const errorList = plan.errors.slice(0, 20).map(er => `<li>Row ${e(er.rowNumber)}: ${e(er.reason)}</li>`).join('');
+        const more = plan.errors.length > 20 ? `<li>… ${e(plan.errors.length - 20)} more</li>` : '';
+        return `
+            <div style="text-align:left">
+                <div>✏️ Update / बदलेंगे: <strong>${e(plan.updates.length)}</strong></div>
+                <div>➕ New / नए: <strong>${e(plan.adds.length)}</strong></div>
+                <div>✔️ Unchanged / कोई बदलाव नहीं: <strong>${e(plan.unchanged.length)}</strong></div>
+                <div>⚠️ Rows with errors (not imported) / गलत पंक्तियाँ: <strong>${e(plan.errors.length)}</strong></div>
+                ${plan.skipped ? `<div>Empty rows skipped: ${e(plan.skipped)}</div>` : ''}
+                ${errorList ? `<ul style="margin:8px 0 0 16px; color:#b91c1c; font-size:13px">${errorList}${more}</ul>` : ''}
+                <p style="margin-top:10px; font-size:13px; color:#555">Items not in the sheet are kept. Nothing is deleted. A backup Excel of the current items downloads first.<br>शीट में न होने वाले आइटम नहीं हटेंगे।</p>
+            </div>`;
+    },
+
+    /**
+     * Imports items from Excel as a MERGE: rows update the matching item (by
+     * ID column, else by name) in place, unknown names are added, and nothing
+     * is deleted. Shows a preview and asks for confirmation before writing.
+     */
     async importFromExcel(event) {
-        const file = event.target.files[0];
+        const input = event.target;
+        const file = input.files[0];
         if (!file) return;
-        
-        const confirmed = await UIManager.showModal(
-            'This will delete ALL existing items and replace them with items from the Excel file. Continue?',
-            'Confirm Import',
-            true
-        );
-        
-        if (!confirmed) {
-            event.target.value = '';
-            return;
-        }
-        
-        UIManager.showLoading();
         
         try {
             await ensureXLSX();
             const data = await file.arrayBuffer();
             const workbook = XLSX.read(data);
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            // defval keeps blank cells so "clear this field" differs from "column missing"
+            const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+            const plan = planItemImport(rows, AppState.items);
             
-            // Delete all existing items
-            for (const item of AppState.items) {
-                await FirebaseService.deleteItem(item.id);
+            if (plan.updates.length === 0 && plan.adds.length === 0) {
+                await UIManager.showModalWithHtml(this.importPreviewHtml(plan), 'Nothing to import', false);
+                return;
             }
-            AppState.items = [];
             
-            // Import new items
-            let imported = 0;
+            const confirmed = await UIManager.showModalWithHtml(this.importPreviewHtml(plan), 'Confirm Import', true);
+            if (!confirmed) return;
             
-            for (const row of jsonData) {
-                const itemName = row['Item Name']?.trim();
-                if (!itemName) continue;
-                
-                // Helper function to parse rate strings - handles both "41,42" and "41, 42" formats
-                const parseRates = (value) => {
-                    if (!value) return [];
-                    // Convert to string first (handles numbers like 4142 that should be "41,42")
-                    const str = value.toString().trim();
-                    // Split by comma and parse each rate
-                    return str.split(',').map(r => {
-                        const parsed = parseFloat(r.trim());
-                        return isNaN(parsed) ? 0 : parsed;
-                    }).filter(r => r > 0);
-                };
-                
-                // Parse purchase rates
-                const purchaseRates = parseRates(row['Purchase Rates']);
-                
-                // Parse sale rates - prioritize Retail-Sale Rates, fallback to Sale Rates
-                let saleRates = [];
-                if (row['Retail-Sale Rates']) {
-                    saleRates = parseRates(row['Retail-Sale Rates']);
-                } else if (row['Retail Sale Rates']) {
-                    saleRates = parseRates(row['Retail Sale Rates']);
-                } else if (row['Sale Rates']) {
-                    // Backward compatibility: map old "Sale Rates" to saleRates (retail)
-                    saleRates = parseRates(row['Sale Rates']);
-                }
-                
-                // Parse wholesale rates (optional column)
-                const wholesaleRates = parseRates(row['Wholesale Rates']);
-                
-                const itemData = {
-                    name: itemName,
-                    hindiName: row['Hindi Name'] || '',
-                    contactPerson: row['Contact Person'] || '',
-                    rates: purchaseRates,
-                    saleRates: saleRates,
-                    wholesaleRates: wholesaleRates
-                };
-                
-                const savedItem = await FirebaseService.saveItem(itemData);
-                AppState.items.push(savedItem);
-                imported++;
+            UIManager.showLoading();
+            try {
+                await this.downloadItemsWorkbook(`items_backup_before_import_${todayLocalISO()}.xlsx`);
+            } catch (backupError) {
+                console.warn('Pre-import backup download failed:', backupError);
             }
+            
+            const added = await FirebaseService.importItems(plan.updates, plan.adds);
+            plan.updates.forEach(u => {
+                const idx = AppState.items.findIndex(i => i.id === u.id);
+                if (idx !== -1) AppState.items[idx] = { ...AppState.items[idx], ...u.fields };
+            });
+            added.forEach(item => {
+                if (!AppState.items.some(i => i.id === item.id)) AppState.items.push(item);
+            });
+            
+            AuditService.log(AuditService.ACTIONS.EDIT_ITEM, {
+                source: 'excel-import',
+                updated: plan.updates.length,
+                added: plan.adds.length,
+                errors: plan.errors.length
+            });
             
             this.renderItems();
-            this.renderItemsTable();
+            this.refreshTable();
             UIManager.hideLoading();
-            UIManager.showToast(`Import complete! ${imported} items imported`);
-            
-            event.target.value = '';
+            UIManager.showToast(`Import complete: ${plan.updates.length} updated, ${plan.adds.length} new${plan.errors.length ? `, ${plan.errors.length} rows skipped` : ''}`);
         } catch (error) {
             console.error('Import error:', error);
             UIManager.hideLoading();
             UIManager.showToast('Failed to import items: ' + error.message);
+        } finally {
+            input.value = '';
         }
     },
-
     /**
      * Item usage (bill lines per item id) from the loaded purchase, wholesale
      * and retail histories.

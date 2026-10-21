@@ -1397,6 +1397,37 @@ const FirebaseService = {
     },
 
     /**
+     * Applies an item import plan with batched writes (merge updates + new
+     * docs). Never deletes. One batch for typical catalogues, so a failure
+     * leaves the catalogue unchanged; very large imports are chunked.
+     * @async
+     * @param {Array<{id: string, fields: Object}>} updates
+     * @param {Array<{fields: Object}>} adds
+     * @returns {Promise<Array<Object>>} the added items with their new ids
+     */
+    async importItems(updates, adds) {
+        const db = getDb();
+        const ref = db.collection(col('items'));
+        const ops = [
+            ...(updates || []).map(u => ({ doc: ref.doc(u.id), data: u.fields, merge: true })),
+            ...(adds || []).map(a => ({ doc: ref.doc(), data: a.fields, merge: false }))
+        ];
+        const added = [];
+        for (let i = 0; i < ops.length; i += 450) {
+            const batch = db.batch();
+            ops.slice(i, i + 450).forEach(op => {
+                if (op.merge) batch.set(op.doc, op.data, { merge: true });
+                else {
+                    batch.set(op.doc, op.data);
+                    added.push({ ...op.data, id: op.doc.id });
+                }
+            });
+            await batch.commit();
+        }
+        return added;
+    },
+
+    /**
      * Loads all purchases from Firestore, ordered by date descending.
      * @async
      * @returns {Promise<Array<Object>>} Array of purchase objects
