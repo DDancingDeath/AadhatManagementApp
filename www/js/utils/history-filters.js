@@ -33,6 +33,50 @@ export const DEFAULT_HISTORY_FILTER = Object.freeze({ type: 'all', preset: 'all'
 /** sessionStorage key for the last History filter. */
 export const HISTORY_FILTER_KEY = 'aadhat.historyFilter';
 
+/** Earliest date a custom range may start (no business data before this). */
+export const MIN_HISTORY_DATE = '2020-01-01';
+
+/** Loading more than this many months older than the window needs a confirm. */
+export const WIDE_LOAD_MONTHS = 3;
+
+/**
+ * Validate custom From/To inputs ('YYYY-MM-DD', either may be empty).
+ * Rejects partially typed years (0002, 0202…), dates before 2020 and dates
+ * after tomorrow, so a half-typed date never starts a big history read.
+ * @param {string} from
+ * @param {string} to
+ * @param {Date} [now=new Date()]
+ * @returns {{ok: true, from: string, to: string}|{ok: false, error: string}}
+ */
+export function validateCustomRange(from, to, now = new Date()) {
+    const values = [String(from || '').trim(), String(to || '').trim()];
+    if (!values[0] && !values[1]) return { ok: false, error: 'Pick a From or To date / शुरू या आख़िरी तारीख चुनें' };
+    const min = parseLocalDate(MIN_HISTORY_DATE);
+    const max = dayStart(now, 1);
+    for (const v of values) {
+        if (!v) continue;
+        const d = parseLocalDate(v);
+        if (!d) return { ok: false, error: 'Enter a valid date / सही तारीख डालें' };
+        if (d < min) return { ok: false, error: 'Dates before 2020 are not allowed / 2020 से पहले की तारीख नहीं चलेगी' };
+        if (d > max) return { ok: false, error: 'Date is in the future / तारीख आगे की है' };
+    }
+    return { ok: true, from: values[0], to: values[1] };
+}
+
+/**
+ * Calendar months of history older than the loaded window that a range
+ * starting at `fromMs` would need (0 = nothing to load).
+ * @param {number|null} fromMs
+ * @param {number} loadedFrom - window start ms; 0 = everything loaded
+ * @returns {number}
+ */
+export function olderMonthsToLoad(fromMs, loadedFrom) {
+    if (!loadedFrom || fromMs === null || fromMs === undefined || fromMs >= loadedFrom) return 0;
+    const a = new Date(fromMs);
+    const b = new Date(loadedFrom);
+    return Math.max(1, (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()));
+}
+
 /**
  * Bill date as a Date: numeric/Firestore `timestamp` first (what the history
  * window queries on), then `date` (ISO or legacy DD/MM/YYYY), then `createdAt`.
@@ -166,7 +210,7 @@ export function filterHistoryBills(bills, { type = 'all', range = null, search =
 }
 
 /**
- * Validate a saved/partial filter into a complete one.
+ * Validate a restored filter into a complete one.
  * @param {*} value - object or JSON string (e.g. from sessionStorage)
  * @returns {{type: string, preset: string, from: string, to: string}}
  */
@@ -176,7 +220,10 @@ export function normalizeHistoryFilter(value) {
         try { obj = JSON.parse(value); } catch { obj = null; }
     }
     if (!obj || typeof obj !== 'object') return { ...DEFAULT_HISTORY_FILTER };
-    const isoOrEmpty = (s) => (typeof s === 'string' && parseLocalDate(s) ? s : '');
+    const isoOrEmpty = (s) => {
+        const d = typeof s === 'string' ? parseLocalDate(s) : null;
+        return d && d >= parseLocalDate(MIN_HISTORY_DATE) ? s : '';
+    };
     return {
         type: HISTORY_TYPES.includes(obj.type) ? obj.type : (obj.type === 'sale' ? 'all' : DEFAULT_HISTORY_FILTER.type),
         preset: HISTORY_PRESETS.includes(obj.preset) ? obj.preset : DEFAULT_HISTORY_FILTER.preset,

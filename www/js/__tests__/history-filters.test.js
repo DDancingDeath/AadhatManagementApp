@@ -6,7 +6,8 @@
 
 import {
     billDateOf, billTimeMs, matchesHistoryType, resolveHistoryRange, isBillInRange,
-    matchesHistorySearch, filterHistoryBills, normalizeHistoryFilter, formatHistoryRange
+    matchesHistorySearch, filterHistoryBills, normalizeHistoryFilter, formatHistoryRange,
+    validateCustomRange, olderMonthsToLoad
 } from '../utils/history-filters.js';
 
 const local = (y, m, d, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -119,6 +120,8 @@ describe('normalizeHistoryFilter / formatHistoryRange', () => {
             .toEqual({ type: 'retail', preset: 'custom', from: '2026-10-01', to: '' });
         expect(normalizeHistoryFilter('not json')).toEqual({ type: 'all', preset: 'all', from: '', to: '' });
         expect(normalizeHistoryFilter({ type: 'x', preset: 'y' })).toEqual({ type: 'all', preset: 'all', from: '', to: '' });
+        expect(normalizeHistoryFilter({ preset: 'custom', from: '0202-08-03', to: '1999-12-31' }))
+            .toEqual({ type: 'all', preset: 'custom', from: '', to: '' });
     });
 
     test('label uses DD/MM/YYYY and the inclusive end day', () => {
@@ -126,5 +129,31 @@ describe('normalizeHistoryFilter / formatHistoryRange', () => {
         expect(formatHistoryRange(resolveHistoryRange('today', now))).toBe('22/10/2026');
         expect(formatHistoryRange(resolveHistoryRange('lastMonth', now))).toBe('01/09/2026 – 30/09/2026');
         expect(formatHistoryRange({ from: null, to: null })).toBe('');
+    });
+});
+
+describe('validateCustomRange / olderMonthsToLoad (quota guard)', () => {
+    const now = new Date(2026, 9, 22, 1, 0);
+    test('a year being typed (0002 → 0020 → 0202 → 2026) is rejected until complete', () => {
+        for (const partial of ['0002-08-03', '0020-08-03', '0202-08-03']) {
+            expect(validateCustomRange(partial, '', now).ok).toBe(false);
+        }
+        expect(validateCustomRange('2026-08-03', '', now)).toEqual({ ok: true, from: '2026-08-03', to: '' });
+    });
+
+    test('before 2020, after tomorrow, invalid and empty are rejected with a bilingual hint', () => {
+        expect(validateCustomRange('2019-12-31', '', now).error).toMatch(/2020.*\/ 2020/);
+        expect(validateCustomRange('2020-01-01', '2026-10-23', now).ok).toBe(true);
+        expect(validateCustomRange('', '2026-10-24', now).error).toContain('future /');
+        expect(validateCustomRange('2026-02-31', '', now).ok).toBe(false);
+        expect(validateCustomRange('', '', now).ok).toBe(false);
+    });
+
+    test('months older than the loaded window', () => {
+        const window = local(2026, 9, 1);
+        expect(olderMonthsToLoad(local(2026, 9, 15), window)).toBe(0);
+        expect(olderMonthsToLoad(local(2026, 8, 20), window)).toBe(1);
+        expect(olderMonthsToLoad(local(2026, 1, 1), window)).toBe(8);
+        expect(olderMonthsToLoad(local(2020, 1, 1), 0)).toBe(0);
     });
 });

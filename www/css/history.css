@@ -227,6 +227,7 @@
 
 .history-custom-range {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   flex: 1 1 100%;
@@ -252,6 +253,29 @@
   color: var(--text-secondary, #6b7280);
 }
 
+.history-apply-range {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #6366f1;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.history-range-hint {
+  flex: 1 1 100%;
+  font-size: 13px;
+  color: #b42318;
+}
+
+.history-range-hint[hidden] {
+  display: none;
+}
+
 /* ==================== REPRINT / SHARE (#136) ==================== */
 .bill-action-btn.btn-reprint {
   background: #0f766e;
@@ -272,6 +296,10 @@
 }
 
 @media (max-width: 480px) {
+  .history-apply-range {
+    flex: 1 1 100%;
+  }
+
   .bill-details-footer .bill-action-btn {
     padding: 10px 4px;
     font-size: 13px;

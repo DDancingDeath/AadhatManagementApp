@@ -14,11 +14,11 @@ import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { PrinterService } from '../services/printer.js';
 import {
     ensureHistoryFrom, isFullHistoryLoaded, historyLoadedFrom, formatWindowDate, findBillIndex,
-    renderStaleHistoryHint, rangeStatus, retryRange, applyRangeState
+    renderStaleHistoryHint, rangeStatus, retryRange, applyRangeState, needsHistoryFrom, loadOlderHistory, monthStart
 } from '../utils/history-window.js';
 import {
     filterHistoryBills, resolveHistoryRange, normalizeHistoryFilter, formatHistoryRange, billDateOf,
-    HISTORY_FILTER_KEY, HISTORY_TYPES
+    validateCustomRange, olderMonthsToLoad, HISTORY_FILTER_KEY, HISTORY_TYPES, WIDE_LOAD_MONTHS
 } from '../utils/history-filters.js';
 import { buildReprintPayload, buildBillShareText } from '../utils/bill-share.js';
 import { todayLocalISO } from '../utils/dates.js';
@@ -65,6 +65,19 @@ export class HistoryManager {
 
     /** Active date range of the last render ({from, to} ms, null = open). */
     static activeRange = { from: null, to: null };
+
+    /**
+     * Range part not covered by the loaded window and not loaded automatically:
+     * 'confirm' = a wide From needing the user's OK, 'older' = a To-only range.
+     * @type {?{kind: 'confirm'|'older', from?: number}}
+     */
+    static rangeGap = null;
+
+    /** Earliest range start the user agreed to load in this page session (ms). */
+    static confirmedFrom = null;
+
+    /** True while "Load older" from the range footer is running. */
+    static loadingGap = false;
 
     /** @returns {{type: string, preset: string, from: string, to: string}} */
     static getFilter() {
@@ -223,8 +236,21 @@ export class HistoryManager {
         const range = resolveHistoryRange(filter.preset, new Date(), filter);
         this.activeRange = range;
         // Ranges older than the loaded window load on demand (with a notice);
+        // wide ones wait for the user's OK, To-only ones load on "Load older".
         // "All dates" keeps the month-by-month infinite scroll instead.
-        const status = range.from === null ? 'ready' : rangeStatus('history', range.from, () => this.refreshHistory());
+        this.rangeGap = null;
+        let status = 'ready';
+        if (range.from !== null) {
+            const confirmed = this.confirmedFrom !== null && this.confirmedFrom <= range.from;
+            if (needsHistoryFrom(range.from) && !confirmed &&
+                olderMonthsToLoad(range.from, historyLoadedFrom()) > WIDE_LOAD_MONTHS) {
+                this.rangeGap = { kind: 'confirm', from: range.from };
+            } else {
+                status = rangeStatus('history', range.from, () => this.refreshHistory());
+            }
+        } else if (range.to !== null && !isFullHistoryLoaded()) {
+            this.rangeGap = { kind: 'older' };
+        }
         applyRangeState(container, status, {
             loadingText: 'Loading older bills… / पुराने बिल लोड हो रहे हैं…',
             errorText: `Couldn't load older bills. Showing bills since ${formatWindowDate(historyLoadedFrom())}.`,
@@ -384,7 +410,12 @@ export class HistoryManager {
     static emptyMessage(type, searchTerm) {
         if (searchTerm && searchTerm.trim()) return `No results found for "${searchTerm}"`;
         const noun = (type === 'all' || !type) ? 'bills' : `${type} bills`;
-        if (this.activeRange.from !== null || this.activeRange.to !== null) {
+        const r = this.activeRange;
+        if (this.rangeGap && (this.rangeGap.kind === 'confirm' || (r.to !== null && r.to <= historyLoadedFrom()))) {
+            const date = formatWindowDate(historyLoadedFrom());
+            return `Bills before ${date} aren't loaded — tap "Load older" / ${date} से पहले के बिल लोड नहीं हैं`;
+        }
+        if (r.from !== null || r.to !== null) {
             return `No ${noun} in this period / इस अवधि में कोई बिल नहीं`;
         }
         if (!isFullHistoryLoaded()) {
@@ -401,13 +432,15 @@ export class HistoryManager {
         const list = document.getElementById('historyList');
         if (!list) return;
 
+        const ranged = this.activeRange.from !== null || this.activeRange.to !== null;
         attachOlderHistoryScroll(list, {
             noun: 'bills',
             // Older months load only once every loaded bill is on screen.
-            enabled: () => !this.activeSearch && !this.hasHiddenBills() && this.activeRange.from === null,
+            enabled: () => !this.activeSearch && !this.hasHiddenBills() && !ranged,
             onLoaded: () => this.refreshHistory()
         });
         renderStaleHistoryHint(list, { id: 'historyStaleHint', onRefreshed: () => this.refreshHistory() });
+        this.renderRangeGap(list);
 
         let footer = document.getElementById('historySearchFooter');
         if (!footer) {
@@ -416,7 +449,7 @@ export class HistoryManager {
             footer.className = 'history-search-footer';
             list.parentNode?.appendChild(footer);
         }
-        if (!this.activeSearch || this.activeRange.from !== null || (isFullHistoryLoaded() && !this.searchingOlder)) {
+        if (!this.activeSearch || ranged || (isFullHistoryLoaded() && !this.searchingOlder)) {
             footer.style.display = 'none';
             footer.textContent = '';
             return;
@@ -869,13 +902,123 @@ export class HistoryManager {
             patch.from = patch.to = todayLocalISO();
         }
         this.setFilter(patch);
+        this.showRangeHint('');
         this.refreshHistory();
     }
 
-    /** Custom range date inputs ('YYYY-MM-DD'; either may be empty). */
-    static setCustomRange(from, to) {
-        this.setFilter({ preset: 'custom', from: from || '', to: to || '' });
+    /**
+     * Apply the custom From/To dates (Apply button). Invalid or half-typed
+     * dates are rejected with a hint; loading many months older than the
+     * window asks first. Nothing is saved or loaded unless it passes.
+     * @param {string} [from] - defaults to the From input
+     * @param {string} [to] - defaults to the To input
+     * @returns {Promise<boolean>} true when applied
+     */
+    static async applyCustomRange(from, to) {
+        if (from === undefined) from = document.getElementById('historyFromDate')?.value || '';
+        if (to === undefined) to = document.getElementById('historyToDate')?.value || '';
+        const check = validateCustomRange(from, to);
+        this.showRangeHint(check.ok ? '' : check.error);
+        if (!check.ok) return false;
+        const range = resolveHistoryRange('custom', new Date(), check);
+        if (range.from !== null) {
+            if (!(await this.confirmOlderLoad(range.from))) return false;
+            if (this.confirmedFrom === null || range.from < this.confirmedFrom) this.confirmedFrom = range.from;
+        }
+        this.setFilter({ preset: 'custom', from: check.from, to: check.to });
         this.refreshHistory();
+        return true;
+    }
+
+    /** @deprecated kept for callers of the old API; same as applyCustomRange */
+    static setCustomRange(from, to) {
+        return this.applyCustomRange(from || '', to || '');
+    }
+
+    /** Bilingual validation hint under the custom range inputs. */
+    static showRangeHint(text) {
+        const hint = document.getElementById('historyRangeHint');
+        if (!hint) return;
+        hint.textContent = text || '';
+        hint.hidden = !text;
+    }
+
+    /**
+     * Ask before loading many months older than the loaded window (data use).
+     * @param {number} fromMs
+     * @returns {Promise<boolean>} true = go ahead
+     */
+    static async confirmOlderLoad(fromMs) {
+        const months = olderMonthsToLoad(fromMs, historyLoadedFrom());
+        if (months <= WIDE_LOAD_MONTHS) return true;
+        return !!(await UIManager.showModal(
+            `This will load ${months} months of older bills and use more data. Continue?\n` +
+            `इससे ${months} महीने के पुराने बिल लोड होंगे और ज़्यादा डेटा लगेगा। जारी रखें?`,
+            'Load older bills / पुराने बिल',
+            true
+        ));
+    }
+
+    /** "Bills before <date> aren't loaded — Load older" row for an unloaded range part. */
+    static renderRangeGap(list) {
+        let row = document.getElementById('historyRangeGap');
+        if (!this.rangeGap) {
+            row?.remove();
+            return;
+        }
+        if (!row) {
+            row = document.createElement('div');
+            row.id = 'historyRangeGap';
+            row.className = 'history-search-footer history-range-gap';
+        }
+        if (row.previousElementSibling !== list) list.after(row);
+        const date = formatWindowDate(historyLoadedFrom());
+        row.textContent = '';
+        const text = document.createElement('span');
+        text.textContent = `Bills before ${date} aren't loaded. / ${date} से पहले के बिल लोड नहीं हैं।`;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'history-search-older-btn';
+        btn.disabled = this.loadingGap;
+        btn.textContent = this.loadingGap ? 'Loading… / लोड हो रहा है…' : 'Load older / पुराने लोड करें';
+        btn.addEventListener('click', () => this.loadRangeGap());
+        row.append(text, ' ', btn);
+    }
+
+    /**
+     * "Load older": a wide From range loads after the confirm; a To-only range
+     * loads back to the month of its To date (confirming if that is wide), or
+     * one more month when the window already reaches it.
+     */
+    static async loadRangeGap() {
+        const gap = this.rangeGap;
+        if (!gap || this.loadingGap) return;
+        if (gap.kind === 'confirm') {
+            if (!(await this.confirmOlderLoad(gap.from))) return;
+            this.confirmedFrom = gap.from;
+            this.refreshHistory();
+            return;
+        }
+        this.loadingGap = true;
+        this.refreshHistory();
+        try {
+            const to = this.activeRange.to;
+            const target = to !== null ? monthStart(0, new Date(to - 1)).getTime() : null;
+            if (target !== null && needsHistoryFrom(target)) {
+                if (await this.confirmOlderLoad(target)) {
+                    const covered = await ensureHistoryFrom(target);
+                    if (!covered) UIManager.showToast("Couldn't load older bills");
+                }
+            } else {
+                await loadOlderHistory(1);
+            }
+        } catch (error) {
+            console.error('Loading older bills failed:', error);
+            UIManager.showToast("Couldn't load older bills");
+        } finally {
+            this.loadingGap = false;
+            this.refreshHistory();
+        }
     }
 
     /** Reflect the remembered filter in the History controls. */
@@ -892,9 +1035,17 @@ export class HistoryManager {
         if (custom) custom.hidden = filter.preset !== 'custom';
         const from = document.getElementById('historyFromDate');
         const to = document.getElementById('historyToDate');
-        if (from && from.value !== filter.from) from.value = filter.from;
-        if (to && to.value !== filter.to) to.value = filter.to;
+        // Only when the saved range changed: a live re-render must not wipe dates being typed.
+        const key = `${filter.from}|${filter.to}`;
+        if (from && to && (this.syncedRangeKey !== key || from.dataset.synced !== '1')) {
+            from.value = filter.from;
+            to.value = filter.to;
+            from.dataset.synced = '1';
+            this.syncedRangeKey = key;
+        }
     }
+
+    static syncedRangeKey = null;
 
     /** "01/10/2026 – 22/10/2026 · 12 bills" under the filters. */
     static updateRangeLabel(range, count) {

@@ -891,6 +891,7 @@ window.app = {
         toggleView: () => HistoryManager.toggleView(),
         setDatePreset: (preset) => HistoryManager.setDatePreset(preset),
         setCustomRange: (from, to) => HistoryManager.setCustomRange(from, to),
+        applyCustomRange: (from, to) => HistoryManager.applyCustomRange(from, to),
         reprintBill: () => HistoryManager.reprintBill(),
         shareBill: () => HistoryManager.shareBill(),
         editBillDetails: (billIndex) => {
