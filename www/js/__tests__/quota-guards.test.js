@@ -13,7 +13,7 @@ import {
     QUOTA_BANNER_TEXT
 } from '../utils/quota-guard.js';
 import { installFirestoreMeter, getQuotaStatus, sourceLabel } from '../firebase/firestore-meter.js';
-import { decideStockRebuild } from '../utils/rebuild-lease.js';
+import { decideStockRebuild, leaseOwnerUid, LEASE_MAX_WAIT_MS } from '../utils/rebuild-lease.js';
 
 const fs = require('fs');
 const path = require('path');
@@ -209,8 +209,8 @@ describe('stock checkpoint rebuild lease (decideStockRebuild)', () => {
     test('a device already rebuilding joins its own rebuild', () => {
         expect(decideStockRebuild({ canManage: true, leaseUntil: now + 5000, now, inFlight: true })).toBe('join');
     });
-    test('while another device holds the lease everyone waits (no full-history read)', () => {
-        expect(decideStockRebuild({ canManage: true, leaseUntil: now + 1, now })).toBe('wait');
+    test('while another user holds the lease everyone waits (no full-history read)', () => {
+        expect(decideStockRebuild({ canManage: true, leaseUntil: now + 1, leaseBy: 'other:1:x', uid: 'me', now })).toBe('wait');
         expect(decideStockRebuild({ canManage: false, leaseUntil: now + 60000, now })).toBe('wait');
     });
     test('an owner/manager takes the lease when none is active', () => {
@@ -220,5 +220,22 @@ describe('stock checkpoint rebuild lease (decideStockRebuild)', () => {
     test('members, and owners after a failed attempt, replay full history', () => {
         expect(decideStockRebuild({ canManage: false, now })).toBe('full-read');
         expect(decideStockRebuild({ canManage: true, now, attempted: true })).toBe('full-read');
+    });
+    test("a lease left by the same user (reload mid-rebuild, new token) never blocks them", () => {
+        expect(leaseOwnerUid('me:123:abc')).toBe('me');
+        expect(decideStockRebuild({ canManage: true, leaseUntil: now + 600000, leaseBy: 'me:123:abc', uid: 'me', now })).toBe('rebuild');
+        expect(decideStockRebuild({ canManage: false, leaseUntil: now + 600000, leaseBy: 'me:123:abc', uid: 'me', now })).toBe('full-read');
+    });
+    test('a dead lease by another user stops blocking after the wait cap', () => {
+        const lease = { canManage: true, leaseUntil: now + 9 * 60000, leaseBy: 'other:1:x', uid: 'me', now };
+        expect(decideStockRebuild({ ...lease, waitedMs: LEASE_MAX_WAIT_MS - 1 })).toBe('wait');
+        expect(decideStockRebuild({ ...lease, waitedMs: LEASE_MAX_WAIT_MS })).toBe('full-read');
+        expect(decideStockRebuild({ ...lease, canManage: false, waitedMs: LEASE_MAX_WAIT_MS })).toBe('full-read');
+    });
+    test('a far-future lease (holder clock ahead) is still capped by local waiting time', () => {
+        const skewed = { canManage: false, leaseUntil: now + 365 * 86400000, leaseBy: 'other:1:x', uid: 'me', now };
+        expect(decideStockRebuild({ ...skewed, waitedMs: 0 })).toBe('wait');
+        expect(decideStockRebuild({ ...skewed, waitedMs: LEASE_MAX_WAIT_MS + 1 })).toBe('full-read');
+        expect(LEASE_MAX_WAIT_MS).toBeLessThanOrEqual(60000);
     });
 });

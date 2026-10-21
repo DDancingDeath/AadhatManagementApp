@@ -26,7 +26,7 @@ import {
     stockFingerprint
 } from '../utils/stock-replay.js';
 import { defaultWindowStart, monthsBefore, normalizeFrom, dateDescComparator } from '../utils/history-range.js';
-import { decideStockRebuild } from '../utils/rebuild-lease.js';
+import { decideStockRebuild, leaseOwnerUid, LEASE_MAX_WAIT_MS } from '../utils/rebuild-lease.js';
 import { isQuotaExhaustedError } from '../utils/quota-guard.js';
 import { installFirestoreMeter, getQuotaStatus } from './firestore-meter.js';
 
@@ -357,6 +357,8 @@ let rebuildRequestedAgain = false;
 const pendingStocks = new WeakSet();
 /** Re-checks the stock once the other device's lease ends. */
 let leaseWaitTimer = null;
+/** When this session first started waiting for another device's rebuild (0 = never). */
+let leaseWaitStartedAt = 0;
 /** Bumped on every change to a stock collection in memory (roll-forward conflict detection). */
 let stockChangeGen = 0;
 /** stockCheckpoints/legacyScan: per collection {complete, foundAt} of the timestamp backfill. */
@@ -687,14 +689,19 @@ async function deleteBill(collKey, id) {
 
 /**
  * Another device is rebuilding the checkpoint: keep the last stock (marked
- * not ready) and re-check when its lease ends; the checkpoint listener
- * re-checks earlier when the rebuilt checkpoint arrives.
+ * not ready) and re-check when its lease ends or the per-session wait cap
+ * (LEASE_MAX_WAIT_MS, local clock, so a skewed or dead lease can't stretch
+ * it) runs out, whichever is first; the checkpoint listener re-checks earlier
+ * when the rebuilt checkpoint arrives. After the cap, stock falls back to a
+ * full-history replay.
  * @private
  */
 function waitForCheckpoint(until) {
     const gen = sessionGen;
+    if (!leaseWaitStartedAt) leaseWaitStartedAt = Date.now();
     clearTimeout(leaseWaitTimer);
-    const delay = Math.min(Math.max(Number(until) - Date.now(), 0), REBUILD_LEASE_MS) + 1000;
+    const remaining = Math.max(LEASE_MAX_WAIT_MS - leaseWaitedMs(), 0);
+    const delay = Math.min(Math.max(Number(until) - Date.now(), 0), remaining) + 250;
     leaseWaitTimer = setTimeout(() => {
         leaseWaitTimer = null;
         if (gen !== sessionGen) return;
@@ -706,6 +713,9 @@ function waitForCheckpoint(until) {
     pendingStocks.add(stock);
     return stock;
 }
+
+/** Total time this session has waited for another device's checkpoint rebuild. */
+const leaseWaitedMs = () => (leaseWaitStartedAt ? Date.now() - leaseWaitStartedAt : 0);
 
 function requestRebuild(after = Promise.resolve()) {
     if (!windowState || !canManageCheckpoint()) return;
@@ -1271,7 +1281,9 @@ async function rebuildCheckpointNow(gen) {
             const parsed = parseCheckpoint(d);
             const aged = Date.now() - ((d && (d.fullBuiltAt || d.builtAt)) || 0) > FORCED_REBUILD_AGE_MS;
             if (parsed && checkpointMatchesItems(parsed) && !aged) return 'fresh';
-            if (d && (d.rebuildingUntil || 0) > Date.now()) return 'leased';
+            // A lease left by this same user (app reloaded/closed mid-rebuild) is taken over.
+            const ownLease = !!AppState.currentUser?.uid && leaseOwnerUid(d?.rebuildingBy) === AppState.currentUser.uid;
+            if (d && (d.rebuildingUntil || 0) > Date.now() && !ownLease) return 'leased';
             baseStaleCount = d?.staleCount || 0;
             tx.set(ref, { rebuildingUntil: Date.now() + REBUILD_LEASE_MS, rebuildingBy: token }, { merge: true });
             return 'acquired';
@@ -1475,6 +1487,7 @@ const FirebaseService = {
         rebuildAttempted = false;
         clearTimeout(leaseWaitTimer);
         leaseWaitTimer = null;
+        leaseWaitStartedAt = 0;
         oldestTimestampPromise = null;
         extendQueue = Promise.resolve();
         pendingExtends.clear();
@@ -2052,7 +2065,10 @@ const FirebaseService = {
             const plan = decideStockRebuild({
                 canManage: canManageCheckpoint(),
                 leaseUntil: checkpointDoc?.rebuildingUntil || 0,
+                leaseBy: checkpointDoc?.rebuildingBy || null,
+                uid: AppState.currentUser?.uid || null,
                 now: Date.now(),
+                waitedMs: leaseWaitedMs(),
                 inFlight: !!rebuildPromise,
                 attempted: rebuildAttempted
             });
@@ -2069,9 +2085,11 @@ const FirebaseService = {
                 if (cp) {
                     return computeStockFrom(cp.state, cp.asOf, currentSources(), AppState.items);
                 }
-                if (result?.status === 'leased') return waitForCheckpoint(checkpointDoc?.rebuildingUntil || Date.now() + REBUILD_LEASE_MS);
-                // Built elsewhere moments ago: the checkpoint listener delivers it shortly.
-                if (result?.status === 'fresh') return waitForCheckpoint(Date.now() + FRESH_CHECKPOINT_WAIT_MS);
+                if (leaseWaitedMs() < LEASE_MAX_WAIT_MS) {
+                    if (result?.status === 'leased') return waitForCheckpoint(checkpointDoc?.rebuildingUntil || Date.now() + REBUILD_LEASE_MS);
+                    // Built elsewhere moments ago: the checkpoint listener delivers it shortly.
+                    if (result?.status === 'fresh') return waitForCheckpoint(Date.now() + FRESH_CHECKPOINT_WAIT_MS);
+                }
             }
         }
         if (AppState.historyLoadedFrom !== 0) {

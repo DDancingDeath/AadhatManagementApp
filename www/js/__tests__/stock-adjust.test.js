@@ -129,3 +129,33 @@ describe('StockManager.applyStockAdjustment', () => {
         expect(spy).toHaveBeenCalled();
     });
 });
+
+describe('StockManager.renderStock while stock is not ready (#194)', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '<div id="currentStockSection"><div id="stockList"></div></div>';
+        AppState.items = [{ id: 'a', name: 'Chana' }];
+        AppState.userRole = 'owner';
+    });
+    afterEach(() => { AppState.stockReady = true; });
+
+    test.each([
+        ['empty', {}],
+        ['stale quantities', { a: { quantity: 7, rate: 50 } }]
+    ])('keeps the "Stock updating" placeholder when getStock returns %s and stock is still pending', async (_, pending) => {
+        AppState.stockReady = true;
+        FirebaseService.getStock.mockImplementation(async () => { AppState.stockReady = false; return pending; });
+        await StockManager.renderStock();
+        const html = document.getElementById('stockList').innerHTML;
+        expect(html).toContain('Stock updating… / स्टॉक अपडेट हो रहा है…');
+        expect(html).not.toContain('No stock data available');
+        expect(html).not.toContain('Chana');
+    });
+
+    test('draws the stock once it is ready', async () => {
+        AppState.stockReady = false;
+        FirebaseService.getStock.mockImplementation(async () => { AppState.stockReady = true; return { a: { quantity: 7, rate: 50 } }; });
+        await StockManager.renderStock();
+        expect(document.getElementById('stockList').innerHTML).not.toContain('Stock updating');
+        expect(document.getElementById('stockList').textContent).toContain('Chana');
+    });
+});
