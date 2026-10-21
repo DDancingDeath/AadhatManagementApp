@@ -7,6 +7,10 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
+import { FirebaseService } from '../firebase/firestore-service.js';
+import { AuditService } from '../services/audit.js';
+import { todayLocalISO } from '../utils/dates.js';
+import { buildBackup, isDeleteConfirmed, DELETE_CONFIRM_WORD } from '../utils/data-export.js';
 
 /**
  * Admin Manager - Unified admin panel
@@ -588,9 +592,48 @@ const AdminManager = {
     },
 
     /**
-     * Clear all data
+     * Saves a JSON backup on this device: the share sheet on phones (so it can
+     * go to Drive/WhatsApp), a normal download elsewhere.
+     * @param {Object} backup
+     * @param {string} filename
+     * @returns {Promise<boolean>} false when the user cancelled sharing
+     */
+    async saveJsonBackup(backup, filename) {
+        const json = JSON.stringify(backup);
+        const blob = new Blob([json], { type: 'application/json' });
+        if (typeof File !== 'undefined' && navigator.canShare) {
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({ files: [file], title: filename });
+                    return true;
+                } catch (e) {
+                    if (e?.name === 'AbortError') return false;
+                    console.warn('Share failed, falling back to download:', e);
+                }
+            }
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        return true;
+    },
+
+    /**
+     * Clear Data (owner only). Nothing is pre-selected; the owner sees how many
+     * records will go, a JSON backup of the selected collections is saved
+     * first, and deletion needs the word DELETE typed in.
      */
     async clearAllData() {
+        if (AppState.userRole !== 'owner') {
+            UIManager.showToast('Only the owner can clear data / सिर्फ मालिक डेटा हटा सकते हैं');
+            return;
+        }
         // Show collection selection modal
         const collections = [
             { id: 'purchases', name: 'Purchases' },
@@ -606,9 +649,11 @@ const AdminManager = {
             { id: 'items', name: 'Items ⚠️' },
             { id: 'users', name: 'Users ⚠️' }
         ];
+        const nameOf = (id) => collections.find(c => c.id === id)?.name || id;
         
         const modalHTML = `
             <div style="text-align: left;">
+                <p style="margin: 0 0 8px; font-size: 13px;">Choose what to delete / क्या हटाना है चुनें:</p>
                 <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: bold; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #ddd;">
                     <input type="checkbox" id="selectAllCollections" style="width: 16px; height: 16px;">
                     <span style="font-size: 14px;">Select All</span>
@@ -616,13 +661,13 @@ const AdminManager = {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px;">
                     ${collections.map((col, i) => `
                         <label style="display: flex; align-items: center; gap: 6px; padding: 3px 0; cursor: pointer;">
-                            <input type="checkbox" class="collection-checkbox" data-collection="${col.id}" ${i < 10 ? 'checked' : ''} style="width: 14px; height: 14px;">
+                            <input type="checkbox" class="collection-checkbox" data-collection="${col.id}" style="width: 14px; height: 14px;">
                             <span style="font-size: 13px; ${i >= 10 ? 'color: #e74c3c;' : ''}">${col.name}</span>
                         </label>
                     `).join('')}
                 </div>
             </div>
-            <p style="color: #e74c3c; margin-top: 10px; font-size: 12px; text-align: center;">⚠️ Cannot be undone!</p>
+            <p style="color: #e74c3c; margin-top: 10px; font-size: 12px; text-align: center;">⚠️ Cannot be undone! A backup file is saved first.</p>
         `;
         
         // Setup select all handler after modal is shown
@@ -657,50 +702,71 @@ const AdminManager = {
             return;
         }
         
-        // Second confirmation
-        const finalConfirm = await UIManager.showModal(
-            `Are you sure you want to delete ${selectedCollections.length} collection(s)? This CANNOT be undone!`,
-            'Final Confirmation',
-            true
-        );
+        // Read what will be deleted (also the backup content)
+        const data = {};
+        UIManager.showLoading();
+        try {
+            for (const collectionId of selectedCollections) {
+                data[collectionId] = await FirebaseService.readCollectionForBackup(collectionId);
+            }
+        } catch (error) {
+            console.error('Error reading data for backup:', error);
+            UIManager.hideLoading();
+            UIManager.showToast('Could not read data for the backup — nothing was deleted');
+            return;
+        }
+        UIManager.hideLoading();
+        const total = selectedCollections.reduce((n, id) => n + data[id].length, 0);
+        
+        const summary = selectedCollections
+            .map(id => `<li>${Helpers.escapeHtml(nameOf(id))}: <strong>${Helpers.escapeHtml(data[id].length)}</strong></li>`)
+            .join('');
+        let typed = '';
+        const finalConfirm = await new Promise((resolve) => {
+            UIManager.showModalWithHtml(`
+                <div style="text-align: left;">
+                    <p style="margin: 0 0 6px;">These records will be deleted for everyone / ये रिकॉर्ड सबके लिए हट जाएंगे:</p>
+                    <ul style="margin: 0 0 8px 16px; font-size: 13px;">${summary}</ul>
+                    <p style="margin: 0 0 6px; font-size: 13px;">Total: <strong>${Helpers.escapeHtml(total)}</strong>. A backup file (JSON) is saved on this device first.</p>
+                    <label for="clearDataConfirmInput" style="font-size: 13px;">Type <strong>${DELETE_CONFIRM_WORD}</strong> to confirm / पुष्टि के लिए <strong>${DELETE_CONFIRM_WORD}</strong> लिखें:</label>
+                    <input id="clearDataConfirmInput" type="text" autocomplete="off" autocapitalize="characters" style="width: 100%; padding: 8px; margin-top: 4px; border: 2px solid #e74c3c; border-radius: 6px;">
+                </div>`, 'Final Confirmation', true).then((result) => {
+                typed = document.getElementById('clearDataConfirmInput')?.value || '';
+                resolve(result);
+            });
+        });
         
         if (!finalConfirm) return;
+        if (!isDeleteConfirmed(typed)) {
+            UIManager.showToast(`You must type ${DELETE_CONFIRM_WORD} — nothing was deleted`);
+            return;
+        }
+        
+        const env = (window.getCollection && window.getCollection('x') !== 'x') ? 'dev' : 'prod';
+        const backup = buildBackup(data, { env, exportedBy: AppState.currentUser?.uid || null });
+        const saved = await this.saveJsonBackup(backup, `aadhat_backup_${env}_${todayLocalISO()}_${Date.now()}.json`);
+        if (!saved) {
+            const goAhead = await UIManager.showModal(
+                'The backup was not saved. Delete anyway?\nबैकअप सेव नहीं हुआ। फिर भी हटाएँ?',
+                'No backup',
+                true
+            );
+            if (!goAhead) return;
+        }
         
         UIManager.showLoading();
         
         try {
-            const db = firebase.firestore();
-            const user = firebase.auth().currentUser;
+            // Audit first so the wipe is on record even if deleting fails midway
+            await AuditService.log(AuditService.ACTIONS.CLEAR_DATA, {
+                collections: selectedCollections,
+                recordsToDelete: total,
+                backupSaved: saved
+            });
             
-            if (!user) {
-                UIManager.showToast('Error: User not authenticated');
-                UIManager.hideLoading();
-                return;
-            }
-            
-            // Delete selected collections (with environment prefix)
             let deletedCount = 0;
-            const getCol = window.getCollection || ((name) => name); // Fallback if not defined
-            
             for (const collectionId of selectedCollections) {
-                const prefixedCollection = getCol(collectionId);
-                const snapshot = await db.collection(prefixedCollection).get();
-                if (snapshot.size > 0) {
-                    const deletePromises = snapshot.docs.map(doc => doc.ref.delete());
-                    await Promise.all(deletePromises);
-                    deletedCount += snapshot.size;
-                }
-            }
-            
-            // Clear local storage
-            localStorage.clear();
-            
-            // Log audit entry
-            if (window.AuditService) {
-                await window.AuditService.log(window.AuditService.ACTIONS.CLEAR_DATA, {
-                    collections: selectedCollections,
-                    recordsDeleted: deletedCount
-                });
+                deletedCount += await FirebaseService.deleteDocsInBatches(collectionId, data[collectionId].map(d => d.id));
             }
             
             UIManager.hideLoading();
@@ -716,5 +782,4 @@ const AdminManager = {
         }
     }
 };
-
 export { AdminManager };
