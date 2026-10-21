@@ -4,7 +4,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
-import { readPayment, round2 } from '../utils/money.js';
+import { outstandingDue, round2 } from '../utils/money.js';
 import { parseAnyBillDate, todayLocalISO } from '../utils/dates.js';
 import { dueEvents, sumDueEvents, saleTimePayment } from '../utils/due-payments.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
@@ -176,7 +176,7 @@ export const DayManager = {
             const paid = saleTimePayment(p);
             cashPaid += paid.cash;
             onlinePaid += paid.online;
-            dueToPay += readPayment(p).due;
+            dueToPay += outstandingDue(p); // 0 once cleared
         });
 
         // From sales (cash/online received when saved, due to receive)
@@ -184,7 +184,7 @@ export const DayManager = {
             const paid = saleTimePayment(s);
             cashReceived += paid.cash;
             onlineReceived += paid.online;
-            dueToReceive += readPayment(s).due;
+            dueToReceive += outstandingDue(s);
         });
 
         // Due payments made today (#95): entries on any loaded bill plus the

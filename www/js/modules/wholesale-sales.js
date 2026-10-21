@@ -516,34 +516,11 @@ export class WholesaleSalesManager {
     }
 
     static async markSaleAsCleared(saleId) {
-        const salesHistory = AppState.salesHistory;
-        const sale = salesHistory.find(s => s.id == saleId);
-        if (!sale) {
-            console.error('Sale not found:', saleId);
-            UIManager.showToast('Error: Sale not found');
-            return;
-        }
-        
         const checkbox = document.getElementById(`clear_${saleId}`);
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-            if (checkbox) checkbox.checked = false;
-            UIManager.showToast('Internet required to clear a sale');
-            return;
-        }
-
-        try {
-            // Transactional update; apply locally only once it is committed.
-            const updated = await FirebaseService.updateWholesaleSale({ ...sale, cleared: true });
-            Object.assign(sale, updated);
-            
-            this.renderSalesOutstanding();
-            window.app.outstanding.renderDue();
-            UIManager.showToast('✓ Sale marked as cleared');
-        } catch (error) {
-            console.error('Error updating sale:', error, 'Sale ID:', saleId);
-            if (checkbox) checkbox.checked = false;
-            UIManager.showToast(error?.code === 'unavailable' ? 'Internet required to clear a sale' : 'Error: ' + error.message);
-        }
+        if (checkbox) checkbox.checked = false;
+        // Same honest clearing as Outstanding (#104): received in cash/online, or written off with a reason
+        const cleared = await OutstandingManager.markAsCleared(saleId, 'wholesale');
+        if (cleared) this.renderSalesHistory();
     }
 
     static renderSalesOutstanding() {
@@ -736,7 +713,7 @@ export class WholesaleSalesManager {
                 <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #155724;">Payment History</h4>
                 ${sale.payments.map(p => `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                        <span>• ${Helpers.escapeHtml(p.date)}${p.recordedBy ? ` by ${Helpers.escapeHtml(p.recordedBy)}` : ''}</span>
+                        <span>• ${Helpers.escapeHtml(p.date)}${p.recordedBy ? ` by ${Helpers.escapeHtml(p.recordedBy)}` : ''}${p.kind === 'writeOff' ? ` — written off: ${Helpers.escapeHtml(p.reason || '')}` : ''}</span>
                         <strong>₹${Math.round(p.amount)}</strong>
                     </div>
                 `).join('')}

@@ -5,6 +5,7 @@
  */
 import { CashManagementManager } from '../modules/cash-management.js';
 import { OutstandingManager } from '../modules/outstanding.js';
+import { WholesaleSalesManager } from '../modules/wholesale-sales.js';
 import { DayManager } from '../modules/day.js';
 import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
@@ -513,5 +514,102 @@ describe('#95 Today shows dues and the hero equals the breakdown (fixture tests/
         expect(amount('todayDueReceived')).toBe(before + 50);
         delete window.app;
         delete window.getCollection;
+    });
+});
+
+describe('#104 "Mark as cleared" asks how and records it (no silent write-off)', () => {
+    const ctx = useFakeShop();
+    let dialogShown;
+    /** Answers the clearing dialog like a user: pick a method, type a reason, press OK/Cancel. */
+    const answer = (method, reason = '', ok = true) => {
+        dialogShown = false;
+        jest.spyOn(UIManager, 'showModalWithHtml').mockImplementation(async (html) => {
+            dialogShown = true;
+            document.getElementById('modalMessage').innerHTML = html;
+            if (method) document.querySelector(`input[name="clearMethod"][value="${method}"]`).checked = true;
+            document.getElementById('clearReason').value = reason;
+            return ok;
+        });
+    };
+    beforeEach(() => {
+        ctx.fake.seed('retailSales', [OLD_SALE, TODAY_SALE]);
+        ctx.fake.seed('cashManagement', [OPEN_SESSION]);
+        AppState.retailSalesHistory = [{ ...OLD_SALE }, { ...TODAY_SALE }];
+        AppState.currentDueFilter = 'sale';
+        document.body.innerHTML = '<input id="outstandingSearchInput"><div id="dueList"></div><div id="modalMessage"></div>';
+        CashManagementManager.todaySession = null;
+    });
+
+    test('the row offers a "Mark as Cleared…" button instead of a one-tap checkbox', () => {
+        OutstandingManager.renderDue();
+        const list = document.getElementById('dueList');
+        expect(list.querySelector('input[type="checkbox"]')).toBeNull();
+        expect([...list.querySelectorAll('button')].map(b => b.textContent.trim())).toContain('Mark as Cleared…');
+    });
+
+    test('write-off: both due fields to 0, a write-off entry with amount/reason/who/when, not counted as money', async () => {
+        answer('writeOff', 'Customer moved away');
+        const ok = await OutstandingManager.markAsCleared('r1', 'retail');
+        expect(ok).toBe(true);
+        const bill = ctx.fake.raw('retailSales').get('r1');
+        expect(bill.payment).toMatchObject({ cash: 300, online: 0, due: 0, writtenOff: 495 });
+        expect(bill.dueAmount).toBe(0);
+        expect(bill).toMatchObject({ cleared: true, clearedBy: 'u1', clearedByName: 'Owner', openDue: false });
+        expect(bill.payments).toEqual([expect.objectContaining({ kind: 'writeOff', amount: 495, reason: 'Customer moved away', recordedBy: 'Owner', recordedById: 'u1' })]);
+        expect(typeof bill.payments[0].at).toBe('number');
+        expect(ctx.fake.raw('cashManagement').get('s21').duePayments).toEqual([]); // no drawer leg
+
+        // Totals drop; the write-off is not cash or online money
+        AppState.retailSalesHistory[1] = { ...TODAY_SALE, ...bill };
+        const t = CashManagementManager.calculateTransactionsForDate('2026-10-21', null);
+        expect(t.dueReceived).toBe(0);
+        expect(t.cashSales).toBe(300);
+        const events = dueEvents({ bills: { retail: AppState.retailSalesHistory }, from: new Date(2026, 9, 21).getTime(), to: new Date(2026, 9, 22).getTime() });
+        expect(sumDueEvents(events)).toMatchObject({ receivedCash: 0, receivedOnline: 0, writtenOffReceivable: 495 });
+        OutstandingManager.renderDue();
+        expect(document.getElementById('dueList').textContent).not.toContain('S1');
+        expect(AuditService.log).toHaveBeenCalledWith('CLEAR_DUE', expect.objectContaining({ method: 'writeOff', amount: 495, reason: 'Customer moved away' }));
+    });
+
+    test.each([
+        ['writeOff', '', true, 'Please write a reason for the write-off'],
+        [null, 'x', true, 'Choose how the due was settled'],
+        ['writeOff', 'Moved away', false, null]
+    ])('nothing is written when method=%p reason=%p ok=%p', async (method, reason, ok, message) => {
+        answer(method, reason, ok);
+        const writes = ctx.fake.stats.writes;
+        expect(await OutstandingManager.markAsCleared('r1', 'retail')).toBe(false);
+        expect(dialogShown).toBe(true);
+        expect(ctx.fake.stats.writes).toBe(writes);
+        if (message) expect(toast).toHaveBeenCalledWith(message);
+    });
+
+    test('received in cash: records the remaining due as a cash payment (drawer leg) and marks the bill cleared', async () => {
+        answer('cash', '');
+        expect(await OutstandingManager.markAsCleared('r0', 'retail')).toBe(true);
+        const bill = ctx.fake.raw('retailSales').get('r0');
+        expect(bill.payment).toMatchObject({ cash: 1000, due: 0 });
+        expect(bill.dueAmount).toBe(0);
+        expect(bill.cleared).toBe(true);
+        expect(bill.payments[0]).toMatchObject({ amount: 600, cash: 600, online: 0, settlesDue: true });
+        expect(ctx.fake.raw('cashManagement').get('s21').duePayments[0]).toMatchObject({ cash: 600, method: 'cash' });
+    });
+
+    test('received online: no drawer cash', async () => {
+        answer('online', 'UPI ref 123');
+        await OutstandingManager.markAsCleared('r0', 'retail');
+        const bill = ctx.fake.raw('retailSales').get('r0');
+        expect(bill.payment).toMatchObject({ cash: 400, online: 600, due: 0 });
+        expect(bill.payments[0]).toMatchObject({ online: 600, cash: 0, note: 'UPI ref 123' });
+    });
+
+    test('wholesale "Mark as Cleared" uses the same dialog and transaction', async () => {
+        const W = { id: 'w1', billNumber: 'W1', customerName: 'Gupta', source: 'sales-tab', date: '2026-10-20T10:00:00', total: 5000, payment: { cash: 3000, online: 0, due: 2000 } };
+        ctx.fake.seed('wholesaleSales', [W]);
+        AppState.salesHistory = [{ ...W }];
+        jest.spyOn(WholesaleSalesManager, 'renderSalesHistory').mockImplementation(() => {});
+        answer('writeOff', 'Settled by discount');
+        await WholesaleSalesManager.markSaleAsCleared('w1');
+        expect(ctx.fake.raw('wholesaleSales').get('w1')).toMatchObject({ cleared: true, payment: { due: 0, writtenOff: 2000 } });
     });
 });
