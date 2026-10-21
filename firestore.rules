@@ -160,6 +160,20 @@ service cloud.firestore {
           : isApprovedIn(usersCol);
     }
 
+    // --- item rate/name history (rateHistory, #82 / #65 phase 1) ---
+    // Append-only: owner/manager create entries for their own uid; nobody
+    // updates or deletes them.
+    function validRateHistoryEntry(usersCol) {
+      let d = request.resource.data;
+      return isManagerIn(usersCol)
+        && d.keys().hasOnly(['itemId', 'itemName', 'field', 'old', 'new', 'by', 'byUserId', 'at', 'source', 'flags'])
+        && d.keys().hasAll(['itemId', 'field', 'byUserId', 'at'])
+        && d.itemId is string && d.itemId.size() > 0
+        && d.field in ['purchase', 'wholesale', 'retail', 'name', 'hindiName']
+        && d.byUserId == request.auth.uid
+        && d.at is number;
+    }
+
     // --- user profile rules (shared by users and dev_users) ---
 
     function canReadProfile(usersCol, userId) {
@@ -224,6 +238,18 @@ service cloud.firestore {
       allow read: if isApprovedIn('dev_users');
       allow create, update: if checkpointRules('dev_users', docId);
       allow delete: if isManagerIn('dev_users');
+    }
+
+    match /rateHistory/{docId} {
+      allow read: if isManagerIn('users');
+      allow create: if validRateHistoryEntry('users');
+      allow update, delete: if false;
+    }
+
+    match /dev_rateHistory/{docId} {
+      allow read: if isManagerIn('dev_users');
+      allow create: if validRateHistoryEntry('dev_users');
+      allow update, delete: if false;
     }
 
     match /users/{userId} {

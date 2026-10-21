@@ -6,7 +6,8 @@ A comprehensive business management application for wholesale/retail operations 
 
 - **Purchase & Sales Management**: Separate collections for purchases, retail sales, and wholesale sales
 - **Real-time Sync**: Automatic UI updates via Firestore onSnapshot listeners
-- **Stock Tracking**: Real-time stock levels with adjustment history
+- **Stock Tracking**: Real-time stock levels with adjustment history, and a "Not selling" list (stock with no sale in 30/60/90 days, owner/manager only)
+- **Item change history**: Every item rate and name change is kept (who, when, old → new); big rate jumps (> 2×) and renames ask for confirmation
 - **Cash Management**: Session-based cash tracking with sign-in/sign-out
 - **User Management**: Role-based access (owner, manager, staff)
 - **Reports & Analytics**: Daily/weekly/monthly reports with charts
@@ -62,6 +63,7 @@ A comprehensive business management application for wholesale/retail operations 
 | `users` | User accounts and roles | (loaded on demand) |
 | `stockCheckpoints` | Stock checkpoint + legacy-scan bookkeeping (see below) | — |
 | `settings` | App-wide settings (`settings/app`: client-version gates) | — |
+| `rateHistory` | Append-only item rate/name changes (owner/manager create + read; never updated/deleted) | (loaded on demand in the item dialog) |
 | `auditLogs` | Audit trail of critical actions (90-day retention) | (loaded on demand) |
 | `itemFrequency`, `drafts`, `autoSaves`, `notifications`, `telemetry` | Item ordering, bill drafts/autosave, in-app notices, diagnostics | — |
 

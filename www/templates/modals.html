@@ -89,6 +89,12 @@
                            placeholder="Enter contact person name (Optional)"
                            style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 8px; font-size: 15px;">
                 </div>
+
+                <div id="itemModalHistorySection" style="display: none; margin-bottom: 8px;">
+                    <label style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px; display: block;">Change history / बदलाव का इतिहास</label>
+                    <button type="button" id="itemModalHistoryBtn" class="filter-btn" onclick="window.app.items.loadModalHistory()">Show rate &amp; name changes / रेट और नाम के बदलाव देखें</button>
+                    <div id="itemModalHistoryList"></div>
+                </div>
             </div>
             <div class="bill-details-footer">
                 <button class="bill-action-btn btn-delete" id="itemModalDeleteBtn" onclick="window.app.items.deleteItemFromModal()" style="display: none;">Delete</button>

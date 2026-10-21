@@ -12,6 +12,9 @@ import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { planStockAdjustment } from '../utils/stock-adjust.js';
+import { findDeadStock, daysSinceLabel, localDaysBetween, DEAD_STOCK_DAY_OPTIONS, DEFAULT_DEAD_STOCK_DAYS } from '../utils/dead-stock.js';
+
+const DEAD_STOCK_DAYS_KEY = 'aadhat.deadStockDays';
 
 /**
  * Stock Manager - Manages inventory stock operations
@@ -304,10 +307,15 @@ export class StockManager {
             UIManager.showToast('You do not have permission to access stock adjustments');
             return;
         }
+        if (section === 'dead' && !this.canSeeDeadStock()) {
+            UIManager.showToast('Only owner or manager can see this / यह केवल मालिक या मैनेजर देख सकते हैं');
+            return;
+        }
         
         const sections = {
             current: document.getElementById("currentStockSection"),
-            adjustment: document.getElementById("stockAdjustmentSection")
+            adjustment: document.getElementById("stockAdjustmentSection"),
+            dead: document.getElementById("deadStockSection")
         };
 
         Object.values(sections).forEach(s => s && (s.style.display = 'none'));
@@ -318,7 +326,7 @@ export class StockManager {
             event.target.classList.add('active');
         } else {
             // If no event (programmatic call), set the active button based on section
-            const btnIndex = section === 'current' ? 0 : 1;
+            const btnIndex = { current: 0, adjustment: 1, dead: 2 }[section] ?? 0;
             const buttons = document.querySelectorAll('#stock .filter-btn');
             if (buttons[btnIndex]) buttons[btnIndex].classList.add('active');
         }
@@ -328,6 +336,112 @@ export class StockManager {
         } else if (section === 'adjustment') {
             this.loadAdjustItemsDropdown();
             this.renderAdjustmentHistory();
+        } else if (section === 'dead') {
+            this.renderDeadStock();
+        }
+    }
+
+    /**
+     * Dead stock shows stock ₹ value and average cost: owner/manager only
+     * until decision #84 says otherwise.
+     * @returns {boolean}
+     */
+    static canSeeDeadStock() {
+        return ['owner', 'manager'].includes(AppState.userRole);
+    }
+
+    /** Selected "no sale in N days" threshold (remembered on this device). */
+    static getDeadStockDays() {
+        let saved = NaN;
+        try { saved = Number(localStorage.getItem(DEAD_STOCK_DAYS_KEY)); } catch (_) { /* storage blocked */ }
+        return DEAD_STOCK_DAY_OPTIONS.includes(saved) ? saved : DEFAULT_DEAD_STOCK_DAYS;
+    }
+
+    static setDeadStockDays(days) {
+        const n = Number(days);
+        if (!DEAD_STOCK_DAY_OPTIONS.includes(n)) return;
+        try { localStorage.setItem(DEAD_STOCK_DAYS_KEY, String(n)); } catch (_) { /* storage blocked */ }
+        this.renderDeadStock();
+    }
+
+    /**
+     * Renders items with stock but no sale in the selected number of days,
+     * from the already loaded bills only (no extra history reads).
+     * @returns {Promise<void>}
+     */
+    static async renderDeadStock() {
+        const container = document.getElementById('deadStockList');
+        const summary = document.getElementById('deadStockSummary');
+        if (!container) return;
+        if (!this.canSeeDeadStock()) {
+            container.innerHTML = '';
+            if (summary) summary.textContent = '';
+            return;
+        }
+        const minDays = this.getDeadStockDays();
+        const select = document.getElementById('deadStockDays');
+        if (select) select.value = String(minDays);
+
+        try {
+            const stock = await FirebaseService.getStock();
+            AppState.stock = stock;
+            const now = Date.now();
+            const windowStart = isFullHistoryLoaded() ? 0 : historyLoadedFrom();
+            const rows = findDeadStock({
+                stock,
+                items: AppState.items,
+                sources: {
+                    purchases: AppState.purchaseHistory,
+                    wholesaleSales: AppState.salesHistory,
+                    retailSales: AppState.retailSalesHistory
+                },
+                now,
+                minDays,
+                windowStart
+            });
+            const windowDays = windowStart > 0 ? localDaysBetween(windowStart, now) : Infinity;
+            const e = (v) => Helpers.escapeHtml(v);
+            const totalValue = rows.reduce((s, r) => s + r.value, 0);
+
+            if (summary) {
+                const windowNote = windowStart > 0
+                    ? `Using bills since ${formatWindowDate(windowStart)} (${windowDays} days). "> ${windowDays} days" = no sale in that time. / ${formatWindowDate(windowStart)} से बिल देखे गए।`
+                    : 'Using all bills. / सभी बिल देखे गए।';
+                summary.innerHTML = rows.length
+                    ? `<strong>${e(rows.length)}</strong> items · ≈ ₹${e(Math.round(totalValue).toLocaleString('en-IN'))} in stock<br>${e(windowNote)}`
+                    : e(windowNote);
+            }
+
+            if (rows.length === 0) {
+                container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 30px;">Every item in stock sold in the last ${e(minDays)} days 👍<br>पिछले ${e(minDays)} दिनों में स्टॉक का हर आइटम बिका है</p>`;
+                return;
+            }
+
+            container.innerHTML = rows.map(r => {
+                const displayName = (AppState.settings.showHindi && r.hindiName) ? r.hindiName : r.name;
+                const sale = daysSinceLabel(r.daysSinceSale, r.saleBeyondWindow, windowDays);
+                const purchase = daysSinceLabel(r.daysSincePurchase, r.purchaseBeyondWindow, windowDays);
+                return `
+                <div class="stock-item dead-stock-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 15px;">${e(displayName || r.name || '-')}</div>
+                            <div style="color: #b45309; font-size: 13px; margin-top: 4px;">Last sale / आखिरी बिक्री: ${e(sale)}${r.uncertain ? ' *' : ''}</div>
+                            <div style="color: #666; font-size: 12px; margin-top: 2px;">Last purchase / आखिरी खरीद: ${e(purchase)}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 18px; font-weight: 700; color: #dc3545;">${e(r.quantity.toFixed(1))} kg</div>
+                            <div style="color: #666; font-size: 12px; margin-top: 4px;">≈ ₹${e(Math.round(r.value).toLocaleString('en-IN'))}</div>
+                            <div style="color: #888; font-size: 12px;">avg ₹${e(r.rate.toFixed(2))}/kg</div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('') + (rows.some(r => r.uncertain)
+                ? `<p style="font-size: 12px; color: #888; margin-top: 8px;">* Loaded bills cover only ${e(windowDays)} days, so a sale up to ${e(minDays)} days ago may not be counted. / * केवल ${e(windowDays)} दिनों के बिल लोड हैं।</p>`
+                : '');
+        } catch (error) {
+            console.error('Error loading dead stock:', error);
+            container.innerHTML = '<p style="text-align: center; color: #dc3545; margin-top: 30px;">Failed to load / लोड नहीं हुआ</p>';
         }
     }
 
@@ -336,6 +450,8 @@ export class StockManager {
      * Called when stock page is loaded
      */
     static hideAdjustmentTabForStaff() {
+        const deadBtn = document.getElementById('deadStockTabBtn');
+        if (deadBtn) deadBtn.style.display = this.canSeeDeadStock() ? '' : 'none';
         if (AppState.userRole === 'staff') {
             // Hide the Stock Adjustment button
             const filterButtons = document.querySelectorAll('#stock .filter-btn');

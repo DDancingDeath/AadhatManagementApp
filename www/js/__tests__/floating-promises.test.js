@@ -23,6 +23,7 @@ const ALLOWED = {
     'modules/settings.js connectToPrinter': 'has its own try/catch with a user toast',
     'modules/stock.js renderStock': 'UI refresh; has its own try/catch',
     'modules/stock.js renderAdjustmentHistory': 'UI refresh; has its own try/catch',
+    'modules/stock.js renderDeadStock': 'UI refresh; has its own try/catch',
     'modules/users.js loadUsers': 'list refresh after a completed write; catches and toasts',
     'ui/infinite-scroll.js trigger': 'catches load errors and switches to the retry state',
 };
