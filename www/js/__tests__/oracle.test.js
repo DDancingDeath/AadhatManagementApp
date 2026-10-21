@@ -46,11 +46,13 @@ function oracleStock(s) {
     const events = [];
     s.purchases.forEach(b => b.items.forEach(l => events.push({ t: oracleTime(b), id: oracleItemId(s.items, l), op: 'add', q: Number(l.qty) })));
     [...s.wholesaleSales, ...s.retailSales].forEach(b => b.items.forEach(l => events.push({ t: oracleTime(b), id: oracleItemId(s.items, l), op: 'remove', q: Number(l.qty) })));
-    s.stockAdjustments.forEach(a => events.push({ t: oracleTime(a), id: oracleItemId(s.items, a), op: a.adjustType, q: Number(a.quantity) }));
+    s.stockAdjustments.forEach(a => events.push({ t: oracleTime(a), id: oracleItemId(s.items, a), op: a.adjustType === 'remove' ? 'adjust-remove' : a.adjustType, q: Number(a.quantity) }));
     events.sort((a, b) => a.t - b.t);
     const qty = {};
     for (const e of events) {
         const cur = qty[e.id] || 0;
+        // Stock adjustments that remove are capped at the stock on hand (#72); bill lines are not.
+        if (e.op === 'adjust-remove') { qty[e.id] = cur - Math.min(e.q, Math.max(0, cur)); continue; }
         qty[e.id] = e.op === 'add' ? cur + e.q : e.op === 'remove' ? cur - e.q : e.q;
     }
     return qty;
