@@ -241,3 +241,65 @@ describe('getAndroidMajorVersion', () => {
         expect(getAndroidMajorVersion('')).toBe(Infinity);
     });
 });
+
+describe('offline bill numbers (#41)', () => {
+    class MemStorage {
+        constructor() { this.m = new Map(); }
+        get length() { return this.m.size; }
+        key(i) { return [...this.m.keys()][i] ?? null; }
+        getItem(k) { return this.m.has(k) ? this.m.get(k) : null; }
+        setItem(k, v) { this.m.set(k, String(v)); }
+        removeItem(k) { this.m.delete(k); }
+    }
+
+    test('two devices offline on the same day never produce the same number', () => {
+        const phoneA = new MemStorage();
+        const phoneB = new MemStorage();
+        phoneA.setItem('aadhatBillDeviceCode', 'AAA');
+        phoneB.setItem('aadhatBillDeviceCode', 'BBB');
+        const a = [1, 2, 3].map(() => Helpers.nextOfflineBillNumber('P', '20261021', phoneA));
+        const b = [1, 2, 3].map(() => Helpers.nextOfflineBillNumber('P', '20261021', phoneB));
+        expect(a).toEqual(['P20261021-AAA-001', 'P20261021-AAA-002', 'P20261021-AAA-003']);
+        expect(b).toEqual(['P20261021-BBB-001', 'P20261021-BBB-002', 'P20261021-BBB-003']);
+        expect(new Set([...a, ...b]).size).toBe(6);
+        // Never collides with the online format P20261021-001.
+        a.concat(b).forEach(n => expect(n).not.toMatch(/^P\d{8}-\d+$/));
+    });
+
+    test('device code is created once and kept; per-prefix sequences; old days pruned', () => {
+        const s = new MemStorage();
+        const code = Helpers.getBillDeviceCode(s);
+        expect(code).toMatch(/^[2-9A-HJ-NP-Z]{3}$/);
+        expect(Helpers.getBillDeviceCode(s)).toBe(code);
+        Helpers.nextOfflineBillNumber('P', '20261020', s);
+        expect(Helpers.nextOfflineBillNumber('S', '20261021', s)).toBe(`S20261021-${code}-001`);
+        expect(Helpers.nextOfflineBillNumber('P', '20261021', s)).toBe(`P20261021-${code}-001`);
+        expect(s.getItem('aadhatOfflineBillSeq:P20261020')).toBeNull();
+    });
+
+    test('generateBillNumber uses the device format offline and never Date.now digits', async () => {
+        localStorage.setItem('aadhatBillDeviceCode', 'K7Q');
+        const query = { where: () => query, get: jest.fn() };
+        global.db = { collection: () => ({ ...query, doc: () => ({ get: jest.fn() }) }), runTransaction: jest.fn() };
+        const online = jest.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+        const n1 = await Helpers.generateBillNumber('W', 'wholesaleSales');
+        const n2 = await Helpers.generateBillNumber('W', 'wholesaleSales');
+        expect(n1).toMatch(/^W\d{8}-K7Q-001$/);
+        expect(n2).toMatch(/^W\d{8}-K7Q-002$/);
+        expect(global.db.runTransaction).not.toHaveBeenCalled();
+        online.mockRestore();
+        delete global.db;
+        localStorage.clear();
+    });
+
+    test('findDuplicateBillNumbers flags a synced bill whose number another bill already has', () => {
+        const records = [
+            { id: 'a', billNumber: 'P20261021-001' },
+            { id: 'b', billNumber: 'P20261021-001' },
+            { id: 'c', billNumber: 'P20261021-002' }
+        ];
+        expect(Helpers.findDuplicateBillNumbers([{ docId: 'b', newRec: records[1] }], records)).toEqual(['P20261021-001']);
+        expect(Helpers.findDuplicateBillNumbers([{ docId: 'c', newRec: records[2] }], records)).toEqual([]);
+        expect(Helpers.findDuplicateBillNumbers([{ docId: 'x', newRec: null }], records)).toEqual([]);
+    });
+});

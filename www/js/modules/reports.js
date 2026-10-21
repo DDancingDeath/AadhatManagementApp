@@ -5,8 +5,12 @@ import { Helpers } from '../utils/helpers.js';
 import { readPayment, outstandingDue, readLineItem, perUnitRate } from '../utils/money.js';
 import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
 import {
-    rangeStatus, retryRange, applyRangeState, needsHistoryFrom, ensureHistoryFrom
+    rangeStatus, retryRange, applyRangeState, needsHistoryFrom, ensureHistoryFrom,
+    onDemandHistoryInfo, renderStaleHistoryHint
 } from '../utils/history-window.js';
+import { createRenderMemo } from '../utils/render-memo.js';
+
+const reportsMemo = createRenderMemo();
 
 /**
  * Per-item totals for the given bills, reading legacy line-item fields too.
@@ -294,6 +298,17 @@ export class ReportsManager {
     }
 
     // ==================== MAIN RENDER ====================
+    static memoState() {
+        return [this.currentTab, this.currentDateFilter, this.customStartDate?.getTime?.() ?? null,
+            this.customEndDate?.getTime?.() ?? null, this.reportFilters];
+    }
+
+    /** Tab-show entry point: skips the recompute when nothing changed since the last render (#24). */
+    static renderReportsIfStale() {
+        if (reportsMemo.isCurrent(this.memoState())) return;
+        this.renderReports();
+    }
+
     static renderReports() {
         // Never show partial totals: wait for the period's history to load
         const start = this.getRangeStart();
@@ -305,7 +320,19 @@ export class ReportsManager {
                 this.renderReports();
             }
         });
-        if (status === 'loading') return;
+        if (status === 'loading') {
+            reportsMemo.reset();
+            return;
+        }
+
+        // Periods reaching into on-demand (non-live) history may be stale (#132).
+        const firstSection = document.querySelector('#reports .reports-section');
+        const onDemand = onDemandHistoryInfo();
+        if (firstSection && onDemand && (!start || start.getTime() < onDemand.liveFrom)) {
+            renderStaleHistoryHint(firstSection, { id: 'reportsStaleHint', onRefreshed: () => this.renderReports() });
+        } else {
+            document.getElementById('reportsStaleHint')?.remove();
+        }
 
         this.populateFilters();
 
@@ -323,6 +350,7 @@ export class ReportsManager {
                 this.renderCompare();
                 break;
         }
+        reportsMemo.record(this.memoState());
     }
 
     // ==================== OVERVIEW TAB ====================

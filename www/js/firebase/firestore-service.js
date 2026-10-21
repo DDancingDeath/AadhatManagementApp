@@ -146,6 +146,12 @@ const RENDER_DEBOUNCE_MS = 150;
 
 /** Max wait for server data at startup once cached data is available (ms). */
 const FIRST_SNAPSHOT_SERVER_WAIT_MS = 10000;
+/** ...when this device already has cached data for the app (#13). */
+const FIRST_SNAPSHOT_CACHED_WAIT_MS = 2500;
+/** A first snapshot from cache had documents this session (the device has used the app before). */
+let warmCache = false;
+/** Per-listener startup facts for Diagnostics (first source, doc count, what made it ready). */
+const listenerStartup = {};
 const pendingViews = new Set();
 let stockDirty = false;
 let flushTimer = null;
@@ -338,6 +344,8 @@ let stockChangeGen = 0;
 /** stockCheckpoints/legacyScan: per collection {complete, foundAt} of the timestamp backfill. */
 let legacyScanDoc = null;
 let oldestTimestampPromise = null;
+/** When the on-demand (non-live) history currently in memory was first fetched (0 = none). */
+let onDemandAsOf = 0;
 let extendQueue = Promise.resolve();
 const pendingExtends = new Map();
 const invalidationTags = new Set();
@@ -412,8 +420,26 @@ function publishCollection(c) {
         if (c.extended.get(id) === rec) c.publishedExtended.add(id);
     });
     AppState[c.spec.stateKey] = list;
-    dataVersion++;
+    AppState.dataVersion = ++dataVersion;
     if (c.spec.stock) stockChangeGen++;
+}
+
+/**
+ * Bill numbers already warned about this session (#41): pre-fix offline
+ * numbering on two phones could issue the same number; tell the user once
+ * when such a bill syncs so it can be told apart by customer/time.
+ */
+const warnedDuplicateBillNumbers = new Set();
+function warnDuplicateBillNumbers(c, changes) {
+    const dups = Helpers.findDuplicateBillNumbers(changes, AppState[c.spec.stateKey], docIdOf)
+        .filter(n => !warnedDuplicateBillNumbers.has(n));
+    if (!dups.length) return;
+    dups.forEach(n => warnedDuplicateBillNumbers.add(n));
+    console.warn(`[${c.spec.label}] duplicate bill number(s) after sync:`, dups);
+    import('../ui/ui-manager.js')
+        .then(({ UIManager }) => UIManager.showToast(
+            `⚠️ Same bill number used twice: ${dups.join(', ')} — check History / एक ही बिल नंबर दो बार`, 6000))
+        .catch(() => {});
 }
 
 /**
@@ -481,7 +507,7 @@ function adoptCheckpoint(data) {
     const cur = activeCheckpoint;
     if (cur && cur.asOf === cp.asOf && cur.builtAt === cp.builtAt && cur.staleCount === cp.staleCount) return true;
     activeCheckpoint = cp;
-    dataVersion++;
+    AppState.dataVersion = ++dataVersion;
     return true;
 }
 
@@ -517,7 +543,7 @@ function invalidateCheckpoint(reason, affectsLocal) {
     console.info(`Stock checkpoint invalidated (${reason})`);
     if (affectsLocal && activeCheckpoint) {
         activeCheckpoint = null;
-        dataVersion++;
+        AppState.dataVersion = ++dataVersion;
         if (windowState) markDirty(['stockView'], true);
     }
     // Rebuild once the stale mark has reached the server (otherwise the
@@ -731,6 +757,7 @@ async function extendHistory(target) {
         publishCollection(c);
     });
     if (fromServer) {
+        if (!onDemandAsOf) onDemandAsOf = Date.now();
         if (full) {
             AppState.historyLoadedFrom = 0;
             ws.rawFull = true;
@@ -747,6 +774,53 @@ async function extendHistory(target) {
 }
 
 let forcedExtends = 0;
+
+/**
+ * Re-reads every on-demand (non-live) record in [historyLoadedFrom, liveFrom)
+ * from the server and replaces the in-memory copies, so edits/deletes made on
+ * another device since they were loaded show up (#132).
+ * @private
+ * @returns {Promise<boolean>} false if offline / served from cache
+ */
+async function refreshOnDemand() {
+    const ws = windowState;
+    if (!ws) return false;
+    const from = AppState.historyLoadedFrom;
+    if (from >= ws.liveFrom) return true;
+    const gen = sessionGen;
+    const full = from === 0;
+    const db = getDb();
+    const snaps = [];
+    for (const spec of HISTORY_COLLECTIONS) {
+        const makeQuery = (attempt) => {
+            let q = db.collection(col(spec.key));
+            if (!full) q = q.where('timestamp', '>=', from).where('timestamp', '<', ws.liveFrom);
+            return attempt ? q.limit(RETRY_LIMIT_BASE + attempt) : q;
+        };
+        snaps.push(await getWithRetry(makeQuery, `${spec.label} refresh`).catch(err => {
+            if (spec.optional) return null;
+            throw err;
+        }));
+        if (gen !== sessionGen || windowState !== ws) return false;
+    }
+    if (snaps.some(s => s && s.metadata?.fromCache)) return false;
+    const inRange = (rec) => full || (typeof rec?.timestamp === 'number' && rec.timestamp >= from && rec.timestamp < ws.liveFrom);
+    snaps.forEach((snap, i) => {
+        if (!snap) return;
+        const c = ws.colls[HISTORY_COLLECTIONS[i].key];
+        const live = liveIdSet(c);
+        c.extended.forEach((rec, id) => {
+            if (inRange(rec)) c.extended.delete(id);
+        });
+        snap.docs.forEach(doc => {
+            if (!live.has(doc.id)) c.extended.set(doc.id, mapDoc(doc));
+        });
+        publishCollection(c);
+    });
+    onDemandAsOf = Date.now();
+    markDirty(ALL_HISTORY_VIEWS, true);
+    return true;
+}
 /** force: always do a fresh read (checkpoint rebuild must not reuse in-session data). */
 function queueExtend(target, raw = false, force = false) {
     const covered = () => !windowState || (!force && (raw
@@ -1049,7 +1123,7 @@ function listenCheckpoint(gen) {
                         // Another device changed history before the checkpoint: stop using it
                         // (full replay) until a rebuilt one arrives.
                         activeCheckpoint = null;
-                        dataVersion++;
+                        AppState.dataVersion = ++dataVersion;
                         markDirty(['stockView'], true);
                         requestRebuild();
                     }
@@ -1058,7 +1132,9 @@ function listenCheckpoint(gen) {
                 if (!snap.metadata.fromCache || navigator.onLine === false) {
                     done();
                 } else if (!timer) {
-                    timer = setTimeout(done, FIRST_SNAPSHOT_SERVER_WAIT_MS);
+                    // A cached checkpoint is safe to start from: later snapshots
+                    // adopt a newer one or drop it when marked stale (above).
+                    timer = setTimeout(done, snap.exists ? FIRST_SNAPSHOT_CACHED_WAIT_MS : FIRST_SNAPSHOT_SERVER_WAIT_MS);
                 }
             }, error => {
                 console.error('Stock checkpoint listener error:', error);
@@ -1340,7 +1416,7 @@ const FirebaseService = {
         pendingViews.clear();
         stockDirty = false;
         stockCache = {};
-        dataVersion++;
+        AppState.dataVersion = ++dataVersion;
         sessionGen++;
         windowState = null;
         checkpointDoc = undefined;
@@ -1990,6 +2066,35 @@ const FirebaseService = {
     },
 
     /**
+     * Diagnostics: how each listener became ready at the last startup.
+     * @returns {Object<string, {first: string, docs: number, readyBy?: string}>}
+     */
+    getStartupListenerInfo() {
+        return JSON.parse(JSON.stringify(listenerStartup));
+    },
+
+    /**
+     * On-demand history currently in memory (records older than the live
+     * window; not live-updated), or null when only live data is loaded.
+     * @returns {?{from: number, liveFrom: number, asOf: number}}
+     */
+    getOnDemandHistoryInfo() {
+        if (!windowState || AppState.historyLoadedFrom >= windowState.liveFrom) return null;
+        return { from: AppState.historyLoadedFrom, liveFrom: windowState.liveFrom, asOf: onDemandAsOf };
+    },
+
+    /**
+     * Re-fetches the on-demand range from the server (queued behind any
+     * running history load).
+     * @returns {Promise<boolean>} false if it could not reach the server
+     */
+    refreshOnDemandHistory() {
+        const p = extendQueue.then(() => refreshOnDemand());
+        extendQueue = p.catch(() => {});
+        return p;
+    },
+
+    /**
      * Diagnostics: the stock checkpoint in use, if any.
      * @returns {?{asOf: number, builtAt: number, liveFrom: number}}
      */
@@ -2079,6 +2184,8 @@ const FirebaseService = {
         this.cleanup();
         const gen = sessionGen;
         const db = getDb();
+        warmCache = false;
+        Object.keys(listenerStartup).forEach(k => delete listenerStartup[k]);
 
         const listen = (query, label, live, onData, { optional = false, mapFn = mapDoc } = {}) => {
             let settle;
@@ -2106,10 +2213,20 @@ const FirebaseService = {
                 // computes stock and renders the initial views itself.
                 if (changed) onData(changes, ready);
                 if (!ready) {
+                    const source = snapshot.metadata.fromCache ? 'cache' : 'server';
+                    listenerStartup[label] = listenerStartup[label] || { first: source, docs: snapshot.size };
+                    if (snapshot.metadata.fromCache && snapshot.size > 0) warmCache = true;
                     if (!snapshot.metadata.fromCache || navigator.onLine === false) {
+                        listenerStartup[label].readyBy = source === 'server' ? 'server' : 'offline-cache';
                         markReady();
                     } else if (!readyTimer) {
-                        readyTimer = setTimeout(markReady, FIRST_SNAPSHOT_SERVER_WAIT_MS);
+                        // This device already has cached data: show it after a
+                        // short wait instead of the full server grace; the live
+                        // listener applies the server copy as soon as it arrives.
+                        readyTimer = setTimeout(() => {
+                            listenerStartup[label].readyBy = 'cache-timeout';
+                            markReady();
+                        }, warmCache ? FIRST_SNAPSHOT_CACHED_WAIT_MS : FIRST_SNAPSHOT_SERVER_WAIT_MS);
                     }
                 }
             }, error => {
@@ -2134,7 +2251,7 @@ const FirebaseService = {
         const itemsLive = { docs: [], initialized: false, server: false };
         const firstSnapshots = [listen(db.collection(col('items')), 'Items', itemsLive, (changes, started) => {
             AppState.items = itemsLive.docs.slice();
-            dataVersion++;
+            AppState.dataVersion = ++dataVersion;
             if (!started) return;
             // Index-based views (item dropdown values, item cards) must
             // never lag behind AppState.items, so refresh them right away.
@@ -2154,6 +2271,7 @@ const FirebaseService = {
             const cp = parseCheckpoint(checkpointDoc);
             const liveFrom = cp ? Math.min(W, cp.asOf) : W;
             windowState = { gen, liveFrom, rawFull: false, colls: {}, backfills: {} };
+            onDemandAsOf = 0;
             AppState.historyLoadedFrom = liveFrom;
             if (cp) adoptCheckpoint(checkpointDoc);
 
@@ -2172,6 +2290,7 @@ const FirebaseService = {
                         if (spec.stock) noteObservedChange(c, previous, ch.newRec, ch.type);
                     });
                     publishCollection(c);
+                    if (started && spec.dues && changes) warnDuplicateBillNumbers(c, changes);
                     if (started) markDirty(spec.views, affectsStock);
                 }, { optional: !!spec.optional }));
 

@@ -161,7 +161,7 @@ const NavigationManager = {
         // Render reports when Reports tab is shown
         if (tabId === 'reports' && window.app?.reports) {
             this.resetFilterButtons('reports');
-            setTimeout(() => window.app.reports.renderReports(), 100);
+            setTimeout(() => window.app.reports.renderReportsIfStale(), 100);
         }
         
         // Initialize finance when Finance tab is shown

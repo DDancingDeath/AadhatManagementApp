@@ -21,6 +21,72 @@ describe('service worker precache list', () => {
     });
 });
 
+describe('self-hosted Firebase SDK (#28)', () => {
+    const html = fs.readFileSync(path.join(WWW, 'index.html'), 'utf8');
+    const sdkTags = [...html.matchAll(/<script defer src="(vendor\/firebase\/[^"]+)" integrity="([^"]+)"><\/script>/g)];
+
+    test('index.html loads app, auth, firestore compat from our origin, in order', () => {
+        expect(html).not.toMatch(/gstatic\.com\/firebasejs/);
+        expect(sdkTags.map((m) => m[1])).toEqual([
+            'vendor/firebase/10.7.1/firebase-app-compat.js',
+            'vendor/firebase/10.7.1/firebase-auth-compat.js',
+            'vendor/firebase/10.7.1/firebase-firestore-compat.js',
+        ]);
+        expect(html.indexOf('firebase-firestore-compat.js')).toBeLessThan(html.indexOf('src="firebaseConfig.js"'));
+    });
+
+    test('SRI hashes match the files on disk and the SW precaches them', () => {
+        const crypto = require('crypto');
+        const { readStaticAssets } = require('../../../scripts/check-sw-assets.js');
+        const precached = readStaticAssets();
+        for (const [, src, integrity] of sdkTags) {
+            const body = fs.readFileSync(path.join(WWW, src));
+            expect(integrity).toBe('sha384-' + crypto.createHash('sha384').update(body).digest('base64'));
+            expect(precached).toContain('/' + src);
+        }
+    });
+});
+
+describe('firebaseConfig.js SDK-missing recovery (#28)', () => {
+    const src = fs.readFileSync(path.join(WWW, 'firebaseConfig.js'), 'utf8');
+
+    beforeEach(() => {
+        // jsdom logs "navigation not implemented" for location.reload().
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        sessionStorage.clear();
+        delete window.caches;
+        delete window.__aadhatSdkRecovery;
+        document.body.innerHTML = '';
+    });
+
+    test('first failure purges cached SDK files and retries once', async () => {
+        const del = jest.fn().mockResolvedValue(true);
+        const reqs = [{ url: 'http://x/vendor/firebase/10.7.1/firebase-app-compat.js' }, { url: 'http://x/js/main.js' }];
+        window.caches = {
+            keys: jest.fn().mockResolvedValue(['aadhat-v24']),
+            open: jest.fn().mockResolvedValue({ keys: jest.fn().mockResolvedValue(reqs), delete: del }),
+        };
+        expect(() => window.eval(src)).toThrow('Firebase SDK failed to load');
+        await window.__aadhatSdkRecovery.catch(() => {});
+        expect(del).toHaveBeenCalledTimes(1);
+        expect(del).toHaveBeenCalledWith(reqs[0]);
+        expect(sessionStorage.getItem('aadhatSdkRetry')).toBe('1');
+        expect(document.getElementById('sdkLoadError')).toBeNull();
+    });
+
+    test('second failure shows a message instead of a blank page', () => {
+        sessionStorage.setItem('aadhatSdkRetry', '1');
+        window.caches = { keys: jest.fn() };
+        expect(() => window.eval(src)).toThrow('Firebase SDK failed to load');
+        expect(window.caches.keys).not.toHaveBeenCalled();
+        expect(document.getElementById('sdkLoadError').textContent).toMatch(/internet/);
+    });
+});
+
 describe('index.html stylesheets', () => {
     test('match styles.css @import order', () => {
         const html = fs.readFileSync(path.join(WWW, 'index.html'), 'utf8');

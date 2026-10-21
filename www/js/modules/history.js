@@ -12,7 +12,8 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import {
-    ensureHistoryFrom, isFullHistoryLoaded, historyLoadedFrom, formatWindowDate, findBillIndex
+    ensureHistoryFrom, isFullHistoryLoaded, historyLoadedFrom, formatWindowDate, findBillIndex,
+    renderStaleHistoryHint
 } from '../utils/history-window.js';
 
 /**
@@ -41,6 +42,15 @@ export class HistoryManager {
 
     /** True while "Search older bills" is loading full history. */
     static searchingOlder = false;
+
+    /** Bills rendered per page; more on "Show more" / scroll (#24). */
+    static PAGE_SIZE = 50;
+    static visibleCount = 50;
+    static pageKey = '';
+    /** Full filtered + sorted list of the last render (search covers all of it). */
+    static pageBills = [];
+    static pageType = 'purchase';
+    static showMoreObserver = null;
 
     /**
      * Save current bill to history with loading indicator
@@ -213,67 +223,137 @@ export class HistoryManager {
         
         // Check view mode and render accordingly
         this.activeSearch = (searchTerm || '').trim();
+        // Only the first PAGE_SIZE bills go into the DOM; live refreshes keep
+        // how many are shown, a new filter/search/view starts over (#24).
+        const pageKey = `${type}|${this.activeSearch}|${this.viewMode}`;
+        if (pageKey !== this.pageKey) {
+            this.pageKey = pageKey;
+            this.visibleCount = this.PAGE_SIZE;
+        }
+        this.pageBills = sortedBills;
+        this.pageType = type;
         if (this.viewMode === 'table') {
-            this.renderHistoryTable(sortedBills, type);
+            this.renderHistoryTable(sortedBills.slice(0, this.visibleCount), type);
+            this.renderShowMore(container);
             this.updateOlderHistoryUi();
             return;
         }
 
         if (sortedBills.length === 0) {
             container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(this.emptyMessage(type, searchTerm))}</p>`;
+            this.renderShowMore(container);
             this.updateOlderHistoryUi();
             return;
         }
 
         container.innerHTML = "";
-
-        sortedBills.forEach((bill) => {
-            const div = document.createElement("div");
-            div.className = "history-item";
-            div.setAttribute('data-type', bill.type);
-            
-            // Use saved values from database
-            const totalPackets = bill.totalPackets || 0;
-            
-            const paymentParts = [];
-            // Handle both old and new payment structures with color coding
-            if (bill.payment) {
-                if (bill.payment.online > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.payment.online)}</span>`);
-                if (bill.payment.cash > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.payment.cash)}</span>`);
-                if (bill.payment.due > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.payment.due)}</span>`);
-            } else {
-                // Fallback to old direct fields
-                if (bill.onlinePayment > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.onlinePayment)}</span>`);
-                if (bill.cashPayment > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.cashPayment)}</span>`);
-                if (bill.dueAmount > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.dueAmount)}</span>`);
-            }
-            const paymentHTML = paymentParts.length > 0 ? `
-                <div class="history-payment">
-                    ${paymentParts.join(' ')}
-                </div>
-            ` : '';
-            
-            // Use billNumber if available, otherwise generate short number from ID
-            const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
-            const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
-            const formattedDate = Helpers.formatDateTime(bill.date);
-            const itemColor = (bill.type === 'retail' || bill.type === 'wholesale') ? '#28a745' : '#007bff';
-            
-            div.innerHTML = `
-                <div class="history-header">
-                    <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill('${billRef(bill)}', '${Helpers.escapeJsAttr(bill.type)}')">#${Helpers.escapeHtml(billNumber)}</span>${bill.customerName ? ` <strong>${Helpers.escapeHtml(bill.customerName)}</strong>` : ''}
-                    <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
-                </div>
-                <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${Helpers.escapeHtml(bill.createdByName || bill.userName)}</strong>` : ''}</div>
-                <div class="history-summary">
-                    ${Helpers.escapeHtml(bill.items.map(item => item.name).join(', '))} • ${Helpers.escapeHtml(totalPackets)} packets
-                </div>
-                ${paymentHTML}
-            `;
-            
-            container.appendChild(div);
-        });
+        const fragment = document.createDocumentFragment();
+        sortedBills.slice(0, this.visibleCount).forEach(bill => fragment.appendChild(this.buildHistoryCard(bill)));
+        container.appendChild(fragment);
+        this.renderShowMore(container);
         this.updateOlderHistoryUi();
+    }
+
+    /** True while loaded bills matching the current filter are not in the DOM yet. */
+    static hasHiddenBills() {
+        return this.pageBills.length > this.visibleCount;
+    }
+
+    /**
+     * Adds the next PAGE_SIZE bills of the current list (Show more button,
+     * or automatically when the button scrolls into view).
+     */
+    static showMoreHistory() {
+        const container = document.getElementById('historyList');
+        if (!container || !this.hasHiddenBills()) return;
+        const from = this.visibleCount;
+        this.visibleCount += this.PAGE_SIZE;
+        if (this.viewMode === 'table') {
+            this.renderHistoryTable(this.pageBills.slice(0, this.visibleCount), this.pageType);
+        } else {
+            container.querySelector('.history-show-more')?.remove();
+            const fragment = document.createDocumentFragment();
+            this.pageBills.slice(from, this.visibleCount).forEach(bill => fragment.appendChild(this.buildHistoryCard(bill)));
+            container.appendChild(fragment);
+        }
+        this.renderShowMore(container);
+        this.updateOlderHistoryUi();
+    }
+
+    /** "Show more" row at the end of the list while loaded bills are hidden. */
+    static renderShowMore(container) {
+        this.showMoreObserver?.disconnect();
+        this.showMoreObserver = null;
+        container.querySelector('.history-show-more')?.remove();
+        if (!this.hasHiddenBills()) return;
+        const row = document.createElement('div');
+        row.className = 'history-show-more';
+        row.style.cssText = 'text-align:center;padding:12px;';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'infinite-scroll-more';
+        btn.textContent = `Show more (${this.pageBills.length - this.visibleCount} more)`;
+        btn.addEventListener('click', () => this.showMoreHistory());
+        row.appendChild(btn);
+        container.appendChild(row);
+        if (typeof IntersectionObserver === 'function') {
+            this.showMoreObserver = new IntersectionObserver(entries => {
+                if (entries.some(e => e.isIntersecting)) this.showMoreHistory();
+            }, { rootMargin: '0px 0px 300px 0px' });
+            this.showMoreObserver.observe(row);
+        }
+    }
+
+    /**
+     * One history card.
+     * @param {Object} bill
+     * @returns {HTMLElement}
+     */
+    static buildHistoryCard(bill) {
+        const div = document.createElement("div");
+        div.className = "history-item";
+        div.setAttribute('data-type', bill.type);
+        
+        // Use saved values from database
+        const totalPackets = bill.totalPackets || 0;
+        
+        const paymentParts = [];
+        // Handle both old and new payment structures with color coding
+        if (bill.payment) {
+            if (bill.payment.online > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.payment.online)}</span>`);
+            if (bill.payment.cash > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.payment.cash)}</span>`);
+            if (bill.payment.due > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.payment.due)}</span>`);
+        } else {
+            // Fallback to old direct fields
+            if (bill.onlinePayment > 0) paymentParts.push(`<span class="payment-badge payment-online">Online: ₹${Math.round(bill.onlinePayment)}</span>`);
+            if (bill.cashPayment > 0) paymentParts.push(`<span class="payment-badge payment-cash">Cash: ₹${Math.round(bill.cashPayment)}</span>`);
+            if (bill.dueAmount > 0) paymentParts.push(`<span class="payment-badge payment-due">Due: ₹${Math.round(bill.dueAmount)}</span>`);
+        }
+        const paymentHTML = paymentParts.length > 0 ? `
+            <div class="history-payment">
+                ${paymentParts.join(' ')}
+            </div>
+        ` : '';
+        
+        // Use billNumber if available, otherwise generate short number from ID
+        const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
+        const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
+        const formattedDate = Helpers.formatDateTime(bill.date);
+        const itemColor = (bill.type === 'retail' || bill.type === 'wholesale') ? '#28a745' : '#007bff';
+        
+        div.innerHTML = `
+            <div class="history-header">
+                <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.history.viewBill('${billRef(bill)}', '${Helpers.escapeJsAttr(bill.type)}')">#${Helpers.escapeHtml(billNumber)}</span>${bill.customerName ? ` <strong>${Helpers.escapeHtml(bill.customerName)}</strong>` : ''}
+                <span style="color: ${itemColor}; font-weight: 700;">₹ ${Math.round(billTotal)}</span>
+            </div>
+            <div class="history-date">${formattedDate}${bill.createdByName || bill.userName ? ` • By: <strong>${Helpers.escapeHtml(bill.createdByName || bill.userName)}</strong>` : ''}</div>
+            <div class="history-summary">
+                ${Helpers.escapeHtml(bill.items.map(item => item.name).join(', '))} • ${Helpers.escapeHtml(totalPackets)} packets
+            </div>
+            ${paymentHTML}
+        `;
+        
+        return div;
     }
 
     /**
@@ -300,9 +380,11 @@ export class HistoryManager {
 
         attachOlderHistoryScroll(list, {
             noun: 'bills',
-            enabled: () => !this.activeSearch,
+            // Older months load only once every loaded bill is on screen.
+            enabled: () => !this.activeSearch && !this.hasHiddenBills(),
             onLoaded: () => this.refreshHistory()
         });
+        renderStaleHistoryHint(list, { id: 'historyStaleHint', onRefreshed: () => this.refreshHistory() });
 
         let footer = document.getElementById('historySearchFooter');
         if (!footer) {

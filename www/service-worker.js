@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v35';
+const CACHE_NAME = 'aadhat-v36';
 // Generated/verified by scripts/check-sw-assets.js (npm run check:sw).
 // Every entry must exist: a 404 here used to make the whole precache fail.
 const STATIC_ASSETS = [
@@ -84,6 +84,8 @@ const STATIC_ASSETS = [
     '/js/utils/lazy-scripts.js',
     '/js/utils/money.js',
     '/js/utils/release-info.js',
+    '/js/utils/render-memo.js',
+    '/js/utils/startup-timings.js',
     '/js/utils/state.js',
     '/js/utils/stock-adjust.js',
     '/js/utils/stock-check.js',
@@ -111,7 +113,10 @@ const STATIC_ASSETS = [
     '/templates/settings.html',
     '/templates/stock.html',
     '/templates/users.html',
-    '/templates/wholesale-sales.html'
+    '/templates/wholesale-sales.html',
+    '/vendor/firebase/10.7.1/firebase-app-compat.js',
+    '/vendor/firebase/10.7.1/firebase-auth-compat.js',
+    '/vendor/firebase/10.7.1/firebase-firestore-compat.js'
 ];
 
 /**
@@ -233,7 +238,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         caches.match(event.request)
             .then((cachedResponse) => {
-                if (cachedResponse) {
+                // A non-OK entry (e.g. a stored error page) is treated as a
+                // miss so it gets refetched instead of replayed forever.
+                if (cachedResponse && cachedResponse.ok) {
                     // Return cached version and update cache in background
                     event.waitUntil(
                         fetch(event.request)

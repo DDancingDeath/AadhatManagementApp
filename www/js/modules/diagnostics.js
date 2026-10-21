@@ -10,6 +10,7 @@ import { TelemetryService } from '../services/telemetry.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { formatDateTimeIN } from '../utils/dates.js';
+import { getStartupTimings, startupRows } from '../utils/startup-timings.js';
 
 /**
  * Diagnostics Manager - View and manage application telemetry and audit logs
@@ -80,6 +81,33 @@ const DiagnosticsManager = {
                     📋 Audit Logs
                 </button>
             </div>
+            ${this.startupTimingsHtml()}
+        `;
+    },
+
+    /**
+     * "Startup timings" block: ms since page start for each app-open step (#13).
+     * @returns {string}
+     */
+    startupTimingsHtml() {
+        const { marks, info } = getStartupTimings();
+        if (!marks.length) return '';
+        const rows = startupRows(marks).map((r, i) => {
+            const detail = marks[i].detail ? JSON.stringify(marks[i].detail) : '';
+            return `<tr><td>${Helpers.escapeHtml(r.name)}</td><td style="text-align:right">${Helpers.escapeHtml(r.at)}</td>` +
+                `<td style="text-align:right">+${Helpers.escapeHtml(r.delta)}</td><td style="font-size:11px;color:#6b7280">${Helpers.escapeHtml(detail)}</td></tr>`;
+        }).join('');
+        const listeners = Object.entries(info.listeners || {}).map(([label, l]) =>
+            `${label}: ${l.first} (${l.docs} docs) → ${l.readyBy || '?'}`).join('; ');
+        return `
+            <details class="diagnostics-startup" style="margin-bottom: 16px;">
+                <summary><strong>⏱ Startup timings</strong> (ms since page start)</summary>
+                <table style="width:100%;font-size:13px;margin-top:8px;border-collapse:collapse;">
+                    <thead><tr><th style="text-align:left">Step</th><th style="text-align:right">At</th><th style="text-align:right">Step time</th><th style="text-align:left">Details</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                ${listeners ? `<div style="font-size:11px;color:#6b7280;margin-top:6px;">Listeners: ${Helpers.escapeHtml(listeners)}</div>` : ''}
+            </details>
         `;
     },
 

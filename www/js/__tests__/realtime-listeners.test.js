@@ -73,6 +73,23 @@ describe('FirebaseService.setupRealtimeListeners', () => {
         expect(resolved).toBe(true);
     });
 
+    it('with cached data, startup waits only the short grace for the server (#13)', async () => {
+        install({ holdServer: true });
+        fake.seed('purchases', [bill('p1', NOW - 2000)]);
+        jest.useFakeTimers();
+        let resolved = false;
+        const ready = FirebaseService.setupRealtimeListeners().then(() => { resolved = true; });
+        for (let i = 0; i < 5 && !resolved; i++) {
+            await fake.settle();
+            jest.advanceTimersByTime(2600);
+            await fake.settle();
+        }
+        expect(resolved).toBe(true);
+        await ready;
+        expect(AppState.purchaseHistory.map(p => p.id)).toEqual(['p1']);
+        expect(FirebaseService.getStartupListenerInfo().Purchases).toMatchObject({ first: 'cache', docs: 1, readyBy: 'cache-timeout' });
+    });
+
     it('rejects when a required listener fails first, but tolerates withdrawals failing', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         install({

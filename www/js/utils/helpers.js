@@ -289,7 +289,8 @@ export class Helpers {
      * today's bills is needed. The first time a counter is used it is seeded
      * from the number of bills already saved today (mid-day deploy).
      * Offline, or if the transaction takes longer than BILL_COUNTER_TIMEOUT_MS,
-     * it falls back to counting today's bills from the local cache.
+     * it issues a device-scoped number instead (see nextOfflineBillNumber):
+     * `{prefix}{YYYYMMDD}-{device}-{seq}`.
      *
      * @param {string} prefix - Bill type prefix ('P' for purchase, 'S' for retail sale, 'W' for wholesale)
      * @param {string} collectionName - Firebase collection name to query for sequence
@@ -324,28 +325,87 @@ export class Helpers {
                 }
             }
             
-            // Fallback: local cache only, so this never blocks on the network.
-            const [cachedBills, counterSnap] = await Promise.all([
-                todaysBills.get({ source: 'cache' }).catch(() => null),
-                counterRef.get({ source: 'cache' }).catch(() => null)
-            ]);
-            // No usable cache (e.g. persistence disabled): previous behaviour.
-            const billsSnap = cachedBills || await todaysBills.get();
-            const cachedCounter = counterSnap?.exists ? (Number(counterSnap.data()?.next) || 0) : 0;
-            const seq = Math.max(billsSnap.size, cachedCounter) + 1;
-            
-            // Reserve the number on the server once we reconnect so online
-            // devices skip past it. Queued locally; never awaited.
-            try {
-                counterRef.set({ next: firebase.firestore.FieldValue.increment(1) }, { merge: true })
-                    .catch(err => console.warn('Bill counter reservation failed:', err?.message || err));
-            } catch (_) { /* ignore */ }
-            
-            return format(seq);
+            // Fallback (offline, or the counter transaction timed out): the
+            // shared counter can't be reached, so issue a device-scoped
+            // number that can never equal another phone's (#41).
+            return Helpers.nextOfflineBillNumber(prefix, dateStr);
         } catch (error) {
             console.error('Error generating bill number:', error);
-            return `${prefix}${dateStr}-${Date.now().toString().slice(-3)}`;
+            return Helpers.nextOfflineBillNumber(prefix, dateStr);
         }
+    }
+
+    /**
+     * This device's short bill-number code (3 chars, no 0/O/1/I), created
+     * once and kept in localStorage. Clearing storage just picks a new code,
+     * which keeps numbers unique.
+     * @param {Storage} [storage]
+     * @returns {string}
+     */
+    static getBillDeviceCode(storage = Helpers._storage()) {
+        try {
+            const saved = storage?.getItem(BILL_DEVICE_CODE_KEY);
+            if (saved && /^[A-Z0-9]{3}$/.test(saved)) return saved;
+        } catch (_) { /* storage blocked */ }
+        const bytes = new Uint8Array(3);
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes);
+        else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+        const code = Array.from(bytes, b => BILL_DEVICE_ALPHABET[b % BILL_DEVICE_ALPHABET.length]).join('');
+        try { storage?.setItem(BILL_DEVICE_CODE_KEY, code); } catch (_) { /* keep for this call only */ }
+        if (!storage) memoryDeviceCode = memoryDeviceCode || code;
+        return storage ? code : memoryDeviceCode;
+    }
+
+    /**
+     * Offline bill number: `{prefix}{YYYYMMDD}-{device}-{seq}`, e.g.
+     * `P20261021-K7Q-004`. The sequence is per device, prefix and day, so two
+     * phones offline at the same time get different strings, and the format
+     * can't collide with online numbers (`P20261021-004`).
+     * @param {string} prefix
+     * @param {string} dateStr - YYYYMMDD
+     * @param {Storage} [storage]
+     * @returns {string}
+     */
+    static nextOfflineBillNumber(prefix, dateStr, storage = Helpers._storage()) {
+        const code = Helpers.getBillDeviceCode(storage);
+        const key = `${BILL_OFFLINE_SEQ_KEY}${prefix}${dateStr}`;
+        let seq;
+        try {
+            seq = (parseInt(storage.getItem(key), 10) || 0) + 1;
+            storage.setItem(key, String(seq));
+            // Drop this prefix's counters for earlier days.
+            for (let i = storage.length - 1; i >= 0; i--) {
+                const k = storage.key(i);
+                if (k && k !== key && k.startsWith(`${BILL_OFFLINE_SEQ_KEY}${prefix}`)) storage.removeItem(k);
+            }
+        } catch (_) {
+            memoryOfflineSeq[key] = (memoryOfflineSeq[key] || 0) + 1;
+            seq = memoryOfflineSeq[key];
+        }
+        return `${prefix}${dateStr}-${code}-${String(seq).padStart(3, '0')}`;
+    }
+
+    /**
+     * Bill numbers of newly added/changed records that another record in the
+     * same collection already uses (e.g. two phones synced the same number).
+     * @param {Array<{newRec: ?Object, docId: string}>} changes
+     * @param {Object[]} records - all records of the collection
+     * @param {Function} [idOf]
+     * @returns {string[]}
+     */
+    static findDuplicateBillNumbers(changes, records, idOf = (r) => String(r?.id)) {
+        const out = new Set();
+        (changes || []).forEach(ch => {
+            const num = ch?.newRec?.billNumber;
+            if (!num) return;
+            if ((records || []).some(r => r?.billNumber === num && idOf(r) !== String(ch.docId))) out.add(num);
+        });
+        return [...out];
+    }
+
+    /** @private */
+    static _storage() {
+        try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch (_) { return null; }
     }
 
     /**
@@ -438,6 +498,11 @@ export class Helpers {
 }
 
 const BILL_COUNTER_TIMEOUT_MS = 2500;
+const BILL_DEVICE_CODE_KEY = 'aadhatBillDeviceCode';
+const BILL_OFFLINE_SEQ_KEY = 'aadhatOfflineBillSeq:';
+const BILL_DEVICE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+let memoryDeviceCode = null;
+const memoryOfflineSeq = {};
 const inFlightLocks = new Set();
 
 function withTimeout(promise, ms) {

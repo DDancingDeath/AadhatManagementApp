@@ -7,10 +7,13 @@
 import { AppState } from '../utils/state.js';
 import { Helpers } from '../utils/helpers.js';
 import { rangeStatus, retryRange, applyRangeState } from '../utils/history-window.js';
+import { createRenderMemo } from '../utils/render-memo.js';
 
 const formatCurrency = (amount) => Helpers.formatCurrency(amount);
 
 const PROFIT_PERIOD_DAYS = { '7days': 7, '30days': 30, '90days': 90 };
+/** Skips recomputing the overview on a tab revisit when nothing changed (#24). */
+const overviewMemo = createRenderMemo();
 
 /**
  * Analytics Manager - Smart Business Insights
@@ -24,6 +27,7 @@ export class AnalyticsManager {
      */
     static init() {
         this.currentTab = 'overview';
+        if (overviewMemo.isCurrent()) return;
         this.renderAll();
     }
 
@@ -84,11 +88,15 @@ export class AnalyticsManager {
      * Render all analytics sections
      */
     static renderAll() {
-        if (!this.ensureRange('overview', () => this.renderAll())) return;
+        if (!this.ensureRange('overview', () => this.renderAll())) {
+            overviewMemo.reset();
+            return;
+        }
         this.renderTodayPrediction();
         this.renderMonthSummary();
         this.renderOutstandingDues();
         this.renderMonthlyProjection();
+        overviewMemo.record();
         // Other tabs will render on demand
     }
 

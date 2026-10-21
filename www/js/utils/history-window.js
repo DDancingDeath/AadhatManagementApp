@@ -277,3 +277,100 @@ export function findBillIndex(history, id, fallbackIndex = -1) {
     if (id === null || id === undefined || id === '') return fallbackIndex;
     return history.findIndex(b => b && String(b.id) === String(id));
 }
+
+/**
+ * On-demand history in memory (older than the live window, not live-updated).
+ * @returns {?{from: number, liveFrom: number, asOf: number}}
+ */
+export function onDemandHistoryInfo() {
+    const s = service();
+    return typeof s?.getOnDemandHistoryInfo === 'function' ? (s.getOnDemandHistoryInfo() || null) : null;
+}
+
+let refreshInflight = null;
+
+/**
+ * Re-fetch the on-demand range (one request at a time app-wide).
+ * @returns {Promise<boolean>} false if the server couldn't be reached
+ */
+export function refreshOnDemandHistory() {
+    const s = service();
+    if (typeof s?.refreshOnDemandHistory !== 'function') return Promise.resolve(false);
+    if (!refreshInflight) {
+        refreshInflight = Promise.resolve()
+            .then(() => s.refreshOnDemandHistory())
+            .then((ok) => !!ok, (err) => {
+                console.error('Refreshing older history failed:', err);
+                return false;
+            })
+            .finally(() => { refreshInflight = null; });
+    }
+    return refreshInflight;
+}
+
+/**
+ * Text of the "older bills may be out of date" hint.
+ * @param {{liveFrom: number, asOf: number}} info
+ * @param {Date} [now]
+ * @returns {string}
+ */
+export function staleHistoryHintText(info, now = new Date()) {
+    let when = '';
+    if (info.asOf) {
+        const at = new Date(info.asOf);
+        const time = at.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        when = at.toDateString() === now.toDateString() ? ` (as of ${time})` : ` (as of ${formatWindowDate(info.asOf)} ${time})`;
+    }
+    return `Bills before ${formatWindowDate(info.liveFrom)} don't update live${when} and may be out of date.`;
+}
+
+/**
+ * Subtle hint + Refresh button shown while on-demand (non-live) history is in
+ * memory; removed otherwise (#132).
+ * @param {HTMLElement} anchor - the hint is inserted before this element
+ * @param {Object} opts
+ * @param {string} opts.id - unique element id for this screen
+ * @param {Function} [opts.onRefreshed] - re-render after a refresh
+ */
+export function renderStaleHistoryHint(anchor, { id, onRefreshed } = {}) {
+    if (!anchor || !id) return;
+    let hint = document.getElementById(id);
+    const info = onDemandHistoryInfo();
+    if (!info) {
+        hint?.remove();
+        return;
+    }
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.id = id;
+        hint.className = 'history-stale-hint';
+        hint.setAttribute('role', 'status');
+        hint.style.cssText = 'font-size:12px;color:#6b7280;margin:4px 0 8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;';
+    }
+    if (hint.nextElementSibling !== anchor) anchor.parentNode?.insertBefore(hint, anchor);
+    if (hint.dataset.busy === '1') return;
+    hint.textContent = '';
+    const text = document.createElement('span');
+    text.textContent = staleHistoryHintText(info);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'history-stale-refresh';
+    btn.textContent = 'Refresh';
+    btn.style.cssText = 'font-size:12px;padding:2px 10px;';
+    btn.addEventListener('click', async () => {
+        hint.dataset.busy = '1';
+        btn.disabled = true;
+        btn.textContent = 'Refreshing…';
+        const ok = await refreshOnDemandHistory();
+        delete hint.dataset.busy;
+        if (!ok) {
+            btn.disabled = false;
+            btn.textContent = 'Retry';
+            text.textContent = "Couldn't refresh older bills (no connection?).";
+            return;
+        }
+        renderStaleHistoryHint(anchor, { id, onRefreshed });
+        onRefreshed?.();
+    });
+    hint.append(text, btn);
+}

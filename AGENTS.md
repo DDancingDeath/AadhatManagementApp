@@ -302,7 +302,11 @@ seed a `dev_users/<uid>` profile with a role).
 - **Non-batched per-recipient `for await { add() }` loops** — slow and
   partial-failure-prone. Use a `WriteBatch`.
 - **Bill numbering with `count + 1`** — race condition. Use a Firestore
-  transaction on a daily counter document.
+  transaction on a daily counter document. When that counter can't be reached
+  (offline / timeout), `Helpers.generateBillNumber` issues a per-device number
+  `{prefix}{YYYYMMDD}-{device}-{seq}` (3-char device code kept in
+  localStorage, per-device daily sequence) — decided over pre-issued number
+  blocks (#41 / Q28) because it needs no server round-trip to set up.
 
 ---
 

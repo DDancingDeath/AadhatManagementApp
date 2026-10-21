@@ -94,6 +94,36 @@ if (APP_ENV !== 'production') {
   });
 }
 
+// Firebase SDK health check (#28). The SDK is self-hosted and precached; if it
+// still did not run (first open with no network, or a corrupt cached copy that
+// SRI rejected), drop the cached SDK files and reload once so they are fetched
+// again. If that already happened this session, show a message, not a blank page.
+if (typeof firebase === 'undefined' || typeof firebase.auth !== 'function' || typeof firebase.firestore !== 'function') {
+  const SDK_RETRY_KEY = 'aadhatSdkRetry';
+  let retried = false;
+  try { retried = sessionStorage.getItem(SDK_RETRY_KEY) === '1'; } catch (_) {}
+  if (!retried && window.caches) {
+    try { sessionStorage.setItem(SDK_RETRY_KEY, '1'); } catch (_) {}
+    window.__aadhatSdkRecovery = caches.keys()
+      .then((names) => Promise.all(names.map((name) => caches.open(name).then((cache) =>
+        cache.keys().then((reqs) => Promise.all(reqs
+          .filter((req) => req.url.includes('/vendor/firebase/'))
+          .map((req) => cache.delete(req))))))))
+      .catch(() => {})
+      .then(() => window.location.reload());
+  } else {
+    const msg = document.createElement('div');
+    msg.id = 'sdkLoadError';
+    msg.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;' +
+      'padding:24px;text-align:center;background:#fff;color:#333;font:16px/1.5 Arial,sans-serif;';
+    msg.textContent = 'App could not start. Please connect to the internet once and reopen. / ' +
+      'ऐप शुरू नहीं हो सका। एक बार इंटरनेट से जुड़कर फिर खोलें।';
+    document.body.appendChild(msg);
+  }
+  throw new Error('Firebase SDK failed to load');
+}
+try { sessionStorage.removeItem('aadhatSdkRetry'); } catch (_) {}
+
 // Initialize Firebase
 //
 // IMPORTANT: variable is intentionally NOT named `app`. A `let app`
