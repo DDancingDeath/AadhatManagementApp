@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v47';
+const CACHE_NAME = 'aadhat-v48';
 // Generated/verified by scripts/check-sw-assets.js (npm run check:sw).
 // Every entry must exist: a 404 here used to make the whole precache fail.
 const STATIC_ASSETS = [
@@ -53,7 +53,6 @@ const STATIC_ASSETS = [
     '/js/modules/app-updates.js',
     '/js/modules/billing.js',
     '/js/modules/cash-management.js',
-    '/js/modules/datefilter.js',
     '/js/modules/day.js',
     '/js/modules/diagnostics.js',
     '/js/modules/finance.js',
@@ -111,7 +110,6 @@ const STATIC_ASSETS = [
     '/templates/billing.html',
     '/templates/cash-management.html',
     '/templates/chat.html',
-    '/templates/configure.html',
     '/templates/day.html',
     '/templates/diagnostics.html',
     '/templates/due.html',

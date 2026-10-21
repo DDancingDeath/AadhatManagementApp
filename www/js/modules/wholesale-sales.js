@@ -9,7 +9,9 @@ import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-c
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { OutstandingManager } from './outstanding.js';
-import { readPayment, round2 } from '../utils/money.js';
+import {
+    checkPaymentSplit, computeWholesaleTotals, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, readPayment, round2
+} from '../utils/money.js';
 
 const PAYMENT_TOLERANCE = 0.01;
 
@@ -17,6 +19,18 @@ const PAYMENT_TOLERANCE = 0.01;
 const WHOLESALE_BUTTONS = '[onclick*="wholesaleSales.completeSale"], [onclick*="wholesaleSales.printWholesaleSale"]';
 
 let wholesaleSaleItems = [];
+
+/**
+ * Id (and bill number, once issued) of the wholesale sale being entered, reused
+ * by every save attempt so a retry cannot create a second bill (#70).
+ * @type {{id: string, billNumber: (string|null)}|null}
+ */
+let pendingBill = null;
+
+function ensurePendingBill() {
+    if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null, attempted: false, date: null, timestamp: null };
+    return pendingBill;
+}
 
 export class WholesaleSalesManager {
     static async generateBillNumber() {
@@ -147,6 +161,7 @@ export class WholesaleSalesManager {
         
         const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         const total = Math.round(quantity * rate);
+        ensurePendingBill();
         
         wholesaleSaleItems.push({
             itemId: item.id,
@@ -179,6 +194,7 @@ export class WholesaleSalesManager {
             if (expensesInput) expensesInput.value = '0';
             if (profitEl) profitEl.textContent = '0';
             if (profitPercentEl) profitPercentEl.textContent = '0';
+            this.updatePaymentTotal();
             return;
         }
         
@@ -194,53 +210,114 @@ export class WholesaleSalesManager {
             `;
         }).join('');
         
-        // Calculate sale total
-        const saleTotal = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        const { total: saleTotal } = this.computeTotals();
         totalEl.textContent = Math.round(saleTotal);
         
-        // Auto-calculate buy amount (cost) from stock average rates
-        let totalBuyAmount = 0;
-        wholesaleSaleItems.forEach(item => {
-            const stockData = AppState.stock[item.itemId];
-            if (stockData && stockData.rate) {
-                totalBuyAmount += stockData.rate * item.qty;
-            }
-        });
-        
-        // Update profit calculation with current expenses
-        this.updateProfitCalculation(saleTotal, totalBuyAmount);
+        this.updateProfitCalculation();
     }
 
-    static updateProfitCalculation(saleTotal = null, buyAmount = null) {
-        const totalEl = document.getElementById('salesTotalAmount');
-        const expensesInput = document.getElementById('salesExpensesAmount');
+    /**
+     * Sale total, cost (stock average rates) and profit (sale − cost − expenses),
+     * computed from the bill lines — the screen is display-only.
+     * @returns {{total: number, cost: number, profit: number, profitPercent: number}}
+     */
+    static computeTotals() {
+        return computeWholesaleTotals(wholesaleSaleItems, AppState.stock, Helpers.getInputNumber('salesExpensesAmount'));
+    }
+
+    static updateProfitCalculation() {
         const profitEl = document.getElementById('salesProfitAmount');
         const profitPercentEl = document.getElementById('salesProfitPercent');
-        
-        // Get sale total if not provided
-        if (saleTotal === null) {
-            saleTotal = parseFloat(totalEl?.textContent) || 0;
-        }
-        
-        // Recalculate buy amount if not provided
-        if (buyAmount === null) {
-            buyAmount = 0;
-            wholesaleSaleItems.forEach(item => {
-                const stockData = AppState.stock[item.itemId];
-                if (stockData && stockData.rate) {
-                    buyAmount += stockData.rate * item.qty;
-                }
-            });
-        }
-        
-        const expenses = parseFloat(expensesInput?.value) || 0;
-        
-        // Calculate profit: Sale Amount - Buy Amount - Expenses
-        const profit = saleTotal - buyAmount - expenses;
-        const profitPercent = saleTotal > 0 ? (profit / saleTotal) * 100 : 0;
+        const { profit, profitPercent } = this.computeTotals();
         
         if (profitEl) profitEl.textContent = Math.round(profit);
         if (profitPercentEl) profitPercentEl.textContent = profitPercent.toFixed(1);
+        this.updatePaymentTotal();
+    }
+
+    /**
+     * Cash / online / due typed on the wholesale form
+     * @returns {{cash: number, online: number, due: number}}
+     */
+    static readPaymentSplit() {
+        return {
+            online: round2(Helpers.getInputNumber('wholesaleOnlinePayment')),
+            cash: round2(Helpers.getInputNumber('wholesaleCashPayment')),
+            due: round2(Helpers.getInputNumber('wholesaleDueAmount'))
+        };
+    }
+
+    /** Refresh "Total Received" and what is not split yet. */
+    static updatePaymentTotal() {
+        const split = this.readPaymentSplit();
+        const receivedEl = document.getElementById('wholesaleTotalReceived');
+        if (receivedEl) receivedEl.textContent = Math.round(split.cash + split.online);
+        Helpers.showSplitRemaining('wholesaleSplitRemaining', checkPaymentSplit(this.computeTotals().total, split));
+    }
+
+    /**
+     * Tick Online / Cash / Due to put the whole bill in that one field
+     * (same as the retail sale form).
+     * @param {'online'|'cash'|'due'} type
+     */
+    static fillReceivableAmount(type) {
+        const { total } = this.computeTotals();
+        const fields = { online: 'wholesaleOnlinePayment', cash: 'wholesaleCashPayment', due: 'wholesaleDueAmount' };
+        const boxes = { online: 'wholesaleOnlineCheckbox', cash: 'wholesaleCashCheckbox', due: 'wholesaleDueCheckbox' };
+        if (document.getElementById(boxes[type])?.checked) {
+            Object.keys(fields).forEach(key => {
+                const input = document.getElementById(fields[key]);
+                if (input) input.value = key === type ? Math.round(total) : '0';
+                if (key !== type) {
+                    const box = document.getElementById(boxes[key]);
+                    if (box) box.checked = false;
+                }
+            });
+        }
+        this.updatePaymentTotal();
+    }
+
+    /** One tap: put whatever is not yet received (total − cash − online) in Due. */
+    static putRestInDue() {
+        const { total } = this.computeTotals();
+        const { cash, online } = this.readPaymentSplit();
+        const rest = round2(total - cash - online);
+        if (rest < 0) {
+            UIManager.showToast(paymentSplitMessage(checkPaymentSplit(total, { cash, online })));
+            return;
+        }
+        const dueInput = document.getElementById('wholesaleDueAmount');
+        if (dueInput) dueInput.value = rest;
+        const dueCheckbox = document.getElementById('wholesaleDueCheckbox');
+        if (dueCheckbox) dueCheckbox.checked = rest > 0;
+        this.updatePaymentTotal();
+    }
+
+    static resetPaymentFields() {
+        ['wholesaleOnlinePayment', 'wholesaleCashPayment', 'wholesaleDueAmount'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        ['wholesaleOnlineCheckbox', 'wholesaleCashCheckbox', 'wholesaleDueCheckbox'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.checked = false;
+        });
+        this.updatePaymentTotal();
+    }
+
+    /** Current bill lines (for draft recovery / tests). */
+    static getItems() {
+        return wholesaleSaleItems;
+    }
+
+    static setItems(items) {
+        wholesaleSaleItems = items || [];
+        if (wholesaleSaleItems.length === 0) pendingBill = null;
+    }
+
+    /** @returns {{id: string, billNumber: (string|null)}|null} */
+    static getPendingBill() {
+        return pendingBill ? { ...pendingBill } : null;
     }
 
     static removeWholesaleItem(index) {
@@ -274,21 +351,41 @@ export class WholesaleSalesManager {
         }
 
         const customerName = Helpers.getInputText('wholesaleCustomerName');
-        const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
         const comments = Helpers.getInputText('salesComments');
-        const expenses = Helpers.getInputInt('salesExpensesAmount');
+        const expenses = round2(Helpers.getInputNumber('salesExpensesAmount'));
         
-        // Get profit from display
-        const profit = Helpers.getElementInt('salesProfitAmount');
-        const profitPercent = Helpers.getElementNumber('salesProfitPercent');
+        // Total and profit come from the bill lines, never from the text on screen
+        const { total, profit, profitPercent } = this.computeTotals();
+        const { cash, online, due } = this.readPaymentSplit();
+        
+        if (cash === 0 && online === 0 && due === 0) {
+            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
+            return;
+        }
+        if (dueNeedsName(due, customerName)) {
+            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
+            document.getElementById('wholesaleCustomerName')?.focus();
+            return;
+        }
+        const split = checkPaymentSplit(total, { cash, online, due });
+        if (!split.ok) {
+            Helpers.showSplitRemaining('wholesaleSplitRemaining', split);
+            UIManager.showToast(paymentSplitMessage(split));
+            return;
+        }
         
         try {
-            // Generate bill number
-            const billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
+            const pending = ensurePendingBill();
+            if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
+            // A retry keeps the first attempt's time so an unchanged sale is written identically
+            if (!pending.timestamp) {
+                pending.timestamp = Date.now();
+                pending.date = Helpers.getCurrentDateTime();
+            }
             
             const saleData = {
-                id: Date.now(),
-                billNumber,
+                id: pending.id,
+                billNumber: pending.billNumber,
                 customerName,
                 items: wholesaleSaleItems.map(item => ({
                     itemId: item.itemId,
@@ -303,20 +400,26 @@ export class WholesaleSalesManager {
                 profitPercent,
                 comments,
                 type: 'wholesale',
+                // Top-level copies keep readPayment(), the cash drawer and Outstanding in step
+                onlinePayment: online,
+                cashPayment: cash,
+                dueAmount: due,
                 payment: {
-                    online: 0,
-                    cash: 0,
-                    total: 0,
-                    due: total
+                    online,
+                    cash,
+                    due,
+                    total: round2(online + cash + due)
                 },
-                date: Helpers.getCurrentDateTime(),
-                timestamp: Date.now(),
+                date: pending.date,
+                timestamp: pending.timestamp,
                 createdBy: AppState.currentUser?.uid || 'unknown',
                 createdByName: AppState.userName || 'User',
                 source: 'sales-tab'
             };
             
-            const writePromise = FirebaseService.saveWholesaleSale(saleData);
+            const retry = pending.attempted;
+            pending.attempted = true;
+            const writePromise = FirebaseService.saveWholesaleSale(saleData, { retry });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(saleData);
             }
@@ -336,12 +439,14 @@ export class WholesaleSalesManager {
             this.updateWholesaleCustomerOptions(customerName);
             
             // Clear bill
+            pendingBill = null;
             wholesaleSaleItems = [];
             document.getElementById('wholesaleCustomerName').value = '';
             document.getElementById('sellQuantity').value = '';
             document.getElementById('sellRate').value = '';
             document.getElementById('salesComments').value = '';
             document.getElementById('salesExpensesAmount').value = '0';
+            this.resetPaymentFields();
             
             // Clear stock details
             document.getElementById('availableStock').textContent = '-';
@@ -355,7 +460,7 @@ export class WholesaleSalesManager {
             // this dropdown. The item detail fields were cleared above so no stale
             // per-item stock is shown in the meantime.
             
-            UIManager.showToast('✓ Sale completed successfully');
+            UIManager.showToast(FirebaseService.keptServerPayment(saleData) ? KEPT_SERVER_PAYMENT_MESSAGE : '✓ Sale completed successfully');
             UIManager.hapticFeedback();
             return saleData;
         } catch (error) {
@@ -458,6 +563,10 @@ export class WholesaleSalesManager {
     }
 
     static async recordPayment(saleId) {
+        return Helpers.runExclusive('due-payment', '[data-record-payment]', () => this._recordPayment(saleId));
+    }
+
+    static async _recordPayment(saleId) {
         const salesHistory = AppState.salesHistory;
         const sale = salesHistory.find(s => s.id == saleId);
         if (!sale) {
@@ -486,6 +595,7 @@ export class WholesaleSalesManager {
         }
         
         const payment = {
+            id: OutstandingManager.paymentEntryId(paymentInput, paymentAmount),
             amount: paymentAmount,
             date: Helpers.getCurrentDateTime(),
             recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
@@ -497,6 +607,7 @@ export class WholesaleSalesManager {
             const written = await OutstandingManager.applyPaymentTransaction('wholesale', sale, paymentAmount, payment);
             Object.assign(sale, written);
             
+            OutstandingManager.clearPaymentEntryId(paymentInput);
             if (paymentInput) paymentInput.value = '';
             this.renderSalesOutstanding();
             this.renderSalesHistory();
@@ -591,7 +702,7 @@ export class WholesaleSalesManager {
                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                                 <label style="font-weight: 500;">Payment (₹):</label>
                                 <input type="number" inputmode="decimal" id="payment_${Helpers.escapeHtml(sale.id)}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
-                                <button onclick="window.app.wholesaleSales.recordPayment('${Helpers.escapeJsAttr(sale.id)}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
+                                <button data-record-payment onclick="window.app.wholesaleSales.recordPayment('${Helpers.escapeJsAttr(sale.id)}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
                             </div>
                             <div style="display: flex; align-items: center;">
                                 <input type="checkbox" id="clear_${Helpers.escapeHtml(sale.id)}" onchange="window.app.wholesaleSales.markSaleAsCleared('${Helpers.escapeJsAttr(sale.id)}')" style="margin-right: 8px; transform: scale(1.2);" />

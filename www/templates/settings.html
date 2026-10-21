@@ -16,6 +16,23 @@
             <p class="setting-description">Display Hindi names in the app (Bills always use Hindi names)</p>
         </div>
 
+        <div class="settings-card" id="labourSettingsCard">
+            <h3>Labour Charges / मज़दूरी</h3>
+
+            <label>Heavy packet weight (kg) / भारी बोरी (kg):</label>
+            <input type="number" inputmode="decimal" id="settingHeavyWeight" placeholder="30" value="30" onchange="window.app.settings.save()" />
+            <p class="setting-description">Packets above this weight get a labour charge</p>
+
+            <label>Labour per heavy packet (₹) / प्रति भारी बोरी मज़दूरी (₹):</label>
+            <input type="number" inputmode="decimal" id="settingLaborRate" placeholder="6" value="6" onchange="window.app.settings.save()" />
+            <p class="setting-description" id="labourSettingsNote">Saved for everyone. / सभी के लिए सहेजा जाता है।</p>
+
+            <label class="checkbox-label">
+                <input type="checkbox" id="settingAutoLabor" checked onchange="window.app.settings.save()">
+                <span>Enable automatic labor charges by default</span>
+            </label>
+        </div>
+
         <div class="settings-card">
             <h3>Bluetooth Printer</h3>
             

@@ -132,6 +132,115 @@ export function readLineItem(item) {
 }
 
 /**
+ * Purchase bill totals computed from the line items (never from on-screen text).
+ * @param {Array<Object>} items - bill lines ({ total, weights })
+ * @param {number} laborCharges - labour deducted from the item total (0 when Labour is unticked)
+ * @param {number} [heavyWeightThreshold=30] - packets heavier than this (kg) count as heavy
+ * @returns {{billTotal: number, laborCharges: number, grandTotal: number, totalPackets: number, heavyPackets: number}}
+ */
+export function computePurchaseTotals(items, laborCharges = 0, heavyWeightThreshold = 30) {
+    const list = Array.isArray(items) ? items : [];
+    const billTotal = sumMoney(list, item => readLineItem(item).total);
+    let totalPackets = 0;
+    let heavyPackets = 0;
+    for (const item of list) {
+        const weights = Array.isArray(item?.weights) ? item.weights : [];
+        totalPackets += weights.length;
+        heavyPackets += weights.filter(w => Number(w) > heavyWeightThreshold).length;
+    }
+    const labour = round2(toMoney(laborCharges) || 0);
+    return { billTotal, laborCharges: labour, grandTotal: round2(billTotal - labour), totalPackets, heavyPackets };
+}
+
+/**
+ * Wholesale sale total, cost (from stock average rates) and profit computed
+ * from the line data.
+ * @param {Array<Object>} items - sale lines ({ itemId, qty|quantity, total })
+ * @param {Object} stock - AppState.stock ({ [itemId]: { rate } })
+ * @param {number} [expenses=0]
+ * @returns {{total: number, cost: number, profit: number, profitPercent: number}}
+ */
+export function computeWholesaleTotals(items, stock = {}, expenses = 0) {
+    const list = Array.isArray(items) ? items : [];
+    const total = sumMoney(list, item => readLineItem(item).total);
+    const cost = sumMoney(list, item => {
+        const rate = toMoney(stock?.[item?.itemId]?.rate);
+        return rate ? rate * readLineItem(item).qty : 0;
+    });
+    const profit = round2(total - cost - (toMoney(expenses) || 0));
+    const profitPercent = total > 0 ? Math.round((profit / total) * 1000) / 10 : 0;
+    return { total, cost, profit, profitPercent };
+}
+
+/** Allowed gap (₹) between cash + online + due and the bill total. */
+export const SPLIT_TOLERANCE = 1;
+
+/**
+ * Checks that cash + online + due adds up to the bill total (within ₹1).
+ * @param {number} total - bill total
+ * @param {{cash?: number, online?: number, due?: number}} split
+ * @returns {{ok: boolean, entered: number, difference: number}} difference = total − entered
+ *   (positive: amount still to allocate; negative: entered too much)
+ */
+export function checkPaymentSplit(total, { cash = 0, online = 0, due = 0 } = {}) {
+    const entered = round2((toMoney(cash) || 0) + (toMoney(online) || 0) + (toMoney(due) || 0));
+    const difference = round2((toMoney(total) || 0) - entered);
+    return { ok: Math.abs(difference) <= SPLIT_TOLERANCE, entered, difference };
+}
+
+/**
+ * Bilingual message for a payment split that does not match the bill total.
+ * @param {{difference: number}} check - result of checkPaymentSplit
+ * @returns {string}
+ */
+export function paymentSplitMessage({ difference }) {
+    const amount = Math.abs(round2(difference)).toLocaleString('en-IN');
+    return difference > 0
+        ? `Cash + Online + Due is ₹${amount} less than the bill total. Add ₹${amount} to Cash, Online or Due. / नकद + ऑनलाइन + उधार बिल से ₹${amount} कम है। ₹${amount} नकद, ऑनलाइन या उधार में जोड़ें।`
+        : `Cash + Online + Due is ₹${amount} more than the bill total. Reduce it by ₹${amount}. / नकद + ऑनलाइन + उधार बिल से ₹${amount} ज़्यादा है। ₹${amount} कम करें।`;
+}
+
+/** Shown when a retried save found a payment recorded on the bill since the first attempt (#70). */
+export const KEPT_SERVER_PAYMENT_MESSAGE =
+    'Bill was already saved; a payment recorded since was kept. / बिल पहले ही सेव हो चुका था; बाद में दर्ज भुगतान रखा गया।';
+
+/** Message shown when a bill with an unpaid part has no party name. */
+export const NAME_REQUIRED_FOR_DUE_MESSAGE =
+    'Enter the name — a bill with Due needs a customer/supplier name. / नाम लिखें — उधार वाले बिल पर ग्राहक/व्यापारी का नाम ज़रूरी है।';
+
+/**
+ * Whether a bill must carry a party name: anything left due must be
+ * attributable to someone.
+ * @param {number} due
+ * @param {string} name
+ * @returns {boolean} true when the save must be blocked
+ */
+export function dueNeedsName(due, name) {
+    return round2(due) > 0 && !String(name ?? '').trim();
+}
+
+/** Default labour charge per heavy packet (₹) and heavy-packet weight (kg). */
+export const DEFAULT_LABOUR_RATE = 6;
+export const DEFAULT_HEAVY_WEIGHT = 30;
+
+/**
+ * Labour settings with blank / invalid / non-positive values replaced by the
+ * defaults (owner decision on #20: 6 is intended; to skip labour, untick Labour).
+ * @param {{laborRate?: *, heavyWeightThreshold?: *}} [raw]
+ * @returns {{laborRate: number, heavyWeightThreshold: number}}
+ */
+export function normalizeLabourSettings(raw = {}) {
+    const positive = (v, fallback) => {
+        const n = toMoney(v);
+        return n !== null && n > 0 ? round2(n) : fallback;
+    };
+    return {
+        laborRate: positive(raw?.laborRate, DEFAULT_LABOUR_RATE),
+        heavyWeightThreshold: positive(raw?.heavyWeightThreshold, DEFAULT_HEAVY_WEIGHT)
+    };
+}
+
+/**
  * Average price per unit, or null when the quantity is 0/invalid
  * (callers show "—" instead of Infinity/NaN).
  * @param {number} value

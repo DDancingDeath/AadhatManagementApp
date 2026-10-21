@@ -15,7 +15,6 @@ import { OutstandingManager } from './modules/outstanding.js';
 import { ReportsManager } from './modules/reports.js';
 import { ExpensesManager } from './modules/miscellaneous.js';
 import { SettingsManager } from './modules/settings.js';
-import { DateFilterManager } from './modules/datefilter.js';
 import { UsersManager } from './modules/users.js';
 import { FinanceManager } from './modules/finance.js';
 import { AnalyticsManager } from './modules/analytics.js';
@@ -39,7 +38,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022j-cash-outstanding';
+const BUILD_ID = '20261022k-money';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -211,6 +210,10 @@ async function initializeUserData() {
             markStartup('version-check', { ok });
             return ok;
         });
+        // Shared labour rate / heavy-packet weight (#20) come from the same settings/app read
+        FirebaseService.loadAppSettings()
+            .then(data => SettingsManager.applySharedSettings(data))
+            .catch(e => console.warn('Shared labour settings not loaded:', e?.code || e));
 
         // Attach real-time listeners. Their first snapshots populate AppState,
         // so every document is read once per app open (a separate .get() of
@@ -751,6 +754,7 @@ window.app = {
         updateSalePaymentTotal: () => BillingManager.updateSalePaymentTotal(),
         fillSalePayableAmount: (type) => BillingManager.fillSalePayableAmount(type),
         fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
+        putRestInDue: (mode) => BillingManager.putRestInDue(mode),
         completeSale: () => BillingManager.completeSale(),
         
         // Print bill (saves and prints; printing starts as soon as the save is issued)
@@ -872,6 +876,9 @@ window.app = {
         reprintSale: (index) => WholesaleSalesManager.reprintSale(index),
         reprintSaleById: (saleId) => WholesaleSalesManager.reprintSaleById(saleId),
         updateProfitCalculation: () => WholesaleSalesManager.updateProfitCalculation(),
+        updatePaymentTotal: () => WholesaleSalesManager.updatePaymentTotal(),
+        fillReceivableAmount: (type) => WholesaleSalesManager.fillReceivableAmount(type),
+        putRestInDue: () => WholesaleSalesManager.putRestInDue(),
         pickContact: () => WholesaleSalesManager.pickContact()
     },
     
@@ -1027,12 +1034,6 @@ window.app = {
     install: {
         prompt: () => InstallManager.prompt(),
         refresh: () => InstallManager.refresh()
-    },
-    
-    // Date Filter
-    dateFilter: {
-        setFilter: (filter, evt) => DateFilterManager.setDateFilter(filter, evt),
-        applyCustomFilter: () => DateFilterManager.applyCustomDateFilter()
     },
     
     // Users

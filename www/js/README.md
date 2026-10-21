@@ -33,7 +33,6 @@ www/js/
 │   ├── retail-sale.js        # Retail sale creation (weights, rates, payment)
 │   ├── wholesale-sales.js    # Wholesale sales (sales tab)
 │   ├── cash-management.js    # Session-based cash tracking
-│   ├── datefilter.js         # Date range filtering
 │   ├── day.js                # Today page
 │   ├── diagnostics.js        # Owner view of telemetry errors + audit logs
 │   ├── finance.js            # Financial overview and profit/loss

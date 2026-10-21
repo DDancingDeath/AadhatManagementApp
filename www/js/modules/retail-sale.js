@@ -11,6 +11,9 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
+import {
+    checkPaymentSplit, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2, sumMoney
+} from '../utils/money.js';
 
 /** Buttons disabled while a retail save/print is in flight */
 const RETAIL_BUTTONS = '#saveSaleBtn, #printSaleBtn';
@@ -26,6 +29,13 @@ let saleItems = [];
  * @private
  */
 let saleWeights = [];
+
+/**
+ * Id (and bill number, once issued) of the sale being entered, reused by every
+ * save attempt so a retry cannot create a second bill (#70).
+ * @type {{id: string, billNumber: (string|null)}|null}
+ */
+let pendingBill = null;
 
 /**
  * Retail Sale Manager - Handles all retail sale operations
@@ -182,6 +192,7 @@ const RetailSaleManager = {
             UIManager.showToast('Item not found');
             return;
         }
+        this.ensurePendingBill();
         
         const itemName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         
@@ -379,13 +390,43 @@ const RetailSaleManager = {
      * Update sale payment total display
      */
     updateSalePaymentTotal() {
-        const saleOnline = Helpers.getInputInt('saleOnlinePayment');
-        const saleCash = Helpers.getInputInt('saleCashPayment');
+        const split = this.readPaymentSplit();
         
-        const totalReceived = saleOnline + saleCash;
+        const totalReceived = split.online + split.cash;
         
         const totalReceivedEl = document.getElementById('totalReceived');
         if (totalReceivedEl) totalReceivedEl.textContent = Math.round(totalReceived);
+        Helpers.showSplitRemaining('saleSplitRemaining', checkPaymentSplit(sumMoney(saleItems, item => item.total), split));
+    },
+
+    /**
+     * Cash / online / due typed on the retail sale form
+     * @returns {{cash: number, online: number, due: number}}
+     */
+    readPaymentSplit() {
+        return {
+            online: round2(Helpers.getInputNumber('saleOnlinePayment')),
+            cash: round2(Helpers.getInputNumber('saleCashPayment')),
+            due: round2(Helpers.getInputNumber('saleDueAmount'))
+        };
+    },
+
+    /**
+     * One tap: put whatever is not yet received (total − cash − online) in Due.
+     */
+    putRestInDue() {
+        const total = sumMoney(saleItems, item => item.total);
+        const { cash, online } = this.readPaymentSplit();
+        const rest = round2(total - cash - online);
+        if (rest < 0) {
+            UIManager.showToast(paymentSplitMessage(checkPaymentSplit(total, { cash, online })));
+            return;
+        }
+        const dueInput = document.getElementById('saleDueAmount');
+        if (dueInput) dueInput.value = rest;
+        const dueCheckbox = document.getElementById('saleDueCheckbox');
+        if (dueCheckbox) dueCheckbox.checked = rest > 0;
+        this.updateSalePaymentTotal();
     },
 
     /**
@@ -477,10 +518,10 @@ const RetailSaleManager = {
             }
         }
 
-        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const saleOnline = Helpers.getInputInt('saleOnlinePayment');
-        const saleCash = Helpers.getInputInt('saleCashPayment');
-        const saleDue = Helpers.getInputInt('saleDueAmount');
+        const salesTotal = sumMoney(saleItems, item => item.total);
+        const saleOnline = round2(Helpers.getInputNumber('saleOnlinePayment'));
+        const saleCash = round2(Helpers.getInputNumber('saleCashPayment'));
+        const saleDue = round2(Helpers.getInputNumber('saleDueAmount'));
         const saleCustomer = Helpers.getInputText('saleCustomerName');
         const saleComments = Helpers.getInputText('saleComments');
         const printComments = document.getElementById('salePrintComments')?.checked || false;
@@ -490,15 +531,34 @@ const RetailSaleManager = {
             return;
         }
         
+        if (dueNeedsName(saleDue, saleCustomer)) {
+            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
+            document.getElementById('saleCustomerName')?.focus();
+            return;
+        }
+        
+        const split = checkPaymentSplit(salesTotal, { cash: saleCash, online: saleOnline, due: saleDue });
+        if (!split.ok) {
+            Helpers.showSplitRemaining('saleSplitRemaining', split);
+            UIManager.showToast(paymentSplitMessage(split));
+            return;
+        }
+        
         const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
         
         try {
             UIManager.showLoading();
-            const billNumber = await Helpers.generateBillNumber('S', 'retailSales');
+            const pending = this.ensurePendingBill();
+            if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('S', 'retailSales');
+            // A retry keeps the first attempt's time so an unchanged sale is written identically
+            if (!pending.timestamp) {
+                pending.timestamp = Date.now();
+                pending.date = new Date().toISOString();
+            }
             
             const sale = {
-                id: Helpers.generateId(),
-                billNumber,
+                id: pending.id,
+                billNumber: pending.billNumber,
                 items: saleItems,
                 total: salesTotal,
                 totalPackets: totalPackets,
@@ -510,19 +570,21 @@ const RetailSaleManager = {
                 printComments: printComments,
                 type: 'retail',
                 isPurchase: false,
-                date: new Date().toISOString(),
+                date: pending.date,
                 userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
                 userName: AppState.userName || 'User',
-                timestamp: Date.now(),
+                timestamp: pending.timestamp,
                 payment: {
                     online: saleOnline,
                     cash: saleCash,
                     due: saleDue,
-                    total: saleOnline + saleCash + saleDue
+                    total: round2(saleOnline + saleCash + saleDue)
                 }
             };
             
-            const writePromise = FirebaseService.saveRetailSale(sale);
+            const retry = pending.attempted;
+            pending.attempted = true;
+            const writePromise = FirebaseService.saveRetailSale(sale, { retry });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(sale);
             }
@@ -543,6 +605,7 @@ const RetailSaleManager = {
             ]);
             
             // Clear sale
+            pendingBill = null;
             saleItems = [];
             this.renderSalesBill();
             
@@ -550,7 +613,7 @@ const RetailSaleManager = {
             this.resetForm();
             
             UIManager.hideLoading();
-            UIManager.showToast('Sale completed successfully!');
+            UIManager.showToast(FirebaseService.keptServerPayment(sale) ? KEPT_SERVER_PAYMENT_MESSAGE : 'Sale completed successfully!');
             UIManager.hapticFeedback('success');
             
             return sale;
@@ -586,6 +649,7 @@ const RetailSaleManager = {
      * Clear the current sale
      */
     clearSale() {
+        pendingBill = null;
         saleItems = [];
         saleWeights = [];
         this.renderSalesBill();
@@ -666,6 +730,31 @@ const RetailSaleManager = {
     },
 
     // -------------------- STATE ACCESS --------------------
+
+    /**
+     * Id/bill number of the sale being entered, created on first use (#70)
+     * @returns {{id: string, billNumber: (string|null)}}
+     */
+    ensurePendingBill() {
+        if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null, attempted: false, date: null, timestamp: null };
+        return pendingBill;
+    },
+
+    /** @returns {{id: string, billNumber: (string|null)}|null} for auto-save / drafts */
+    getPendingBill() {
+        return pendingBill ? { ...pendingBill } : null;
+    },
+
+    /** Restore the sale id from an auto-save / draft. */
+    setPendingBill(pending) {
+        pendingBill = pending && pending.id ? {
+            id: String(pending.id),
+            billNumber: pending.billNumber || null,
+            attempted: !!pending.attempted,
+            date: pending.date || null,
+            timestamp: pending.timestamp || null
+        } : null;
+    },
 
     /**
      * Get current sale items

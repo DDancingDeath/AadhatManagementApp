@@ -10,6 +10,10 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
+import {
+    checkPaymentSplit, computePurchaseTotals, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, normalizeLabourSettings,
+    paymentSplitMessage, round2
+} from '../utils/money.js';
 
 /** Buttons disabled while a purchase save/print is in flight */
 const PURCHASE_BUTTONS = '#saveBillBtn, #printBillBtn';
@@ -25,6 +29,15 @@ let billItems = [];
  * @private
  */
 let weights = [];
+
+/**
+ * Id (and bill number, once issued) of the bill being entered. Created with the
+ * bill and reused by every save attempt, so a retry after a timeout overwrites
+ * the same document instead of creating a second bill (#70). Cleared only after
+ * a confirmed save or when the bill is discarded.
+ * @type {{id: string, billNumber: (string|null)}|null}
+ */
+let pendingBill = null;
 
 /**
  * Purchase Manager - Handles all purchase operations
@@ -174,6 +187,7 @@ const PurchaseManager = {
             UIManager.showToast('Item not found');
             return;
         }
+        this.ensurePendingBill();
         
         const qty = weights.reduce((sum, w) => sum + w, 0);
         const total = Math.round(qty * rate);
@@ -270,15 +284,7 @@ const PurchaseManager = {
         }).join('');
         
         // Update totals
-        const billTotal = billItems.reduce((sum, item) => sum + item.total, 0);
-        const totalPackets = billItems.reduce((sum, item) => sum + item.weights.length, 0);
-        
-        // Calculate heavy packets
-        const heavyWeightThreshold = AppState.settings?.heavyWeightThreshold || 30;
-        const totalHeavyPackets = billItems.reduce((sum, item) => {
-            const heavyCount = item.weights.filter(w => w > heavyWeightThreshold).length;
-            return sum + heavyCount;
-        }, 0);
+        const { billTotal, totalPackets } = this.computeTotals(0);
         
         if (billTotalSpan) billTotalSpan.textContent = Math.round(billTotal);
         if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = totalPackets;
@@ -289,7 +295,7 @@ const PurchaseManager = {
             delete laborChargesInput.dataset.manuallySet;
         }
         
-        this.updateTotals(totalHeavyPackets);
+        this.updateTotals();
     },
 
     /**
@@ -342,18 +348,34 @@ const PurchaseManager = {
     // -------------------- TOTALS --------------------
 
     /**
-     * Update totals display
-     * @param {number} heavyPacketsCount - Number of heavy packets for labor calculation
+     * Totals of the current bill computed from its items (the screen is display-only).
+     * @param {number} [laborCharges] - labour to deduct; defaults to the labour field
+     *   (0 when the Labour checkbox is unticked)
+     * @returns {{billTotal: number, laborCharges: number, grandTotal: number, totalPackets: number, heavyPackets: number}}
      */
-    updateTotals(heavyPacketsCount = 0) {
-        const billTotal = Helpers.getElementInt('billTotal');
+    computeTotals(laborCharges) {
+        if (laborCharges === undefined) {
+            const autoLaborCheckbox = document.getElementById('autoLaborCharge');
+            const labourOn = autoLaborCheckbox ? autoLaborCheckbox.checked : true;
+            laborCharges = labourOn ? Helpers.getInputNumber('manualLaborCharges') : 0;
+        }
+        const { heavyWeightThreshold } = normalizeLabourSettings(AppState.settings);
+        return computePurchaseTotals(billItems, laborCharges, heavyWeightThreshold);
+    },
+
+    /**
+     * Update totals display. Heavy packets are counted from the bill items.
+     */
+    updateTotals() {
+        const { billTotal, heavyPackets: heavyPacketsCount } = this.computeTotals(0);
         const autoLaborCheckbox = document.getElementById('autoLaborCharge');
         const laborCalculationSpan = document.getElementById('laborCalculation');
         const laborChargesInput = document.getElementById('manualLaborCharges');
         
         let laborCharges = 0;
         if (autoLaborCheckbox?.checked) {
-            const laborRate = AppState.settings?.laborRate || 6;
+            // Shared rate for every device (#20); blank/invalid falls back to ₹6
+            const { laborRate } = normalizeLabourSettings(AppState.settings);
             const autoCalculatedLabor = laborRate * heavyPacketsCount;
             
             if (laborChargesInput && !laborChargesInput.dataset.manuallySet && this.billingManager?.editingBillIndex === undefined) {
@@ -397,15 +419,44 @@ const PurchaseManager = {
      * Update payment total display
      */
     updatePaymentTotal() {
-        const onlinePayment = Helpers.getInputInt('onlinePayment');
-        const cashPayment = Helpers.getInputInt('cashPayment');
+        const split = this.readPaymentSplit();
         
-        const totalPaid = onlinePayment + cashPayment;
+        const totalPaid = split.online + split.cash;
         
         const totalPaymentElement = document.getElementById('totalPayment');
         if (totalPaymentElement) {
             totalPaymentElement.textContent = Math.round(totalPaid);
         }
+        Helpers.showSplitRemaining('purchaseSplitRemaining', checkPaymentSplit(this.computeTotals().grandTotal, split));
+    },
+
+    /**
+     * Cash / online / due typed on the purchase form
+     * @returns {{cash: number, online: number, due: number}}
+     */
+    readPaymentSplit() {
+        return {
+            online: round2(Helpers.getInputNumber('onlinePayment')),
+            cash: round2(Helpers.getInputNumber('cashPayment')),
+            due: round2(Helpers.getInputNumber('dueAmount'))
+        };
+    },
+
+    /**
+     * One tap: put whatever is not yet paid (total − cash − online) in Due.
+     */
+    putRestInDue() {
+        const { cash, online } = this.readPaymentSplit();
+        const rest = round2(this.computeTotals().grandTotal - cash - online);
+        if (rest < 0) {
+            UIManager.showToast(paymentSplitMessage(checkPaymentSplit(this.computeTotals().grandTotal, { cash, online })));
+            return;
+        }
+        const dueInput = document.getElementById('dueAmount');
+        if (dueInput) dueInput.value = rest;
+        const dueCheckbox = document.getElementById('dueCheckbox');
+        if (dueCheckbox) dueCheckbox.checked = rest > 0;
+        this.updatePaymentTotal();
     },
 
     /**
@@ -413,7 +464,7 @@ const PurchaseManager = {
      * @param {'online'|'cash'|'due'} type - Payment type
      */
     fillPayableAmount(type) {
-        const grandTotal = Helpers.getElementInt('amountPayable');
+        const { grandTotal } = this.computeTotals();
         const onlineInput = document.getElementById('onlinePayment');
         const cashInput = document.getElementById('cashPayment');
         const dueInput = document.getElementById('dueAmount');
@@ -513,19 +564,30 @@ const PurchaseManager = {
             return;
         }
         
-        const billTotal = Helpers.getElementInt('billTotal');
-        const laborCharges = Helpers.getInputInt('manualLaborCharges');
-        const totalPackets = Helpers.getElementInt('totalPacketsInBill');
-        const grandTotal = Helpers.getElementInt('amountPayable');
-        const onlinePayment = Helpers.getInputInt('onlinePayment');
-        const cashPayment = Helpers.getInputInt('cashPayment');
-        const dueAmount = Helpers.getInputInt('dueAmount');
+        // Totals come from the items, never from the (rounded) text on screen
+        const { billTotal, laborCharges, totalPackets, grandTotal } = this.computeTotals();
+        const onlinePayment = round2(Helpers.getInputNumber('onlinePayment'));
+        const cashPayment = round2(Helpers.getInputNumber('cashPayment'));
+        const dueAmount = round2(Helpers.getInputNumber('dueAmount'));
         const customerName = Helpers.getInputText('customerName');
         const comments = Helpers.getInputText('billComments');
         const printComments = document.getElementById('billPrintComments')?.checked || false;
         
         if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {
             UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
+            return;
+        }
+        
+        if (dueNeedsName(dueAmount, customerName)) {
+            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
+            document.getElementById('customerName')?.focus();
+            return;
+        }
+        
+        const split = checkPaymentSplit(grandTotal, { cash: cashPayment, online: onlinePayment, due: dueAmount });
+        if (!split.ok) {
+            Helpers.showSplitRemaining('purchaseSplitRemaining', split);
+            UIManager.showToast(paymentSplitMessage(split));
             return;
         }
         
@@ -538,11 +600,17 @@ const PurchaseManager = {
         
         try {
             UIManager.showLoading();
-            const billNumber = await Helpers.generateBillNumber('P', 'purchases');
+            const pending = this.ensurePendingBill();
+            if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('P', 'purchases');
+            // A retry keeps the first attempt's time so an unchanged bill is written identically
+            if (!pending.timestamp) {
+                pending.timestamp = Date.now();
+                pending.date = new Date().toISOString();
+            }
             
             const bill = {
-                id: Helpers.generateId(),
-                billNumber,
+                id: pending.id,
+                billNumber: pending.billNumber,
                 items: billItems,
                 billTotal,
                 laborCharges,
@@ -558,18 +626,20 @@ const PurchaseManager = {
                 printComments,
                 type: 'purchase',
                 isPurchase: true,
-                date: new Date().toISOString(),
+                date: pending.date,
                 userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
-                timestamp: Date.now(),
+                timestamp: pending.timestamp,
                 payment: {
                     online: onlinePayment,
                     cash: cashPayment,
                     due: dueAmount,
-                    total: onlinePayment + cashPayment + dueAmount
+                    total: round2(onlinePayment + cashPayment + dueAmount)
                 }
             };
             
-            const writePromise = FirebaseService.savePurchase(bill);
+            const retry = pending.attempted;
+            pending.attempted = true;
+            const writePromise = FirebaseService.savePurchase(bill, { retry });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(bill);
             }
@@ -589,6 +659,7 @@ const PurchaseManager = {
             ]);
             
             // Clear bill
+            pendingBill = null;
             billItems = [];
             weights = [];
             this.renderBill();
@@ -598,7 +669,7 @@ const PurchaseManager = {
             this.resetForm();
             
             UIManager.hideLoading();
-            UIManager.showToast('Bill saved successfully!');
+            UIManager.showToast(FirebaseService.keptServerPayment(bill) ? KEPT_SERVER_PAYMENT_MESSAGE : 'Bill saved successfully!');
             UIManager.hapticFeedback('success');
             
             return bill;
@@ -633,6 +704,7 @@ const PurchaseManager = {
      * Clear the current bill
      */
     clearBill() {
+        pendingBill = null;
         billItems = [];
         weights = [];
         this.renderBill();
@@ -679,6 +751,31 @@ const PurchaseManager = {
     },
 
     // -------------------- STATE ACCESS --------------------
+
+    /**
+     * Id/bill number of the bill being entered, created on first use (#70)
+     * @returns {{id: string, billNumber: (string|null)}}
+     */
+    ensurePendingBill() {
+        if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null, attempted: false, date: null, timestamp: null };
+        return pendingBill;
+    },
+
+    /** @returns {{id: string, billNumber: (string|null)}|null} for auto-save / drafts */
+    getPendingBill() {
+        return pendingBill ? { ...pendingBill } : null;
+    },
+
+    /** Restore the bill id from an auto-save / draft. */
+    setPendingBill(pending) {
+        pendingBill = pending && pending.id ? {
+            id: String(pending.id),
+            billNumber: pending.billNumber || null,
+            attempted: !!pending.attempted,
+            date: pending.date || null,
+            timestamp: pending.timestamp || null
+        } : null;
+    },
 
     /**
      * Get current bill items

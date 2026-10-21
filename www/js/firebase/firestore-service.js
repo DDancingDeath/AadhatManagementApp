@@ -352,6 +352,8 @@ let checkpointDoc;
 /** Checkpoint in use for stock (parsed), or null. */
 let activeCheckpoint = null;
 let checkpointItemsCheck = { items: null, checkpoint: null, ok: false };
+/** settings/app read once per app open (version check + shared labour settings) */
+let appSettingsPromise = null;
 let rebuildPromise = null;
 let rebuildRequestedAgain = false;
 /** Stock objects returned while another device rebuilds the checkpoint (not exact yet). */
@@ -637,17 +639,82 @@ function prepareStockRecord(collKey, record, isNew) {
     if (HISTORY_SPEC[collKey].dues) record.openDue = hasDue(collKey, record);
 }
 
-/** Creates (or overwrites by id) a bill and keeps memory/checkpoint in step. @private */
-async function saveBill(collKey, record, label) {
+/** Bill fields that Outstanding / other devices change after a bill is created. */
+const BILL_MONEY_FIELDS = ['payment', 'payments', 'dueAmount', 'cashPayment', 'onlinePayment', 'openDue', 'cleared'];
+/** Payment signature of the last new-bill write this device sent, by `${collKey}/${id}` (#70). */
+const sentBillPaymentSigs = new Map();
+/** Bills whose retry kept the server's money fields (a payment was recorded meanwhile). */
+const keptServerPaymentBills = new WeakSet();
+
+/**
+ * Creates a bill (or overwrites by id) and keeps memory/checkpoint in step.
+ * With `retry`, the same new bill (same id) is saved again after a failed or
+ * timed-out attempt: see retryBillSave. @private
+ */
+async function saveBill(collKey, record, label, { retry = false } = {}) {
     if (!record.userId && AppState.currentUser) record.userId = AppState.currentUser.uid;
     if (!record.userName && AppState.userName) record.userName = AppState.userName;
     const previous = record.id ? findRecord(collKey, record.id) : null;
     prepareStockRecord(collKey, record, !previous);
     if (!record.id) record.id = getDb().collection(col(collKey)).doc().id;
-    const write = getDb().collection(col(collKey)).doc(String(record.id)).set(record);
+    const docRef = getDb().collection(col(collKey)).doc(String(record.id));
+    const key = `${collKey}/${record.id}`;
+    if (retry) return retryBillSave(collKey, record, docRef, previous, key);
+    sentBillPaymentSigs.set(key, paymentSignature(record));
+    const write = docRef.set(record);
     noteStockWrite(collKey, previous, record);
     noteLocalRecordWrite(collKey, String(record.id), record);
     await settleWrite(write, label);
+    return record;
+}
+
+/**
+ * Retry of a new bill whose earlier attempt may already have reached the server
+ * (#70). In a transaction: missing → create; identical → nothing to write; if a
+ * payment was recorded on the server since (payments[] or a payment state other
+ * than the one this device sent) → save the bill but keep the server's money
+ * fields, so due / cash / payments[] stay consistent; otherwise overwrite.
+ * Needs a connection (transaction). On "kept", `record` is updated in place with
+ * the server's money fields. @private
+ */
+async function retryBillSave(collKey, record, ref, previous, key) {
+    const sentSig = sentBillPaymentSigs.get(key) ?? paymentSignature(record);
+    let kept = false;
+    let wrote = false;
+    let serverMoney = null;
+    await getDb().runTransaction(async tx => {
+        kept = false;
+        wrote = true;
+        serverMoney = null;
+        const snap = await tx.get(ref);
+        if (!snap.exists) {
+            tx.set(ref, record);
+            return;
+        }
+        const server = snap.data() || {};
+        const serverPayments = Array.isArray(server.payments) ? server.payments : [];
+        if (serverPayments.length > 0 || paymentSignature(server) !== sentSig) {
+            const nonMoney = { ...record };
+            BILL_MONEY_FIELDS.forEach(k => delete nonMoney[k]);
+            tx.set(ref, nonMoney, { merge: true });
+            serverMoney = server;
+            kept = true;
+            return;
+        }
+        wrote = !Object.keys(record).every(k => stableJson(server[k]) === stableJson(record[k]));
+        if (wrote) tx.set(ref, record);
+    });
+    if (kept) {
+        BILL_MONEY_FIELDS.forEach(k => {
+            if (k in serverMoney) record[k] = serverMoney[k];
+            else delete record[k];
+        });
+        keptServerPaymentBills.add(record);
+    }
+    sentBillPaymentSigs.set(key, paymentSignature(record));
+    // An identical retry wrote nothing: stock and the checkpoint are unchanged
+    if (wrote) noteStockWrite(collKey, previous, record, { oldUnknown: true });
+    noteLocalRecordWrite(collKey, String(record.id), record);
     return record;
 }
 
@@ -1490,6 +1557,7 @@ const FirebaseService = {
         activeCheckpoint = null;
         checkpointItemsCheck = { items: null, checkpoint: null, ok: false };
         rebuildPromise = null;
+        appSettingsPromise = null;
         rebuildRequestedAgain = false;
         rebuildAttempted = false;
         clearTimeout(leaseWaitTimer);
@@ -1669,8 +1737,8 @@ const FirebaseService = {
      * @param {number} purchase.total - Total purchase amount
      * @returns {Promise<Object>} The saved purchase with ID
      */
-    async savePurchase(purchase) {
-        return saveBill('purchases', purchase, 'savePurchase');
+    async savePurchase(purchase, options) {
+        return saveBill('purchases', purchase, 'savePurchase', options);
     },
 
     /**
@@ -1716,8 +1784,8 @@ const FirebaseService = {
      * @param {number} sale.total - Total sale amount
      * @returns {Promise<Object>} The saved sale with ID
      */
-    async saveWholesaleSale(sale) {
-        return saveBill('wholesaleSales', sale, 'saveWholesaleSale');
+    async saveWholesaleSale(sale, options) {
+        return saveBill('wholesaleSales', sale, 'saveWholesaleSale', options);
     },
 
     /**
@@ -1743,8 +1811,8 @@ const FirebaseService = {
      * @param {number} sale.total - Total sale amount
      * @returns {Promise<Object>} The saved sale with ID
      */
-    async saveRetailSale(sale) {
-        return saveBill('retailSales', sale, 'saveRetailSale');
+    async saveRetailSale(sale, options) {
+        return saveBill('retailSales', sale, 'saveRetailSale', options);
     },
 
     /**
@@ -1787,6 +1855,16 @@ const FirebaseService = {
      */
     async deleteWholesaleSale(saleId) {
         await deleteBill('wholesaleSales', saleId);
+    },
+
+    /**
+     * True when a retried new-bill save found a payment recorded on the server
+     * since the first attempt and kept the server's money fields (#70).
+     * @param {Object} record - The bill passed to savePurchase/saveRetailSale/saveWholesaleSale
+     * @returns {boolean}
+     */
+    keptServerPayment(record) {
+        return !!record && keptServerPaymentBills.has(record);
     },
 
     /**
@@ -1955,13 +2033,49 @@ const FirebaseService = {
      */
     async isClientVersionSupported() {
         try {
-            const snap = await getWithRetry(getDb().collection(col('settings')).doc('app'), 'App settings', { attempts: 2, timeoutMs: 8000 });
-            const min = snap.exists ? Number(snap.data().minClientVersion) : NaN;
+            const data = await this.loadAppSettings();
+            const min = data ? Number(data.minClientVersion) : NaN;
             return !(Number.isFinite(min) && min > CLIENT_VERSION);
         } catch (e) {
             console.warn('Reading minClientVersion failed:', e?.code || e);
             return true;
         }
+    },
+
+    /**
+     * Reads the shared settings/app document once per app open (the version check
+     * and the shared labour settings use the same read). Resolves null when the
+     * document does not exist; rejects when it cannot be read.
+     * @param {{refresh?: boolean}} [options]
+     * @returns {Promise<Object|null>}
+     */
+    loadAppSettings({ refresh = false } = {}) {
+        if (!appSettingsPromise || refresh) {
+            appSettingsPromise = getWithRetry(getDb().collection(col('settings')).doc('app'), 'App settings', { attempts: 2, timeoutMs: 8000 })
+                .then(snap => (snap.exists ? snap.data() || {} : null));
+            appSettingsPromise.catch(() => { appSettingsPromise = null; });
+        }
+        return appSettingsPromise;
+    },
+
+    /**
+     * Saves the labour rate and heavy-packet weight for every device (#20).
+     * settings/app is owner-only (firestore.rules); merge keeps minClientVersion etc.
+     * @param {{laborRate: number, heavyWeightThreshold: number}} labour
+     * @returns {Promise<void>}
+     */
+    async saveSharedLabourSettings({ laborRate, heavyWeightThreshold }) {
+        const fields = {
+            laborRate,
+            heavyWeightThreshold,
+            labourUpdatedAt: Date.now(),
+            labourUpdatedBy: AppState.currentUser?.uid || 'unknown'
+        };
+        const write = getDb().collection(col('settings')).doc('app').set(fields, { merge: true });
+        if (appSettingsPromise) {
+            appSettingsPromise = appSettingsPromise.then(data => ({ ...(data || {}), ...fields }), () => ({ ...fields }));
+        }
+        await settleWrite(write, 'saveSharedLabourSettings');
     },
 
     /**

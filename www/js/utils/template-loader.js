@@ -28,7 +28,6 @@ export class TemplateLoader {
             'wholesale-sales',
             'expenses',
             'reports',
-            'configure',
             'settings',
             'finance',
             'analytics',
@@ -74,7 +73,6 @@ export class TemplateLoader {
         appContent.insertAdjacentHTML('beforeend', templates.expenses);
         
         appContent.insertAdjacentHTML('beforeend', templates.reports);
-        appContent.insertAdjacentHTML('beforeend', templates.configure);
         appContent.insertAdjacentHTML('beforeend', templates.settings);
         appContent.insertAdjacentHTML('beforeend', templates.finance);
         appContent.insertAdjacentHTML('beforeend', templates.analytics);

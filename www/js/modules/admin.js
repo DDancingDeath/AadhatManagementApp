@@ -11,6 +11,8 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { todayLocalISO } from '../utils/dates.js';
 import { buildBackup, isDeleteConfirmed, DELETE_CONFIRM_WORD } from '../utils/data-export.js';
+import { normalizeLabourSettings } from '../utils/money.js';
+import { SettingsManager } from './settings.js';
 
 /**
  * Admin Manager - Unified admin panel
@@ -100,10 +102,9 @@ const AdminManager = {
         const container = document.getElementById('adminContainer');
         if (!container) return;
 
-        // Get current settings
-        const heavyWeight = localStorage.getItem('heavyWeightThreshold') || '30';
-        const laborRate = localStorage.getItem('laborChargeRate') || '6';
-        const autoLabor = localStorage.getItem('autoLaborCharges') !== 'false';
+        // Same shared values billing uses (#21): settings/app via AppState.settings
+        const { heavyWeightThreshold: heavyWeight, laborRate } = normalizeLabourSettings(AppState.settings);
+        const autoLabor = AppState.settings?.autoLaborEnabled !== false;
 
         container.innerHTML = `
             <div class="settings-card">
@@ -134,25 +135,28 @@ const AdminManager = {
     /**
      * Save configure settings
      */
-    saveConfigure() {
-        const heavyWeight = document.getElementById('adminHeavyWeight')?.value || '30';
-        const laborRate = document.getElementById('adminLaborRate')?.value || '6';
-        const autoLabor = document.getElementById('adminAutoLabor')?.checked;
+    async saveConfigure() {
+        const autoLabor = document.getElementById('adminAutoLabor');
+        if (autoLabor) {
+            AppState.settings.autoLaborEnabled = autoLabor.checked;
+            localStorage.setItem('settings', JSON.stringify(AppState.settings));
+            const settingAutoLabor = document.getElementById('settingAutoLabor');
+            if (settingAutoLabor) settingAutoLabor.checked = autoLabor.checked;
+        }
 
-        localStorage.setItem('heavyWeightThreshold', heavyWeight);
-        localStorage.setItem('laborChargeRate', laborRate);
-        localStorage.setItem('autoLaborCharges', autoLabor);
+        // Same save path as Settings: one shared value for billing on every device (#21)
+        const saved = await SettingsManager.saveLabourSettings({
+            laborRate: document.getElementById('adminLaborRate')?.value,
+            heavyWeightThreshold: document.getElementById('adminHeavyWeight')?.value
+        });
+        const { heavyWeightThreshold, laborRate } = normalizeLabourSettings(AppState.settings);
+        const heavyInput = document.getElementById('adminHeavyWeight');
+        const rateInput = document.getElementById('adminLaborRate');
+        if (heavyInput) heavyInput.value = heavyWeightThreshold;
+        if (rateInput) rateInput.value = laborRate;
 
-        // Also update the settings page inputs if they exist
-        const settingHeavyWeight = document.getElementById('settingHeavyWeight');
-        const settingLaborRate = document.getElementById('settingLaborRate');
-        const settingAutoLabor = document.getElementById('settingAutoLabor');
-        
-        if (settingHeavyWeight) settingHeavyWeight.value = heavyWeight;
-        if (settingLaborRate) settingLaborRate.value = laborRate;
-        if (settingAutoLabor) settingAutoLabor.checked = autoLabor;
-
-        UIManager.showToast('Settings saved');
+        if (saved) UIManager.showToast('Settings saved for everyone / सभी के लिए सहेजा गया');
+        return saved;
     },
 
     /**
