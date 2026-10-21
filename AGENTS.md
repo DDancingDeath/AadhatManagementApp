@@ -132,6 +132,15 @@ In order:
 
 ## 5. Standard workflows
 
+### Planning: what to pick next
+
+The pinned issue **"[Plan] Roadmap: pick order (auto-updated)"** lists every
+open issue in pick order. Take the first open ⬜ row that isn't blocked (⛔).
+When you add an issue, place it in `tools/plan/order.json` (right phase,
+right position, optional `note` / `after: [N]`). The plan issue regenerates
+automatically (`.github/workflows/plan-page.yml` → `tools/plan/generate.js`);
+open issues missing from `order.json` show up under 🆕 Unplaced.
+
 ### "I want to fix a bug"
 
 1. Confirm the bug is also tracked in the staging clone's

@@ -1,0 +1,35 @@
+name: Plan page
+
+# Regenerates the pinned "[Plan] Roadmap: pick order (auto-updated)" issue
+# from tools/plan/order.json + live issue data.
+on:
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled, milestoned, demilestoned, deleted]
+  schedule:
+    - cron: '30 0 * * *' # 06:00 IST daily
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: plan-page
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    # Skip events on the plan issue itself (our own edit would retrigger "edited").
+    if: >-
+      github.event_name != 'issues' ||
+      (github.event.issue.title != '[Plan] Roadmap: pick order (auto-updated)' &&
+       !contains(github.event.issue.body, '<!-- plan-page -->'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tools/plan/generate.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
