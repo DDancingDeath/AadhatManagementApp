@@ -28,6 +28,7 @@
       "title": "1. Stop data loss (backups, rules, destructive ops)",
       "why": "Nothing else matters if data can be wiped or overwritten. Rules tests in CI first, so every rules change after it is checked.",
       "items": [
+        { "n": 194, "note": "Quota ran out 2026-10-21: find cause + guards first" },
         { "n": 16, "note": "Run rules tests + check:release in CI before touching rules" },
         { "n": 148, "note": "Cheap: plain npm ci works; do with #16" },
         { "n": 17, "note": "Backups + safe Clear Data, before any import/migration work" },
