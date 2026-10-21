@@ -7,7 +7,8 @@ const path = require('path');
 const { validateChangelog, checkRelease, applyRelease } = require('../../../scripts/release.js');
 import {
     compareVersions, whatsNewToShow, shouldCheckForUpdate, updateToOffer,
-    buildShareMessage, whatsAppShareUrl, DOWNLOAD_PAGE_URL, UPDATE_CHECK_INTERVAL_MS
+    buildShareMessage, whatsAppShareUrl, DOWNLOAD_PAGE_URL, UPDATE_CHECK_INTERVAL_MS,
+    normalizeWhatsNewLang, whatsNewContent
 } from '../utils/release-info.js';
 
 const ROOT = path.join(__dirname, '..', '..', '..');
@@ -128,6 +129,33 @@ describe("What's new", () => {
     test('skips when the changelog is missing or has no entry for this version', () => {
         expect(whatsNewToShow(null, '1.3.0', null)).toBeNull();
         expect(whatsNewToShow(changelog, '1.4.0', '1.3.0')).toBeNull();
+    });
+});
+
+describe("What's new language", () => {
+    const release = { version: '1.3.0', notes: { en: ['Faster sync'], hi: ['तेज़ सिंक'] } };
+
+    test('defaults to English when nothing is stored', () => {
+        expect(whatsNewContent(release, null)).toEqual({ lang: 'en', notesLang: 'en', notes: ['Faster sync'], fellBack: false });
+    });
+
+    test('uses the remembered Hindi choice', () => {
+        expect(whatsNewContent(release, 'hi')).toEqual({ lang: 'hi', notesLang: 'hi', notes: ['तेज़ सिंक'], fellBack: false });
+    });
+
+    test('treats an invalid stored value as English', () => {
+        for (const bad of ['HI', 'fr', '', 'undefined', 42]) {
+            expect(normalizeWhatsNewLang(bad)).toBe('en');
+            expect(whatsNewContent(release, bad).lang).toBe('en');
+        }
+    });
+
+    test('falls back to the other language when the chosen one has no notes', () => {
+        expect(whatsNewContent({ version: '1.3.0', notes: { en: [], hi: ['केवल हिंदी'] } }, 'en'))
+            .toEqual({ lang: 'en', notesLang: 'hi', notes: ['केवल हिंदी'], fellBack: true });
+        expect(whatsNewContent({ version: '1.3.0', notes: { en: ['Only English'] } }, 'hi'))
+            .toEqual({ lang: 'hi', notesLang: 'en', notes: ['Only English'], fellBack: true });
+        expect(whatsNewContent({ version: '1.3.0' }, 'hi')).toEqual({ lang: 'hi', notesLang: 'hi', notes: [], fellBack: false });
     });
 });
 
