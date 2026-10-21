@@ -1,0 +1,94 @@
+name: Firestore backup
+
+# Exports all production Firestore collections, then gzips and encrypts the
+# file (AES-256, passphrase in the BACKUP_PASSPHRASE secret) and keeps it as a
+# workflow artifact. The repo is public, so the archive is never uploaded
+# unencrypted. Restore steps: tools/backup/README.md.
+
+on:
+  schedule:
+    - cron: '30 21 * * *' # 03:00 IST daily
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Ignore the free-quota size guard'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firestore-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check secrets
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          SA: ${{ secrets.FIREBASE_BACKUP_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT }}
+        run: |
+          if [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::BACKUP_PASSPHRASE secret is not set; refusing to create an unencrypted backup."
+            exit 1
+          fi
+          if [ -z "$SA" ]; then
+            echo "::error::No service account secret (FIREBASE_BACKUP_SERVICE_ACCOUNT or FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT)."
+            exit 1
+          fi
+
+      - name: Install firebase-admin (job only)
+        working-directory: tools/backup
+        run: npm install --no-save --no-package-lock --no-audit --no-fund --omit=dev
+
+      - name: Export Firestore
+        id: export
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_BACKUP_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT }}
+          BACKUP_TRIGGER: ${{ github.event_name }}
+          BACKUP_FORCE: ${{ inputs.force && 'true' || 'false' }}
+          BACKUP_WEEKLY_ABOVE: ${{ vars.BACKUP_WEEKLY_ABOVE }}
+          BACKUP_HARD_MAX: ${{ vars.BACKUP_HARD_MAX }}
+          BACKUP_EXCLUDE: ${{ vars.BACKUP_EXCLUDE }}
+        run: node tools/backup/export-firestore.js --out "$RUNNER_TEMP/backup/firestore-backup.json"
+
+      - name: Compress and encrypt
+        if: steps.export.outputs.skipped == 'false'
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/backup"
+          STAMP=$(TZ=Asia/Kolkata date +%Y-%m-%d_%H%M)
+          gzip -9 firestore-backup.json
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in firestore-backup.json.gz -out "firestore-backup-$STAMP.json.gz.enc" \
+            -pass env:BACKUP_PASSPHRASE
+          rm -f firestore-backup.json.gz
+          sha256sum firestore-backup-*.enc > SHA256SUMS
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+
+      - name: Upload encrypted backup
+        if: steps.export.outputs.skipped == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-backup-${{ env.STAMP }}
+          path: |
+            ${{ runner.temp }}/backup/firestore-backup-*.enc
+            ${{ runner.temp }}/backup/SHA256SUMS
+          retention-days: 60
+          if-no-files-found: error
+
+      - name: Remove plaintext
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/backup"
