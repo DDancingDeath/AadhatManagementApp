@@ -26,6 +26,18 @@ import {
     stockFingerprint
 } from '../utils/stock-replay.js';
 import { defaultWindowStart, monthsBefore, normalizeFrom, dateDescComparator } from '../utils/history-range.js';
+import { decideStockRebuild } from '../utils/rebuild-lease.js';
+import { isQuotaExhaustedError } from '../utils/quota-guard.js';
+import { installFirestoreMeter, getQuotaStatus } from './firestore-meter.js';
+
+// Count reads and catch quota errors for every Firestore call in the app (#194).
+if (typeof firebase !== 'undefined' && firebase.firestore) {
+    try {
+        installFirestoreMeter(firebase.firestore);
+    } catch (e) {
+        console.warn('Read counter not installed:', e);
+    }
+}
 
 /**
  * Gets the Firestore database reference.
@@ -251,6 +263,8 @@ const FORCED_REBUILD_AGE_MS = 7 * DAY_MS;
 const ROLL_FORWARD_SLACK_MS = 7 * DAY_MS;
 /** How long a device may hold the rebuild lease. */
 const REBUILD_LEASE_MS = 10 * 60 * 1000;
+/** Re-check delay when another device has just built the checkpoint. */
+const FRESH_CHECKPOINT_WAIT_MS = 5000;
 /** Edits older than the window start of (now + margin) invalidate (covers roll-forwards by devices near a month boundary). */
 const INVALIDATION_MARGIN_MS = 2 * DAY_MS;
 const BACKFILL_MAX_WRITES = 5000;
@@ -339,6 +353,10 @@ let activeCheckpoint = null;
 let checkpointItemsCheck = { items: null, checkpoint: null, ok: false };
 let rebuildPromise = null;
 let rebuildRequestedAgain = false;
+/** Stock objects returned while another device rebuilds the checkpoint (not exact yet). */
+const pendingStocks = new WeakSet();
+/** Re-checks the stock once the other device's lease ends. */
+let leaseWaitTimer = null;
 /** Bumped on every change to a stock collection in memory (roll-forward conflict detection). */
 let stockChangeGen = 0;
 /** stockCheckpoints/legacyScan: per collection {complete, foundAt} of the timestamp backfill. */
@@ -665,6 +683,28 @@ async function deleteBill(collKey, id) {
     noteStockWrite(collKey, previous, null, { oldUnknown: true });
     await write;
     forgetRecord(collKey, id);
+}
+
+/**
+ * Another device is rebuilding the checkpoint: keep the last stock (marked
+ * not ready) and re-check when its lease ends; the checkpoint listener
+ * re-checks earlier when the rebuilt checkpoint arrives.
+ * @private
+ */
+function waitForCheckpoint(until) {
+    const gen = sessionGen;
+    clearTimeout(leaseWaitTimer);
+    const delay = Math.min(Math.max(Number(until) - Date.now(), 0), REBUILD_LEASE_MS) + 1000;
+    leaseWaitTimer = setTimeout(() => {
+        leaseWaitTimer = null;
+        if (gen !== sessionGen) return;
+        AppState.dataVersion = ++dataVersion;
+        markDirty(['stockView'], true);
+    }, delay);
+    console.info('Stock checkpoint is being rebuilt on another device; waiting for it instead of reading all history.');
+    const stock = { ...(AppState.stock || {}) };
+    pendingStocks.add(stock);
+    return stock;
 }
 
 function requestRebuild(after = Promise.resolve()) {
@@ -1126,6 +1166,12 @@ function listenCheckpoint(gen) {
                         AppState.dataVersion = ++dataVersion;
                         markDirty(['stockView'], true);
                         requestRebuild();
+                    } else if (leaseWaitTimer && !((checkpointDoc?.rebuildingUntil || 0) > Date.now())) {
+                        // The device we were waiting for gave up its lease: decide again now.
+                        clearTimeout(leaseWaitTimer);
+                        leaseWaitTimer = null;
+                        AppState.dataVersion = ++dataVersion;
+                        markDirty(['stockView'], true);
                     }
                     return;
                 }
@@ -1341,6 +1387,8 @@ function settleWrite(writePromise, label = 'write') {
                     return;
                 }
                 console.error(`[${label}] write failed after it was queued:`, error);
+                // The quota banner already explains this one (#194).
+                if (isQuotaExhaustedError(error)) return;
                 import('../ui/ui-manager.js')
                     .then(({ UIManager }) => UIManager.showToast(`⚠️ Save failed on server: ${error?.message || error}`))
                     .catch(() => {});
@@ -1425,6 +1473,8 @@ const FirebaseService = {
         rebuildPromise = null;
         rebuildRequestedAgain = false;
         rebuildAttempted = false;
+        clearTimeout(leaseWaitTimer);
+        leaseWaitTimer = null;
         oldestTimestampPromise = null;
         extendQueue = Promise.resolve();
         pendingExtends.clear();
@@ -1997,6 +2047,34 @@ const FirebaseService = {
             return computeStockFrom(cp.state, cp.asOf, currentSources(), AppState.items);
         }
         if (AppState.historyLoadedFrom !== 0) {
+            // One device rebuilds (lease) and does the only full-history read;
+            // the others wait for its checkpoint instead of each reading everything (#194).
+            const plan = decideStockRebuild({
+                canManage: canManageCheckpoint(),
+                leaseUntil: checkpointDoc?.rebuildingUntil || 0,
+                now: Date.now(),
+                inFlight: !!rebuildPromise,
+                attempted: rebuildAttempted
+            });
+            if (plan === 'wait') return waitForCheckpoint(checkpointDoc.rebuildingUntil);
+            if (plan === 'join' || plan === 'rebuild') {
+                let result = null;
+                try {
+                    result = await (plan === 'join' ? rebuildPromise : this.rebuildStockCheckpoint());
+                } catch (e) {
+                    console.error('Stock checkpoint rebuild failed:', e);
+                }
+                if (!windowState) return computeStock(currentSources(), AppState.items);
+                cp = usableCheckpoint();
+                if (cp) {
+                    return computeStockFrom(cp.state, cp.asOf, currentSources(), AppState.items);
+                }
+                if (result?.status === 'leased') return waitForCheckpoint(checkpointDoc?.rebuildingUntil || Date.now() + REBUILD_LEASE_MS);
+                // Built elsewhere moments ago: the checkpoint listener delivers it shortly.
+                if (result?.status === 'fresh') return waitForCheckpoint(Date.now() + FRESH_CHECKPOINT_WAIT_MS);
+            }
+        }
+        if (AppState.historyLoadedFrom !== 0) {
             try {
                 await this.ensureHistoryFrom(null);
             } catch (e) {
@@ -2033,6 +2111,12 @@ const FirebaseService = {
         const version = dataVersion;
         const stock = await this.calculateStock();
         AppState.stock = stock;
+        if (pendingStocks.has(stock)) {
+            // Last known stock is shown as "updating" until the checkpoint arrives.
+            AppState.stockReady = false;
+            stockCache = {};
+            return stock;
+        }
         AppState.stockReady = true;
         stockCache = { stock, version };
         return stock;
@@ -2105,6 +2189,15 @@ const FirebaseService = {
      */
     getStartupListenerInfo() {
         return JSON.parse(JSON.stringify(listenerStartup));
+    },
+
+    /**
+     * Diagnostics (#194): estimated document reads since the app opened, the
+     * top sources, and any "daily limit reached" errors seen this session.
+     * @returns {{reads: number, since: number, top: Array<{source: string, reads: number}>, heavy: boolean, quota: Object}}
+     */
+    getReadStats() {
+        return getQuotaStatus();
     },
 
     /**

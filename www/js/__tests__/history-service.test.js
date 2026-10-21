@@ -623,6 +623,35 @@ describe('review fixes (2)', () => {
         expect(AppState.stock).toEqual(fullStock());
     });
 
+    it('#194 while another device holds the rebuild lease, this one waits for its checkpoint instead of reading all history', async () => {
+        install(37);
+        await open();
+        await rebuildSettled();
+        const built = { ...cpDoc() };
+        // Calculation version changed and another owner device took the lease.
+        await fake.db.collection('stockCheckpoints').doc('current')
+            .set({ ...built, formatVersion: 2, rebuildingUntil: Date.now() + 60000, rebuildingBy: 'other' });
+        const fullReads = () => fake.stats.queryLog.filter(q => ['purchases', 'retailSales', 'wholesaleSales', 'stockAdjustments'].includes(q.coll) &&
+            !q.filters.some(f => f.field === 'timestamp' || f.field === 'openDue')).length;
+        const before = fullReads();
+        FirebaseService.cleanup();
+        await FirebaseService.setupRealtimeListeners();
+        await FirebaseService.prepareStock();
+        await settle();
+        expect(AppState.stockReady).toBe(false);
+        expect(fullReads()).toBe(before);
+        // The other device finishes: its checkpoint is adopted, still without a full read here.
+        await fake.db.collection('stockCheckpoints').doc('current').set({ ...built, builtAt: built.builtAt + 1 });
+        for (let i = 0; i < 30 && !AppState.stockReady; i++) {
+            await settle(2);
+            await new Promise(r => setTimeout(r, 50));
+        }
+        expect(AppState.stockReady).toBe(true);
+        expect(AppState.stock).toEqual(fullStock());
+        expect(fullReads()).toBe(before);
+        expect(FirebaseService.isFullHistoryLoaded()).toBe(false);
+    }, 30000);
+
     it('#8 one dues listener per bill collection, bounded to before the window (no duplicate deliveries)', async () => {
         install(34);
         await open();

@@ -11,6 +11,7 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { formatDateTimeIN } from '../utils/dates.js';
 import { getStartupTimings, startupRows } from '../utils/startup-timings.js';
+import { getQuotaStatus } from '../firebase/firestore-meter.js';
 
 /**
  * Diagnostics Manager - View and manage application telemetry and audit logs
@@ -82,6 +83,28 @@ const DiagnosticsManager = {
                 </button>
             </div>
             ${this.startupTimingsHtml()}
+            ${this.readStatsHtml()}
+        `;
+    },
+
+    /**
+     * "Data reads" block (#194): estimated Firestore document reads since the
+     * app opened, top 5 sources, and daily-limit errors seen this session.
+     * @returns {string}
+     */
+    readStatsHtml() {
+        const s = getQuotaStatus();
+        const rows = s.top.map(t => `<tr><td>${Helpers.escapeHtml(t.source)}</td><td style="text-align:right">${Helpers.escapeHtml(String(t.reads))}</td></tr>`).join('');
+        const quota = s.quota.count
+            ? `<div style="color:#b45309;margin-top:6px;">⚠️ Daily free limit reached: ${s.quota.count} error(s), first ${Helpers.escapeHtml(formatDateTimeIN(new Date(s.quota.firstAt)))} (${Helpers.escapeHtml(s.quota.lastSource)})</div>`
+            : '';
+        return `
+            <details class="diagnostics-reads" style="margin-bottom: 16px;">
+                <summary><strong>📊 Data reads this session</strong> ≈ ${Helpers.escapeHtml(String(s.reads))}${s.heavy ? ' ⚠️' : ''}</summary>
+                <div style="font-size:12px;color:#6b7280;margin-top:6px;">Since app open ${Helpers.escapeHtml(formatDateTimeIN(new Date(s.since)))}. Estimate; free limit is 50,000 reads/day shared by everyone.</div>
+                ${rows ? `<table style="width:100%;font-size:13px;margin-top:8px;border-collapse:collapse;"><thead><tr><th style="text-align:left">Top sources</th><th style="text-align:right">Reads</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+                ${quota}
+            </details>
         `;
     },
 

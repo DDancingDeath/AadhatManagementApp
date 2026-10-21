@@ -14,31 +14,44 @@
 // 
 // Option 1: Use URL parameter: ?env=development
 // Option 2: Use localStorage: localStorage.setItem('appEnv', 'development')
-// Option 3: Automatic: localhost = development, otherwise = production
+// Option 3: Automatic: localhost and Firebase preview channels (host contains
+//           "--") = development (dev_ collections), otherwise = production.
+//           On a preview channel ?prod=1 shows live data.
+// Note: dev_ collections still live in the production project and count
+// against its quota (far less than live data); #35 tracks a separate project.
 // =============================================================================
 
+// --- env-detect (#194; unit-tested by quota-guards.test.js) ---
+// Firebase Hosting preview channels are served from <site>--<channel>-<hash>.web.app.
+const isPreviewHost = (hostname) => /--/.test(hostname) && /\.(web\.app|firebaseapp\.com)$/i.test(hostname);
+
 // Check environment from multiple sources
-const getEnvironment = () => {
-  // 1. Check URL parameter (highest priority for quick testing)
-  const urlParams = new URLSearchParams(window.location.search);
+const getEnvironment = (loc = window.location, store = localStorage, isNative = !!window.Capacitor?.isNativePlatform?.()) => {
+  const urlParams = new URLSearchParams(loc.search);
+  // 1. URL parameter (highest priority for quick testing)
   if (urlParams.get('env')) return urlParams.get('env');
-  
-  // 2. Check localStorage (persists across sessions)
-  if (localStorage.getItem('appEnv')) return localStorage.getItem('appEnv');
-  
-  // 3. Check if running on localhost in a BROWSER (not Capacitor app)
-  // Capacitor apps run from capacitor:// or file:// protocol, not http://localhost
-  const isCapacitorApp = window.location.protocol === 'capacitor:' || 
-                         window.location.protocol === 'file:' ||
-                         window.Capacitor?.isNativePlatform?.();
-  
-  if (!isCapacitorApp && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+
+  // 2. Preview channel explicitly pointed at live data
+  const preview = isPreviewHost(loc.hostname);
+  if (preview && urlParams.get('prod') === '1') return 'production';
+
+  // 3. localStorage (persists across sessions)
+  if (store.getItem('appEnv')) return store.getItem('appEnv');
+
+  // 4. localhost in a BROWSER (not the Capacitor app, which runs from capacitor:// or file://)
+  const isCapacitorApp = loc.protocol === 'capacitor:' || loc.protocol === 'file:' || isNative;
+  if (!isCapacitorApp && (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1')) {
     return 'development';
   }
-  
-  // 4. Default to production (including Capacitor apps)
+
+  // 5. Preview channels use test (dev_) data so testing never spends the live
+  //    data's read quota on real history (#194). Add ?prod=1 to see live data.
+  if (preview) return 'development';
+
+  // 6. Default to production (including Capacitor apps)
   return 'production';
 };
+// --- end env-detect ---
 
 const APP_ENV = getEnvironment();
 
@@ -70,25 +83,30 @@ window.COLLECTION_PREFIX = COLLECTION_PREFIX;
 // Helper function to get prefixed collection name
 window.getCollection = (name) => COLLECTION_PREFIX + name;
 
-// Show environment indicator in UI (for development only)
-if (APP_ENV !== 'production') {
+// Show environment indicator in UI (development and every preview channel)
+const IS_PREVIEW_HOST = isPreviewHost(window.location.hostname);
+window.IS_PREVIEW_HOST = IS_PREVIEW_HOST;
+if (APP_ENV !== 'production' || IS_PREVIEW_HOST) {
   document.addEventListener('DOMContentLoaded', () => {
     const indicator = document.createElement('div');
     indicator.id = 'env-indicator';
-    indicator.innerHTML = `🔧 ${APP_ENV.toUpperCase()}`;
+    if (IS_PREVIEW_HOST) {
+      indicator.textContent = APP_ENV === 'production' ? 'PREVIEW — LIVE data' : 'PREVIEW — test data';
+    } else {
+      indicator.textContent = `🔧 ${APP_ENV.toUpperCase()}`;
+    }
     indicator.style.cssText = `
       position: fixed;
       top: 0;
       left: 50%;
       transform: translateX(-50%);
-      background: #ff6b35;
+      background: ${IS_PREVIEW_HOST && APP_ENV === 'production' ? '#c62828' : '#ff6b35'};
       color: white;
       padding: 2px 12px;
       font-size: 10px;
       font-weight: bold;
       z-index: 99999;
       border-radius: 0 0 4px 4px;
-      text-transform: uppercase;
     `;
     document.body.appendChild(indicator);
   });
