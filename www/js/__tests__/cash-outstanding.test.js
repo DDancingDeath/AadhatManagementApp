@@ -4,6 +4,10 @@
  * (#107), Today dues (#95), honest clearing (#104) and expense refresh (#89).
  */
 import { CashManagementManager } from '../modules/cash-management.js';
+import { OutstandingManager } from '../modules/outstanding.js';
+import { AuditService } from '../services/audit.js';
+import { readPayment } from '../utils/money.js';
+import { dueEvents, sumDueEvents, saleTimePayment, entryParts, legParts, checkPaymentSplit } from '../utils/due-payments.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AppState } from '../utils/state.js';
@@ -212,5 +216,172 @@ describe('#101 forgotten sessions are closed as "not counted"', () => {
             expect(fake.raw('cashManagement').get('s20')).toMatchObject({ closingBalance: 1450, difference: -50, counted: true, countedLate: true });
             expect(isNotCounted(CashManagementManager.cachedSessions[0])).toBe(false);
         });
+    });
+});
+
+/** Shared emulator-free setup: fake Firestore, local clock 21 Oct 2026 10:00. */
+function useFakeShop() {
+    const ctx = {};
+    beforeEach(() => {
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+        jest.setSystemTime(new Date(2026, 9, 21, 10, 0, 0));
+        ctx.fake = createFakeFirestore();
+        jest.spyOn(FirebaseService, 'db', 'get').mockReturnValue(ctx.fake.db);
+        global.firebase = ctx.fake.firebase;
+        window.getCollection = (n) => n;
+        jest.spyOn(AuditService, 'log').mockResolvedValue(undefined);
+        jest.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true);
+        ['salesHistory', 'retailSalesHistory', 'purchaseHistory', 'expensesHistory'].forEach(k => { AppState[k] = []; });
+    });
+    afterEach(() => {
+        jest.useRealTimers();
+        delete window.getCollection;
+        delete global.firebase;
+        ['salesHistory', 'retailSalesHistory', 'purchaseHistory', 'expensesHistory'].forEach(k => { AppState[k] = []; });
+    });
+    return ctx;
+}
+
+// Yesterday's credit sale (₹1000, ₹600 due) and today's (₹795, ₹495 due); a supplier bill with ₹1068 to pay.
+const OLD_SALE = { id: 'r0', billNumber: 'S0', customerName: 'Sita', date: '20/10/2026', total: 1000, cashPayment: 400, dueAmount: 600, payment: { cash: 400, online: 0, due: 600, total: 400 } };
+const TODAY_SALE = { id: 'r1', billNumber: 'S1', customerName: 'Sita', date: '2026-10-21T09:00:00', total: 795, cashPayment: 300, dueAmount: 495, payment: { cash: 300, online: 0, due: 495, total: 300 } };
+const PURCHASE = { id: 'p1', billNumber: 'P1', customerName: 'Ram', date: '2026-10-19T09:00:00', grandTotal: 2568, cashPayment: 1500, dueAmount: 1068, payment: { cash: 1500, online: 0, due: 1068, total: 1500 } };
+const OPEN_SESSION = { id: 's21', date: '2026-10-21', openingBalance: 1000, signedOut: false, duePayments: [] };
+
+describe('#98 one due-payment path for Outstanding and Cash', () => {
+    const ctx = useFakeShop();
+    beforeEach(() => {
+        ctx.fake.seed('retailSales', [OLD_SALE, TODAY_SALE]);
+        ctx.fake.seed('purchases', [PURCHASE]);
+        ctx.fake.seed('cashManagement', [OPEN_SESSION]);
+        AppState.retailSalesHistory = [{ ...OLD_SALE }, { ...TODAY_SALE }];
+        AppState.purchaseHistory = [{ ...PURCHASE }];
+        jest.spyOn(OutstandingManager, 'renderDue').mockImplementation(() => {});
+        document.body.innerHTML = CASH_TEMPLATE + '<input id="payment_r0"><input id="payment_r1"><input id="payment_p1">';
+        CashManagementManager.todaySession = null;
+    });
+
+    const drawer = () => {
+        const session = ctx.fake.raw('cashManagement').get('s21');
+        CashManagementManager.todaySession = { id: 's21', ...session };
+        CashManagementManager.todayTransactions = CashManagementManager.calculateTransactionsForDate('2026-10-21', CashManagementManager.todaySession);
+        return CashManagementManager.todayTransactions;
+    };
+
+    test('Outstanding cash payment reduces the bill (both due fields) and adds a drawer leg to today\'s open session', async () => {
+        setVal('payment_r0', 250);
+        await OutstandingManager.recordPayment('r0', 'retail');
+        const bill = ctx.fake.raw('retailSales').get('r0');
+        expect(bill.payment).toMatchObject({ cash: 650, online: 0, due: 350 });
+        expect(bill.dueAmount).toBe(350);
+        expect(bill.payments).toEqual([expect.objectContaining({ amount: 250, cash: 250, online: 0 })]);
+        const legs = ctx.fake.raw('cashManagement').get('s21').duePayments;
+        expect(legs).toEqual([expect.objectContaining({ id: bill.payments[0].id, billId: 'r0', type: 'received', method: 'cash', amount: 250, cash: 250 })]);
+
+        AppState.retailSalesHistory[0] = { ...AppState.retailSalesHistory[0], ...bill };
+        const t = drawer();
+        expect(t.dueReceived).toBe(250); // bill entry + session leg = one payment
+        expect(CashManagementManager.calculateExpectedCash()).toBe(1000 + 300 + 250);
+    });
+
+    test('a payment whose bill is no longer loaded still reaches the drawer through the session leg', async () => {
+        setVal('payment_r0', 250);
+        await OutstandingManager.recordPayment('r0', 'retail');
+        AppState.retailSalesHistory = [{ ...TODAY_SALE }]; // old bill paid off and dropped from memory
+        expect(drawer().dueReceived).toBe(250);
+    });
+
+    test('collecting today\'s own bill does not double count: sale-time cash + due received = cash in', async () => {
+        setVal('payment_r1', 495);
+        await OutstandingManager.recordPayment('r1', 'retail');
+        AppState.retailSalesHistory[1] = { ...AppState.retailSalesHistory[1], ...ctx.fake.raw('retailSales').get('r1') };
+        const t = drawer();
+        expect(t.cashSales).toBe(300);
+        expect(t.dueReceived).toBe(495);
+    });
+
+    test('Cash tab "Due received" picks an open bill and reduces its due (same path)', async () => {
+        CashManagementManager.todaySession = { ...OPEN_SESSION };
+        setVal('cashTransactionType', 'received');
+        setVal('partyName', 'sita');
+        CashManagementManager.updateTransactionForm();
+        const options = [...document.querySelectorAll('#dueBillSelect option')].map(o => o.value);
+        expect(options).toEqual(['retail|r0', 'retail|r1', '']); // oldest first, "no bill" last
+        setVal('dueBillSelect', 'retail|r0');
+        setVal('transactionAmount', 100);
+        jest.spyOn(FirebaseService, 'loadCashSessions').mockResolvedValue([]);
+        await CashManagementManager.recordTransaction();
+
+        const bill = ctx.fake.raw('retailSales').get('r0');
+        expect(bill.payment.due).toBe(500);
+        expect(bill.dueAmount).toBe(500);
+        const legs = ctx.fake.raw('cashManagement').get('s21').duePayments;
+        expect(legs).toHaveLength(1);
+        expect(legs[0]).toMatchObject({ billId: 'r0', cash: 100, type: 'received' });
+        expect(CashManagementManager.todaySession.duePayments).toHaveLength(1);
+        expect(CashManagementManager.todayTransactions.dueReceived).toBe(100);
+    });
+
+    test('paying a supplier due from Outstanding is cash out of the drawer', async () => {
+        setVal('payment_p1', 68);
+        await OutstandingManager.recordPayment('p1', 'purchase');
+        AppState.purchaseHistory[0] = { ...AppState.purchaseHistory[0], ...ctx.fake.raw('purchases').get('p1') };
+        const t = drawer();
+        expect(t.duePaid).toBe(68);
+        expect(t.dueReceived).toBe(0);
+    });
+
+    test('online payments never touch the drawer', async () => {
+        const bill = AppState.retailSalesHistory[0];
+        const written = await OutstandingManager.applyPaymentTransaction('retail', bill, { cash: 0, online: 200 }, { recordedBy: 'Owner' });
+        Object.assign(bill, written);
+        expect(ctx.fake.raw('cashManagement').get('s21').duePayments[0]).toMatchObject({ method: 'online', cash: 0, online: 200 });
+        expect(drawer().dueReceived).toBe(0);
+    });
+
+    test('with no open session the payment is still recorded on the bill and counted from it', async () => {
+        ctx.fake.raw('cashManagement').delete('s21');
+        setVal('payment_r0', 250);
+        await OutstandingManager.recordPayment('r0', 'retail');
+        AppState.retailSalesHistory[0] = { ...AppState.retailSalesHistory[0], ...ctx.fake.raw('retailSales').get('r0') };
+        expect(CashManagementManager.calculateTransactionsForDate('2026-10-21', null).dueReceived).toBe(250);
+    });
+});
+
+describe('due-payment helpers', () => {
+    test('legacy entries/legs count as cash; write-offs are not money', () => {
+        expect(entryParts({ amount: 200 })).toEqual({ cash: 200, online: 0, writeOff: 0 });
+        expect(entryParts({ amount: 300, cash: 100, online: 200 })).toEqual({ cash: 100, online: 200, writeOff: 0 });
+        expect(entryParts({ kind: 'writeOff', amount: 50 })).toEqual({ cash: 0, online: 0, writeOff: 50 });
+        expect(legParts({ amount: 250, method: 'cash' })).toEqual({ cash: 250, online: 0 });
+        expect(legParts({ amount: 999, method: 'online' })).toEqual({ cash: 0, online: 999 });
+    });
+
+    test('sale-time payment subtracts later due payments', () => {
+        const bill = { total: 795, payment: { cash: 500, online: 100, due: 195 }, payments: [{ amount: 200 }, { amount: 100, cash: 0, online: 100 }] };
+        expect(saleTimePayment(bill)).toEqual({ cash: 300, online: 0 });
+    });
+
+    test('events are de-duplicated by payment id across bills and sessions', () => {
+        const from = new Date(2026, 9, 21).getTime();
+        const to = new Date(2026, 9, 22).getTime();
+        const at = new Date(2026, 9, 21, 14).getTime();
+        const events = dueEvents({
+            bills: { retail: [{ id: 'r1', payments: [{ id: 'x', amount: 200, cash: 200, online: 0, at }, { amount: 50, date: '20/10/2026, 2:00:00 pm' }] }] },
+            sessions: [{ id: 's', duePayments: [{ id: 'x', amount: 200, cash: 200, method: 'cash' }, { id: 'y', amount: 70, method: 'cash', type: 'paid', timestamp: new Date(at).toISOString() }] }],
+            from, to
+        });
+        expect(events.map(e => e.id)).toEqual(['x', 'y']);
+        expect(sumDueEvents(events)).toMatchObject({ receivedCash: 200, paidCash: 70 });
+    });
+
+    test.each([
+        [100, 0, 495, { ok: true, cash: 100, online: 0, total: 100 }],
+        [100, 395, 495, { ok: true, cash: 100, online: 395, total: 495 }],
+        [100, 396, 495, { ok: false, error: 'exceeds-due' }],
+        [0, 0, 495, { ok: false, error: 'empty' }],
+        [-5, 10, 495, { ok: false, error: 'negative' }]
+    ])('checkPaymentSplit(%p, %p, due %p)', (cash, online, due, expected) => {
+        expect(checkPaymentSplit(cash, online, due)).toEqual(expected);
     });
 });

@@ -11,7 +11,9 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 import { readPayment, round2 } from '../utils/money.js';
-import { parseAnyBillDate } from '../utils/dates.js';
+import { parseAnyBillDate, todayLocalISO } from '../utils/dates.js';
+import { checkPaymentSplit, directionFor } from '../utils/due-payments.js';
+import { CashManagementManager } from './cash-management.js';
 
 const PAYMENT_TOLERANCE = 0.01;
 const COLLECTION_BY_TYPE = { purchase: 'purchases', retail: 'retailSales', wholesale: 'wholesaleSales' };
@@ -212,67 +214,81 @@ export class OutstandingManager {
     }
 
     static async recordPayment(transactionId, transactionType) {
+        const paymentInput = document.getElementById(`payment_${transactionId}`);
+        const cash = Number(paymentInput?.value) || 0;
+        const ok = await this.recordDuePayment({ billType: transactionType, billId: transactionId, cash, online: 0 });
+        if (ok && paymentInput) paymentInput.value = '';
+    }
+
+    /** Bill of a type ('purchase' | 'retail' | 'wholesale') from AppState. */
+    static findBill(billType, billId) {
+        const list = billType === 'purchase' ? AppState.purchaseHistory
+            : billType === 'retail' ? AppState.retailSalesHistory
+                : AppState.salesHistory;
+        return (list || []).find(b => String(b.id) === String(billId)) || null;
+    }
+
+    /**
+     * The one way to record a due payment (#98), used by Outstanding and the
+     * Cash tab: reduces the bill's due (payment.due + dueAmount + payments[])
+     * and, when a cash session is open today, adds the payment to it as a
+     * drawer leg — all in one transaction.
+     * @param {Object} args
+     * @param {'purchase'|'retail'|'wholesale'} args.billType
+     * @param {string} args.billId
+     * @param {number} args.cash Cash part
+     * @param {number} [args.online=0] Online part
+     * @param {string} [args.note]
+     * @returns {Promise<boolean>} true when recorded
+     */
+    static async recordDuePayment({ billType, billId, cash, online = 0, note = '' }) {
         try {
-            const paymentInput = document.getElementById(`payment_${transactionId}`);
-            const paymentAmount = round2(Number(paymentInput.value) || 0);
-            
-            if (paymentAmount <= 0) {
-                UIManager.showToast('Please enter a valid payment amount');
-                return;
-            }
-            
-            let transaction;
-            if (transactionType === 'purchase') {
-                transaction = AppState.purchaseHistory.find(b => String(b.id) === String(transactionId));
-            } else if (transactionType === 'retail') {
-                transaction = AppState.retailSalesHistory.find(s => String(s.id) === String(transactionId));
-            } else {
-                // wholesale
-                transaction = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
-            }
-            
+            const transaction = this.findBill(billType, billId);
             if (!transaction) {
                 UIManager.showToast('Error: Transaction not found');
-                return;
+                return false;
             }
-            
+
             const outstanding = readPayment(transaction).due;
-            
-            if (paymentAmount > outstanding + PAYMENT_TOLERANCE) {
-                UIManager.showToast('Payment amount exceeds outstanding amount');
-                return;
+            const split = checkPaymentSplit(cash, online, outstanding, PAYMENT_TOLERANCE);
+            if (!split.ok) {
+                UIManager.showToast(split.error === 'exceeds-due'
+                    ? 'Payment amount exceeds outstanding amount'
+                    : 'Please enter a valid payment amount');
+                return false;
             }
-            
+
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                 UIManager.showToast('Internet required to record payment');
-                return;
+                return false;
             }
-            
-            const payment = {
-                amount: paymentAmount,
+
+            const entry = {
+                amount: split.total,
                 date: Helpers.getCurrentDateTime(),
                 recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             };
-            
+            if (note) entry.note = note;
+
             // Server-side read-modify-write so concurrent payments from two devices can't overwrite each other
-            const written = await this.applyPaymentTransaction(transactionType, transaction, paymentAmount, payment);
+            const written = await this.applyPaymentTransaction(billType, transaction, { cash: split.cash, online: split.online }, entry);
             Object.assign(transaction, written);
-            
-            paymentInput.value = '';
-            this.renderDue();
-            
+
+            this.refreshAfterPayment();
+
             // Log audit entry
             await AuditService.log(AuditService.ACTIONS.UPDATE_PAYMENT, {
                 billNumber: transaction.billNumber || 'N/A',
-                paymentAmount: paymentAmount,
-                transactionType: transactionType,
-                customer: transaction.customer || transaction.supplier || 'N/A'
+                paymentAmount: split.total,
+                cash: split.cash,
+                online: split.online,
+                transactionType: billType,
+                customer: transaction.customerName || transaction.customer || transaction.supplier || 'N/A'
             });
-            
-            const paymentLabel = transactionType === 'purchase' ? 'Payment' : 'Payment';
-            UIManager.showToast(`✓ ${paymentLabel} of ₹${paymentAmount} recorded`);
+
+            UIManager.showToast(`✓ Payment of ₹${split.total} recorded`);
             UIManager.hapticFeedback('light');
-            
+            return true;
         } catch (error) {
             console.error('Error recording payment:', error);
             if (error && error.code === 'exceeds-due') {
@@ -283,6 +299,24 @@ export class OutstandingManager {
             } else {
                 UIManager.showToast('Error: ' + error.message);
             }
+            return false;
+        }
+    }
+
+    /** Re-render every screen that shows dues or today's money. */
+    static refreshAfterPayment() {
+        this.renderDue();
+        const app = typeof window !== 'undefined' ? window.app : null;
+        try {
+            app?.wholesaleSales?.renderOutstanding?.();
+            if (document.getElementById('todayTotalIn')) app?.day?.loadTodayData?.();
+            if (CashManagementManager.todaySession) {
+                CashManagementManager.calculateTodayTransactions()
+                    .then(() => CashManagementManager.updateUI())
+                    .catch(e => console.error('Cash refresh after payment failed:', e));
+            }
+        } catch (e) {
+            console.error('Refresh after payment failed:', e);
         }
     }
 
@@ -294,44 +328,91 @@ export class OutstandingManager {
     }
 
     /**
+     * Today's open cash session, if any (one small query when the Cash tab
+     * hasn't loaded it). Failures just mean "no drawer leg".
+     * @returns {Promise<?string>} session id
+     */
+    static async findOpenSessionId() {
+        const today = todayLocalISO();
+        const local = CashManagementManager.todaySession;
+        if (local && local.date === today) return local.signedOut ? null : String(local.id);
+        try {
+            const sessions = await FirebaseService.loadCashSessionsForDate(today);
+            const open = sessions.find(s => !s.signedOut);
+            return open ? String(open.id) : null;
+        } catch (e) {
+            console.warn('Could not look up today\'s cash session:', e?.message || e);
+            return null;
+        }
+    }
+
+    /**
      * Record a payment against a bill inside a Firestore transaction.
      * Re-reads the bill from the server, recomputes due from the fresh doc and
-     * writes only payment fields (payment.*, payments[], and dueAmount if present).
-     * @returns {Promise<Object>} The fields written (for patching local state)
+     * writes only payment fields (payment.*, payments[], and dueAmount if
+     * present). When today's cash session is open, the same payment (same id)
+     * is added to its duePayments in the same transaction.
+     * @param {string} transactionType 'purchase' | 'retail' | 'wholesale'
+     * @param {Object} bill
+     * @param {number|{cash: number, online: number}} amount A number = all cash
+     * @param {Object} entry payments[] entry (amount/date/recordedBy…)
+     * @returns {Promise<Object>} The bill fields written (for patching local state)
      */
     static async applyPaymentTransaction(transactionType, bill, amount, entry) {
+        const parts = typeof amount === 'number' ? { cash: amount, online: 0 } : amount;
+        const cash = round2(parts.cash || 0);
+        const online = round2(parts.online || 0);
+        const total = round2(cash + online);
+        const at = Date.now();
+        const fullEntry = {
+            ...entry,
+            id: entry.id || Helpers.generateId(),
+            amount: total,
+            cash,
+            online,
+            at,
+            recordedById: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
+        };
+
         const db = FirebaseService.db;
         const coll = db.collection(colName(COLLECTION_BY_TYPE[transactionType] || 'wholesaleSales'));
         // FirebaseService saves/updates bills at doc(String(bill.id)); legacy docs may only carry an `id` field
         let ref = coll.doc(String(bill.id));
+        const sessionId = await this.findOpenSessionId();
+        const sessionRef = sessionId ? FirebaseService.cashSessionRef(sessionId) : null;
+        const today = todayLocalISO();
+        let legWritten = null;
 
         for (let attempt = 0; attempt < 2; attempt++) {
             const written = await db.runTransaction(async (tx) => {
+                legWritten = null;
                 const snap = await tx.get(ref);
+                const sessionSnap = sessionRef ? await tx.get(sessionRef) : null;
                 if (!snap.exists) return null;
                 const fresh = snap.data() || {};
                 const pay = readPayment(fresh);
 
-                if (amount > pay.due + PAYMENT_TOLERANCE) {
+                if (total > pay.due + PAYMENT_TOLERANCE) {
                     const err = new Error('Payment amount exceeds outstanding amount');
                     err.code = 'exceeds-due';
                     err.due = pay.due;
                     throw err;
                 }
 
-                const newCash = round2(pay.cash + amount);
-                let newDue = round2(pay.due - amount);
+                const newCash = round2(pay.cash + cash);
+                const newOnline = round2(pay.online + online);
+                let newDue = round2(pay.due - total);
                 if (newDue < PAYMENT_TOLERANCE) newDue = 0;
 
                 const update = {
                     payment: {
                         ...(fresh.payment && typeof fresh.payment === 'object' ? fresh.payment : {}),
-                        online: pay.online,
+                        online: newOnline,
                         cash: newCash,
                         due: newDue,
-                        total: round2(pay.online + newCash)
+                        total: round2(newOnline + newCash)
                     },
-                    payments: [...(Array.isArray(fresh.payments) ? fresh.payments : []), entry]
+                    payments: [...(Array.isArray(fresh.payments) ? fresh.payments : []), fullEntry]
                 };
                 if (Object.prototype.hasOwnProperty.call(fresh, 'dueAmount')) {
                     update.dueAmount = newDue;
@@ -339,10 +420,38 @@ export class OutstandingManager {
                 update.openDue = FirebaseService.billHasOpenDue(COLLECTION_BY_TYPE[transactionType] || 'wholesaleSales', { ...fresh, ...update });
                 update.clientVersion = FirebaseService.CLIENT_VERSION;
                 tx.update(ref, update);
+
+                const session = sessionSnap && sessionSnap.exists ? sessionSnap.data() : null;
+                if (session && !session.signedOut && session.date === today) {
+                    const leg = {
+                        id: fullEntry.id,
+                        billId: String(fresh.id ?? bill.id),
+                        billType: transactionType,
+                        billNumber: fresh.billNumber || bill.billNumber || '',
+                        type: directionFor(transactionType),
+                        customer: fresh.customerName || bill.customerName || 'N/A',
+                        amount: total,
+                        cash,
+                        online,
+                        // Older app versions count only method 'cash' legs (by amount)
+                        method: cash > 0 && online > 0 ? 'split' : (cash > 0 ? 'cash' : 'online'),
+                        notes: entry.note || '',
+                        timestamp: new Date(at).toISOString(),
+                        recordedBy: fullEntry.recordedBy || 'Unknown'
+                    };
+                    tx.update(sessionRef, { duePayments: [...(Array.isArray(session.duePayments) ? session.duePayments : []), leg] });
+                    legWritten = leg;
+                }
                 return update;
             });
 
-            if (written) return written;
+            if (written) {
+                const local = CashManagementManager.todaySession;
+                if (legWritten && local && String(local.id) === sessionId) {
+                    local.duePayments = [...(local.duePayments || []).filter(l => l.id !== legWritten.id), legWritten];
+                }
+                return written;
+            }
 
             if (attempt === 0) {
                 const snap = await coll.where('id', '==', bill.id).limit(2).get();

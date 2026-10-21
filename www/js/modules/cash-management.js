@@ -9,10 +9,12 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
-import { todayLocalISO, localISODaysAgo, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
 import { needsHistoryFrom, ensureHistoryFrom } from '../utils/history-window.js';
 import { sessionTotals, parseCashAmount, isNotCounted, lastCountedSession, autoCloseFields } from '../utils/cash-session.js';
-import { round2 } from '../utils/money.js';
+import { round2, outstandingDue } from '../utils/money.js';
+import { OutstandingManager } from './outstanding.js';
+import { dueEvents, sumDueEvents, saleTimePayment } from '../utils/due-payments.js';
 
 const sessionRef = (sessionId) => {
     const name = window.getCollection ? window.getCollection('cashManagement') : 'cashManagement';
@@ -87,6 +89,10 @@ export class CashManagementManager {
         if (transactionType) {
             transactionType.addEventListener('change', () => this.updateTransactionForm());
         }
+        const partyInput = document.getElementById('partyName');
+        if (partyInput) {
+            partyInput.addEventListener('input', () => this.populateDueBills());
+        }
         
         // Initialize form state (hide customer name for default "Cash Added")
         this.updateTransactionForm();
@@ -101,6 +107,9 @@ export class CashManagementManager {
         const amountLabel = document.getElementById('amountLabel');
         const notesLabel = document.getElementById('notesLabel');
         const customerNameRow = document.getElementById('customerNameRow');
+        const dueBillRow = document.getElementById('dueBillRow');
+        if (dueBillRow) dueBillRow.style.display = type === 'deposit' ? 'none' : 'block';
+        if (type !== 'deposit') this.populateDueBills();
         
         if (type === 'deposit') {
             // Cash deposit - hide customer name
@@ -117,6 +126,42 @@ export class CashManagementManager {
             if (customerNameRow) customerNameRow.style.display = 'block';
             if (amountLabel) amountLabel.textContent = 'Amount Received (₹):';
             if (notesLabel) notesLabel.textContent = 'Notes (Optional):';
+        }
+    }
+
+    /**
+     * Open bills for the Cash tab "Due received/paid" picker (#98): sales
+     * with money to collect, or purchases with money to pay, filtered by the
+     * typed party name. The last option records a payment not linked to any bill.
+     */
+    static populateDueBills() {
+        const select = document.getElementById('dueBillSelect');
+        if (!select) return;
+        const type = document.getElementById('cashTransactionType')?.value;
+        const party = (document.getElementById('partyName')?.value || '').trim().toLowerCase();
+        const sources = type === 'paid'
+            ? [['purchase', AppState.purchaseHistory]]
+            : [['retail', AppState.retailSalesHistory], ['wholesale', AppState.salesHistory]];
+        const bills = [];
+        sources.forEach(([billType, list]) => {
+            (list || []).forEach(bill => {
+                const due = outstandingDue(bill);
+                if (due <= 0) return;
+                const name = String(bill.customerName || '');
+                if (party && !name.toLowerCase().includes(party)) return;
+                bills.push({ billType, bill, due, time: billTime(bill.date) || 0 });
+            });
+        });
+        bills.sort((a, b) => a.time - b.time); // oldest due first
+        const options = bills.slice(0, 50).map(({ billType, bill, due }) =>
+            `<option value="${Helpers.escapeHtml(`${billType}|${bill.id}`)}">#${Helpers.escapeHtml(bill.billNumber || String(bill.id).slice(0, 8))} · ${Helpers.escapeHtml(bill.customerName || 'N/A')} · Due ₹${Helpers.escapeHtml(round2(due))}</option>`);
+        options.push('<option value="">No bill — old udhaar not in the app</option>');
+        select.innerHTML = options.join('');
+        const hint = document.getElementById('dueBillHint');
+        if (hint) {
+            hint.textContent = bills.length > 0
+                ? 'The payment reduces this bill\'s due on the Outstanding screen too.'
+                : 'No open bill found for this name.';
         }
     }
 
@@ -210,6 +255,10 @@ export class CashManagementManager {
         const dayStart = parseLocalDate(dateStr);
         const dateStart = dayStart ? dayStart.getTime() : NaN;
         const dateEnd = dayStart ? new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1).getTime() : NaN;
+        const inDay = (value) => {
+            const t = billTime(value);
+            return t >= dateStart && t < dateEnd;
+        };
 
         const transactions = {
             cashSales: 0,
@@ -221,44 +270,23 @@ export class CashManagementManager {
             cashDeposits: 0
         };
 
-        // Calculate cash sales from wholesale and retail
         const sales = AppState.salesHistory || [];
         const retailSales = AppState.retailSalesHistory || [];
-        
-        sales.forEach(sale => {
-            const saleTime = billTime(sale.date);
-            if (saleTime >= dateStart && saleTime < dateEnd) {
-                const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
-                if (cashAmount > 0) transactions.cashSales += cashAmount;
-            }
-        });
-        
-        retailSales.forEach(sale => {
-            const saleTime = billTime(sale.date);
-            if (saleTime >= dateStart && saleTime < dateEnd) {
-                const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
-                if (cashAmount > 0) transactions.cashSales += cashAmount;
-            }
-        });
-
-        // Calculate cash purchases
         const purchases = AppState.purchaseHistory || [];
+
+        // Cash paid when the bill was saved (payment.* is canonical); cash
+        // collected later on the bill counts as a due payment on its own day.
+        [...sales, ...retailSales].forEach(sale => {
+            if (inDay(sale.date)) transactions.cashSales += saleTimePayment(sale).cash;
+        });
         purchases.forEach(purchase => {
-            const purchaseTime = billTime(purchase.date);
-            if (purchaseTime >= dateStart && purchaseTime < dateEnd) {
-                const cashAmount = Number(purchase.cashPayment) || Number(purchase.payment?.cash) || 0;
-                if (cashAmount > 0) transactions.cashPurchases += cashAmount;
-            }
+            if (inDay(purchase.date)) transactions.cashPurchases += saleTimePayment(purchase).cash;
         });
 
         // Calculate cash expenses
         const payments = AppState.expensesHistory || [];
         payments.forEach(payment => {
-            const paymentDate = Helpers.parseDate(payment.date);
-            if (!paymentDate) return;
-            
-            const paymentTime = paymentDate.getTime();
-            if (paymentTime >= dateStart && paymentTime < dateEnd) {
+            if (inDay(payment.date)) {
                 const amount = Number(payment.amount) || 0;
                 const category = (payment.category || payment.type || '').toLowerCase();
                 if (category === 'personal') {
@@ -269,26 +297,25 @@ export class CashManagementManager {
             }
         });
 
-        // Get due payments from session
-        if (session && session.duePayments) {
-            session.duePayments.forEach(payment => {
-                if (payment.method === 'cash') {
-                    if (payment.type === 'paid') {
-                        transactions.duePaid += payment.amount;
-                    } else {
-                        transactions.dueReceived += payment.amount;
-                    }
-                }
-            });
-        }
+        // Due payments made that day: recorded on bills and/or as drawer legs
+        // in the session, counted once (#98). Only the cash part is drawer cash.
+        const dues = sumDueEvents(dueEvents({
+            bills: { retail: retailSales, wholesale: sales, purchase: purchases },
+            sessions: session ? [session] : [],
+            from: dateStart,
+            to: dateEnd
+        }));
+        transactions.dueReceived = dues.receivedCash;
+        transactions.duePaid = dues.paidCash;
 
         // Get cash deposits from session
         if (session && session.cashDeposits) {
             session.cashDeposits.forEach(deposit => {
-                transactions.cashDeposits += deposit.amount;
+                transactions.cashDeposits += Number(deposit.amount) || 0;
             });
         }
 
+        Object.keys(transactions).forEach(k => { transactions[k] = round2(transactions[k]); });
         return transactions;
     }
 
@@ -330,121 +357,7 @@ export class CashManagementManager {
      * @returns {Promise<void>}
      */
     static async calculateTodayTransactions() {
-        const today = todayLocalISO();
-        const todayStart = parseLocalDate(today).getTime();
-        const todayEnd = parseLocalDate(localISODaysAgo(-1)).getTime();
-
-        // Reset transactions
-        this.todayTransactions = {
-            cashSales: 0,
-            cashPurchases: 0,
-            businessExpenses: 0,
-            personalExpenses: 0,
-            dueReceived: 0,
-            duePaid: 0,
-            cashDeposits: 0
-        };
-
-        // Calculate cash sales from wholesale and retail
-        const sales = AppState.salesHistory || [];
-        const retailSales = AppState.retailSalesHistory || [];
-        
-        // Process wholesale sales
-        sales.forEach(sale => {
-            const saleTime = billTime(sale.date);
-            if (saleTime >= todayStart && saleTime < todayEnd) {
-                const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
-                if (cashAmount > 0) {
-                    this.todayTransactions.cashSales += cashAmount;
-                }
-            }
-        });
-        
-        // Process retail sales
-        retailSales.forEach(sale => {
-            const saleTime = billTime(sale.date);
-            if (saleTime >= todayStart && saleTime < todayEnd) {
-                const cashAmount = Number(sale.cashPayment) || Number(sale.payment?.cash) || 0;
-                if (cashAmount > 0) {
-                    this.todayTransactions.cashSales += cashAmount;
-                }
-            }
-        });
-
-        // Calculate cash purchases
-        const purchases = AppState.purchaseHistory || [];
-        purchases.forEach(purchase => {
-            const purchaseTime = billTime(purchase.date);
-            if (purchaseTime >= todayStart && purchaseTime < todayEnd) {
-                const cashAmount = Number(purchase.cashPayment) || Number(purchase.payment?.cash) || 0;
-                if (cashAmount > 0) {
-                    this.todayTransactions.cashPurchases += cashAmount;
-                }
-            }
-        });
-
-        // Calculate cash expenses
-        const payments = AppState.expensesHistory || [];
-        payments.forEach(payment => {
-            // Parse Indian locale date format: "28/12/2025, 7:55:07 pm"
-            let paymentTime;
-            if (payment.date && payment.date.includes('/')) {
-                // Convert "28/12/2025, 7:55:07 pm" to Date object
-                const [datePart, timePart] = payment.date.split(', ');
-                const [day, month, year] = datePart.split('/');
-                
-                // Parse time with AM/PM
-                const timeMatch = timePart.match(/(\d+):(\d+):(\d+)\s*(am|pm)/i);
-                if (timeMatch) {
-                    let [_, hours, minutes, seconds, period] = timeMatch;
-                    hours = parseInt(hours);
-                    if (period.toLowerCase() === 'pm' && hours !== 12) hours += 12;
-                    if (period.toLowerCase() === 'am' && hours === 12) hours = 0;
-                    
-                    const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hours, parseInt(minutes), parseInt(seconds));
-                    paymentTime = dateObj.getTime();
-                } else {
-                    paymentTime = NaN;
-                }
-            } else {
-                paymentTime = billTime(payment.date);
-            }
-            
-            // Separate business and personal expenses
-            if (!isNaN(paymentTime) && paymentTime >= todayStart && paymentTime < todayEnd) {
-                const amount = Number(payment.amount) || 0;
-                // Check category (lowercase) - expenses use 'personal' or 'business'
-                const category = (payment.category || payment.type || '').toLowerCase();
-                if (category === 'personal') {
-                    this.todayTransactions.personalExpenses += amount;
-                } else {
-                    // All other types are business expenses
-                    this.todayTransactions.businessExpenses += amount;
-                }
-            }
-        });
-
-        // Get due payments from today's session
-        if (this.todaySession && this.todaySession.duePayments) {
-            this.todaySession.duePayments.forEach(payment => {
-                if (payment.method === 'cash') {
-                    if (payment.type === 'paid') {
-                        // Payment paid to supplier (cash out)
-                        this.todayTransactions.duePaid += payment.amount;
-                    } else {
-                        // Payment received from customer (cash in)
-                        this.todayTransactions.dueReceived += payment.amount;
-                    }
-                }
-            });
-        }
-
-        // Get cash deposits from today's session
-        if (this.todaySession && this.todaySession.cashDeposits) {
-            this.todaySession.cashDeposits.forEach(deposit => {
-                this.todayTransactions.cashDeposits += deposit.amount;
-            });
-        }
+        this.todayTransactions = this.calculateTransactionsForDate(todayLocalISO(), this.todaySession);
     }
 
     static updateUI() {
@@ -864,7 +777,7 @@ export class CashManagementManager {
 
     static async recordTransaction() {
         const type = Helpers.getInputText('cashTransactionType');
-        const amount = Helpers.getInputInt('transactionAmount');
+        const amount = parseCashAmount(document.getElementById('transactionAmount')?.value);
         const notes = Helpers.getInputText('transactionNotes');
 
         if (!amount || amount <= 0) {
@@ -914,12 +827,32 @@ export class CashManagementManager {
             // Due payment (received or paid)
             const partyName = document.getElementById('partyName')?.value || 'N/A';
 
+            // Linked to a bill: the one shared path (bill due + drawer leg, one transaction)
+            const billChoice = document.getElementById('dueBillSelect')?.value || '';
+            if (billChoice) {
+                const sep = billChoice.indexOf('|');
+                const billType = billChoice.slice(0, sep);
+                const billId = billChoice.slice(sep + 1);
+                const ok = await OutstandingManager.recordDuePayment({ billType, billId, cash: amount, online: 0, note: notes });
+                if (ok) {
+                    this.renderHistory();
+                    document.getElementById('partyName').value = '';
+                    document.getElementById('transactionAmount').value = '';
+                    document.getElementById('transactionNotes').value = '';
+                    this.populateDueBills();
+                }
+                return;
+            }
+
             const payment = {
                 id: Helpers.generateId(),
                 type: type, // 'received' or 'paid'
                 customer: partyName,
                 amount: amount,
                 method: 'cash', // All cash transactions
+                cash: amount,
+                online: 0,
+                unlinked: true, // not tied to a bill in the app
                 notes: notes,
                 timestamp: new Date().toISOString(),
                 recordedBy: AppState.userName || 'Unknown'
@@ -964,8 +897,8 @@ export class CashManagementManager {
             if (purchase.customerName) customers.add(purchase.customerName);
         });
         
-        // Get customers from sales history
-        AppState.salesHistory?.forEach(sale => {
+        // Get customers from sales history (wholesale and retail)
+        [...(AppState.salesHistory || []), ...(AppState.retailSalesHistory || [])].forEach(sale => {
             if (sale.customerName) customers.add(sale.customerName);
         });
 

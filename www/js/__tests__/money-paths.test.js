@@ -443,9 +443,8 @@ describe('cash drawer expected balance', () => {
         expect(CashManagementManager.calculateExpectedCash()).toBe(0);
     });
 
-    // BUG: see #98 — a due collected from the Outstanding screen raises payment.cash on the bill,
-    // but the drawer reads the stale top-level cashPayment first, so expected cash misses it.
-    test.skip('a due collected in cash today raises the expected drawer balance', () => {
+    // #98: payment.cash (raised by a due collected later) wins over the stale top-level cashPayment.
+    test('a due collected in cash today raises the expected drawer balance', () => {
         AppState.retailSalesHistory = [{ id: 'r1', date: '21/10/2026', cashPayment: 300, dueAmount: 0, payment: { cash: 795, due: 0 } }];
         AppState.salesHistory = [];
         AppState.purchaseHistory = [];

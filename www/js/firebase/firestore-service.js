@@ -2784,6 +2784,25 @@ const FirebaseService = {
     },
 
     /**
+     * Cash sessions for one local day (YYYY-MM-DD); usually one. One small
+     * query instead of loadCashSessions() (which reads every session).
+     * @param {string} date
+     * @returns {Promise<Array<Object>>}
+     */
+    async loadCashSessionsForDate(date) {
+        const snapshot = await this.db.collection(col('cashManagement')).where('date', '==', date).get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    /**
+     * Document reference of a cash session (for transactions).
+     * @param {string} sessionId
+     */
+    cashSessionRef(sessionId) {
+        return this.db.collection(col('cashManagement')).doc(String(sessionId));
+    },
+
+    /**
      * Saves a cash management session to Firestore.
      * @async
      * @param {Object} session - The cash session to save
