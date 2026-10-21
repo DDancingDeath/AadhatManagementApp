@@ -37,7 +37,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261021n-whatsnew-lang';
+const BUILD_ID = '20261021o-sidenav';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -84,13 +84,8 @@ window.addEventListener('unhandledrejection', function(event) {
 
 // Setup event listeners
 function setupEventListeners() {
-    // Overlay click to close menu
-    const overlay = document.querySelector('.overlay');
-    if (overlay) {
-        overlay.addEventListener('click', () => {
-            NavigationManager.toggleMenu();
-        });
-    }
+    // Close the side menu on overlay tap / Esc / swipe-left
+    NavigationManager.initMenuDismiss();
     
     // Modal buttons
     const modalCancel = document.getElementById('modalCancel');
@@ -609,6 +604,7 @@ window.app = {
     // Navigation
     nav: {
         toggleMenu: () => NavigationManager.toggleMenu(),
+        closeMenu: () => NavigationManager.closeMenu(),
         showTab: (tabId, evt) => NavigationManager.showTabFromNav(tabId, evt)
     },
     
