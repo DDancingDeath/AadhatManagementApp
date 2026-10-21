@@ -77,6 +77,7 @@
         { "n": 42, "note": "Void bills; do with #120" },
         { "n": 120 },
         { "n": 37, "note": "Save-time checks", "after": [103] },
+        { "n": 188, "note": "Live red/amber highlighting while billing; uses #37 rules", "after": [37] },
         { "n": 112, "note": "Server time; pairs with #37 backdate checks" },
         { "n": 124, "note": "Items archive/dup names; do with #75" },
         { "n": 75 },
@@ -149,6 +150,7 @@
       "why": "Owner-visible features built on the now-trusted numbers.",
       "items": [
         { "n": 40 },
+        { "n": 187, "note": "Anomaly engine + daily report + Anomalies page; merges #40 card", "after": [37, 40] },
         { "n": 46 },
         { "n": 48 },
         { "n": 160, "after": [43] },
