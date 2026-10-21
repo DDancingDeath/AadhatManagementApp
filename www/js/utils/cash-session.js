@@ -4,6 +4,7 @@
  */
 
 import { round2 } from './money.js';
+import { parseLocalDate } from './dates.js';
 
 /**
  * Reads a cash amount typed by the user. 0 is a valid amount (empty drawer);
@@ -74,12 +75,14 @@ export function lastCountedSession(sessions) {
  */
 export function autoCloseFields(session, transactions) {
     const { expected } = sessionTotals(session, transactions);
+    const day = parseLocalDate(session.date);
+    const endOfDay = day ? new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59) : new Date();
     return {
         closingBalance: null,
         expectedBalance: expected,
         difference: null,
         counted: false,
-        signOutTime: `${session.date}T23:59:59`,
+        signOutTime: endOfDay.toISOString(),
         signedOut: true,
         autoSignedOut: true,
         autoClosed: true,

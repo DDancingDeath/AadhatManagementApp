@@ -11,7 +11,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { todayLocalISO, localISODaysAgo, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
 import { needsHistoryFrom, ensureHistoryFrom } from '../utils/history-window.js';
-import { sessionTotals, parseCashAmount } from '../utils/cash-session.js';
+import { sessionTotals, parseCashAmount, isNotCounted, lastCountedSession, autoCloseFields } from '../utils/cash-session.js';
 import { round2 } from '../utils/money.js';
 
 const sessionRef = (sessionId) => {
@@ -168,28 +168,8 @@ export class CashManagementManager {
 
                         // Calculate transactions for that specific date
                         const transactions = this.calculateTransactionsForDate(fresh.date, fresh);
-                        
-                        // Calculate expected balance
-                        const opening = fresh.openingBalance || 0;
-                        const expectedBalance = opening 
-                            + transactions.cashSales 
-                            + transactions.dueReceived 
-                            + transactions.cashDeposits
-                            - transactions.cashPurchases 
-                            - transactions.businessExpenses 
-                            - transactions.personalExpenses 
-                            - transactions.duePaid;
-                        
-                        const closingFields = {
-                            closingBalance: 0, // Actual cash in hand = 0 (no one counted)
-                            expectedBalance: expectedBalance,
-                            difference: 0 - expectedBalance, // Difference = actual - expected
-                            signOutTime: new Date(fresh.date + 'T23:59:59').toISOString(),
-                            signedOut: true,
-                            autoSignedOut: true,
-                            autoSignOutReason: 'Session not closed by end of day',
-                            transactions: transactions
-                        };
+                        // Nobody counted the drawer: record "not counted", never a fake ₹0 count (#101)
+                        const closingFields = autoCloseFields(fresh, transactions);
                         tx.update(ref, closingFields);
                         return { ...fresh, ...closingFields };
                     });
@@ -496,6 +476,7 @@ export class CashManagementManager {
         } else {
             // No session - show sign in with empty status
             signInSection.style.display = 'block';
+            this.prefillOpeningAmount();
             signOutSection.style.display = 'none';
             cashDepositSection.style.display = 'none';
             if (cashStatusCard) cashStatusCard.style.display = 'block';
@@ -668,6 +649,72 @@ export class CashManagementManager {
         if (expectedCashEl) expectedCashEl.textContent = `₹${expected}`;
     }
 
+    /**
+     * Suggest the last counted closing as today's opening (#101). Editable;
+     * never overwrites what the user already typed.
+     */
+    static prefillOpeningAmount() {
+        const input = document.getElementById('cashSignInAmount');
+        const hint = document.getElementById('cashSignInSuggestion');
+        const last = lastCountedSession(this.cachedSessions || []);
+        if (!input || !last) {
+            if (hint) hint.style.display = 'none';
+            return;
+        }
+        const amount = Number(last.closingBalance);
+        if (input.value === '') input.value = String(amount);
+        if (hint) {
+            hint.textContent = `Suggested from the last count (${last.date}): ₹${amount}. Change it if the drawer has a different amount.`;
+            hint.style.display = 'block';
+        }
+    }
+
+    /**
+     * Record the real count for a day the app closed without one (#101).
+     * Transaction: only a still-uncounted session is updated.
+     * @param {string} sessionId
+     */
+    static async recordLateCount(sessionId) {
+        const amount = parseCashAmount(document.getElementById('lateCountAmount')?.value);
+        if (amount === null) {
+            UIManager.showToast('Please enter the cash amount counted');
+            return;
+        }
+        try {
+            const ref = sessionRef(sessionId);
+            const updated = await FirebaseService.db.runTransaction(async (tx) => {
+                const snap = await tx.get(ref);
+                if (!snap.exists) return null;
+                const fresh = { id: snap.id, ...snap.data() };
+                if (!isNotCounted(fresh)) return null;
+                const expected = Number(fresh.expectedBalance) || 0;
+                const fields = {
+                    closingBalance: amount,
+                    difference: round2(amount - expected),
+                    counted: true,
+                    countedLate: true,
+                    countedAt: new Date().toISOString(),
+                    countedBy: AppState.currentUser?.uid || 'unknown',
+                    countedByName: AppState.userName || 'Unknown'
+                };
+                tx.update(ref, fields);
+                return { ...fresh, ...fields };
+            });
+            if (!updated) {
+                UIManager.showToast('This day already has a count');
+                return;
+            }
+            const idx = (this.cachedSessions || []).findIndex(s => s.id === sessionId);
+            if (idx !== -1) this.cachedSessions[idx] = updated;
+            UIManager.closeModal(true);
+            this.renderHistoryFromCache();
+            UIManager.showToast(`✓ Count of ₹${amount} saved`);
+        } catch (error) {
+            console.error('Late count error:', error);
+            UIManager.showToast('Failed to save count: ' + error.message);
+        }
+    }
+
     static validateSignOut() {
         const actualAmount = parseCashAmount(document.getElementById('cashSignOutAmount')?.value);
         const expected = this.calculateExpectedCash();
@@ -707,17 +754,16 @@ export class CashManagementManager {
         }
 
         try {
-            // Check if yesterday's closing matches today's opening
-            const yesterdayDate = localISODaysAgo(1);
-            
+            // Compare with the last real count (days closed without a count are skipped, #101)
             const sessions = await FirebaseService.loadCashSessions();
-            const yesterdaySession = sessions.find(s => s.date === yesterdayDate);
+            const lastCounted = lastCountedSession(sessions);
             
-            if (yesterdaySession && yesterdaySession.signedOut) {
-                const diff = Math.abs(yesterdaySession.closingBalance - amount);
+            if (lastCounted) {
+                const lastClosing = Number(lastCounted.closingBalance);
+                const diff = Math.abs(lastClosing - amount);
                 if (diff > 1) {
                     const confirmed = await UIManager.showModal(
-                        `Yesterday's closing was ₹${yesterdaySession.closingBalance}, but you're signing in with ₹${amount}.\nDifference: ₹${diff.toFixed(2)}\n\nDo you want to continue?`,
+                        `Last counted closing (${lastCounted.date}) was ₹${lastClosing}, but you're signing in with ₹${amount}.\nDifference: ₹${diff.toFixed(2)}\n\nDo you want to continue?`,
                         'Cash Mismatch Warning',
                         true
                     );
@@ -935,64 +981,7 @@ export class CashManagementManager {
     static renderHistoryFromCache() {
         const container = document.getElementById('cashHistoryList');
         if (!container) return;
-
-        const sessions = this.cachedSessions || [];
-        
-        // Sort by date descending
-        sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        if (sessions.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">No cash management history</p>';
-            return;
-        }
-
-        container.innerHTML = sessions.map(session => {
-            const date = (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', { 
-                weekday: 'short', 
-                day: 'numeric', 
-                month: 'short' 
-            });
-            
-            const status = session.signedOut 
-                ? '<span style="color: #6c757d;">✓ Closed</span>' 
-                : '<span style="color: #22c55e; font-weight: 600;">● Active</span>';
-            
-            const diff = session.difference || 0;
-            const absDiff = Math.abs(diff);
-            let diffColor;
-            if (absDiff < 50) {
-                diffColor = '#22c55e';
-            } else if (absDiff < 500) {
-                diffColor = '#f59e0b';
-            } else {
-                diffColor = '#ef4444';
-            }
-            const diffText = absDiff < 1 ? 'Matched' : (diff > 0 ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`);
-            const cashAdded = session.transactions?.cashDeposits || 0;
-
-            return `
-                <div onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(session.date)}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <strong style="font-size: 15px;">${date}</strong>
-                        ${status}
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; color: #6c757d;">
-                        <div>Opening: <strong>₹${Helpers.escapeHtml(session.openingBalance)}</strong></div>
-                        ${session.signedOut ? `
-                            <div>Closing: <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
-                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
-                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
-                            <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
-                            ` : '<div>In Progress...</div>'}
-                        </div>
-                        ${session.duePayments && session.duePayments.length > 0 ? `
-                            <div style="margin-top: 8px; font-size: 13px; color: #6c757d;">
-                                ${session.duePayments.length} due payment(s) recorded
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-        }).join('');
+        this.renderSessionList(container, this.cachedSessions || []);
     }
 
     static async renderHistory() {
@@ -1002,27 +991,48 @@ export class CashManagementManager {
         try {
             const sessions = await FirebaseService.loadCashSessions();
             this.cachedSessions = sessions; // Update cache
-            
-            // Sort by date descending
-            sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
+            this.renderSessionList(container, sessions);
+        } catch (error) {
+            console.error('Error rendering history:', error);
+            container.innerHTML = '<p style="text-align: center; color: #ef4444; padding: 20px;">Failed to load history</p>';
+        }
+    }
 
-            if (sessions.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">No cash management history</p>';
+    /**
+     * Session history list. Sessions the app closed without a count show
+     * "Not counted" (no shortage) and are listed first for review (#101).
+     * @param {HTMLElement} container
+     * @param {Object[]} sessions
+     */
+    static renderSessionList(container, sessions) {
+        sessions.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+        if (sessions.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">No cash management history</p>';
             return;
         }
 
-        container.innerHTML = sessions.map(session => {
-            const date = (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', { 
-                weekday: 'short', 
-                day: 'numeric', 
-                month: 'short' 
-            });
-            
-            const status = session.signedOut 
-                ? '<span style="color: #6c757d;">✓ Closed</span>' 
-                : '<span style="color: #22c55e; font-weight: 600;">● Active</span>';
-            
-            const diff = session.difference || 0;
+        const notCounted = sessions.filter(isNotCounted);
+        const dayLabel = (session) => (parseLocalDate(session.date) || new Date(session.date)).toLocaleDateString('en-IN', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short'
+        });
+        const review = notCounted.length > 0 ? `
+            <div style="background: #fff7ed; border: 1px solid #fdba74; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 13px; color: #9a3412;">
+                <strong>⚠ ${notCounted.length} day(s) closed without a cash count</strong>
+                <div style="margin-top: 4px;">Tap a day to record the real count: ${notCounted.map(s => `<a href="#" onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(s.date)}'); return false;" style="color: #9a3412; font-weight: 600;">${Helpers.escapeHtml(dayLabel(s))}</a>`).join(', ')}</div>
+            </div>` : '';
+
+        container.innerHTML = review + sessions.map(session => {
+            const date = dayLabel(session);
+            const uncounted = isNotCounted(session);
+
+            const status = !session.signedOut
+                ? '<span style="color: #22c55e; font-weight: 600;">● Active</span>'
+                : (uncounted ? '<span style="color: #c2410c; font-weight: 600;">⚠ Not counted</span>' : '<span style="color: #6c757d;">✓ Closed</span>');
+
+            const diff = Number(session.difference) || 0;
             const absDiff = Math.abs(diff);
             let diffColor;
             if (absDiff < 50) {
@@ -1034,6 +1044,15 @@ export class CashManagementManager {
             }
             const diffText = absDiff < 1 ? 'Matched' : (diff > 0 ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`);
             const cashAdded = session.transactions?.cashDeposits || 0;
+            const closedRows = uncounted ? `
+                            <div>Closing: <strong style="color: #c2410c;">Not counted</strong></div>
+                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
+                            ` : `
+                            <div>Closing: <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
+                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
+                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
+                            <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
+                            `;
 
             return `
                 <div onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(session.date)}')" style="border-bottom: 1px solid #e5e7eb; padding: 12px 0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
@@ -1043,25 +1062,16 @@ export class CashManagementManager {
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; color: #6c757d;">
                         <div>Opening: <strong>₹${Helpers.escapeHtml(session.openingBalance)}</strong></div>
-                        ${session.signedOut ? `
-                            <div>Closing: <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
-                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
-                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
-                            <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
-                            ` : '<div>In Progress...</div>'}
-                        </div>
-                        ${session.duePayments && session.duePayments.length > 0 ? `
-                            <div style="margin-top: 8px; font-size: 13px; color: #6c757d;">
-                                ${session.duePayments.length} due payment(s) recorded
-                            </div>
-                        ` : ''}
+                        ${session.signedOut ? closedRows : '<div>In Progress...</div>'}
                     </div>
-                `;
-            }).join('');
-        } catch (error) {
-            console.error('Error rendering history:', error);
-            container.innerHTML = '<p style="text-align: center; color: #ef4444; padding: 20px;">Failed to load history</p>';
-        }
+                    ${session.duePayments && session.duePayments.length > 0 ? `
+                        <div style="margin-top: 8px; font-size: 13px; color: #6c757d;">
+                            ${session.duePayments.length} due payment(s) recorded
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
     }
 
     static async showSessionDetails(sessionDate) {
@@ -1086,7 +1096,8 @@ export class CashManagementManager {
         let diffColor = '#22c55e'; // green
         if (absDiff >= 500) diffColor = '#ef4444'; // red
         else if (absDiff >= 50) diffColor = '#f59e0b'; // yellow
-        const diffText = absDiff < 1 ? 'Matched' : (diff >= 0 ? `+₹${diff.toFixed(2)}` : `₹${diff.toFixed(2)}`);
+        const uncounted = isNotCounted(session);
+        const diffText = uncounted ? 'Not counted' : (absDiff < 1 ? 'Matched' : (diff >= 0 ? `+₹${diff.toFixed(2)}` : `₹${diff.toFixed(2)}`));
 
         // An open session has no saved snapshot yet: use today's live totals.
         const isLiveToday = !session.signedOut && this.todaySession && this.todaySession.date === session.date;
@@ -1094,7 +1105,7 @@ export class CashManagementManager {
         const totals = sessionTotals(session, txns);
         const totalCashIn = totals.opening + totals.cashIn;
         const totalCashOut = totals.cashOut;
-        const difference = session.signedOut ? (session.closingBalance - session.expectedBalance) : 0;
+        const difference = session.signedOut && !uncounted ? (session.closingBalance - session.expectedBalance) : 0;
         const absDifference = Math.abs(difference);
         
         // Color coding based on difference amount
@@ -1103,10 +1114,19 @@ export class CashManagementManager {
         else if (absDifference >= 50) cardDiffColor = '#f59e0b'; // orange/yellow for >= 50
         
         const diffBgColor = session.signedOut ? `rgba(${parseInt(cardDiffColor.slice(1, 3), 16)}, ${parseInt(cardDiffColor.slice(3, 5), 16)}, ${parseInt(cardDiffColor.slice(5, 7), 16)}, 0.1)` : 'rgba(148, 163, 184, 0.1)';
-        const diffTextColor = session.signedOut ? cardDiffColor : '#64748b';
+        const diffTextColor = session.signedOut && !uncounted ? cardDiffColor : '#64748b';
         
         let modalContent = `
             <div style="padding: 0;">
+                ${uncounted ? `
+                <div style="background: #fff7ed; border: 1px solid #fdba74; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 13px; color: #9a3412;">
+                    <strong>This day was closed by the app without a cash count.</strong>
+                    <div style="margin: 6px 0;">If you know how much cash was in the drawer, record it:</div>
+                    <div style="display: flex; gap: 6px;">
+                        <input type="number" inputmode="decimal" min="0" id="lateCountAmount" placeholder="Cash counted (₹)" style="flex: 1; padding: 8px; border: 1px solid #fdba74; border-radius: 6px;" />
+                        <button type="button" onclick="window.app.cashManagement.recordLateCount('${Helpers.escapeJsAttr(session.id)}')" style="background: #ea580c; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: 600;">Save count</button>
+                    </div>
+                </div>` : ''}
                 <!-- Summary Card -->
                 ${session.signedOut ? `
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
@@ -1125,7 +1145,7 @@ export class CashManagementManager {
                     <!-- Actual Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
                         <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Actual Balance</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.closingBalance)}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">${uncounted ? 'Not counted' : `₹${Helpers.escapeHtml(session.closingBalance)}`}</div>
                     </div>
                     
                     <!-- Difference -->

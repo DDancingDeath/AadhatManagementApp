@@ -989,6 +989,7 @@ window.app = {
         signOut: () => CashManagementManager.signOut(),
         recordTransaction: () => CashManagementManager.recordTransaction(),
         showDetails: (sessionDate) => CashManagementManager.showSessionDetails(sessionDate),
+        recordLateCount: (sessionId) => CashManagementManager.recordLateCount(sessionId),
         loadTodaySession: () => CashManagementManager.loadTodaySession(),
         renderHistory: () => CashManagementManager.renderHistory(),
         calculateTodayTransactions: () => CashManagementManager.calculateTodayTransactions(),

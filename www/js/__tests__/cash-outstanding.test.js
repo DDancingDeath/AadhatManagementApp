@@ -9,6 +9,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { AppState } from '../utils/state.js';
 import { sessionTotals, parseCashAmount, isNotCounted, lastCountedSession, autoCloseFields } from '../utils/cash-session.js';
 import fs from 'fs';
+import { createFakeFirestore } from './__mocks__/fake-firestore.js';
 import path from 'path';
 
 const CASH_TEMPLATE = fs.readFileSync(path.join(__dirname, '../../templates/cash-management.html'), 'utf8');
@@ -113,5 +114,103 @@ describe('#66 ₹0 opening/closing and session notes', () => {
         await CashManagementManager.showSessionDetails('2026-10-20');
         expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
         expect(html).toContain('Took ₹2,000 home');
+    });
+});
+
+describe('#101 forgotten sessions are closed as "not counted"', () => {
+    const DAY_TXNS = { cashSales: 1000, cashPurchases: 400, businessExpenses: 0, personalExpenses: 0, dueReceived: 0, duePaid: 0, cashDeposits: 0 };
+
+    test('autoCloseFields keeps the expected balance but records no count and no difference', () => {
+        const fields = autoCloseFields({ date: '2026-10-20', openingBalance: 500 }, DAY_TXNS);
+        expect(fields).toMatchObject({
+            closingBalance: null, difference: null, expectedBalance: 1100, counted: false,
+            signedOut: true, autoSignedOut: true, autoClosed: true, transactions: DAY_TXNS
+        });
+        const end = new Date(fields.signOutTime);
+        expect([end.getFullYear(), end.getMonth(), end.getDate(), end.getHours()]).toEqual([2026, 9, 20, 23]);
+    });
+
+    test.each([
+        [{ signedOut: true, counted: false }, true],
+        [{ signedOut: true, autoSignedOut: true, closingBalance: 0 }, true],                  // older app: fake ₹0 count
+        [{ signedOut: true, autoSignedOut: true, counted: true, countedLate: true }, false],   // real count added later
+        [{ signedOut: true, closingBalance: 0 }, false],                                     // a real ₹0 count
+        [{ signedOut: false }, false]
+    ])('isNotCounted(%o) → %p', (session, expected) => {
+        expect(isNotCounted(session)).toBe(expected);
+    });
+
+    test('the last counted closing skips days closed without a count', () => {
+        const sessions = [
+            { date: '2026-10-21', signedOut: false, openingBalance: 0 },
+            { date: '2026-10-20', signedOut: true, counted: false, closingBalance: null },
+            { date: '2026-10-19', signedOut: true, autoSignedOut: true, closingBalance: 0 },
+            { date: '2026-10-18', signedOut: true, closingBalance: 1234 },
+            { date: '2026-10-17', signedOut: true, closingBalance: 999 }
+        ];
+        expect(lastCountedSession(sessions).date).toBe('2026-10-18');
+        expect(lastCountedSession([])).toBeNull();
+    });
+
+    describe('in the app', () => {
+        let fake;
+        beforeEach(() => {
+            jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+            jest.setSystemTime(new Date(2026, 9, 21, 10, 0, 0));
+            fake = createFakeFirestore();
+            jest.spyOn(FirebaseService, 'db', 'get').mockReturnValue(fake.db);
+            global.firebase = fake.firebase;
+            window.getCollection = (n) => n;
+            document.body.innerHTML = CASH_TEMPLATE + '<div id="modalOverlay"><div id="modalTitle"></div><div id="modalMessage"></div><button id="modalCancel"></button></div>';
+            AppState.salesHistory = [{ id: 'w1', date: '2026-10-20T11:00:00', total: 1000, payment: { cash: 1000, online: 0, due: 0 } }];
+            AppState.retailSalesHistory = [];
+            AppState.purchaseHistory = [];
+            AppState.expensesHistory = [];
+        });
+        afterEach(() => {
+            jest.useRealTimers();
+            delete window.getCollection;
+            delete global.firebase;
+            AppState.salesHistory = [];
+        });
+
+        test('auto-close writes "not counted" (no ₹0 count, no shortage) and history shows it for review', async () => {
+            fake.seed('cashManagement', [
+                { id: 's20', date: '2026-10-20', openingBalance: 500, signedOut: false, duePayments: [] },
+                { id: 's19', date: '2026-10-19', openingBalance: 800, signedOut: true, counted: true, closingBalance: 500, expectedBalance: 500, difference: 0 }
+            ]);
+            const sessions = await FirebaseService.loadCashSessions();
+            await CashManagementManager.autoSignOutPreviousDays(sessions);
+
+            const doc = fake.raw('cashManagement').get('s20');
+            expect(doc).toMatchObject({ signedOut: true, counted: false, closingBalance: null, difference: null, expectedBalance: 1500 });
+
+            CashManagementManager.cachedSessions = sessions;
+            CashManagementManager.renderHistoryFromCache();
+            const list = document.getElementById('cashHistoryList').textContent.replace(/\s+/g, ' ');
+            expect(list).toContain('1 day(s) closed without a cash count');
+            expect(list).toContain('Not counted');
+            expect(list).not.toMatch(/-₹1500/);
+        });
+
+        test('next opening is pre-filled from the last counted closing', () => {
+            CashManagementManager.cachedSessions = [
+                { id: 's20', date: '2026-10-20', signedOut: true, counted: false, closingBalance: null },
+                { id: 's19', date: '2026-10-19', signedOut: true, counted: true, closingBalance: 500 }
+            ];
+            CashManagementManager.todaySession = null;
+            CashManagementManager.updateUI();
+            expect(document.getElementById('cashSignInAmount').value).toBe('500');
+            expect(document.getElementById('cashSignInSuggestion').textContent).toContain('2026-10-19');
+        });
+
+        test('a late count resolves a not-counted day', async () => {
+            fake.seed('cashManagement', [{ id: 's20', date: '2026-10-20', openingBalance: 500, signedOut: true, counted: false, closingBalance: null, expectedBalance: 1500, difference: null }]);
+            CashManagementManager.cachedSessions = await FirebaseService.loadCashSessions();
+            document.body.insertAdjacentHTML('beforeend', '<input id="lateCountAmount" value="1450">');
+            await CashManagementManager.recordLateCount('s20');
+            expect(fake.raw('cashManagement').get('s20')).toMatchObject({ closingBalance: 1450, difference: -50, counted: true, countedLate: true });
+            expect(isNotCounted(CashManagementManager.cachedSessions[0])).toBe(false);
+        });
     });
 });
