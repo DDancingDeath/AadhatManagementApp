@@ -165,6 +165,8 @@
         { "n": 94, "note": "Desktop polish; do #94, #91, #88 together" },
         { "n": 91 },
         { "n": 88 },
+        { "n": 177, "note": "Phone side menu; fix in PR #179" },
+        { "n": 185, "note": "No 'staff' in user-facing text; fix in PR #186" },
         { "n": 102 },
         { "n": 100 },
         { "n": 105 }
