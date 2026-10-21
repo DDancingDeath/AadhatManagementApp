@@ -5,7 +5,9 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:rules": "npx --yes firebase-tools@latest emulators:exec --only firestore --project demo-aadhat \"node rules-tests/test.js\"",
-    "check:sw": "node scripts/check-sw-assets.js"
+    "check:sw": "node scripts/check-sw-assets.js",
+    "release": "node scripts/release.js",
+    "check:release": "node scripts/release.js --check"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^7.2.0",
@@ -28,7 +30,7 @@
     "babel-jest": "^29.7.0"
   },
   "name": "aadhatmanagementapp",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "Aadhat Billing Management App",
   "main": "www/js/main.js",
   "repository": {

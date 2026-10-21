@@ -133,6 +133,9 @@ const NavigationManager = {
         if (tabId === 'settings' && window.app?.settings) {
             setTimeout(() => window.app.settings.load(), 100);
         }
+        if (tabId === 'settings' && window.app?.install) {
+            window.app.install.refresh();
+        }
         
         // Initialize diagnostics when Diagnostics tab is shown (owner only)
         if (tabId === 'diagnostics' && window.app?.diagnostics) {

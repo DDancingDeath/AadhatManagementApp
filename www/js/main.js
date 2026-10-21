@@ -25,23 +25,27 @@ import { AuditService } from './services/audit.js';
 import { TelemetryService } from './services/telemetry.js';
 import { DiagnosticsManager } from './modules/diagnostics.js';
 import { AdminManager } from './modules/admin.js';
+import { AppUpdatesManager } from './modules/app-updates.js';
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
 import { Helpers } from './utils/helpers.js';
+import { InstallManager } from './services/install-prompt.js';
 
 // Build stamp — bumped on every deploy that ships new JS so you can verify
 // in the browser console whether the latest code is actually running. If
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261014d-edit-conflict';
+const BUILD_ID = '20261021d-desktop-toggles';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
 );
 // Expose on window so the user can copy/paste it back to us when debugging.
 window.__AADHAT_BUILD__ = BUILD_ID;
+
+InstallManager.init();
 
 // Load and inject HTML templates from separate .html files
 async function injectTemplates() {
@@ -252,6 +256,9 @@ async function initializeUserData() {
         AuditService.cleanupOldLogs();
         
         UIManager.hideLoading();
+
+        // What's new + Android update banner (non-blocking, best effort)
+        AppUpdatesManager.onAppReady();
         
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -264,6 +271,7 @@ async function initializeUserData() {
 document.addEventListener('DOMContentLoaded', async function() {
     // STEP 1: Load and inject all HTML templates from .html files
     await injectTemplates();
+    InstallManager.refresh();
     
     // STEP 2: Initialize auth tabs after templates are loaded
     AuthManager.initAuthTabs();
@@ -919,7 +927,10 @@ window.app = {
     
     // Settings
     settings: {
-        load: () => SettingsManager.loadSettings(),
+        load: () => {
+            AppUpdatesManager.renderSettings();
+            SettingsManager.loadSettings();
+        },
         save: () => SettingsManager.saveSettings(),
         toggleDarkMode: () => SettingsManager.toggleDarkMode(),
         clearAllData: () => SettingsManager.clearAllData(),
@@ -932,6 +943,12 @@ window.app = {
         loadAuditLogs: () => SettingsManager.loadAuditLogs(),
         filterAuditLogs: () => SettingsManager.filterAuditLogs(),
         loadStorageStats: () => SettingsManager.loadStorageStats()
+    },
+
+    // PWA install (Settings)
+    install: {
+        prompt: () => InstallManager.prompt(),
+        refresh: () => InstallManager.refresh()
     },
     
     // Date Filter
@@ -972,6 +989,14 @@ window.app = {
         clearAllData: () => AdminManager.clearAllData()
     },
     
+    // What's new / update banner / share app
+    updates: {
+        showWhatsNew: () => AppUpdatesManager.showWhatsNew(),
+        shareOnWhatsApp: () => AppUpdatesManager.shareOnWhatsApp(),
+        shareNative: () => AppUpdatesManager.shareNative(),
+        openDownloadPage: () => AppUpdatesManager.openDownloadPage()
+    },
+
     // UI
     ui: {
         showLoading: () => UIManager.showLoading(),

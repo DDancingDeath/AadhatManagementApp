@@ -228,6 +228,36 @@ The app includes a service worker (`www/service-worker.js`) that:
 - Uses network-first strategy for Firebase API calls
 - Enables basic offline functionality
 
+## Releasing a new version
+
+The version lives in four places that must agree: `www/changelog.json` (top
+entry), `package.json`, `www/js/version.js` and `android/app/build.gradle`.
+
+1. Add the new release at the **top** of `www/changelog.json` with `version`
+   (x.y.z), `date` (YYYY-MM-DD), `androidVersionCode` (previous + 1) and short
+   `notes.en` / `notes.hi` lists written for shop staff.
+2. Run `npm run release -- 1.4.0 --code 5` (same version/code). It refuses to
+   run until the changelog entry exists and the code increases.
+3. `npm run check:release` verifies everything is consistent (CI-friendly).
+4. Build the APK and publish a GitHub Release tagged `v1.4.0` with the APK
+   attached as **`AadhatManagement.apk`**. Installed Android apps check
+   `releases/latest` (at most every 12 h) and show an "Update available"
+   banner; https://aadhat-management.web.app/download always links to the
+   latest APK.
+
+After updating, each user sees a one-time "What's new" sheet (Settings → App
+updates reopens it and has "Share on WhatsApp" for sending the download link).
+
+## Install as an app (PWA)
+
+`www/manifest.webmanifest` plus the icons in `www/icons/` make the web app
+installable on desktop (Chrome/Edge) and Android/iOS home screens. In a
+browser tab, **Settings → Install App / ऐप इंस्टॉल करें** shows an install
+button when the browser offers one, or a short hint otherwise (Safari/Firefox).
+The card is hidden inside the Capacitor Android app and when already running
+installed. New icons/manifest changes must stay in `STATIC_ASSETS`
+(`npm run check:sw`).
+
 ## Documentation
 
 - **Module Documentation**: [www/js/README.md](www/js/README.md)

@@ -6,6 +6,7 @@
         </div>
 
         <div id="salesEntrySection">
+            <div class="bill-col-entry">
             <div class="form-row">
                 <label style="width: 100px;">Customer:</label>
                 <div style="display: flex; gap: 8px; flex: 1; align-items: center;">
@@ -54,7 +55,9 @@
             </thead>
             <tbody></tbody>
         </table>
+            </div>
 
+            <div class="bill-col-summary">
         <div class="bill-totals">
             <div class="total-row grand-total" style="background: linear-gradient(135deg, #e8f5e9, #c8e6c9); color: #2e7d32;">
                 <span>Total Receivable:</span>
@@ -92,6 +95,7 @@
             <button class="save-btn save-sale-btn" onclick="window.app.wholesaleSales.completeSale()" style="flex: 1; padding: 12px;">Save</button>
             <button class="print-btn print-sale-btn" onclick="window.app.wholesaleSales.printWholesaleSale()" style="flex: 1; padding: 12px;">Print</button>
         </div>
+            </div>
 
         <h3>Sales History</h3>
         <div id="salesHistoryList">

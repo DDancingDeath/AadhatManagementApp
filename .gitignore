@@ -107,3 +107,6 @@ scripts/auth-state.json
 
 # Firestore rules test dependencies
 rules-tests/node_modules/
+
+# scratch dirs from release.test.js
+.release-test-*/

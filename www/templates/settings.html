@@ -46,9 +46,31 @@
             </div>
         </div>
 
+        <div class="settings-card" id="installAppCard" style="display: none;">
+            <h3>Install App / ऐप इंस्टॉल करें</h3>
+            <button class="add-item-btn" id="installAppBtn" onclick="window.app.install.prompt()" style="display: none;">
+                📲 Install app on this device / ऐप इंस्टॉल करें
+            </button>
+            <p class="setting-description" id="installAppHint" style="display: none;">
+                Chrome/Edge: address bar → Install icon. iPhone/iPad Safari: Share → Add to Home Screen.<br>
+                Chrome/Edge: एड्रेस बार में Install आइकन दबाएँ। iPhone/iPad Safari: Share → Add to Home Screen।
+            </p>
+        </div>
+
+        <div class="settings-card">
+            <h3>App updates / ऐप अपडेट</h3>
+            <p><strong>Version:</strong> <span id="appVersionText">-</span></p>
+            <div class="app-updates-actions">
+                <button class="add-item-btn" type="button" onclick="window.app.updates.showWhatsNew()">✨ What's new / क्या नया है</button>
+                <button class="add-item-btn" type="button" onclick="window.app.updates.shareOnWhatsApp()">💬 Share on WhatsApp / WhatsApp पर भेजें</button>
+                <button class="add-item-btn" type="button" id="shareAppNativeBtn" style="display: none;" onclick="window.app.updates.shareNative()">📤 Share app / ऐप शेयर करें</button>
+                <button class="add-item-btn" type="button" onclick="window.app.updates.openDownloadPage()">⬇️ Download page / डाउनलोड पेज</button>
+            </div>
+            <p class="setting-description">Send the app link and latest changes to your staff</p>
+        </div>
+
         <div class="settings-card">
             <h3>About</h3>
-            <p><strong>Version:</strong> 1.0.0</p>
             <p><strong>App:</strong> Aadhat Billing System</p>
             <p><strong>Developer:</strong> Your Company Name</p>
         </div>
