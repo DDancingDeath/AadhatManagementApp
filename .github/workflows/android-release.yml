@@ -137,6 +137,10 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action's default also installs the retired 'tools' package,
+          # which current sdkmanager can't find (exit 1).
+          packages: platform-tools
 
       - name: Sync Capacitor
         run: npx cap sync android
