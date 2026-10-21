@@ -46,6 +46,18 @@
             </div>
         </div>
 
+        <div class="settings-card" id="notifSettingsCard" style="display: none;">
+            <h3>Notifications / सूचनाएं</h3>
+            <label class="checkbox-label">
+                <input type="checkbox" id="settingSystemNotifications" onchange="window.app.notifications.toggleSystem(this.checked)">
+                <span>🔔 Desktop notifications / डेस्कटॉप सूचनाएं</span>
+            </label>
+            <p class="setting-description">
+                Shows a computer notification for new updates while the app is open in another tab or window. Closed apps can't get notifications yet.<br>
+                ऐप खुला हो पर दूसरे टैब/विंडो में हो, तब भी नई सूचना दिखेगी। बंद ऐप पर अभी सूचना नहीं आती।
+            </p>
+        </div>
+
         <div class="settings-card" id="installAppCard" style="display: none;">
             <h3>Install App / ऐप इंस्टॉल करें</h3>
             <button class="add-item-btn" id="installAppBtn" onclick="window.app.install.prompt()" style="display: none;">

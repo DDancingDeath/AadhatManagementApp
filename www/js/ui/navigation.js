@@ -200,6 +200,9 @@ const NavigationManager = {
         if (tabId === 'settings' && window.app?.install) {
             window.app.install.refresh();
         }
+        if (tabId === 'settings' && window.app?.notifications) {
+            window.app.notifications.refreshSettings();
+        }
         
         // Initialize diagnostics when Diagnostics tab is shown (owner only)
         if (tabId === 'diagnostics' && window.app?.diagnostics) {

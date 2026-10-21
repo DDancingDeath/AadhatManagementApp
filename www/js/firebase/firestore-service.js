@@ -12,6 +12,7 @@ import { APP_CONFIG } from '../utils/constants.js';
 import { Helpers } from '../utils/helpers.js';
 import { outstandingDue } from '../utils/money.js';
 import { parseAnyBillDate } from '../utils/dates.js';
+import { planNotificationDocs, newEventId } from '../utils/notification-format.js';
 import {
     STOCK_REPLAY_FORMAT,
     eventTime,
@@ -1428,17 +1429,23 @@ const getUsersForNotifications = async () => {
     return users;
 };
 
-/** Writes one notification per user id using batched writes. */
-const writeNotifications = async (userIds, notification) => {
+/**
+ * Writes planned notification docs ({id, data}) with batched writes. Doc ids
+ * are per event + recipient, so re-sending an event never duplicates it.
+ */
+const writeNotificationDocs = async (docs) => {
     const db = getDb();
     const ref = db.collection(col('notifications'));
-    for (let i = 0; i < userIds.length; i += 450) {
+    for (let i = 0; i < docs.length; i += 450) {
         const batch = db.batch();
-        userIds.slice(i, i + 450).forEach(userId => {
-            batch.set(ref.doc(), { ...notification, userId });
-        });
+        docs.slice(i, i + 450).forEach(({ id, data }) => batch.set(ref.doc(id), data));
         await batch.commit();
     }
+};
+
+const notificationFromDoc = (doc) => {
+    const data = typeof doc.data === 'function' ? (doc.data({ serverTimestamps: 'estimate' }) || {}) : {};
+    return { ...data, id: doc.id };
 };
 
 /**
@@ -2478,7 +2485,7 @@ const FirebaseService = {
         // never did anything, yet each re-read its whole collection on every
         // app open.
         
-        // Listen to notifications for current user (rate changes, etc.)
+        // Global item frequency (dropdown order) for signed-in users
         if (AppState.currentUser?.uid) {
             // Listen to global item frequency changes to update dropdown order in real-time
             const unsubItemFrequency = getDb().collection(col('itemFrequency')).doc('global').onSnapshot(doc => {
@@ -2502,41 +2509,9 @@ const FirebaseService = {
                 console.error('Item frequency listener error:', error);
             });
             unsubscribeFunctions.push(unsubItemFrequency);
-            
-            console.log('Setting up notifications listener for user:', AppState.currentUser.uid);
-            
-            const unsubNotifications = getDb().collection(col('notifications'))
-                .where('userId', '==', AppState.currentUser.uid)
-                .where('read', '==', false)
-                .orderBy('timestamp', 'desc')
-                .limit(10)
-                .onSnapshot(snapshot => {
-                    console.log('Notifications snapshot received, changes:', snapshot.docChanges().length);
-                    snapshot.docChanges().forEach(change => {
-                        console.log('Notification change type:', change.type, change.doc.data());
-                        if (change.type === 'added') {
-                            const notification = change.doc.data();
-                            // Show toast for rate change notifications
-                            if (notification.type === 'rate_change') {
-                                const itemName = notification.itemHindiName || notification.itemName;
-                                const message = `${itemName} ${notification.rateTypeLabel} rate: ₹${notification.oldRate} → ₹${notification.newRate} (by ${notification.changedBy})`;
-                                console.log('Showing rate change toast:', message);
-                                // BUG: see #12 — UIManager is not imported here, so this throws.
-                                // eslint-disable-next-line no-undef
-                                UIManager.showToast(message, 5000);
-                                
-                                // Mark as read after showing
-                                getDb().collection(col('notifications')).doc(change.doc.id).update({ read: true });
-                            }
-                        }
-                    });
-                }, error => {
-                    console.error('Notifications listener error:', error);
-                });
-            unsubscribeFunctions.push(unsubNotifications);
-        } else {
-            console.warn('No currentUser.uid, skipping notifications listener');
         }
+        // The notifications listener is owned by NotificationsManager (#12):
+        // it starts once the profile is loaded and stops on logout.
 
         return Promise.all(firstSnapshots).then(() => {
             if (gen !== sessionGen) return;
@@ -2549,87 +2524,186 @@ const FirebaseService = {
     },
 
     /**
-     * Notifies all owner users when a document is edited.
-     * Creates notification documents for each owner in the notifications collection.
-     * @async
-     * @param {string} type - Type of document edited (e.g., 'bill', 'sale')
-     * @param {string} docId - ID of the edited document
-     * @param {Object} oldData - Original data before edit
-     * @param {Object} newData - New data after edit
+     * Sends one notification event to the given recipients (actor excluded)
+     * in batched writes. Callers fire-and-forget with `.catch(...)` logging.
+     * @param {string} eventId - same id → same docs, so an event never notifies twice
+     * @param {string[]} recipientIds
+     * @param {Object} data - notification fields (type, …)
+     * @returns {Promise<number>} number of recipients
+     */
+    async sendNotification(eventId, recipientIds, data) {
+        const docs = planNotificationDocs(eventId, recipientIds, AppState.currentUser?.uid, {
+            ...data,
+            read: false,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if (docs.length) await writeNotificationDocs(docs);
+        return docs.length;
+    },
+
+    /**
+     * Notifies users about item rate changes (one event per rate type).
+     * Wholesale rates are only visible to owners/managers, so only they hear
+     * about wholesale changes. Never rejects.
+     * @param {Object} item - the saved item
+     * @param {Array<{rateType: string, oldRate: *, newRate: *}>} changes
+     * @param {string} [eventPrefix] - stable id prefix for this save
      * @returns {Promise<void>}
      */
-    async notifyOwnersOfEdit(type, docId, oldData, newData) {
+    async notifyRateChanges(item, changes, eventPrefix = newEventId('rate')) {
         try {
+            if (!changes?.length) return;
             const users = await getUsersForNotifications();
-            const ownerIds = users.filter(u => u.role === 'owner').map(u => u.id);
-            
-            const notification = {
-                type: 'edit',
-                documentType: type,
-                documentId: docId,
-                oldData: oldData,
-                newData: newData,
-                editedBy: AppState.userName,
-                editedByUserId: AppState.currentUser?.uid,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                read: false
-            };
-            
-            await writeNotifications(ownerIds, notification);
+            const labels = { purchase: 'Purchase', sale: 'Sale', wholesale: 'Wholesale' };
+            for (const ch of changes) {
+                const recipients = ch.rateType === 'wholesale'
+                    ? users.filter(u => u.role === 'owner' || u.role === 'manager')
+                    : users;
+                await this.sendNotification(`${eventPrefix}-${ch.rateType}`, recipients.map(u => u.id), {
+                    type: 'rate_change',
+                    itemId: item.id || null,
+                    itemName: item.name || '',
+                    itemHindiName: item.hindiName || '',
+                    rateType: ch.rateType,
+                    rateTypeLabel: labels[ch.rateType] || ch.rateType,
+                    oldRate: ch.oldRate,
+                    newRate: ch.newRate,
+                    changedBy: AppState.userName || 'Unknown',
+                    changedByUserId: AppState.currentUser?.uid || null
+                });
+            }
         } catch (error) {
-            console.error('Error notifying owners:', error);
+            console.error('Error notifying rate change:', error);
         }
     },
 
     /**
-     * Notifies all users when an item rate is changed.
-     * Creates notification documents for all users in the notifications collection.
-     * Note: Wholesale rate changes only notify owners/managers (staff can't see wholesale rates)
+     * Notifies all users when one item rate is changed (inline rate editor).
      * Callers need not await this; it never rejects.
-     * @async
      * @param {Object} item - The item with changed rate
-     * @param {string} rateType - Type of rate ('purchase', 'sale', 'wholesale')
-     * @param {number} oldRate - Previous rate value
-     * @param {number} newRate - New rate value
+     * @param {string} rateType - 'purchase' | 'sale' | 'wholesale'
+     * @param {number} oldRate - value when editing started
+     * @param {number} newRate - committed value
      * @returns {Promise<void>}
      */
     async notifyRateChange(item, rateType, oldRate, newRate) {
+        return this.notifyRateChanges(item, [{ rateType, oldRate, newRate }]);
+    },
+
+    /**
+     * Tells owners that an item was added or its name/contact changed
+     * (rate changes go through notifyRateChanges). Never rejects.
+     * @param {Object} item
+     * @param {'added'|'updated'} action
+     * @param {string[]} [fields] - changed non-rate fields
+     * @returns {Promise<void>}
+     */
+    async notifyItemEdit(item, action, fields = []) {
         try {
-            // Wholesale rates are only visible to owners/managers, so don't notify staff
             const users = await getUsersForNotifications();
-            const recipients = rateType === 'wholesale'
-                ? users.filter(u => u.role === 'owner' || u.role === 'manager')
-                : users;
-            
-            const rateTypeLabels = {
-                'purchase': 'Purchase',
-                'sale': 'Sale', 
-                'wholesale': 'Wholesale'
-            };
-            
-            const notification = {
-                type: 'rate_change',
-                itemId: item.id,
-                itemName: item.name,
+            const ownerIds = users.filter(u => u.role === 'owner').map(u => u.id);
+            await this.sendNotification(newEventId('item'), ownerIds, {
+                type: 'item_edit',
+                action,
+                fields,
+                itemId: item.id || null,
+                itemName: item.name || '',
                 itemHindiName: item.hindiName || '',
-                rateType: rateType,
-                rateTypeLabel: rateTypeLabels[rateType] || rateType,
-                oldRate: oldRate,
-                newRate: newRate,
                 changedBy: AppState.userName || 'Unknown',
-                changedByUserId: AppState.currentUser?.uid,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                read: false
-            };
-            
-            // Notify all relevant users except the one who made the change
-            const userIds = recipients.map(u => u.id).filter(id => id !== AppState.currentUser?.uid);
-            await writeNotifications(userIds, notification);
-            
-            console.log(`Rate change notification sent to ${userIds.length} users: ${item.name} ${rateType} rate: ₹${oldRate} → ₹${newRate}`);
+                changedByUserId: AppState.currentUser?.uid || null
+            });
         } catch (error) {
-            console.error('Error notifying rate change:', error);
+            console.error('Error notifying item edit:', error);
         }
+    },
+
+    /**
+     * Live listener on the user's newest unread notifications
+     * (index: userId + read + timestamp desc).
+     * @param {string} uid
+     * @param {number} limit
+     * @param {function(Array<Object>, Array<{type: string, id: string}>, Object): void} onNext
+     * @param {function(Error): void} onError
+     * @returns {function(): void} unsubscribe
+     */
+    listenUnreadNotifications(uid, limit, onNext, onError) {
+        return getDb().collection(col('notifications'))
+            .where('userId', '==', uid)
+            .where('read', '==', false)
+            .orderBy('timestamp', 'desc')
+            .limit(limit)
+            .onSnapshot(snapshot => {
+                const list = snapshot.docs.map(notificationFromDoc);
+                const changes = snapshot.docChanges().map(ch => ({ type: ch.type, id: ch.doc.id }));
+                onNext(list, changes, snapshot.metadata || {});
+            }, onError);
+    },
+
+    /**
+     * One page of the user's notifications, newest first (read and unread).
+     * `read in [false, true]` lets the existing userId + read + timestamp
+     * index serve this query, so no new index has to be deployed.
+     * @param {string} uid
+     * @param {{limit?: number, after?: Object}} [opts] - `after` = cursor from the previous page
+     * @returns {Promise<{items: Array<Object>, cursor: ?Object, hasMore: boolean}>}
+     */
+    async loadNotificationsPage(uid, { limit = 30, after = null } = {}) {
+        let query = getDb().collection(col('notifications'))
+            .where('userId', '==', uid)
+            .where('read', 'in', [false, true])
+            .orderBy('timestamp', 'desc');
+        if (after) query = query.startAfter(after);
+        const snapshot = await query.limit(limit).get();
+        const docs = snapshot.docs;
+        return {
+            items: docs.map(notificationFromDoc),
+            cursor: docs.length ? docs[docs.length - 1] : after,
+            hasMore: docs.length === limit
+        };
+    },
+
+    /**
+     * Marks notifications read (batched). Fire-and-forget callers add `.catch`.
+     * @param {string[]} ids
+     * @returns {Promise<void>}
+     */
+    async markNotificationsRead(ids) {
+        const unique = [...new Set((ids || []).filter(Boolean))];
+        if (!unique.length) return;
+        const db = getDb();
+        const ref = db.collection(col('notifications'));
+        for (let i = 0; i < unique.length; i += 450) {
+            const batch = db.batch();
+            unique.slice(i, i + 450).forEach(id => batch.update(ref.doc(id), { read: true, readAt: Date.now() }));
+            await batch.commit();
+        }
+    },
+
+    /**
+     * Deletes this user's notifications older than `cutoffMs` (at most `max`
+     * per run, to keep reads cheap).
+     * @param {string} uid
+     * @param {number} cutoffMs
+     * @param {number} [max=100]
+     * @returns {Promise<number>} deleted count
+     */
+    async deleteOldNotifications(uid, cutoffMs, max = 100) {
+        const db = getDb();
+        const cutoff = typeof firebase !== 'undefined' && firebase.firestore?.Timestamp?.fromMillis
+            ? firebase.firestore.Timestamp.fromMillis(cutoffMs)
+            : cutoffMs;
+        const snapshot = await db.collection(col('notifications'))
+            .where('userId', '==', uid)
+            .where('read', 'in', [false, true])
+            .where('timestamp', '<', cutoff)
+            .orderBy('timestamp', 'desc')
+            .limit(max)
+            .get();
+        if (snapshot.empty) return 0;
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        return snapshot.size;
     },
 
     /**

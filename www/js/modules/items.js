@@ -17,6 +17,7 @@ import {
     snapshotItem, diffItemSnapshots, changeWarnings, buildHistoryEntries, historyDocId,
     formatHistoryValue, FIELD_LABELS, RATE_SANITY_FACTOR, RATE_FIELDS
 } from '../utils/rate-history.js';
+import { createRateEditTracker, diffItemRates, diffItemFields } from '../utils/notification-format.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -29,6 +30,13 @@ const ItemsManager = {
      * @private
      */
     updateTimers: {},
+
+    /**
+     * Rate value at the start of an inline edit, so the notification reports
+     * "40 → 45" and not the previous keystroke ("4 → 45").
+     * @private
+     */
+    rateEdits: createRateEditTracker(),
     
     /**
      * Id of the item open in the edit modal (null when adding). An id, not a
@@ -115,6 +123,7 @@ const ItemsManager = {
                     <input type="number" class="rate-input purchase" 
                            value="${Helpers.escapeHtml(rate)}" 
                            oninput="window.app.items.updateRate(${id}, ${rateIndex}, this.value)"
+                           onchange="window.app.items.commitRate(${id}, ${rateIndex})"
                            placeholder="Rate">
                     <button class="delete-rate" onclick="window.app.items.deleteRate(${id}, ${rateIndex})">×</button>
                 </div>
@@ -126,6 +135,7 @@ const ItemsManager = {
                     <input type="number" class="rate-input sale" 
                            value="${Helpers.escapeHtml(rate)}" 
                            oninput="window.app.items.updateSaleRate(${id}, ${rateIndex}, this.value)"
+                           onchange="window.app.items.commitSaleRate(${id}, ${rateIndex})"
                            placeholder="Rate">
                     <button class="delete-rate" onclick="window.app.items.deleteSaleRate(${id}, ${rateIndex})">×</button>
                 </div>
@@ -137,6 +147,7 @@ const ItemsManager = {
                     <input type="number" class="rate-input wholesale" 
                            value="${Helpers.escapeHtml(rate)}" 
                            oninput="window.app.items.updateWholesaleRate(${id}, ${rateIndex}, this.value)"
+                           onchange="window.app.items.commitWholesaleRate(${id}, ${rateIndex})"
                            placeholder="Rate">
                     <button class="delete-rate" onclick="window.app.items.deleteWholesaleRate(${id}, ${rateIndex})">×</button>
                 </div>
@@ -348,18 +359,25 @@ const ItemsManager = {
         const key = `${field}_${id}_${rateIndex}`;
         // Old value = before this typing burst, not the previous keystroke ("4 → 45")
         this.rememberOldValue(key, Number(item[field][rateIndex]) || 0);
+        this.rateEdits.begin(key, item[field][rateIndex]);
         const newRate = Number(value);
         item[field][rateIndex] = newRate;
         const historyField = kind === 'sale' ? 'retail' : kind;
-        this.scheduleSave(key, id, (saved) => {
-            const oldRate = this.pendingOldValues[key];
-            this.recordInlineChange(key, saved, historyField, newRate);
-            // Notify all users about rate change (fire-and-forget; never rejects)
-            if (oldRate !== newRate && newRate > 0) {
-                FirebaseService.notifyRateChange(saved, kind, oldRate, newRate)
-                    .catch(e => console.warn('Rate-change notification failed:', e));
-            }
-        });
+        this.scheduleSave(key, id, (saved) => this.recordInlineChange(key, saved, historyField, newRate));
+    },
+
+    /**
+     * Inline rate input committed (change/blur): one notification comparing
+     * the value at edit start with the committed value.
+     */
+    commitRateOfType(id, field, kind, rateIndex) {
+        const item = this.getItem(id);
+        const key = `${field}_${id}_${rateIndex}`;
+        const change = this.rateEdits.commit(key, item?.[field]?.[rateIndex]);
+        if (!item || !change) return;
+        // Fire-and-forget; never rejects
+        FirebaseService.notifyRateChange(item, kind, change.oldRate, change.newRate)
+            .catch(e => console.warn('Rate-change notification failed:', e));
     },
 
     async deleteRateOfType(id, field, rateIndex) {
@@ -376,16 +394,19 @@ const ItemsManager = {
     // Purchase rates
     addRate(id) { return this.addRateOfType(id, 'rates'); },
     updateRate(id, rateIndex, value) { this.updateRateOfType(id, 'rates', 'purchase', rateIndex, value); },
+    commitRate(id, rateIndex) { this.commitRateOfType(id, 'rates', 'purchase', rateIndex); },
     deleteRate(id, rateIndex) { return this.deleteRateOfType(id, 'rates', rateIndex); },
 
     // Retail sale rates
     addSaleRate(id) { return this.addRateOfType(id, 'saleRates'); },
     updateSaleRate(id, rateIndex, value) { this.updateRateOfType(id, 'saleRates', 'sale', rateIndex, value); },
+    commitSaleRate(id, rateIndex) { this.commitRateOfType(id, 'saleRates', 'sale', rateIndex); },
     deleteSaleRate(id, rateIndex) { return this.deleteRateOfType(id, 'saleRates', rateIndex); },
 
     // Wholesale rates
     addWholesaleRate(id) { return this.addRateOfType(id, 'wholesaleRates'); },
     updateWholesaleRate(id, rateIndex, value) { this.updateRateOfType(id, 'wholesaleRates', 'wholesale', rateIndex, value); },
+    commitWholesaleRate(id, rateIndex) { this.commitRateOfType(id, 'wholesaleRates', 'wholesale', rateIndex); },
     deleteWholesaleRate(id, rateIndex) { return this.deleteRateOfType(id, 'wholesaleRates', rateIndex); },
 
     /**
@@ -922,12 +943,14 @@ const ItemsManager = {
                 if (idx !== -1) AppState.items[idx] = updated;
                 this.recordHistory(updated, changes, 'modal');
                 UIManager.showToast('Item updated');
+                this.notifyModalEdit(existing, updated);
             } else {
                 // Add new item
                 const savedItem = await FirebaseService.saveItem(itemData);
                 AppState.items.push(savedItem);
                 this.recordHistory(savedItem, changes, 'modal');
                 UIManager.showToast('Item added');
+                this.notifyItemAdded(savedItem);
             }
             
             this.closeItemModal();
@@ -940,6 +963,40 @@ const ItemsManager = {
         }
     },
     
+    /**
+     * Edit dialog saved: rate changes go to everyone (wholesale: owners and
+     * managers), name/contact changes to owners. Values are compared with the
+     * item as it was when the dialog opened. Fire-and-forget.
+     * @private
+     */
+    notifyModalEdit(before, after) {
+        try {
+            const rateChanges = diffItemRates(before, after);
+            if (rateChanges.length) {
+                FirebaseService.notifyRateChanges(after, rateChanges)
+                    .catch(e => console.warn('Rate-change notification failed:', e));
+            }
+            const fields = diffItemFields(before, after);
+            if (fields.length) {
+                FirebaseService.notifyItemEdit(after, 'updated', fields)
+                    .catch(e => console.warn('Item notification failed:', e));
+            }
+        } catch (e) {
+            // A notification problem must never fail the save itself.
+            console.warn('Item notifications failed:', e);
+        }
+    },
+
+    /** @private Fire-and-forget "new item" note for owners. */
+    notifyItemAdded(item) {
+        try {
+            FirebaseService.notifyItemEdit(item, 'added')
+                .catch(e => console.warn('Item notification failed:', e));
+        } catch (e) {
+            console.warn('Item notification failed:', e);
+        }
+    },
+
     // Delete item from modal
     async deleteItemFromModal() {
         const id = this.currentEditingItemId;

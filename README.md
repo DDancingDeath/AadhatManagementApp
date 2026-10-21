@@ -14,6 +14,7 @@ A comprehensive business management application for wholesale/retail operations 
 - **Bluetooth Printing**: ESC/POS thermal printer support
 - **Audit Logging**: 90-day retention for critical actions
 - **Outstanding Tracking**: Customer/supplier payment management
+- **Notifications**: In-app bell + inbox for rate and item changes while the app is open (no push to closed apps on the free plan) — see [docs/notifications.md](docs/notifications.md)
 - **Offline Support**: Service worker for offline functionality
 
 ## Tech Stack
