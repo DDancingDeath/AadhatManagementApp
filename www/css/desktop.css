@@ -125,6 +125,11 @@
     align-items: start;
   }
 
+  /* Live bill-check banner (#188) spans both columns */
+  .bill-check-banner {
+    grid-column: 1 / -1;
+  }
+
   #salesEntrySection > :not(.bill-col-entry):not(.bill-col-summary) {
     grid-column: 1 / -1;
   }

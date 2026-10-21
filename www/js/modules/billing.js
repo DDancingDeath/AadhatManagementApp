@@ -10,9 +10,8 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
-import {
-    checkPaymentSplit, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2, sumMoney
-} from '../utils/money.js';
+import { round2, sumMoney } from '../utils/money.js';
+import { BillChecksUI } from '../ui/bill-highlight.js';
 import { findBillIndex } from '../utils/history-window.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 import { PurchaseManager } from './purchase.js';
@@ -29,6 +28,11 @@ export function canEditBill(bill) {
     return !!(uid && bill && bill.userId && bill.userId === uid);
 }
 export const EDIT_NOT_ALLOWED_MESSAGE = 'Only the person who created this bill, a manager or an owner can edit it';
+
+/** Draft fields that make the bill checks treat the form as an edit of `bill` (#37). */
+const editCheckContext = (bill) => ({
+    isEdit: true, id: bill.id, editingBill: bill, date: bill.date, enteredAt: bill.timestamp
+});
 
 // Per-bill "Print comments" toggle: carried through edit, drafts and autosave.
 const readPrintComments = (id) => !!document.getElementById(id)?.checked;
@@ -1028,6 +1032,19 @@ const BillingManager = {
     },
 
     /**
+     * Saved copy of the bill open in the editor (null when not editing / not found).
+     * @returns {Object|null}
+     */
+    getEditingBill() {
+        if (this.editingBillIndex === undefined) return null;
+        const type = this.editingBillType || 'purchase';
+        const history = type === 'purchase' ? AppState.purchaseHistory
+            : type === 'retail' ? AppState.retailSalesHistory : AppState.salesHistory;
+        const index = findBillIndex(history || [], this.editingBillId, this.editingBillIndex);
+        return index === -1 ? null : history[index] || null;
+    },
+
+    /**
      * Save edited bill. Called from inside the purchase/retail save locks.
      * @async
      * @param {Object} [options]
@@ -1080,16 +1097,8 @@ const BillingManager = {
                 const comments = Helpers.getInputText('billComments');
                 const printComments = readPrintComments('billPrintComments');
                 
-                if (dueNeedsName(dueAmount, customerName)) {
-                    UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
-                    document.getElementById('customerName')?.focus();
-                    return undefined;
-                }
-                const split = checkPaymentSplit(grandTotal, { cash: cashPayment, online: onlinePayment, due: dueAmount });
-                if (!split.ok) {
-                    UIManager.showToast(paymentSplitMessage(split));
-                    return undefined;
-                }
+                const checks = await BillChecksUI.confirmSave('purchase', editCheckContext(bill));
+                if (!checks.ok) return undefined;
                 
                 const laborCalculationSpan = document.getElementById('laborCalculation');
                 const laborCalc = laborCalculationSpan?.textContent || null;
@@ -1116,7 +1125,8 @@ const BillingManager = {
                         total: round2(onlinePayment + cashPayment + dueAmount)
                     },
                     editedAt: new Date().toISOString(),
-                    editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
+                    editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
+                    ...BillChecksUI.billFields(checks, bill)
                 };
 
                 // Wait for the server: only a committed edit is printed, kept and cleared from the editor.
@@ -1154,16 +1164,8 @@ const BillingManager = {
                 const saleComments = Helpers.getInputText('saleComments');
                 const printComments = readPrintComments('salePrintComments');
 
-                if (dueNeedsName(saleDue, saleCustomer)) {
-                    UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
-                    document.getElementById('saleCustomerName')?.focus();
-                    return undefined;
-                }
-                const saleSplit = checkPaymentSplit(salesTotal, { cash: saleCash, online: saleOnline, due: saleDue });
-                if (!saleSplit.ok) {
-                    UIManager.showToast(paymentSplitMessage(saleSplit));
-                    return undefined;
-                }
+                const checks = await BillChecksUI.confirmSave('retail', editCheckContext(bill));
+                if (!checks.ok) return undefined;
 
                 const updatedSale = {
                     ...bill,
@@ -1184,7 +1186,8 @@ const BillingManager = {
                         total: round2(saleOnline + saleCash + saleDue)
                     },
                     editedAt: new Date().toISOString(),
-                    editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
+                    editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
+                    ...BillChecksUI.billFields(checks, bill)
                 };
 
                 FirebaseService.withLoadedPaymentSignature(updatedSale, this.editingBillPaymentSig);

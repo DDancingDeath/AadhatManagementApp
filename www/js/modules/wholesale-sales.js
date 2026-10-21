@@ -5,12 +5,14 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
-import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
+import { computeShortfallsFrom } from '../utils/stock-check.js';
+import { normalizeThresholds } from '../utils/bill-checks.js';
+import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { OutstandingManager } from './outstanding.js';
 import {
-    checkPaymentSplit, computeWholesaleTotals, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, readPayment, round2
+    checkPaymentSplit, computeWholesaleTotals, KEPT_SERVER_PAYMENT_MESSAGE, paymentSplitMessage, readPayment, round2
 } from '../utils/money.js';
 
 const PAYMENT_TOLERANCE = 0.01;
@@ -152,10 +154,13 @@ export class WholesaleSalesManager {
             UIManager.showToast('Stock is still updating — please try again in a moment');
             return;
         }
-        const stockData = AppState.stock[item.id] || AppState.stock[itemName];
-        if (!stockData || stockData.quantity < quantity) {
-            const available = stockData?.quantity || 0;
-            UIManager.showToast(`Insufficient stock! Available: ${available.toFixed(1)}kg`);
+        // Same limit as at save (#37, Q18/Q57): a small oversell only warns, beyond the limit it blocks
+        const { oversellBlockKg } = normalizeThresholds(AppState.settings?.checkThresholds);
+        const short = computeShortfallsFrom([...wholesaleSaleItems, { itemId: item.id, name: itemName, qty: quantity }],
+            { items: AppState.items, stock: AppState.stock, stockReady: AppState.stockReady })
+            .find(s => s.key === item.id);
+        if (short && short.shortfall > oversellBlockKg + 1e-6) {
+            UIManager.showToast(`Insufficient stock! Available: ${short.available.toFixed(1)}kg`);
             return;
         }
         
@@ -253,6 +258,7 @@ export class WholesaleSalesManager {
         const receivedEl = document.getElementById('wholesaleTotalReceived');
         if (receivedEl) receivedEl.textContent = Math.round(split.cash + split.online);
         Helpers.showSplitRemaining('wholesaleSplitRemaining', checkPaymentSplit(this.computeTotals().total, split));
+        BillChecksUI.schedule('wholesale');
     }
 
     /**
@@ -320,6 +326,27 @@ export class WholesaleSalesManager {
         return pendingBill ? { ...pendingBill } : null;
     }
 
+    /**
+     * The sale as the check engine sees it (utils/bill-checks.js).
+     * @returns {Object}
+     */
+    static getCheckDraft() {
+        const itemName = Helpers.getInputText('sellItem');
+        const item = itemName ? AppState.items.find(i => i.name === itemName) : null;
+        return {
+            kind: 'wholesale',
+            isEdit: false,
+            id: pendingBill?.id || null,
+            items: wholesaleSaleItems,
+            total: this.computeTotals().total,
+            payment: this.readPaymentSplit(),
+            partyName: Helpers.getInputText('wholesaleCustomerName'),
+            date: pendingBill?.date,
+            enteredAt: pendingBill?.timestamp,
+            entry: item ? { itemId: item.id, name: item.name, rate: readTypedNumber('sellRate'), qty: readTypedNumber('sellQuantity') } : null
+        };
+    }
+
     static removeWholesaleItem(index) {
         wholesaleSaleItems.splice(index, 1);
         this.renderWholesaleBill();
@@ -338,18 +365,6 @@ export class WholesaleSalesManager {
             return;
         }
 
-        // Warn (but don't hard-block) when a sale exceeds recorded stock.
-        // Mirrors retail-sale.completeSale — wholesale lines use { itemId,
-        // name, qty } so the shared helper resolves them the same way.
-        const shortfalls = computeStockShortfalls(wholesaleSaleItems);
-        if (shortfalls.length > 0) {
-            const message = formatShortfallMessage(shortfalls);
-            const proceed = await UIManager.showModal(message, 'Stock Shortfall', true);
-            if (!proceed) {
-                return;
-            }
-        }
-
         const customerName = Helpers.getInputText('wholesaleCustomerName');
         const comments = Helpers.getInputText('salesComments');
         const expenses = round2(Helpers.getInputNumber('salesExpensesAmount'));
@@ -358,21 +373,10 @@ export class WholesaleSalesManager {
         const { total, profit, profitPercent } = this.computeTotals();
         const { cash, online, due } = this.readPaymentSplit();
         
-        if (cash === 0 && online === 0 && due === 0) {
-            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
-            return;
-        }
-        if (dueNeedsName(due, customerName)) {
-            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
-            document.getElementById('wholesaleCustomerName')?.focus();
-            return;
-        }
-        const split = checkPaymentSplit(total, { cash, online, due });
-        if (!split.ok) {
-            Helpers.showSplitRemaining('wholesaleSplitRemaining', split);
-            UIManager.showToast(paymentSplitMessage(split));
-            return;
-        }
+        // Payment, name-for-Due, stock and the other bill checks (#23, #68, #37)
+        this.updatePaymentTotal();
+        const checks = await BillChecksUI.confirmSave('wholesale');
+        if (!checks.ok) return;
         
         try {
             const pending = ensurePendingBill();
@@ -414,7 +418,8 @@ export class WholesaleSalesManager {
                 timestamp: pending.timestamp,
                 createdBy: AppState.currentUser?.uid || 'unknown',
                 createdByName: AppState.userName || 'User',
-                source: 'sales-tab'
+                source: 'sales-tab',
+                ...BillChecksUI.billFields(checks)
             };
             
             const retry = pending.attempted;
@@ -906,3 +911,16 @@ export class WholesaleSalesManager {
         await this.reprintSale(index);
     }
 }
+
+BillChecksUI.register('wholesale', {
+    sectionId: 'salesEntrySection',
+    tableSelector: '#salesTable',
+    saveButtons: WHOLESALE_BUTTONS,
+    getDraft: () => WholesaleSalesManager.getCheckDraft(),
+    fields: {
+        party: { inputs: ['wholesaleCustomerName'] },
+        payment: { inputs: ['wholesaleCashPayment', 'wholesaleOnlinePayment', 'wholesaleDueAmount'], anchor: 'wholesaleSplitRemaining' },
+        'entry.rate': { inputs: ['sellRate'] },
+        'entry.qty': { inputs: ['sellQuantity'] }
+    }
+});

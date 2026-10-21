@@ -1,0 +1,155 @@
+/* Live bill checks (#188): red = must fix (block), amber = unusual (warn).
+   Never colour only: every mark comes with an icon and a text reason. */
+
+.bill-checks-block,
+.bill-checks-warn {
+    outline: 3px solid var(--danger-dark);
+    outline-offset: 4px;
+    border-radius: 12px;
+}
+
+.bill-checks-warn {
+    outline-color: var(--warning-dark);
+}
+
+.bill-check-banner {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 2px solid var(--danger-dark);
+    background: #fef2f2;
+    color: #7f1d1d;
+    box-shadow: var(--shadow-sm);
+}
+
+.bill-check-banner[hidden] {
+    display: none;
+}
+
+.bill-check-banner.bill-check-warn {
+    border-color: var(--warning-dark);
+    background: #fffbeb;
+    color: #78350f;
+}
+
+.bill-check-banner-head {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.bill-check-banner ul {
+    margin: 6px 0 0;
+    padding-left: 4px;
+    list-style: none;
+    font-size: 13px;
+}
+
+input.bill-check-block,
+select.bill-check-block {
+    border-color: var(--danger-dark) !important;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.25) !important;
+}
+
+input.bill-check-warn,
+select.bill-check-warn {
+    border-color: var(--warning-dark) !important;
+    box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.25) !important;
+}
+
+tr.bill-check-block > td {
+    background: #fef2f2;
+}
+
+tr.bill-check-block > td:first-child {
+    box-shadow: inset 4px 0 0 var(--danger-dark);
+}
+
+tr.bill-check-warn > td {
+    background: #fffbeb;
+}
+
+tr.bill-check-warn > td:first-child {
+    box-shadow: inset 4px 0 0 var(--warning-dark);
+}
+
+.bill-check-msg {
+    margin: 2px 0 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #b91c1c;
+}
+
+.bill-check-msg.bill-check-warn {
+    color: #92400e;
+}
+
+tr.bill-check-row > td {
+    padding-top: 0;
+    border-top: none;
+}
+
+tr.bill-check-row .bill-check-msg {
+    margin: 0 0 4px;
+}
+
+.bill-check-save-blocked {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.bill-check-save-override {
+    outline: 2px dashed var(--warning-dark);
+    outline-offset: 2px;
+}
+
+.bill-check-modal-list {
+    margin: 0 0 12px;
+    padding-left: 4px;
+    list-style: none;
+    text-align: left;
+}
+
+.bill-check-reason {
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+body.dark-mode .bill-check-banner {
+    background: #3b0d0d;
+    color: #fecaca;
+}
+
+body.dark-mode .bill-check-banner.bill-check-warn {
+    background: #3a2a06;
+    color: #fde68a;
+}
+
+body.dark-mode tr.bill-check-block > td {
+    background: rgba(220, 38, 38, 0.18);
+}
+
+body.dark-mode tr.bill-check-warn > td {
+    background: rgba(217, 119, 6, 0.2);
+}
+
+body.dark-mode .bill-check-msg {
+    color: #fca5a5;
+}
+
+body.dark-mode .bill-check-msg.bill-check-warn {
+    color: #fcd34d;
+}

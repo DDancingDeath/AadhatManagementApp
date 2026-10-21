@@ -319,8 +319,19 @@ describe('new retail sale save', () => {
         await addLine(0, 36, [10]);
         setVal('saleCashPayment', 360);
         expect(await RetailSaleManager.completeSale()).toBeUndefined();
-        expect(modal).toHaveBeenCalledWith(expect.stringContaining('Rice'), 'Stock Shortfall', true);
+        expect(modal).toHaveBeenCalledWith(expect.stringContaining('Rice: selling 10.0 kg, only 5.0 kg'), 'Check before saving / सेव से पहले जाँचें', true);
         expect(saveRetailSale).not.toHaveBeenCalled();
+    });
+
+    test('retail oversell far beyond the limit still only warns (#33 open); accepted warning saved as a flag (#37)', async () => {
+        AppState.stock = { 'item-rice': { quantity: 1 } };
+        jest.spyOn(UIManager, 'showModal').mockResolvedValue(true);
+        await addLine(0, 36, [10]);
+        setVal('saleCashPayment', 360);
+        const sale = await RetailSaleManager.completeSale();
+        expect(saveRetailSale).toHaveBeenCalledTimes(1);
+        expect(sale.flags).toEqual([expect.objectContaining({ rule: 'oversell' })]);
+        expect(sale.overrides).toBeUndefined();
     });
 
     test('refuses a credit sale without a customer name (#68)', async () => {

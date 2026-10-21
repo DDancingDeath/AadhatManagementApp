@@ -12,12 +12,25 @@ import { AuditService } from '../services/audit.js';
 import { todayLocalISO } from '../utils/dates.js';
 import { buildBackup, isDeleteConfirmed, DELETE_CONFIRM_WORD } from '../utils/data-export.js';
 import { normalizeLabourSettings } from '../utils/money.js';
+import { DEFAULT_THRESHOLDS, normalizeThresholds } from '../utils/bill-checks.js';
 import { SettingsManager } from './settings.js';
 
 /**
  * Admin Manager - Unified admin panel
  * @namespace AdminManager
  */
+/** Bill-check limits editable in Admin → Configure (keys of DEFAULT_THRESHOLDS). */
+const CHECK_THRESHOLD_FIELDS = [
+    ['oversellBlockKg', 'Oversell: block beyond (kg) / स्टॉक से ज़्यादा बिक्री: इससे ज़्यादा पर रोकें (किलो)'],
+    ['rateMultiple', 'Rate far from usual: times (×) / सामान्य रेट से कितने गुना पर चेतावनी'],
+    ['duplicateWindowSec', 'Same bill again within (seconds) / इतने सेकंड में वही बिल दोबारा'],
+    ['maxFutureMin', 'Bill date ahead by more than (minutes) / बिल की तारीख़ इतने मिनट से आगे'],
+    ['backdateDays', 'Bill date back by more than (days) / बिल की तारीख़ इतने दिन से पीछे'],
+    ['cashOkRs', 'Cash count: fine up to (₹) / नकद गिनती: इतने ₹ तक ठीक'],
+    ['cashHighRs', 'Cash count: big difference above (₹) / नकद गिनती: इतने ₹ से ज़्यादा बड़ा अंतर'],
+    ['stockAdjustFlagKg', 'Stock adjustment flagged above (kg) / स्टॉक बदलाव इतने किलो से ज़्यादा पर निशान']
+];
+
 const AdminManager = {
     /**
      * Current active tab
@@ -129,7 +142,53 @@ const AdminManager = {
                     <span>Enable automatic labor charges by default</span>
                 </label>
             </div>
+            ${this.renderCheckThresholds()}
         `;
+    },
+
+    /**
+     * Bill-check limits card (#37): shop-wide, blank = default.
+     * @returns {string}
+     */
+    renderCheckThresholds() {
+        const t = normalizeThresholds(AppState.settings?.checkThresholds);
+        const rows = CHECK_THRESHOLD_FIELDS.map(([key, label]) => `
+                <label for="adminCheck_${key}">${Helpers.escapeHtml(label)}</label>
+                <input type="number" inputmode="decimal" min="0" step="any" id="adminCheck_${key}"
+                       placeholder="${Helpers.escapeHtml(DEFAULT_THRESHOLDS[key])}" value="${Helpers.escapeHtml(t[key])}"
+                       onchange="window.app.admin.saveCheckThresholds()" />`).join('');
+        return `
+            <div class="settings-card">
+                <h3>Bill checks / बिल जाँच</h3>
+                <p class="setting-description">Limits for the red/amber warnings while billing. They apply to everyone; blank = default. / बिलिंग में लाल/पीली चेतावनी की सीमाएँ। सभी पर लागू; खाली = डिफ़ॉल्ट।</p>
+                ${rows}
+            </div>`;
+    },
+
+    /**
+     * Save the bill-check limits for everyone (owner only).
+     * @returns {Promise<boolean>}
+     */
+    async saveCheckThresholds() {
+        if (AppState.userRole !== 'owner') return false;
+        const typed = {};
+        CHECK_THRESHOLD_FIELDS.forEach(([key]) => { typed[key] = document.getElementById(`adminCheck_${key}`)?.value; });
+        const next = normalizeThresholds(typed);
+        AppState.settings.checkThresholds = next;
+        localStorage.setItem('settings', JSON.stringify(AppState.settings));
+        CHECK_THRESHOLD_FIELDS.forEach(([key]) => {
+            const input = document.getElementById(`adminCheck_${key}`);
+            if (input) input.value = next[key];
+        });
+        try {
+            await FirebaseService.saveSharedCheckThresholds(next);
+            UIManager.showToast('Settings saved for everyone / सभी के लिए सहेजा गया');
+            return true;
+        } catch (error) {
+            console.error('Saving bill-check limits failed:', error);
+            UIManager.showToast('Not saved for everyone — check the internet and try again / सभी के लिए सहेजा नहीं गया — इंटरनेट देखकर फिर कोशिश करें');
+            return false;
+        }
     },
 
     /**

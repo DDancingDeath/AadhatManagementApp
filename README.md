@@ -8,6 +8,7 @@ A comprehensive business management application for wholesale/retail operations 
 - **Real-time Sync**: Automatic UI updates via Firestore onSnapshot listeners
 - **Stock Tracking**: Real-time stock levels with adjustment history, and a "Not selling" list (stock with no sale in 30/60/90 days, owner/manager only)
 - **Item change history**: Every item rate and name change is kept (who, when, old → new); big rate jumps (> 2×) and renames ask for confirmation
+- **Bill checks while typing**: Purchase, retail and wholesale bills mark problems live — red (must fix: payment split, name for Due, zero rate/qty, wholesale oversell beyond the limit) and amber (rate > 2× / < ½ the usual, below cost, small oversell, possible duplicate, odd date) with a reason under the field and a banner. Save asks once for amber; owner/manager can save past an overridable red with a reason (stored on the bill as `overrides`, accepted warnings as `flags`). Rules: `www/js/utils/bill-checks.js`; limits in Admin → Configure
 - **Cash Management**: Session-based cash tracking with sign-in/sign-out
 - **User Management**: Role-based access (owner, manager, staff)
 - **Reports & Analytics**: Daily/weekly/monthly reports with charts
