@@ -9,7 +9,9 @@ import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-c
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { OutstandingManager } from './outstanding.js';
-import { computeWholesaleTotals, readPayment, round2 } from '../utils/money.js';
+import {
+    checkPaymentSplit, computeWholesaleTotals, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, readPayment, round2
+} from '../utils/money.js';
 
 const PAYMENT_TOLERANCE = 0.01;
 
@@ -179,6 +181,7 @@ export class WholesaleSalesManager {
             if (expensesInput) expensesInput.value = '0';
             if (profitEl) profitEl.textContent = '0';
             if (profitPercentEl) profitPercentEl.textContent = '0';
+            this.updatePaymentTotal();
             return;
         }
         
@@ -216,6 +219,86 @@ export class WholesaleSalesManager {
         
         if (profitEl) profitEl.textContent = Math.round(profit);
         if (profitPercentEl) profitPercentEl.textContent = profitPercent.toFixed(1);
+        this.updatePaymentTotal();
+    }
+
+    /**
+     * Cash / online / due typed on the wholesale form
+     * @returns {{cash: number, online: number, due: number}}
+     */
+    static readPaymentSplit() {
+        return {
+            online: round2(Helpers.getInputNumber('wholesaleOnlinePayment')),
+            cash: round2(Helpers.getInputNumber('wholesaleCashPayment')),
+            due: round2(Helpers.getInputNumber('wholesaleDueAmount'))
+        };
+    }
+
+    /** Refresh "Total Received" and what is not split yet. */
+    static updatePaymentTotal() {
+        const split = this.readPaymentSplit();
+        const receivedEl = document.getElementById('wholesaleTotalReceived');
+        if (receivedEl) receivedEl.textContent = Math.round(split.cash + split.online);
+        Helpers.showSplitRemaining('wholesaleSplitRemaining', checkPaymentSplit(this.computeTotals().total, split));
+    }
+
+    /**
+     * Tick Online / Cash / Due to put the whole bill in that one field
+     * (same as the retail sale form).
+     * @param {'online'|'cash'|'due'} type
+     */
+    static fillReceivableAmount(type) {
+        const { total } = this.computeTotals();
+        const fields = { online: 'wholesaleOnlinePayment', cash: 'wholesaleCashPayment', due: 'wholesaleDueAmount' };
+        const boxes = { online: 'wholesaleOnlineCheckbox', cash: 'wholesaleCashCheckbox', due: 'wholesaleDueCheckbox' };
+        if (document.getElementById(boxes[type])?.checked) {
+            Object.keys(fields).forEach(key => {
+                const input = document.getElementById(fields[key]);
+                if (input) input.value = key === type ? Math.round(total) : '0';
+                if (key !== type) {
+                    const box = document.getElementById(boxes[key]);
+                    if (box) box.checked = false;
+                }
+            });
+        }
+        this.updatePaymentTotal();
+    }
+
+    /** One tap: put whatever is not yet received (total − cash − online) in Due. */
+    static putRestInDue() {
+        const { total } = this.computeTotals();
+        const { cash, online } = this.readPaymentSplit();
+        const rest = round2(total - cash - online);
+        if (rest < 0) {
+            UIManager.showToast(paymentSplitMessage(checkPaymentSplit(total, { cash, online })));
+            return;
+        }
+        const dueInput = document.getElementById('wholesaleDueAmount');
+        if (dueInput) dueInput.value = rest;
+        const dueCheckbox = document.getElementById('wholesaleDueCheckbox');
+        if (dueCheckbox) dueCheckbox.checked = rest > 0;
+        this.updatePaymentTotal();
+    }
+
+    static resetPaymentFields() {
+        ['wholesaleOnlinePayment', 'wholesaleCashPayment', 'wholesaleDueAmount'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        ['wholesaleOnlineCheckbox', 'wholesaleCashCheckbox', 'wholesaleDueCheckbox'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.checked = false;
+        });
+        this.updatePaymentTotal();
+    }
+
+    /** Current bill lines (for draft recovery / tests). */
+    static getItems() {
+        return wholesaleSaleItems;
+    }
+
+    static setItems(items) {
+        wholesaleSaleItems = items || [];
     }
 
     static removeWholesaleItem(index) {
@@ -254,6 +337,23 @@ export class WholesaleSalesManager {
         
         // Total and profit come from the bill lines, never from the text on screen
         const { total, profit, profitPercent } = this.computeTotals();
+        const { cash, online, due } = this.readPaymentSplit();
+        
+        if (cash === 0 && online === 0 && due === 0) {
+            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
+            return;
+        }
+        if (dueNeedsName(due, customerName)) {
+            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
+            document.getElementById('wholesaleCustomerName')?.focus();
+            return;
+        }
+        const split = checkPaymentSplit(total, { cash, online, due });
+        if (!split.ok) {
+            Helpers.showSplitRemaining('wholesaleSplitRemaining', split);
+            UIManager.showToast(paymentSplitMessage(split));
+            return;
+        }
         
         try {
             // Generate bill number
@@ -276,11 +376,15 @@ export class WholesaleSalesManager {
                 profitPercent,
                 comments,
                 type: 'wholesale',
+                // Top-level copies keep readPayment(), the cash drawer and Outstanding in step
+                onlinePayment: online,
+                cashPayment: cash,
+                dueAmount: due,
                 payment: {
-                    online: 0,
-                    cash: 0,
-                    total: 0,
-                    due: total
+                    online,
+                    cash,
+                    due,
+                    total: round2(online + cash + due)
                 },
                 date: Helpers.getCurrentDateTime(),
                 timestamp: Date.now(),
@@ -315,6 +419,7 @@ export class WholesaleSalesManager {
             document.getElementById('sellRate').value = '';
             document.getElementById('salesComments').value = '';
             document.getElementById('salesExpensesAmount').value = '0';
+            this.resetPaymentFields();
             
             // Clear stock details
             document.getElementById('availableStock').textContent = '-';

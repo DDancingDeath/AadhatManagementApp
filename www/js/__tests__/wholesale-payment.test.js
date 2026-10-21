@@ -19,6 +19,8 @@ jest.mock('../ui/infinite-scroll.js', () => ({ attachOlderHistoryScroll: jest.fn
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
 import { WholesaleSalesManager } from '../modules/wholesale-sales.js';
+import { Helpers } from '../utils/helpers.js';
+import { readPayment, NAME_REQUIRED_FOR_DUE_MESSAGE } from '../utils/money.js';
 
 beforeEach(() => {
     document.body.innerHTML = '<div id="salesOutstandingList"></div><div id="salesHistoryList"></div><div id="toast"></div>';
@@ -110,5 +112,84 @@ describe('wholesale recordPayment uses the payment transaction', () => {
         spy.mockRestore();
         expect(db.runTransaction).not.toHaveBeenCalled();
         expect(document.getElementById('toast').textContent).toBe('Internet required to record payment');
+    });
+});
+
+describe('wholesale sale save: payment split (#113, #23, #68, #26)', () => {
+    const DOM = `
+      <input id="wholesaleCustomerName"><select id="sellItem"><option value="Rice">Rice</option></select><input id="sellQuantity"><input id="sellRate"><input id="salesComments">
+      <input id="salesExpensesAmount" value="0"><span id="availableStock"></span><span id="avgPurchaseRate"></span>
+      <table id="salesTable"><tbody></tbody></table><span id="salesTotalAmount">0</span>
+      <span id="salesProfitAmount">0</span><span id="salesProfitPercent">0</span>
+      <input type="checkbox" id="wholesaleOnlineCheckbox"><input id="wholesaleOnlinePayment">
+      <input type="checkbox" id="wholesaleCashCheckbox"><input id="wholesaleCashPayment">
+      <input type="checkbox" id="wholesaleDueCheckbox"><input id="wholesaleDueAmount">
+      <span id="wholesaleTotalReceived"></span><strong id="wholesaleSplitRemaining"></strong>
+      <div id="salesHistoryList"></div><datalist id="wholesaleCustomerOptions"></datalist><div id="toast"></div>`;
+    const setVal = (id, v) => { document.getElementById(id).value = String(v); };
+    let saved;
+
+    beforeEach(async () => {
+        document.body.innerHTML = DOM;
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(Helpers, 'generateBillNumber').mockResolvedValue('W20261022-001');
+        saved = [];
+        FirebaseService.saveWholesaleSale = jest.fn(async (sale) => { saved.push(sale); return sale; });
+        AppState.items = [{ id: 'rice', name: 'Rice' }];
+        AppState.stock = { rice: { quantity: 500, rate: 30.5 } };
+        AppState.stockReady = true;
+        AppState.settings = { showHindi: false };
+        setVal('sellRate', 40.25);
+        setVal('sellQuantity', 100);
+        await WholesaleSalesManager.addToWholesaleBill(); // 4025
+    });
+    afterEach(() => {
+        WholesaleSalesManager.setItems([]);
+        jest.restoreAllMocks();
+    });
+    const toast = () => document.getElementById('toast').textContent;
+
+    test('cash + online + due is saved nested and top-level; total and profit come from the lines', async () => {
+        document.getElementById('salesTotalAmount').textContent = '9999';
+        document.getElementById('salesProfitAmount').textContent = '9999';
+        setVal('salesExpensesAmount', 25);
+        setVal('wholesaleCustomerName', 'Gupta Traders');
+        setVal('wholesaleCashPayment', 2000);
+        setVal('wholesaleOnlinePayment', 1000);
+        WholesaleSalesManager.putRestInDue();
+        expect(document.getElementById('wholesaleDueAmount').value).toBe('1025');
+
+        const sale = await WholesaleSalesManager.completeSale();
+
+        expect(sale).toMatchObject({
+            total: 4025, expenses: 25, profit: 950, profitPercent: 23.6,
+            cashPayment: 2000, onlinePayment: 1000, dueAmount: 1025,
+            payment: { cash: 2000, online: 1000, due: 1025, total: 4025 }
+        });
+        expect(readPayment(sale)).toEqual({ total: 4025, cash: 2000, online: 1000, due: 1025, paid: 3000 });
+        expect(saved).toHaveLength(1);
+    });
+
+    test('a mismatched split, a Due without a name, or no payment is refused', async () => {
+        setVal('wholesaleCashPayment', 4000);
+        expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
+        expect(toast()).toContain('₹25 less than the bill total');
+
+        setVal('wholesaleCashPayment', 0);
+        setVal('wholesaleDueAmount', 4025);
+        expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
+        expect(toast()).toBe(NAME_REQUIRED_FOR_DUE_MESSAGE);
+
+        setVal('wholesaleDueAmount', 0);
+        expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
+        expect(toast()).toContain('at least one payment method');
+        expect(saved).toHaveLength(0);
+    });
+
+    test('a fully paid cash sale needs no name and its cash reaches the drawer', async () => {
+        setVal('wholesaleCashPayment', 4025);
+        const sale = await WholesaleSalesManager.completeSale();
+        expect(sale).toMatchObject({ customerName: '', cashPayment: 4025, dueAmount: 0, payment: { due: 0 } });
+        expect(readPayment(sale).cash).toBe(4025);
     });
 });

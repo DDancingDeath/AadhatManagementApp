@@ -873,6 +873,9 @@ window.app = {
         reprintSale: (index) => WholesaleSalesManager.reprintSale(index),
         reprintSaleById: (saleId) => WholesaleSalesManager.reprintSaleById(saleId),
         updateProfitCalculation: () => WholesaleSalesManager.updateProfitCalculation(),
+        updatePaymentTotal: () => WholesaleSalesManager.updatePaymentTotal(),
+        fillReceivableAmount: (type) => WholesaleSalesManager.fillReceivableAmount(type),
+        putRestInDue: () => WholesaleSalesManager.putRestInDue(),
         pickContact: () => WholesaleSalesManager.pickContact()
     },
     

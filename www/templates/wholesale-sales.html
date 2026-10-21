@@ -63,6 +63,35 @@
                 <span>Total Receivable:</span>
                 <strong style="color: #22c55e !important;">₹ <span id="salesTotalAmount">0</span></strong>
             </div>
+
+            <div class="payment-row">
+                <label>Online (₹):</label>
+                <input type="checkbox" id="wholesaleOnlineCheckbox" onchange="window.app.wholesaleSales.fillReceivableAmount('online')" />
+                <input type="number" inputmode="decimal" id="wholesaleOnlinePayment" oninput="window.app.wholesaleSales.updatePaymentTotal();" placeholder="0" />
+            </div>
+
+            <div class="payment-row">
+                <label>Cash (₹):</label>
+                <input type="checkbox" id="wholesaleCashCheckbox" onchange="window.app.wholesaleSales.fillReceivableAmount('cash')" />
+                <input type="number" inputmode="decimal" id="wholesaleCashPayment" oninput="window.app.wholesaleSales.updatePaymentTotal();" placeholder="0" />
+            </div>
+
+            <div class="payment-row payment-total" style="background: linear-gradient(135deg, #e8f5e9, #c8e6c9) !important;">
+                <span style="color: #22c55e !important; font-weight: 600;">Total Received:</span>
+                <strong style="color: #22c55e !important;">₹ <span id="wholesaleTotalReceived" style="color: #22c55e !important;">0</span></strong>
+            </div>
+
+            <div class="payment-row">
+                <label>Due (₹):</label>
+                <input type="checkbox" id="wholesaleDueCheckbox" onchange="window.app.wholesaleSales.fillReceivableAmount('due')" />
+                <input type="number" inputmode="decimal" id="wholesaleDueAmount" oninput="window.app.wholesaleSales.updatePaymentTotal();" placeholder="0" />
+            </div>
+
+            <div class="payment-row split-remaining-row">
+                <span>Not split yet / बाकी:</span>
+                <strong id="wholesaleSplitRemaining">₹0</strong>
+                <button type="button" class="split-rest-btn" onclick="window.app.wholesaleSales.putRestInDue()">Rest → Due / बाकी उधार</button>
+            </div>
         </div>
 
         <div class="bill-totals" style="margin-top: 16px;">
