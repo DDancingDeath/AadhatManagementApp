@@ -2680,6 +2680,34 @@ const FirebaseService = {
     },
 
     /**
+     * Marks all of this user's unread notifications read, in bounded pages
+     * (`pageSize` docs per batch, at most `maxPages` pages) so a huge backlog
+     * can't run away with reads/writes.
+     * @param {string} uid
+     * @param {{pageSize?: number, maxPages?: number}} [opts]
+     * @returns {Promise<number>} number marked read
+     */
+    async markAllNotificationsRead(uid, { pageSize = 450, maxPages = 3 } = {}) {
+        if (!uid) return 0;
+        const db = getDb();
+        let total = 0;
+        for (let page = 0; page < maxPages; page++) {
+            const snapshot = await db.collection(col('notifications'))
+                .where('userId', '==', uid)
+                .where('read', '==', false)
+                .limit(pageSize)
+                .get();
+            if (snapshot.empty) break;
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => batch.update(doc.ref, { read: true, readAt: Date.now() }));
+            await batch.commit();
+            total += snapshot.size;
+            if (snapshot.size < pageSize) break;
+        }
+        return total;
+    },
+
+    /**
      * Deletes this user's notifications older than `cutoffMs` (at most `max`
      * per run, to keep reads cheap).
      * @param {string} uid

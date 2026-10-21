@@ -227,6 +227,19 @@ describe('Firestore paths (fake Firestore)', () => {
         expect(fake.raw('notifications').get('n05').read).toBe(false);
     });
 
+    test('mark all read covers unread beyond memory, bounded by pages', async () => {
+        fake.seed('notifications', Array.from({ length: 12 }, (_, i) => ({
+            id: `u${String(i).padStart(2, '0')}`, userId: 'owner1', read: false, timestamp: NOW - i * MIN, type: 'rate_change'
+        })).concat([{ id: 'other', userId: 'mgr', read: false, timestamp: NOW, type: 'rate_change' }]));
+        expect(await FirebaseService.markAllNotificationsRead('owner1', { pageSize: 5, maxPages: 2 })).toBe(10);
+        const mine = [...fake.raw('notifications').entries()].filter(([, d]) => d.userId === 'owner1');
+        expect(mine.filter(([, d]) => !d.read)).toHaveLength(2);
+        expect(await FirebaseService.markAllNotificationsRead('owner1', { pageSize: 5, maxPages: 2 })).toBe(2);
+        expect(mine.length).toBe(12);
+        expect([...fake.raw('notifications').values()].filter(d => d.userId === 'owner1').every(d => d.read)).toBe(true);
+        expect(fake.raw('notifications').get('other').read).toBe(false);
+    });
+
     test('retention deletes only this user\'s notifications older than the cut-off', async () => {
         fake.seed('notifications', [
             { id: 'old', userId: 'owner1', read: true, timestamp: NOW - 40 * DAY },
@@ -290,6 +303,22 @@ describe('Firestore paths (fake Firestore)', () => {
             expect(document.querySelectorAll('#notifList .notif-row')).toHaveLength(2);
             expect([...fake.raw('notifications').values()].filter(d => d.userId === 'owner1').every(d => d.read === true)).toBe(true);
             expect(document.getElementById('notifBadge').hidden).toBe(true);
+        });
+
+        test('"Mark all read" clears unread beyond the 20 in the listener, so the badge stays empty', async () => {
+            fake.seed('notifications', Array.from({ length: 25 }, (_, i) => ({
+                id: `m${String(i).padStart(2, '0')}`, userId: 'owner1', read: false, timestamp: Date.now() - (i + 10) * MIN, type: 'rate_change', itemName: 'Gehu', rateType: 'sale', oldRate: 1, newRate: 2
+            })));
+            NotificationsManager.start('owner1');
+            await fake.settle();
+            expect(document.getElementById('notifBadge').textContent).toBe(`${UNREAD_LIMIT}+`);
+
+            NotificationsManager.markAllRead();
+            await fake.settle();
+            await fake.settle();
+            expect([...fake.raw('notifications').values()].every(d => d.read === true)).toBe(true);
+            expect(document.getElementById('notifBadge').hidden).toBe(true);
+            expect(UIManager.showToast).not.toHaveBeenCalledWith(expect.stringContaining('Gehu'), expect.anything());
         });
 
         test('listener errors: one bilingual toast + Diagnostics entry, no crash', async () => {

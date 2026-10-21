@@ -225,19 +225,36 @@ const NotificationsManager = {
     /** @private Marks ids read locally (keeps the "new" highlight) and in Firestore. */
     markRead(ids) {
         if (!ids.length) return;
-        const set = new Set(ids);
-        this.panelItems.forEach(n => { if (set.has(n.id)) n.readNow = true; });
-        this.unread = this.unread.filter(n => !set.has(n.id));
-        this.renderBadge();
+        this.applyLocalRead(ids);
         FirebaseService.markNotificationsRead(ids)
             .catch(e => console.warn('Marking notifications read failed:', e));
     },
 
+    /** @private */
+    applyLocalRead(ids) {
+        const set = new Set(ids);
+        this.panelItems.forEach(n => { if (set.has(n.id)) n.readNow = true; });
+        this.unread = this.unread.filter(n => !set.has(n.id));
+        this.renderBadge();
+    },
+
+    /**
+     * Marks every unread notification of this user read on the server, not
+     * only the ones in memory: otherwise the 20-doc unread listener refills
+     * with older unread and the badge comes back.
+     */
     markAllRead() {
+        if (!this.uid) return;
         const ids = idsToMarkRead('all', [...this.unread, ...this.panelItems.filter(n => !n.readNow)]);
-        this.markRead(ids);
+        this.applyLocalRead(ids);
         this.panelItems.forEach(n => { n.read = true; });
         this.renderPanel();
+        FirebaseService.markAllNotificationsRead(this.uid)
+            .catch(e => {
+                console.warn('Mark all read failed:', e);
+                FirebaseService.markNotificationsRead(ids)
+                    .catch(err => console.warn('Marking notifications read failed:', err));
+            });
     },
 
     /** Row tap: mark it read and go to the related item / bill list. */
