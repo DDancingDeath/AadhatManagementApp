@@ -162,7 +162,7 @@ describe('duplicate item names are blocked', () => {
     });
 });
 
-describe('most-used badge and sort (#75)', () => {
+describe('most-used sort (#75)', () => {
     const histories = () => ({
         purchaseHistory: [
             { items: [{ itemId: 'c', name: 'Moong' }, { name: 'gehu ' }] },
@@ -186,13 +186,11 @@ describe('most-used badge and sort (#75)', () => {
         }, items)).toEqual({ c: 4, b: 2 });
     });
 
-    test('Items table shows badges and sorts most used first', () => {
+    test('Items table sorts most used first without showing the usage count', () => {
         Object.assign(AppState, histories());
         ItemsManager.renderItemsTable();
         const rows = [...document.querySelectorAll('#itemsViewTableBody tr')];
-        expect(rows.map(r => r.cells[0].childNodes[0].textContent.trim())).toEqual(['Moong', 'Gehu', 'Chana']);
-        expect(rows[0].querySelector('span').textContent).toBe('3');
-        expect(rows[1].querySelector('span').textContent).toBe('2');
-        expect(rows[2].querySelector('span')).toBeNull();
+        expect(rows.map(r => r.cells[0].textContent.trim())).toEqual(['Moong', 'Gehu', 'Chana']);
+        expect(rows.every(r => r.cells[0].querySelector('span') === null)).toBe(true);
     });
 });
