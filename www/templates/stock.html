@@ -60,8 +60,19 @@
                 </div>
                 
                 <div class="form-row">
-                    <label>Reason (Optional):</label>
-                    <input type="text" id="adjustReason" placeholder="e.g., Damaged goods, Manual count" />
+                    <label>Reason / कारण:</label>
+                    <select id="adjustReasonCode">
+                        <option value="">Select reason / कारण चुनें</option>
+                        <option value="count">Physical count / गिनती</option>
+                        <option value="damage">Damaged / खराब</option>
+                        <option value="theft">Theft or loss / चोरी या गुम</option>
+                        <option value="other">Other / अन्य</option>
+                    </select>
+                </div>
+                
+                <div class="form-row">
+                    <label>Note (required for Other) / टिप्पणी:</label>
+                    <input type="text" id="adjustReason" placeholder="e.g., Rats damaged 2 bags" />
                 </div>
                 
                 <button class="add-to-bill-btn" onclick="window.app.stock.applyAdjustment()">Apply Adjustment</button>

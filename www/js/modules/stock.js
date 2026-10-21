@@ -11,6 +11,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
+import { planStockAdjustment } from '../utils/stock-adjust.js';
 
 /**
  * Stock Manager - Manages inventory stock operations
@@ -424,9 +425,11 @@ export class StockManager {
     static async applyStockAdjustment() {
         const itemId = Helpers.getInputText('adjustItem');
         const adjustType = Helpers.getInputText('adjustType');
-        const quantity = Helpers.getInputNumber('adjustQuantity');
+        // NaN when blank, so an empty box can't become "set stock to 0"
+        const quantity = Helpers.getInputNumber('adjustQuantity', NaN);
         const rate = Helpers.getInputNumber('adjustRate');
-        const reason = Helpers.getInputText('adjustReason');
+        const reasonCode = Helpers.getInputText('adjustReasonCode');
+        const reasonNote = Helpers.getInputText('adjustReason');
 
         const item = itemId ? AppState.items.find(i => i.id === itemId) : null;
         if (!item) {
@@ -435,35 +438,34 @@ export class StockManager {
         }
         const itemName = item.name;
 
-        if (isNaN(quantity) || quantity <= 0) {
-            UIManager.showToast("Please enter a valid quantity");
+        const currentStock = AppState.stock[item.id]?.quantity || 0;
+        const plan = planStockAdjustment({ adjustType, quantity, currentStock, reasonCode, reasonNote });
+        if (!plan.ok) {
+            UIManager.showToast(plan.error);
             return;
         }
-
-        const currentStock = AppState.stock[item.id]?.quantity || 0;
-        let newStock = currentStock;
-
-        switch (adjustType) {
-            case 'add':
-                newStock = currentStock + quantity;
-                break;
-            case 'remove':
-                newStock = Math.max(0, currentStock - quantity);
-                break;
-            case 'set':
-                newStock = quantity;
-                break;
+        if (plan.capped) {
+            const ok = await UIManager.showModal(
+                `Only ${plan.quantity} kg in stock. Remove ${plan.quantity} kg (stock becomes 0)?\nस्टॉक में सिर्फ ${plan.quantity} kg है। ${plan.quantity} kg हटाएँ (स्टॉक 0 होगा)?`,
+                'Remove more than stock?',
+                true
+            );
+            if (!ok) return;
         }
-        
+        const newStock = plan.newStock;
+        const reason = plan.reason;
+
         const adjustment = {
             itemId: item.id,
             itemName,
             adjustType,
-            quantity,
+            quantity: plan.quantity,
+            rawQuantity: plan.rawQuantity,
             rate: rate || 0,
             previousStock: currentStock,
             newStock,
             reason,
+            reasonCode,
             date: Helpers.getCurrentDateTime(),
             timestamp: Date.now(),
             createdBy: AppState.currentUser?.uid || 'unknown',
@@ -481,6 +483,8 @@ export class StockManager {
             document.getElementById("adjustQuantity").value = "";
             document.getElementById("adjustRate").value = "0";
             document.getElementById("adjustReason").value = "";
+            const reasonSelect = document.getElementById("adjustReasonCode");
+            if (reasonSelect) reasonSelect.value = "";
             
             // Recalculate stock from Firebase data to ensure accuracy
             const freshStock = await FirebaseService.calculateStock();
@@ -490,8 +494,8 @@ export class StockManager {
             this.renderAdjustmentHistory();
             this.loadAdjustItemStock();
             
-            // Refresh current stock tab if it's visible
-            if (document.getElementById('stockCurrentSection')?.classList.contains('active')) {
+            // Keep the Current Stock list in step with the adjustment
+            if (document.getElementById('currentStockSection')) {
                 this.renderStock();
             }
         } catch (error) {
@@ -565,6 +569,7 @@ export class StockManager {
                         ${displayRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${displayRate.toFixed(2)}/kg${valueImpact ? ` • Value: ₹${Math.round(valueImpact)}` : ''}</div>` : ''}
                         <div style="font-size: 13px; color: #666;">
                             ${(adj.previousStock || 0).toFixed(1)} kg → ${(adj.newStock || 0).toFixed(1)} kg
+                            ${Number(adj.rawQuantity) > Number(adj.quantity) ? ` (asked ${Helpers.escapeHtml(adj.rawQuantity)} kg, capped at stock)` : ''}
                         </div>
                         ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${Helpers.escapeHtml(adj.reason)}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
                     </div>

@@ -436,13 +436,15 @@ async function debugStockForName(query) {
                     runningValue += ev.qty * ev.rate;
                 }
             } else if (ev.kind === 'adjust:remove') {
-                delta = -ev.qty;
+                // Same cap as stock-replay: never removes more than is on hand
                 const prevQty = runningQty;
-                runningQty = prevQty - ev.qty;
+                const removed = Math.min(ev.qty, Math.max(0, prevQty));
+                delta = -removed;
+                runningQty = prevQty - removed;
                 if (runningQty <= 0 || prevQty <= 0) {
                     runningValue = 0;
                 } else {
-                    const ratio = ev.qty / prevQty;
+                    const ratio = removed / prevQty;
                     runningValue -= runningValue * ratio;
                 }
             } else if (ev.kind === 'adjust:set') {

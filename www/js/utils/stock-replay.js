@@ -15,7 +15,7 @@
 import { Helpers } from './helpers.js';
 
 /** Bump when the replay rules or the checkpoint layout change. */
-export const STOCK_REPLAY_FORMAT = 2;
+export const STOCK_REPLAY_FORMAT = 3;
 
 const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
 
@@ -209,13 +209,16 @@ export function replayEvents(stock, events, getItemKey, resolutions) {
                     break;
                 }
                 case 'remove': {
+                    // A removal can never take stock below zero (#72): it
+                    // removes at most what is on hand.
                     const prevQty = stock[key].quantity;
-                    const newQty = prevQty - adjQty;
+                    const removed = Math.min(adjQty, Math.max(0, prevQty));
+                    const newQty = prevQty - removed;
                     stock[key].quantity = newQty;
                     if (newQty <= 0 || prevQty <= 0) {
                         stock[key].totalValue = 0;
                     } else {
-                        const removalRatio = adjQty / prevQty;
+                        const removalRatio = removed / prevQty;
                         stock[key].totalValue -= stock[key].totalValue * removalRatio;
                     }
                     break;

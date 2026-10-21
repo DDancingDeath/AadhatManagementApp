@@ -99,7 +99,7 @@ describe('recent history window + stock checkpoint', () => {
 
         await rebuildSettled();
         const cp = cpDoc();
-        expect(cp).toMatchObject({ stale: false, asOf: W, formatVersion: 2 });
+        expect(cp).toMatchObject({ stale: false, asOf: W, formatVersion: 3 });
         expect(cp.backfill.complete).toBe(true);
         // Every dated stock document now has a numeric timestamp.
         ['purchases', 'wholesaleSales', 'retailSales', 'stockAdjustments'].forEach(c => {
