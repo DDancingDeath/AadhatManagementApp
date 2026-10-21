@@ -1,3 +1,5 @@
+> **Archived 2026-10-21 (#105).** Original design notes for Bluetooth printing; partly out of date (setup steps, "Future Enhancements" wishlist). The current implementation is `www/js/services/printer.js` (tests: `printer-raster.test.js`); printer bugs and ideas are tracked as GitHub issues labelled `area:printer`.
+
 # Bluetooth Printer Integration
 
 ## Overview

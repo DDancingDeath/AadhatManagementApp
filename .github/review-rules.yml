@@ -1,0 +1,171 @@
+# Aadhat review rules — regex registry of mistakes this codebase keeps making.
+#
+# Ported from the (archived) staging clone's .copilot/skills/aadhat-review/rules.yml
+# (22 rules, learned 2026-05-21) for #54. Staging-only rules were dropped: chat.js,
+# voice-billing.js and diagnostics-secrets (files/features not in this repo),
+# finance custom-accounts and stock empty-reason (staging PAGE_SPECS product
+# decisions, not prod rules), and the commit-trailer check (not a code pattern).
+# Prefix rules now use this repo's `dev_` prefix (not prod_/staging_).
+#
+# Checked by scripts/check-review-rules.js (`npm run check:review`) on the lines a
+# branch ADDS; CI fails on `severity: block`. `--all` scans whole files instead.
+#
+# Format (a small YAML subset the checker parses itself — keep to it):
+#   - id: kebab-case
+#     pattern: "JS regex, double-quoted, backslashes doubled"   (tested per line)
+#     applies_to: "glob" | ["glob", ...]      (** = any dirs, * = within a dir)
+#     excludes: ["glob", ...]                 (optional)
+#     message: |                              (block text; first line is the summary)
+#     severity: block | warn | info
+#     learned_at: YYYY-MM-DD
+# Examples of real findings: .github/review-rules-examples/
+
+rules:
+  - id: firestore-collection-literal
+    pattern: "\\.collection\\(\\s*['\"`]"
+    applies_to: ["www/js/**/*.js", "www/*.js"]
+    excludes: ["www/js/__tests__/**"]
+    message: |
+      Firestore collection opened with a literal name — the dev_ prefix is skipped.
+      Use col('name') inside FirebaseService or window.getCollection('name'), so
+      localhost writes go to dev_* and never to production data.
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: firebase-firestore-in-module
+    pattern: "firebase\\.firestore\\(\\)"
+    applies_to: ["www/js/modules/**/*.js", "www/js/ui/**/*.js", "www/js/utils/**/*.js"]
+    message: |
+      Direct firebase.firestore() in a UI/business module bypasses FirebaseService.
+      Add or reuse a FirebaseService method instead (AGENTS.md rule 2; #64, #123).
+    severity: block
+    learned_at: 2026-10-21
+
+  - id: inline-onclick-without-window-app
+    pattern: "onclick=\"(?!window\\.app\\.)"
+    applies_to: ["www/templates/**/*.html"]
+    message: |
+      Inline onclick handler that doesn't go through window.app.
+      Expose the handler via main.js -> window.app.X.Y, or wire it with addEventListener.
+    severity: warn
+    learned_at: 2026-05-21
+
+  - id: raw-date-construction
+    pattern: "new Date\\([^)]*['\"`]"
+    applies_to: ["www/js/**/*.js"]
+    excludes: ["www/js/utils/helpers.js", "www/js/utils/dates.js", "www/js/__tests__/**"]
+    message: |
+      new Date(<string>) misparses DD/MM/YYYY bills and shifts YYYY-MM-DD to UTC.
+      Use parseAnyBillDate / parseLocalDate (utils/dates.js) or Helpers.parseDate().
+    severity: warn
+    learned_at: 2026-05-21
+
+  - id: iso-string-date-key
+    pattern: "toISOString\\(\\)\\s*\\.\\s*(split|slice|substring|substr)\\("
+    applies_to: ["www/js/**/*.js"]
+    excludes: ["www/js/utils/dates.js", "www/js/__tests__/**"]
+    message: |
+      toISOString().split('T')[0] gives the UTC date — wrong for 00:00–05:30 IST.
+      Use todayLocalISO() / local date helpers from utils/dates.js.
+    severity: warn
+    learned_at: 2026-10-21
+
+  - id: due-amount-vs-payment-due-drift
+    pattern: "\\.dueAmount\\s*=[^=]|payment\\.due\\s*=[^=]"
+    applies_to: ["www/js/**/*.js"]
+    excludes: ["www/js/__tests__/**"]
+    message: |
+      dueAmount (top level) and payment.due (nested) must be written together.
+      Setting only one causes drift on older bills; nested is canonical (utils/money.js).
+    severity: warn
+    learned_at: 2026-05-21
+
+  - id: top-level-app-shadowing
+    pattern: "^(let|const|var)\\s+app\\s*="
+    applies_to: ["www/**/*.js"]
+    message: |
+      Top-level `app` declaration shadows window.app and breaks every inline onclick.
+      Use another name (firebaseConfig.js uses firebaseApp; firebase-app-shadow.test.js).
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: showToast-wrong-arg-type
+    pattern: "showToast\\([^,]+,\\s*['\"](error|success|warning|info)['\"]"
+    applies_to: ["www/js/**/*.js"]
+    message: |
+      UIManager.showToast(message, duration): the 2nd argument is a duration in ms,
+      not a type string. Passing 'error' gives a NaN timeout.
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: framework-import
+    pattern: "from\\s+['\"](react|vue|svelte|preact|@angular)"
+    applies_to: ["www/**/*.js"]
+    message: |
+      No frameworks: the app is vanilla ES modules + window.app globals with no build step.
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: ts-file-introduced
+    pattern: ".*"
+    applies_to: ["www/**/*.ts"]
+    message: |
+      TypeScript is not in the build chain (there is no build step); .ts files are not served.
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: hardcoded-collection-prefix
+    pattern: "['\"`]dev_"
+    applies_to: ["www/**/*.js"]
+    excludes: ["www/firebaseConfig.js", "www/js/firebase/firestore-service.js", "www/js/__tests__/**"]
+    message: |
+      Hard-coded dev_ prefix. The prefix comes from window.getCollection / FirebaseService;
+      typing it breaks the dev/prod split.
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: catch-swallow-empty-body
+    pattern: "catch\\s*\\((?!_)[A-Za-z$][\\w$]*\\)\\s*\\{\\s*\\}"
+    applies_to: ["www/js/**/*.js"]
+    excludes: ["www/js/__tests__/**"]
+    message: |
+      Empty catch block swallows errors silently.
+      Log it, show a toast, or name the param `_e` / `_err` to mark an intentional ignore.
+    severity: warn
+    learned_at: 2026-05-21
+
+  - id: bill-numbering-count-plus-one
+    pattern: "\\b(count|size|length)\\s*\\+\\s*1\\b.*\\b(bill|invoice)(No|Number|Num)\\b|\\b(bill|invoice)(No|Number|Num)\\b.*\\b(count|size|length)\\s*\\+\\s*1\\b"
+    applies_to: ["www/js/**/*.js"]
+    excludes: ["www/js/__tests__/**"]
+    message: |
+      Bill numbers must not come from a local count + 1 — concurrent saves collide.
+      Use a Firestore transaction on a counter document.
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: cash-sessions-wrong-collection
+    pattern: "(col|getCollection)\\(\\s*['\"]cashSessions?['\"]"
+    applies_to: ["www/**/*.js"]
+    message: |
+      Cash sessions live in the `cashManagement` collection, not `cashSessions`.
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: no-external-ml-api
+    pattern: "(openai|anthropic|generativelanguage|api\\.mistral)\\.|new\\s+XMLHttpRequest\\("
+    applies_to: ["www/js/**/*.js"]
+    excludes: ["www/js/__tests__/**"]
+    message: |
+      No calls to external AI/ML APIs (and no raw XHR) from the client: cost, latency,
+      privacy, and API keys must never ship in the app (AGENTS.md rule 7).
+    severity: block
+    learned_at: 2026-05-21
+
+  - id: hardcoded-ui-text-in-module
+    pattern: "['\"](Please select|No matching|Insufficient stock|Mark as Cleared)\\b[^'\"]{3,}['\"]"
+    applies_to: ["www/js/modules/**/*.js"]
+    message: |
+      English-only UI text in module logic; consider a Hindi sibling ("English · हिंदी").
+    severity: info
+    learned_at: 2026-05-21
