@@ -153,3 +153,38 @@ body.dark-mode .bill-check-msg {
 body.dark-mode .bill-check-msg.bill-check-warn {
     color: #fcd34d;
 }
+
+/* Existing due of the party under the name field (#166) — information only */
+.party-due-line {
+    display: block;
+    width: 100%;
+    margin: -4px 0 10px;
+    padding: 6px 10px;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    background: #eff6ff;
+    color: #1e40af;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+}
+
+.party-due-line.party-due-old {
+    border-color: #fcd34d;
+    background: #fffbeb;
+    color: #92400e;
+}
+
+body.dark-mode .party-due-line {
+    background: #172554;
+    border-color: #1e3a8a;
+    color: #bfdbfe;
+}
+
+body.dark-mode .party-due-line.party-due-old {
+    background: #3a2a06;
+    border-color: #92400e;
+    color: #fde68a;
+}

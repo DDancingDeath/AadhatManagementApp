@@ -217,3 +217,23 @@
 .aging-bills-title {
     margin-top: 14px;
 }
+
+/* Outstanding opened for one party from a bill (#166) */
+.party-filter-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 14px;
+}
+
+body.dark-mode .party-filter-note {
+    background: #172554;
+    color: #bfdbfe;
+}

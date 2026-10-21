@@ -18,7 +18,7 @@ import { PrinterService } from '../services/printer.js';
 import { openExternal } from '../utils/open-external.js';
 import { billDateOf } from '../utils/history-filters.js';
 import {
-    AGING_BUCKETS, ageInDays, bucketIndex, buildAging, chaseFirst, filterBillsByBucket, sortParties
+    AGING_BUCKETS, ageInDays, bucketIndex, buildAging, chaseFirst, filterBillsByBucket, normalizePartyName, sortParties
 } from '../utils/aging.js';
 import {
     buildReminderText, buildStatement, formatINR, normalizePhone, whatsAppReminderUrl
@@ -94,6 +94,7 @@ export class OutstandingManager {
     static filterDue(filter, evt) {
         AppState.currentDueFilter = filter;
         this.agingBucket = null;
+        this.partyFilter = null;
         
         document.querySelectorAll('#due .filter-btn').forEach(btn => btn.classList.remove('active'));
         if (evt) evt.target.classList.add('active');
@@ -165,8 +166,11 @@ export class OutstandingManager {
         }
         
         // Aging summary + per-party rows for the same bills (#46)
-        this.renderAging(dueTransactions, currentDueFilter === 'purchase' ? 'payable' : 'receivable');
-        const shownTransactions = filterBillsByBucket(dueTransactions, this.agingBucket);
+        const party = this.partyFilter;
+        const partyBills = party ? dueTransactions.filter(t => normalizePartyName(t.customerName) === party.key) : dueTransactions;
+        this.renderAging(partyBills, currentDueFilter === 'purchase' ? 'payable' : 'receivable');
+        this.renderPartyFilterNote();
+        const shownTransactions = filterBillsByBucket(partyBills, this.agingBucket);
 
         // Sort by date (newest first) - use timestamp if available, otherwise parse date
         shownTransactions.sort((a, b) => {
@@ -176,7 +180,8 @@ export class OutstandingManager {
         });
         
         if (shownTransactions.length === 0) {
-            const message = dueTransactions.length > 0 ? 'No bills in this age group'
+            const message = partyBills.length > 0 ? 'No bills in this age group'
+                : party ? 'Nothing outstanding for this party / इस पार्टी का कोई बकाया नहीं'
                 : currentDueFilter === 'purchase' ? 'No outstanding purchase amounts' : 'No outstanding sale amounts';
             container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
             return;
@@ -323,6 +328,40 @@ export class OutstandingManager {
     static setAgingBucket(key) {
         this.agingBucket = this.agingBucket === key ? null : key;
         this.renderDue();
+    }
+
+    /** Party opened from a bill's "Already owes" line (#166): {key, name} or null. */
+    static partyFilter = null;
+
+    /**
+     * Open Outstanding showing only one party's open bills.
+     * @param {'purchase'|'sale'} filter
+     * @param {string} name Party name as typed on the bill
+     */
+    static showParty(filter, name) {
+        const key = normalizePartyName(name);
+        this.filterDue(filter === 'purchase' ? 'purchase' : 'sale');
+        document.querySelectorAll('#due .filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.classList.contains(filter === 'purchase' ? 'filter-purchase' : 'filter-sale'));
+        });
+        if (!key) return;
+        this.partyFilter = { key, name: String(name).trim() };
+        this.renderDue();
+    }
+
+    static clearPartyFilter() {
+        this.partyFilter = null;
+        this.renderDue();
+    }
+
+    static renderPartyFilterNote() {
+        const el = document.getElementById('dueAging');
+        if (!el || !this.partyFilter) return;
+        el.insertAdjacentHTML('afterbegin', `
+            <div class="party-filter-note">
+                <span>Showing only / केवल: <strong>${Helpers.escapeHtml(this.partyFilter.name)}</strong></span>
+                <button type="button" class="aging-btn" onclick="window.app.outstanding.clearPartyFilter()">Show all / सभी दिखाएँ</button>
+            </div>`);
     }
 
     static setAgingSort(by) {
