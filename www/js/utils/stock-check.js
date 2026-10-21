@@ -15,41 +15,51 @@
 import { AppState } from '../utils/state.js';
 
 const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
+// Legacy bill lines store the name as `item`.
+const lineName = (item) => item.name || item.item;
 
 /**
- * Resolve a sale-line item to its canonical catalogue id, mirroring the
- * resolution used inside calculateStock(). Falls back to the normalized
- * name when nothing matches, so unknown items still bucket together.
+ * Find the catalogue entry for a line item: itemId first, then name or
+ * Hindi name (same precedence calculateStock() uses). Null when unknown.
  *
  * @param {Object} item - sale line item ({ itemId?, name? })
- * @returns {string} canonical key for stock lookup
+ * @param {Array<Object>} items - item catalogue
+ * @returns {Object | null}
  */
-function resolveKey(item) {
+function findCatalogueEntry(item, items) {
     if (item.itemId) {
-        const found = AppState.items.find((i) => i.id === item.itemId);
-        if (found) return found.id;
+        const byId = items.find((i) => i.id === item.itemId);
+        if (byId) return byId;
     }
-    const target = normalize(item.name);
-    if (target) {
-        const found = AppState.items.find(
-            (i) => normalize(i.name) === target || normalize(i.hindiName) === target
-        );
-        if (found) return found.id;
-    }
-    return target || (item.itemId || '__unknown__');
+    const target = normalize(lineName(item));
+    if (!target) return null;
+    return items.find((i) => normalize(i.name) === target || normalize(i.hindiName) === target) || null;
 }
 
 /**
- * Look up the on-hand quantity for an item across legacy keys (itemId,
- * name, hindiName) so we don't miss stock that's still bucketed under an
- * old key.
+ * Canonical stock key for a line item; unknown items bucket under their
+ * normalized name so they still aggregate together.
  *
- * @param {Object} catalogueEntry - resolved catalogue item or null
- * @param {string} fallbackName - the line item's name (for legacy buckets)
- * @returns {number} sum of stock quantities across known keys
+ * @param {Object} item
+ * @param {Array<Object>} items
+ * @returns {string}
  */
-function lookupAvailable(catalogueEntry, fallbackName) {
-    const stock = AppState.stock || {};
+function resolveKey(item, items) {
+    const found = findCatalogueEntry(item, items);
+    if (found) return found.id;
+    return normalize(lineName(item)) || (item.itemId || '__unknown__');
+}
+
+/**
+ * On-hand quantity for an item across legacy keys (itemId, name, hindiName)
+ * so stock still bucketed under an old key is not missed.
+ *
+ * @param {Object|null} catalogueEntry - resolved catalogue item or null
+ * @param {string} fallbackName - the line item's name (for legacy buckets)
+ * @param {Object} stock - stock map
+ * @returns {number}
+ */
+function lookupAvailable(catalogueEntry, fallbackName, stock) {
     let qty = 0;
     if (catalogueEntry?.id && stock[catalogueEntry.id]) {
         qty += stock[catalogueEntry.id].quantity || 0;
@@ -65,66 +75,66 @@ function lookupAvailable(catalogueEntry, fallbackName) {
 }
 
 /**
- * Find the catalogue entry corresponding to a line item, mirroring the
- * same id/name/hindiName precedence as resolveKey() so the two stay in
- * sync. Returns null if nothing matches.
- *
- * @param {Object} item - sale line item
- * @returns {Object | null}
+ * Stock bucket key for a line item (catalogue id, else normalized name).
+ * @param {Object} item
+ * @param {Array<Object>} [items] - item catalogue
+ * @returns {string}
  */
-function findCatalogueEntry(item) {
-    if (item.itemId) {
-        const byId = AppState.items.find((i) => i.id === item.itemId);
-        if (byId) return byId;
-    }
-    const target = normalize(item.name);
-    if (!target) return null;
-    return (
-        AppState.items.find(
-            (i) => normalize(i.name) === target || normalize(i.hindiName) === target
-        ) || null
-    );
+export function stockKeyFor(item, items = []) {
+    return resolveKey(item || {}, Array.isArray(items) ? items : []);
 }
 
+const lineQty = (item) => parseFloat(item.qty ?? item.quantity) || 0;
+
 /**
- * Compute per-item shortfalls for a list of sale items.
+ * Per-item shortfalls for sale lines against a given stock snapshot (pure).
+ * A bill may have several lines for the same item (e.g. two weight groups),
+ * so quantities are aggregated per item before comparing.
  *
  * @param {Array<{itemId?: string, name?: string, qty?: number, quantity?: number}>} saleItems
- * @returns {Array<{name: string, requested: number, available: number, shortfall: number}>}
- *   list of items whose requested quantity exceeds on-hand stock (empty if all fit)
+ * @param {{items?: Array<Object>, stock?: Object, stockReady?: boolean}} snapshot
+ * @param {Array<Object>} [credit] - lines already deducted from `stock` (the
+ *   saved copy of a bill being edited); their quantities count as available
+ * @returns {Array<{key: string, name: string, requested: number, available: number, shortfall: number}>}
  */
-export function computeStockShortfalls(saleItems) {
+export function computeShortfallsFrom(saleItems, { items = [], stock = {}, stockReady = true } = {}, credit = []) {
     if (!Array.isArray(saleItems) || saleItems.length === 0) return [];
     // Stock is still being computed from full history: no reliable figure to warn against.
-    if (AppState.stockReady === false) return [];
+    if (stockReady === false) return [];
+    const catalogue = Array.isArray(items) ? items : [];
+    const stockMap = stock || {};
 
-    // Aggregate requested quantity per canonical key. A bill may have
-    // several line items for the same physical item (e.g. two weight
-    // groups), so individual-line checks would miss the cumulative
-    // overshoot.
     const requestedByKey = new Map();
     for (const item of saleItems) {
-        const key = resolveKey(item);
-        const qty = parseFloat(item.qty ?? item.quantity) || 0;
+        if (!item) continue;
+        const key = resolveKey(item, catalogue);
         const prev = requestedByKey.get(key);
         if (prev) {
-            prev.requested += qty;
+            prev.requested += lineQty(item);
         } else {
-            const catalogueEntry = findCatalogueEntry(item);
+            const catalogueEntry = findCatalogueEntry(item, catalogue);
             requestedByKey.set(key, {
                 key,
-                name: item.name || catalogueEntry?.name || key,
+                name: lineName(item) || catalogueEntry?.name || key,
                 catalogueEntry,
-                requested: qty,
+                requested: lineQty(item),
             });
         }
     }
 
+    const credited = new Map();
+    for (const item of Array.isArray(credit) ? credit : []) {
+        if (!item) continue;
+        const key = resolveKey(item, catalogue);
+        credited.set(key, (credited.get(key) || 0) + lineQty(item));
+    }
+
     const shortfalls = [];
     for (const row of requestedByKey.values()) {
-        const available = lookupAvailable(row.catalogueEntry, row.name);
+        const available = lookupAvailable(row.catalogueEntry, row.name, stockMap) + (credited.get(row.key) || 0);
         if (row.requested > available + 1e-6) {
             shortfalls.push({
+                key: row.key,
                 name: row.name,
                 requested: row.requested,
                 available,
@@ -133,6 +143,21 @@ export function computeStockShortfalls(saleItems) {
         }
     }
     return shortfalls;
+}
+
+/**
+ * Compute per-item shortfalls for a list of sale items against AppState.
+ *
+ * @param {Array<{itemId?: string, name?: string, qty?: number, quantity?: number}>} saleItems
+ * @returns {Array<{name: string, requested: number, available: number, shortfall: number}>}
+ *   list of items whose requested quantity exceeds on-hand stock (empty if all fit)
+ */
+export function computeStockShortfalls(saleItems) {
+    return computeShortfallsFrom(saleItems, {
+        items: AppState.items || [],
+        stock: AppState.stock || {},
+        stockReady: AppState.stockReady,
+    }).map(({ name, requested, available, shortfall }) => ({ name, requested, available, shortfall }));
 }
 
 /**

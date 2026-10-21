@@ -11,9 +11,9 @@ import { AuditService } from '../services/audit.js';
 import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
 import {
-    checkPaymentSplit, computePurchaseTotals, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, normalizeLabourSettings,
-    paymentSplitMessage, round2
+    checkPaymentSplit, computePurchaseTotals, KEPT_SERVER_PAYMENT_MESSAGE, normalizeLabourSettings, paymentSplitMessage, round2
 } from '../utils/money.js';
+import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
 
 /** Buttons disabled while a purchase save/print is in flight */
 const PURCHASE_BUTTONS = '#saveBillBtn, #printBillBtn';
@@ -428,6 +428,7 @@ const PurchaseManager = {
             totalPaymentElement.textContent = Math.round(totalPaid);
         }
         Helpers.showSplitRemaining('purchaseSplitRemaining', checkPaymentSplit(this.computeTotals().grandTotal, split));
+        BillChecksUI.schedule('purchase');
     },
 
     /**
@@ -573,23 +574,10 @@ const PurchaseManager = {
         const comments = Helpers.getInputText('billComments');
         const printComments = document.getElementById('billPrintComments')?.checked || false;
         
-        if (onlinePayment === 0 && cashPayment === 0 && dueAmount === 0) {
-            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
-            return;
-        }
-        
-        if (dueNeedsName(dueAmount, customerName)) {
-            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
-            document.getElementById('customerName')?.focus();
-            return;
-        }
-        
-        const split = checkPaymentSplit(grandTotal, { cash: cashPayment, online: onlinePayment, due: dueAmount });
-        if (!split.ok) {
-            Helpers.showSplitRemaining('purchaseSplitRemaining', split);
-            UIManager.showToast(paymentSplitMessage(split));
-            return;
-        }
+        // Payment, name-for-Due and the other bill checks (#23, #68, #37)
+        this.updatePaymentTotal();
+        const checks = await BillChecksUI.confirmSave('purchase');
+        if (!checks.ok) return;
         
         const autoLaborCheckbox = document.getElementById('autoLaborCharge');
         const laborChargesInput = document.getElementById('manualLaborCharges');
@@ -634,7 +622,8 @@ const PurchaseManager = {
                     cash: cashPayment,
                     due: dueAmount,
                     total: round2(onlinePayment + cashPayment + dueAmount)
-                }
+                },
+                ...BillChecksUI.billFields(checks)
             };
             
             const retry = pending.attempted;
@@ -756,6 +745,29 @@ const PurchaseManager = {
      * Id/bill number of the bill being entered, created on first use (#70)
      * @returns {{id: string, billNumber: (string|null)}}
      */
+    /**
+     * The bill as the check engine sees it (utils/bill-checks.js).
+     * @returns {Object}
+     */
+    getCheckDraft() {
+        const editing = this.billingManager?.editingBillIndex !== undefined;
+        const original = editing ? this.billingManager.getEditingBill?.() || null : null;
+        const item = AppState.items[parseInt(document.getElementById('billItem')?.value)];
+        return {
+            kind: 'purchase',
+            isEdit: editing,
+            id: editing ? original?.id || null : pendingBill?.id || null,
+            editingBill: original,
+            items: billItems,
+            total: this.computeTotals().grandTotal,
+            payment: this.readPaymentSplit(),
+            partyName: Helpers.getInputText('customerName'),
+            date: editing ? original?.date : pendingBill?.date,
+            enteredAt: editing ? original?.timestamp : pendingBill?.timestamp,
+            entry: item ? { itemId: item.id, name: item.name, rate: readTypedNumber('billRate'), qty: readTypedNumber('newWeight') } : null
+        };
+    },
+
     ensurePendingBill() {
         if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null, attempted: false, date: null, timestamp: null };
         return pendingBill;
@@ -809,5 +821,18 @@ const PurchaseManager = {
         weights = w || [];
     }
 };
+
+BillChecksUI.register('purchase', {
+    sectionId: 'purchaseSection',
+    tableSelector: '#billTable',
+    saveButtons: '#saveBillBtn, #printBillBtn',
+    getDraft: () => PurchaseManager.getCheckDraft(),
+    fields: {
+        party: { inputs: ['customerName'] },
+        payment: { inputs: ['cashPayment', 'onlinePayment', 'dueAmount'], anchor: 'purchaseSplitRemaining' },
+        'entry.rate': { inputs: ['billRate'] },
+        'entry.qty': { inputs: ['newWeight'] }
+    }
+});
 
 export { PurchaseManager };

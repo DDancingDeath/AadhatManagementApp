@@ -38,7 +38,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022n-outstanding-aging';
+const BUILD_ID = '20261022o-bill-checks';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -1066,6 +1066,7 @@ window.app = {
         init: () => AdminManager.init(),
         showTab: (tab) => AdminManager.showTab(tab),
         saveConfigure: () => AdminManager.saveConfigure(),
+        saveCheckThresholds: () => AdminManager.saveCheckThresholds(),
         approveUser: (userId) => AdminManager.approveUser(userId),
         rejectUser: (userId) => AdminManager.rejectUser(userId),
         showChangeRole: (userId, userName, currentRole) => AdminManager.showChangeRole(userId, userName, currentRole),

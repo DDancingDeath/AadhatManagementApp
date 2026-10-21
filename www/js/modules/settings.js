@@ -11,6 +11,7 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { normalizeLabourSettings } from '../utils/money.js';
+import { normalizeThresholds } from '../utils/bill-checks.js';
 
 const LABOUR_OWNER_ONLY_NOTE = 'Only the owner can change these. They apply to everyone. / इन्हें केवल मालिक बदल सकते हैं। ये सभी पर लागू होते हैं।';
 
@@ -159,6 +160,9 @@ export class SettingsManager {
      * @returns {Promise<void>}
      */
     static async applySharedSettings(appSettings) {
+        // Bill-check limits (#37): shop-wide, defaults when the owner has not set any
+        AppState.settings.checkThresholds = normalizeThresholds(appSettings?.checkThresholds);
+        localStorage.setItem('settings', JSON.stringify(AppState.settings));
         const hasShared = !!appSettings && (appSettings.laborRate !== undefined || appSettings.heavyWeightThreshold !== undefined);
         if (hasShared) {
             this.applyLabourLocally(normalizeLabourSettings(appSettings));

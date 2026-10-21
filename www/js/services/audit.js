@@ -28,6 +28,8 @@ export class AuditService {
         
         // Stock
         ADJUST_STOCK: 'ADJUST_STOCK',
+        // Owner/manager saved a bill past a blocking check (#37 / #188)
+        OVERRIDE_CHECK: 'OVERRIDE_CHECK',
         
         // Finance
         RECORD_WITHDRAWAL: 'RECORD_WITHDRAWAL',

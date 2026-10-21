@@ -13,6 +13,7 @@ import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.
 import { needsHistoryFrom, ensureHistoryFrom } from '../utils/history-window.js';
 import { sessionTotals, parseCashAmount, isNotCounted, lastCountedSession, autoCloseFields } from '../utils/cash-session.js';
 import { round2, outstandingDue } from '../utils/money.js';
+import { evaluateCashCount, toFlags } from '../utils/bill-checks.js';
 import { OutstandingManager } from './outstanding.js';
 import { dueEvents, sumDueEvents, saleTimePayment, normalizeParty, sameParty, billParty } from '../utils/due-payments.js';
 
@@ -690,6 +691,11 @@ export class CashManagementManager {
                 alertDiv.style.color = '#842029';
                 alertDiv.textContent = `⚠ Short ₹${Math.abs(difference).toFixed(2)} - Please verify`;
             }
+            // Q19 bands (#37): name a big difference or an impossible (negative) expected drawer
+            const band = evaluateCashCount({ expected, counted: actualAmount }, AppState.settings?.checkThresholds)
+                .filter(i => i.id !== 'cash-mismatch');
+            alertDiv.style.whiteSpace = 'pre-line';
+            if (band.length) alertDiv.textContent += band.map(i => `\n⚠ ${i.en} / ${i.hi}`).join('');
         } else if (alertDiv) {
             alertDiv.style.display = 'none';
         }
@@ -793,6 +799,9 @@ export class CashManagementManager {
             }
         };
         if (closingNotes) closingFields.closingNotes = closingNotes;
+        const cashFlags = toFlags(evaluateCashCount({ expected, counted: actualAmount }, AppState.settings?.checkThresholds),
+            AppState.currentUser?.uid || 'unknown', Date.now());
+        if (cashFlags.length) closingFields.flags = cashFlags;
         const updatedSession = { ...this.todaySession, ...closingFields };
 
         try {

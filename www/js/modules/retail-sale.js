@@ -10,10 +10,10 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
-import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
 import {
-    checkPaymentSplit, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2, sumMoney
+    checkPaymentSplit, KEPT_SERVER_PAYMENT_MESSAGE, paymentSplitMessage, round2, sumMoney
 } from '../utils/money.js';
+import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
 
 /** Buttons disabled while a retail save/print is in flight */
 const RETAIL_BUTTONS = '#saveSaleBtn, #printSaleBtn';
@@ -397,6 +397,7 @@ const RetailSaleManager = {
         const totalReceivedEl = document.getElementById('totalReceived');
         if (totalReceivedEl) totalReceivedEl.textContent = Math.round(totalReceived);
         Helpers.showSplitRemaining('saleSplitRemaining', checkPaymentSplit(sumMoney(saleItems, item => item.total), split));
+        BillChecksUI.schedule('retail');
     },
 
     /**
@@ -505,19 +506,6 @@ const RetailSaleManager = {
             return;
         }
 
-        // Warn (but don't hard-block) when a sale exceeds recorded stock.
-        // An oversell pushes running stock into negative, which the cost-
-        // basis logic in calculateStock() handles correctly but which the
-        // user almost always wants to know about before saving.
-        const shortfalls = computeStockShortfalls(saleItems);
-        if (shortfalls.length > 0) {
-            const message = formatShortfallMessage(shortfalls);
-            const proceed = await UIManager.showModal(message, 'Stock Shortfall', true);
-            if (!proceed) {
-                return;
-            }
-        }
-
         const salesTotal = sumMoney(saleItems, item => item.total);
         const saleOnline = round2(Helpers.getInputNumber('saleOnlinePayment'));
         const saleCash = round2(Helpers.getInputNumber('saleCashPayment'));
@@ -526,23 +514,10 @@ const RetailSaleManager = {
         const saleComments = Helpers.getInputText('saleComments');
         const printComments = document.getElementById('salePrintComments')?.checked || false;
         
-        if (saleOnline === 0 && saleCash === 0 && saleDue === 0) {
-            UIManager.showToast('Please enter at least one payment method (Cash, Online, or Due)');
-            return;
-        }
-        
-        if (dueNeedsName(saleDue, saleCustomer)) {
-            UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
-            document.getElementById('saleCustomerName')?.focus();
-            return;
-        }
-        
-        const split = checkPaymentSplit(salesTotal, { cash: saleCash, online: saleOnline, due: saleDue });
-        if (!split.ok) {
-            Helpers.showSplitRemaining('saleSplitRemaining', split);
-            UIManager.showToast(paymentSplitMessage(split));
-            return;
-        }
+        // Payment, name-for-Due, stock (warns only for retail, #33) and the other checks (#37)
+        this.updateSalePaymentTotal();
+        const checks = await BillChecksUI.confirmSave('retail');
+        if (!checks.ok) return;
         
         const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
         
@@ -579,7 +554,8 @@ const RetailSaleManager = {
                     cash: saleCash,
                     due: saleDue,
                     total: round2(saleOnline + saleCash + saleDue)
-                }
+                },
+                ...BillChecksUI.billFields(checks)
             };
             
             const retry = pending.attempted;
@@ -735,6 +711,29 @@ const RetailSaleManager = {
      * Id/bill number of the sale being entered, created on first use (#70)
      * @returns {{id: string, billNumber: (string|null)}}
      */
+    /**
+     * The sale as the check engine sees it (utils/bill-checks.js).
+     * @returns {Object}
+     */
+    getCheckDraft() {
+        const editing = this.billingManager?.editingBillIndex !== undefined;
+        const original = editing ? this.billingManager.getEditingBill?.() || null : null;
+        const item = AppState.items[parseInt(document.getElementById('saleItem')?.value)];
+        return {
+            kind: 'retail',
+            isEdit: editing,
+            id: editing ? original?.id || null : pendingBill?.id || null,
+            editingBill: original,
+            items: saleItems,
+            total: sumMoney(saleItems, line => line.total),
+            payment: this.readPaymentSplit(),
+            partyName: Helpers.getInputText('saleCustomerName'),
+            date: editing ? original?.date : pendingBill?.date,
+            enteredAt: editing ? original?.timestamp : pendingBill?.timestamp,
+            entry: item ? { itemId: item.id, name: item.name, rate: readTypedNumber('saleRate'), qty: readTypedNumber('saleWeight') } : null
+        };
+    },
+
     ensurePendingBill() {
         if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null, attempted: false, date: null, timestamp: null };
         return pendingBill;
@@ -788,5 +787,18 @@ const RetailSaleManager = {
         saleWeights = w || [];
     }
 };
+
+BillChecksUI.register('retail', {
+    sectionId: 'saleSection',
+    tableSelector: '#saleTable',
+    saveButtons: '#saveSaleBtn, #printSaleBtn',
+    getDraft: () => RetailSaleManager.getCheckDraft(),
+    fields: {
+        party: { inputs: ['saleCustomerName'] },
+        payment: { inputs: ['saleCashPayment', 'saleOnlinePayment', 'saleDueAmount'], anchor: 'saleSplitRemaining' },
+        'entry.rate': { inputs: ['saleRate'] },
+        'entry.qty': { inputs: ['saleWeight'] }
+    }
+});
 
 export { RetailSaleManager };

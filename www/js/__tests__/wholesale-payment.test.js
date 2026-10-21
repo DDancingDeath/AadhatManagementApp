@@ -21,6 +21,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
 import { WholesaleSalesManager } from '../modules/wholesale-sales.js';
 import { Helpers } from '../utils/helpers.js';
+import { UIManager } from '../ui/ui-manager.js';
 import { readPayment, NAME_REQUIRED_FOR_DUE_MESSAGE } from '../utils/money.js';
 
 beforeEach(() => {
@@ -185,6 +186,65 @@ describe('wholesale sale save: payment split (#113, #23, #68, #26)', () => {
         expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
         expect(toast()).toContain('at least one payment method');
         expect(saved).toHaveLength(0);
+    });
+
+    test('oversell: same limit at add and save — up to 5 kg warns, beyond blocks (#37, Q18/Q57)', async () => {
+        AppState.stock = { rice: { quantity: 103, rate: 30.5 } };
+        setVal('sellQuantity', 6); // 106 kg vs 103 → 3 kg short: allowed with a warning
+        await WholesaleSalesManager.addToWholesaleBill();
+        expect(WholesaleSalesManager.getItems()).toHaveLength(2);
+        setVal('sellQuantity', 3); // 109 kg → 6 kg short: blocked at add
+        await WholesaleSalesManager.addToWholesaleBill();
+        expect(WholesaleSalesManager.getItems()).toHaveLength(2);
+        expect(toast()).toBe('Insufficient stock! Available: 103.0kg');
+
+        setVal('wholesaleCashPayment', 4267);
+        const modal = jest.spyOn(UIManager, 'showModal').mockResolvedValue(true);
+        const sale = await WholesaleSalesManager.completeSale();
+        expect(modal).toHaveBeenCalledWith(expect.stringContaining('short 3.0 kg'), expect.any(String), true);
+        expect(sale.flags).toEqual([expect.objectContaining({ rule: 'oversell', by: 'owner1' })]);
+
+        // Stock fell meanwhile: now 9 kg short → blocked for a member, toast names the item
+        WholesaleSalesManager.setItems([{ itemId: 'rice', name: 'Rice', rate: 40, qty: 12, total: 480 }]);
+        AppState.stock = { rice: { quantity: 3, rate: 30.5 } };
+        AppState.userRole = 'staff';
+        setVal('wholesaleCashPayment', 480);
+        expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
+        expect(toast()).toContain('Rice: selling 12.0 kg, only 3.0 kg in stock');
+        expect(saved).toHaveLength(1);
+    });
+
+    test('retry after a failed save: own quantities already deducted from stock are credited back (no block, no warn)', async () => {
+        WholesaleSalesManager.setItems([]);
+        AppState.stock = { rice: { quantity: 50, rate: 30.5 } };
+        AppState.salesHistory = [];
+        AppState.userRole = 'staff';
+        setVal('sellRate', 40);
+        setVal('sellQuantity', 30);
+        await WholesaleSalesManager.addToWholesaleBill(); // 1200
+        setVal('wholesaleCashPayment', 1200);
+        const modal = jest.spyOn(UIManager, 'showModal').mockResolvedValue(true);
+        FirebaseService.saveWholesaleSale = jest.fn(async (sale) => {
+            AppState.salesHistory.unshift(sale);
+            AppState.stock = { rice: { quantity: 20, rate: 30.5 } };
+            throw new Error('timeout');
+        });
+        expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
+        expect(toast()).toBe('Error: timeout');
+
+        // Adding another 5 kg on the retry bill: 35 of 50 kg, the add check must credit the 30 kg too
+        setVal('sellQuantity', 5);
+        await WholesaleSalesManager.addToWholesaleBill();
+        expect(WholesaleSalesManager.getItems()).toHaveLength(2);
+        setVal('wholesaleCashPayment', 1400);
+
+        FirebaseService.saveWholesaleSale = jest.fn(async (sale) => sale);
+        const sale = await WholesaleSalesManager.completeSale();
+        expect(modal).not.toHaveBeenCalled();
+        expect(sale).toMatchObject({ total: 1400 });
+        expect(sale.flags).toBeUndefined();
+        expect(sale.overrides).toBeUndefined();
+        AppState.salesHistory = [];
     });
 
     test('a fully paid cash sale needs no name and its cash reaches the drawer', async () => {
