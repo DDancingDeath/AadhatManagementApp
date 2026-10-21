@@ -62,3 +62,62 @@ jobs:
         run: npm ci
       - name: Rules tests (Firestore emulator)
         run: npm run test:rules
+
+  e2e:
+    name: Playwright E2E (emulators)
+    # Kept off the default PR path to keep PR CI fast: runs nightly, on manual
+    # dispatch, and on PRs carrying the "e2e" label.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'e2e'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --legacy-peer-deps
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: E2E against Firebase emulators
+        run: npm run test:e2e
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  prod-smoke:
+    name: Production smoke (read-only)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npx playwright install --with-deps chromium
+      - name: Smoke the live site (no login, no writes)
+        run: npm run test:smoke
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: prod-smoke-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

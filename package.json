@@ -9,7 +9,9 @@
     "release": "node scripts/release.js",
     "check:release": "node scripts/release.js --check",
     "check:review": "node scripts/check-review-rules.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:e2e": "playwright test",
+    "test:smoke": "playwright test -c playwright.prod.config.js"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^7.2.0",
@@ -28,6 +30,7 @@
     "@babel/core": "^7.24.0",
     "@babel/preset-env": "^7.24.0",
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.63.0",
     "acorn": "^8.19.0",
     "acorn-walk": "^8.3.5",
     "babel-jest": "^29.7.0",
