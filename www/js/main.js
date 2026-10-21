@@ -84,13 +84,8 @@ window.addEventListener('unhandledrejection', function(event) {
 
 // Setup event listeners
 function setupEventListeners() {
-    // Overlay click to close menu
-    const overlay = document.querySelector('.overlay');
-    if (overlay) {
-        overlay.addEventListener('click', () => {
-            NavigationManager.toggleMenu();
-        });
-    }
+    // Close the side menu on overlay tap / Esc / swipe-left
+    NavigationManager.initMenuDismiss();
     
     // Modal buttons
     const modalCancel = document.getElementById('modalCancel');
@@ -609,6 +604,7 @@ window.app = {
     // Navigation
     nav: {
         toggleMenu: () => NavigationManager.toggleMenu(),
+        closeMenu: () => NavigationManager.closeMenu(),
         showTab: (tabId, evt) => NavigationManager.showTabFromNav(tabId, evt)
     },
     
