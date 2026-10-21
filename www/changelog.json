@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "1.4.0",
+      "date": "2026-10-21",
+      "androidVersionCode": 5,
+      "notes": {
+        "en": [
+          "Item edits and deletes always act on the right item; Excel import adds to your list instead of replacing it.",
+          "Stock can no longer go below zero, and stock changes need a reason.",
+          "App opens even without internet, starts faster, and History loads faster.",
+          "Bills made offline on different phones no longer get the same bill number.",
+          "Error messages now stay on screen long enough to read.",
+          "Side menu closes when you tap outside it.",
+          "Choose English or Hindi in the \"What's new\" screen.",
+          "Clear Data is safer: type DELETE to confirm, and a backup is saved first."
+        ],
+        "hi": [
+          "आइटम बदलना या हटाना अब हमेशा सही आइटम पर होता है; Excel इम्पोर्ट सूची में जोड़ता है, पुरानी सूची नहीं मिटाता।",
+          "स्टॉक अब शून्य से कम नहीं होगा, और स्टॉक बदलने के लिए कारण लिखना ज़रूरी है।",
+          "ऐप बिना इंटरनेट के भी खुलता है, जल्दी शुरू होता है, और हिस्ट्री तेज़ी से लोड होती है।",
+          "अलग-अलग फ़ोन पर ऑफ़लाइन बने बिलों के नंबर अब एक जैसे नहीं होंगे।",
+          "गलती के संदेश अब पढ़ने लायक समय तक स्क्रीन पर रहते हैं।",
+          "साइड मेन्यू के बाहर टैप करने पर मेन्यू बंद हो जाता है।",
+          "\"क्या नया है\" स्क्रीन में अंग्रेज़ी या हिंदी चुनें।",
+          "डेटा मिटाना अब ज़्यादा सुरक्षित: पुष्टि के लिए DELETE लिखें, और पहले बैकअप सेव होता है।"
+        ]
+      }
+    },
+    {
       "version": "1.3.0",
       "date": "2026-10-21",
       "androidVersionCode": 4,
