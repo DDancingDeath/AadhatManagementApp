@@ -105,13 +105,46 @@ function findOpenModal() {
         if (ok && isShown(ok)) return { closer: () => ok.click() };
         return { closer: null };
     }
-    const overlays = [...document.querySelectorAll('.bill-details-overlay, .modal')].filter(isShown);
-    const top = overlays[overlays.length - 1];
+    // Popups built in JS (Users role change, Expense delete, ...) are full-screen fixed
+    // children of <body> with no shared class; appended last, they sit on top.
+    const generic = [...document.body.children].filter(isBodyOverlay);
+    const top = generic[generic.length - 1] ||
+        [...document.querySelectorAll('.bill-details-overlay, .modal')].filter(isShown).pop();
     if (top) {
-        const btn = top.querySelector('.bill-details-close, .bill-action-btn.btn-close, .modal-close');
-        return { closer: btn ? () => btn.click() : null };
+        const btn = findCloseControl(top);
+        if (btn) return { closer: () => btn.click() };
+        // Backdrop-click-to-dismiss popups: simulate a click on the backdrop itself.
+        if (typeof top.onclick === 'function') return { closer: () => top.click() };
+        return { closer: null };
     }
     return null;
+}
+
+const NON_DIALOG_IDS = new Set(['appContent', 'toast', 'loadingOverlay', 'overlay', 'modalOverlay', HELP_ID]);
+
+function isBodyOverlay(el) {
+    if (NON_DIALOG_IDS.has(el.id) || !isShown(el)) return false;
+    if (getComputedStyle(el).position !== 'fixed') return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= window.innerWidth * 0.9 && r.height >= window.innerHeight * 0.9;
+}
+
+const CLOSE_SELECTOR = '.bill-details-close, .bill-action-btn.btn-close, .modal-close, [data-dismiss]';
+const CLOSE_TEXT = /^(cancel|close|✕|×|रद्द|बंद)/i;
+
+/**
+ * The control that dismisses a dialog without side effects: a known close button,
+ * else a button labelled/identified as Cancel/Close. Null when there is none.
+ * @param {Element} root
+ * @returns {HTMLElement|null}
+ */
+export function findCloseControl(root) {
+    if (!root) return null;
+    const explicit = root.querySelector(CLOSE_SELECTOR);
+    if (explicit) return explicit;
+    return [...root.querySelectorAll('button, [role="button"]')].find(b =>
+        CLOSE_TEXT.test((b.textContent || '').trim()) || /cancel|close/i.test(b.id || '')
+    ) || null;
 }
 
 function buildContext(target) {
