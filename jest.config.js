@@ -33,6 +33,7 @@ module.exports = {
         'www/js/utils/helpers.js',
         'www/js/utils/validator.js',
         'www/js/utils/state.js',
+        'www/js/utils/money.js',
         // Exclude files that require Firebase, DOM, or Capacitor
         '!www/js/__tests__/**',
         '!www/js/main.js',
@@ -56,6 +57,12 @@ module.exports = {
         'www/js/utils/validator.js': {
             branches: 90,
             functions: 85,
+            lines: 95,
+            statements: 95
+        },
+        'www/js/utils/money.js': {
+            branches: 90,
+            functions: 100,
             lines: 95,
             statements: 95
         },
