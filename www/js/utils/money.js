@@ -110,3 +110,37 @@ export function outstandingDue(bill) {
     const due = readPayment(bill).due;
     return due > 0 ? due : 0;
 }
+
+/**
+ * Normalised view of a bill line item across schemas: legacy bills (and some
+ * wholesale lines) store `item`/`quantity`/`amount` instead of `name`/`qty`/`total`.
+ * @param {Object} item
+ * @returns {{name: string, qty: number, rate: number, total: number}}
+ */
+export function readLineItem(item) {
+    if (!item || typeof item !== 'object') return { name: '', qty: 0, rate: 0, total: 0 };
+    const qty = firstPresent(item.qty, item.quantity) || 0;
+    const rate = firstPresent(item.rate) || 0;
+    let total = firstPresent(item.total, item.amount);
+    if (total === null) total = qty * rate;
+    return {
+        name: String(item.name || item.item || '').trim(),
+        qty,
+        rate: round2(rate),
+        total: round2(total)
+    };
+}
+
+/**
+ * Average price per unit, or null when the quantity is 0/invalid
+ * (callers show "—" instead of Infinity/NaN).
+ * @param {number} value
+ * @param {number} qty
+ * @returns {number|null}
+ */
+export function perUnitRate(value, qty) {
+    const v = Number(value);
+    const q = Number(qty);
+    if (!Number.isFinite(v) || !Number.isFinite(q) || q <= 0) return null;
+    return round2(v / q);
+}
