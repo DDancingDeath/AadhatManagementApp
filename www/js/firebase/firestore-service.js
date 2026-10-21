@@ -2079,6 +2079,24 @@ const FirebaseService = {
     },
 
     /**
+     * Saves the bill-check limits for every device (#37). settings/app is owner-only.
+     * @param {Object} thresholds - normalized (utils/bill-checks.js normalizeThresholds)
+     * @returns {Promise<void>}
+     */
+    async saveSharedCheckThresholds(thresholds) {
+        const fields = {
+            checkThresholds: { ...thresholds },
+            checksUpdatedAt: Date.now(),
+            checksUpdatedBy: AppState.currentUser?.uid || 'unknown'
+        };
+        const write = getDb().collection(col('settings')).doc('app').set(fields, { merge: true });
+        if (appSettingsPromise) {
+            appSettingsPromise = appSettingsPromise.then(data => ({ ...(data || {}), ...fields }), () => ({ ...fields }));
+        }
+        await settleWrite(write, 'saveSharedCheckThresholds');
+    },
+
+    /**
      * Startup: computes stock if that needs no full-history read; otherwise
      * starts it in the background (AppState.stockReady stays false until the
      * exact stock is available; screens show "Stock updating…").

@@ -12,6 +12,7 @@ import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { planStockAdjustment } from '../utils/stock-adjust.js';
+import { evaluateStockAdjustment, toFlags } from '../utils/bill-checks.js';
 import { findDeadStock, daysSinceLabel, localDaysBetween, DEAD_STOCK_DAY_OPTIONS, DEFAULT_DEAD_STOCK_DAYS } from '../utils/dead-stock.js';
 
 const DEAD_STOCK_DAYS_KEY = 'aadhat.deadStockDays';
@@ -596,6 +597,10 @@ export class StockManager {
             createdBy: AppState.currentUser?.uid || 'unknown',
             createdByName: AppState.userName || 'User'
         };
+        // Q17 (#37): a large adjustment is saved with a flag for review
+        const adjustFlags = toFlags(evaluateStockAdjustment(newStock - currentStock, AppState.settings?.checkThresholds),
+            adjustment.createdBy, adjustment.timestamp);
+        if (adjustFlags.length) adjustment.flags = adjustFlags;
 
         try {
             await FirebaseService.saveStockAdjustment(adjustment);
