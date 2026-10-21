@@ -183,14 +183,28 @@ const ItemsManager = {
         }, 500);
     },
 
+    /**
+     * Saves an item after a rate was added/removed in AppState. On failure the
+     * local change is undone and the user is told (inline handlers can't catch).
+     */
+    async _saveItemRates(index, undo) {
+        try {
+            await FirebaseService.saveItem(AppState.items[index]);
+        } catch (error) {
+            undo();
+            console.error('Error saving item rates:', error);
+            UIManager.showToast('Rate not saved - check internet and try again · रेट सेव नहीं हुआ', 3500);
+        }
+        this.renderItems();
+    },
+
     // Add purchase rate
     async addRate(index) {
         if (!AppState.items[index].rates) {
             AppState.items[index].rates = [];
         }
         AppState.items[index].rates.push('');
-        await FirebaseService.saveItem(AppState.items[index]);
-        this.renderItems();
+        await this._saveItemRates(index, () => AppState.items[index].rates.pop());
     },
 
     // Update purchase rate (AUTO-SAVE with debounce)
@@ -205,7 +219,8 @@ const ItemsManager = {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
                 // Notify all users about rate change (fire-and-forget; never rejects)
                 if (oldRate !== newRate && newRate > 0) {
-                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'purchase', oldRate, newRate);
+                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'purchase', oldRate, newRate)
+                        .catch(e => console.warn('Rate-change notification failed:', e));
                 }
             } catch (error) {
                 console.error('Error updating rate:', error);
@@ -215,9 +230,8 @@ const ItemsManager = {
 
     // Delete purchase rate
     async deleteRate(itemIndex, rateIndex) {
-        AppState.items[itemIndex].rates.splice(rateIndex, 1);
-        await FirebaseService.saveItem(AppState.items[itemIndex]);
-        this.renderItems();
+        const [removed] = AppState.items[itemIndex].rates.splice(rateIndex, 1);
+        await this._saveItemRates(itemIndex, () => AppState.items[itemIndex].rates.splice(rateIndex, 0, removed));
     },
 
     // Add sale rate
@@ -226,8 +240,7 @@ const ItemsManager = {
             AppState.items[index].saleRates = [];
         }
         AppState.items[index].saleRates.push('');
-        await FirebaseService.saveItem(AppState.items[index]);
-        this.renderItems();
+        await this._saveItemRates(index, () => AppState.items[index].saleRates.pop());
     },
 
     // Update sale rate (AUTO-SAVE with debounce)
@@ -245,7 +258,8 @@ const ItemsManager = {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
                 // Notify all users about rate change (fire-and-forget; never rejects)
                 if (oldRate !== newRate && newRate > 0) {
-                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'sale', oldRate, newRate);
+                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'sale', oldRate, newRate)
+                        .catch(e => console.warn('Rate-change notification failed:', e));
                 }
             } catch (error) {
                 console.error('Error updating sale rate:', error);
@@ -256,9 +270,8 @@ const ItemsManager = {
     // Delete sale rate
     async deleteSaleRate(itemIndex, rateIndex) {
         if (AppState.items[itemIndex].saleRates) {
-            AppState.items[itemIndex].saleRates.splice(rateIndex, 1);
-            await FirebaseService.saveItem(AppState.items[itemIndex]);
-            this.renderItems();
+            const [removed] = AppState.items[itemIndex].saleRates.splice(rateIndex, 1);
+            await this._saveItemRates(itemIndex, () => AppState.items[itemIndex].saleRates.splice(rateIndex, 0, removed));
         }
     },
 
@@ -268,8 +281,7 @@ const ItemsManager = {
             AppState.items[index].wholesaleRates = [];
         }
         AppState.items[index].wholesaleRates.push('');
-        await FirebaseService.saveItem(AppState.items[index]);
-        this.renderItems();
+        await this._saveItemRates(index, () => AppState.items[index].wholesaleRates.pop());
     },
 
     // Update wholesale rate (AUTO-SAVE with debounce)
@@ -287,7 +299,8 @@ const ItemsManager = {
                 await FirebaseService.saveItem(AppState.items[itemIndex]);
                 // Notify all users about rate change (fire-and-forget; never rejects)
                 if (oldRate !== newRate && newRate > 0) {
-                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'wholesale', oldRate, newRate);
+                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'wholesale', oldRate, newRate)
+                        .catch(e => console.warn('Rate-change notification failed:', e));
                 }
             } catch (error) {
                 console.error('Error updating wholesale rate:', error);
@@ -298,9 +311,8 @@ const ItemsManager = {
     // Delete wholesale rate
     async deleteWholesaleRate(itemIndex, rateIndex) {
         if (AppState.items[itemIndex].wholesaleRates) {
-            AppState.items[itemIndex].wholesaleRates.splice(rateIndex, 1);
-            await FirebaseService.saveItem(AppState.items[itemIndex]);
-            this.renderItems();
+            const [removed] = AppState.items[itemIndex].wholesaleRates.splice(rateIndex, 1);
+            await this._saveItemRates(itemIndex, () => AppState.items[itemIndex].wholesaleRates.splice(rateIndex, 0, removed));
         }
     },
 

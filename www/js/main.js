@@ -249,7 +249,7 @@ async function initializeUserData() {
         PrinterService.updateStatus();
         
         // Clean up old audit logs (runs silently for owners)
-        AuditService.cleanupOldLogs();
+        AuditService.cleanupOldLogs().catch(e => console.warn('Audit log cleanup failed:', e));
         
         UIManager.hideLoading();
 

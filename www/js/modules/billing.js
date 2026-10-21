@@ -131,7 +131,7 @@ const BillingManager = {
         
         // Auto-save current mode before switching
         if (this.autoSaveEnabled && this.currentMode !== mode) {
-            this.autoSaveToCloud();
+            this.autoSaveToCloud().catch(e => console.warn('Auto-save failed:', e));
         }
         
         // Update button states
@@ -515,7 +515,7 @@ const BillingManager = {
         } else {
             RetailSaleManager.clearSale();
         }
-        this.deleteAutoSave();
+        this.deleteAutoSave().catch(e => console.warn('Auto-save cleanup failed:', e));
     },
 
     /**
@@ -683,7 +683,7 @@ const BillingManager = {
         }
         
         autoSaveTimer = setTimeout(() => {
-            this.autoSaveToCloud();
+            this.autoSaveToCloud().catch(e => console.warn('Auto-save failed:', e));
         }, AUTO_SAVE_DELAY);
     },
 
@@ -1110,7 +1110,7 @@ const BillingManager = {
                     billNumber: updatedBill.billNumber || 'N/A',
                     amount: billTotal,
                     supplier: customerName
-                });
+                }).catch(e => console.warn('Audit log failed:', e));
                 
                 this._refreshAfterEdit();
                 
@@ -1168,7 +1168,7 @@ const BillingManager = {
                     billNumber: updatedSale.billNumber || 'N/A',
                     amount: salesTotal,
                     customer: saleCustomer
-                });
+                }).catch(e => console.warn('Audit log failed:', e));
                 
                 this._refreshAfterEdit();
                 

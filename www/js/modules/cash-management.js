@@ -68,7 +68,7 @@ export class CashManagementManager {
             this.loadTodaySessionFromCache(sessions);
             
             // Recalculate transactions to get latest data
-            this.calculateTodayTransactions();
+            this.calculateTodayTransactions().catch(e => console.error('Cash transactions refresh failed:', e));
         });
         this.updateUI();
         this.loadCustomerOptions();
