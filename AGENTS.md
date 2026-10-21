@@ -15,10 +15,11 @@ and is wrapped in **Capacitor** for Android distribution.
 
 - **Owner**: `DDancingDeath` (https://github.com/DDancingDeath/AadhatManagementApp)
 - **Live URL**: `https://aadhat-management.web.app`
-- **A read-only staging clone exists** at
-  `https://github.com/DDancingDeath/AadhatManagementApp-staging` (private).
-  All risky improvements are tried there first; verified fixes are
-  cherry-picked / PR'd back here. See section 6.
+- **Bug / feature list**: GitHub issues in this repo (labels, milestones and
+  the pinned plan issue — see section 5). There is no other master list.
+- **The staging clone (`AadhatManagementApp-staging`) is archived** —
+  read-only reference only; nothing is developed or verified there any
+  more. See section 6.
 
 ---
 
@@ -33,8 +34,8 @@ and is wrapped in **Capacitor** for Android distribution.
    development (localhost) uses `dev_` (`dev_purchases`). Several existing modules bypass it — those are bugs, not
    patterns to copy.
 3. **Don't add a build step or framework.** No webpack, no Vite, no React.
-   Inline `<script>` tags + `window.app` globals are a deliberate choice and
-   the staging clone depends on cherry-pick parity.
+   Inline `<script>` tags + `window.app` globals are a deliberate choice;
+   files under `www/` are served exactly as written.
 4. **Don't rename existing files casually.** Inline `onclick="window.app.x.y()"`
    handlers and `template-loader.js` reference paths and method names by
    exact string.
@@ -103,16 +104,36 @@ In order:
 - **Escaping**: any Firestore/user text inserted via `innerHTML` must go
   through `Helpers.escapeHtml()`; values inside `onclick="fn('…')"` need
   `Helpers.escapeJsAttr()`.
-- **Service worker**: every app JS/CSS/template file must be listed in
-  `STATIC_ASSETS` in `www/service-worker.js` (`npm run check:sw`; a test
-  enforces it). Bump the `?v=` tokens in `index.html`, `BUILD_ID` in
-  `main.js` and `CACHE_NAME` in `service-worker.js` together when shipping.
+- **Service worker / cache bump**: every app JS/CSS/template file (and
+  icon/manifest) must be listed in `STATIC_ASSETS` in `www/service-worker.js`
+  (`npm run check:sw`; a test enforces it). Any PR that changes a shipped
+  file under `www/` bumps all three together:
+  1. every `?v=<token>` in `www/index.html` (one token for the whole file),
+  2. `BUILD_ID` in `www/js/main.js`,
+  3. `CACHE_NAME` (`aadhat-vN`) in `www/service-worker.js`.
+
+  Token format: `?v=YYYYMMDD<letter>` (e.g. `20261021j`), `BUILD_ID` =
+  `'<same token>-<short-slug>'`, `CACHE_NAME` = next `aadhat-vN`. Parallel
+  PRs collide on these three lines — whoever merges second rebases and
+  picks the next value. Don't touch app version / changelog for a cache bump.
 - **Versions / release notes**: `www/changelog.json` (newest first, `en` +
   `hi` notes) is the source of truth. Never hand-edit version numbers — run
   `npm run release -- <x.y.z> --code <n>` after adding the changelog entry;
-  `npm run check:release` must pass. `www/download.html` (public, no Firebase)
-  and the in-app "What's new"/update banner (`js/modules/app-updates.js`,
-  pure logic in `js/utils/release-info.js`) read that file.
+  `npm run check:release` must pass. `www/download.html` (public, no
+  Firebase; served at `/download`) and the in-app "What's new"/update banner
+  (`js/modules/app-updates.js`, pure logic in `js/utils/release-info.js`)
+  read that file. Release flow end-to-end is in section 5 ("Releasing").
+- **PWA install**: `www/manifest.webmanifest` + `www/icons/` make the web app
+  installable; `js/services/install-prompt.js` drives the Settings →
+  "Install App" card (hidden inside the Capacitor app and when already
+  installed). Manifest/icon changes must stay in `STATIC_ASSETS`.
+- **Desktop layout (≥ 1024 px)**: `www/css/desktop.css` holds every desktop
+  rule inside `@media (min-width: 1024px)` (plus a `1440px` tier). The phone
+  layout must not change unless an issue says so — put desktop-only CSS
+  there, not in the per-page sheets. Keyboard shortcuts (desktop only) live
+  in `js/utils/keyboard-shortcuts.js` (`resolveShortcut()` is pure and
+  unit-tested): `Alt+1…9` tabs, `Ctrl+S`/`Ctrl+P` save/print the open bill,
+  `/` focus search, `?` help overlay, `Esc` close.
 - **Money fields**: bills sometimes store `dueAmount` at top level *and*
   `payment.due` inside a nested object. Both can exist; both can drift.
   Read both, write both, treat the nested one as canonical when present.
@@ -125,12 +146,42 @@ In order:
   `www/js/utils/lazy-scripts.js`; don't add it back as a `<script>` tag.
 - `firebase` global is the compat-SDK style — modular SDK is intentionally
   not used.
-- Many functions are async but don't await — that's a real bug, but
-  documented; don't "fix" them silently.
+- Many functions are async but are called without `await` — that's a real
+  bug, tracked (with an inventory) in #126. Save/delete/money paths must be
+  awaited; intentional fire-and-forget writes (audit log, item-frequency,
+  autosave) stay non-blocking but must end in `.catch(...)` logging. Don't
+  change a call's blocking behaviour without saying so in the PR.
 
 ---
 
 ## 5. Standard workflows
+
+### Issues: the bug and feature list
+
+GitHub issues in `DDancingDeath/AadhatManagementApp` are the single list of
+bugs, features and decisions. (The staging clone's `docs/REVIEW_ISSUES.md`
+is archived history — don't add to it or cite it as the master list.)
+
+- **Title tag** — start every title with one of `[Bug]`, `[Feature]`,
+  `[Refactor]`, `[Test]`, `[Security]`, `[Perf]`, `[Ops]`, `[Decision]`,
+  `[Docs]` (and `[Plan]` for the pinned plan issue only).
+- **Labels** — one priority `P0` (data loss / money wrong / app down) …
+  `P3` (nice to have); one `type:*` matching the title tag (`type:bug`,
+  `type:feature`, `type:refactor`, `type:test`, `type:security`, `type:perf`,
+  `type:ops`, `type:decision`, `type:docs`); any number of `area:*`
+  (`area:money`, `area:rules`, `area:stock`, `area:offline`, `area:printer`,
+  `area:reports`, `area:ux`, `area:ci`). `owner-decision` = blocked on an
+  answer from the owner — don't implement a guess; `owner-action` = a console
+  click / secret / release only the owner can do.
+- **Milestones** — `Sprint 1 - Safety`, `Sprint 2 - Trust`,
+  `Sprint 3 - Speed & offline`, `Sprint 4 - Features`, `Later`. The pick
+  order across all of them is the pinned plan issue #171 (next subsection).
+- **Body** — problem, evidence (file:line), impact, proposed fix, acceptance
+  criteria checkboxes. Read the whole body, including any "Additional
+  findings" section, before starting, and re-check the problem still exists
+  on `main`.
+- **Commits / PRs** reference the issue: `fix(stock): … (#29)`; the PR body
+  says `Closes #N` (fully fixed) or `Part of #N`.
 
 ### Planning: what to pick next
 
@@ -143,50 +194,75 @@ open issues missing from `order.json` show up under 🆕 Unplaced.
 
 ### "I want to fix a bug"
 
-1. Confirm the bug is also tracked in the staging clone's
-   `docs/REVIEW_ISSUES.md` (most known bugs already are). If it isn't,
-   add it there *first* — that file is the running master list.
-2. Make the change in `www/js/...`.
-3. Run `npm ci && npm test` (plus `npm run test:rules` for rules changes).
-   Baseline must stay green.
+1. Find the GitHub issue (search open + closed). If there is none, open one
+   first (title tag + labels + milestone as above) and place it in
+   `tools/plan/order.json`.
+2. Make the change in `www/js/...`. Add a focused Jest test that fails
+   without the fix (prefer pure functions).
+3. Run `npm ci && npm test` (plus `npm run test:rules` for rules changes,
+   `npm run check:sw` / `npm run check:release` when touching `www/`).
+   Baseline must stay green. If a shipped `www/` file changed, do the cache
+   bump (section 4).
 4. Commit with a message like
-   `fix(stock): refresh current-stock pane after adjustment (REVIEW_ISSUES WALK-25)`.
-5. Open a PR. Don't merge to `main` directly — Firebase Hosting auto-deploys
-   on merge to `main`.
+   `fix(stock): refresh current-stock pane after adjustment (#25)`.
+5. Open a PR (`Closes #N`). Don't merge to `main` directly — Firebase
+   Hosting auto-deploys on merge to `main`.
 
 ### "I want to add a new capability"
 
-1. Strongly consider doing it in the staging clone first. The staging
-   clone is the place for greenfield work; prod is for stabilised fixes.
-2. If it must land directly in prod: update tests, update README if user-
-   facing, ship behind a config flag if behaviour-changing.
+1. There must be an issue (`[Feature]`), and any `owner-decision` it depends
+   on must be answered first.
+2. Update tests, update README if user-facing, ship behind a config flag if
+   behaviour-changing. Prefer small PRs that can be reverted on their own.
 
 ### "The CSS / a single template needs a tweak"
 
-These are usually safe to do directly in prod. Use a Playwright probe in
-`tools/` to verify before pushing if the visual impact is non-trivial. The
-staging clone has examples (`tools/_verify-bottom-buttons.js`).
+Usually safe. Desktop-only rules go in `www/css/desktop.css`; check the
+phone layout (≈ 390 px) is unchanged. For non-trivial visual changes run a
+short Playwright probe against a local static server (`?emulator=1`, see
+section 7) before pushing; don't commit one-off probe scripts.
+
+### Releasing (Android APK + web)
+
+1. Add the release at the top of `www/changelog.json` (`version`, `date`,
+   `androidVersionCode` = previous + 1, short `notes.en` / `notes.hi`).
+2. `npm run release -- <x.y.z> --code <n>` (updates `package.json`,
+   `www/js/version.js`, `android/app/build.gradle`), then
+   `npm run check:release`.
+3. Merge to `main` (web deploys automatically), then push tag `v<x.y.z>`.
+   The tag-driven Android release workflow (#92 / PR #173) builds and signs
+   the APK and publishes a GitHub Release with `AadhatManagement.apk`.
+4. Installed apps see the "Update available" banner (checks
+   `releases/latest`, at most every 12 h); `/download` always links to the
+   latest APK; users get a one-time "What's new" sheet.
+
+### Code-review rules
+
+`.github/review-rules.yml` is a regex registry of mistakes this codebase
+keeps making (FirebaseService bypass, `showToast(msg, 'error')`, raw date
+parsing, top-level `app` shadowing, …). `npm run check:review` checks the
+lines your branch adds (vs `origin/main`) and fails on `severity: block`;
+CI runs it on every PR. `node scripts/check-review-rules.js --all` reports
+existing violations. When the owner accepts a review finding that a regex
+could have caught, add a rule (with `learned_at`) and, ideally, an example
+in `.github/review-rules-examples/`.
 
 ---
 
-## 6. The staging clone
+## 6. The staging clone (archived)
 
-A separate private repo (`AadhatManagementApp-staging`) exists as a
-read-only safety mirror. It:
+`AadhatManagementApp-staging` (private) was a read-only mirror used for
+early experiments. It is now **archived on GitHub (read-only)**; a git
+bundle backup of it exists with the owner. Treat it as a historical
+reference only:
 
-- Connects to the same Firebase project (`aadhat-management`).
-- Is meant to be read-only via (1) a JS guard that monkey-patches the SDK
-  and (2) a service worker that 403s non-GET requests to Firebase hosts.
-  Note: this repo's `firestore.rules` does NOT contain a rule that blocks
-  writes from the `staging-readonly` account (that proposal, PR #1, was
-  closed) — server-side, it is an ordinary approved staff user.
-- Hosts at `https://aadhat-staging.web.app`.
-- Is where the AI Assistant is being designed (see staging
-  `docs/CHAT_DESIGN.md`).
-- Is where every behavioural fix is verified before it's PR'd here.
-
-When a fix lands here that originated in staging, the commit message
-should reference the staging commit SHA so the audit trail is preserved.
+- Don't develop, verify or log bugs there; don't cite its
+  `docs/REVIEW_ISSUES.md` / `PAGE_SPECS.md` as current. Anything still
+  relevant has been (or should be) filed as a GitHub issue here.
+- It talked to the same Firebase project through an ordinary approved staff
+  account, `staging-readonly`; `firestore.rules` has no special rule for it.
+  Removing that account is tracked in #81.
+- Old commits that cite a staging SHA keep that reference; new work doesn't.
 
 ---
 
