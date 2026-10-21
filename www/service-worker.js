@@ -78,6 +78,7 @@ const STATIC_ASSETS = [
     '/js/utils/helpers.js',
     '/js/utils/history-range.js',
     '/js/utils/history-window.js',
+    '/js/utils/item-catalog.js',
     '/js/utils/keyboard-shortcuts.js',
     '/js/utils/lazy-scripts.js',
     '/js/utils/money.js',

@@ -125,6 +125,7 @@ const isTabActive = (tabId) => !!document.getElementById(tabId)?.classList.conta
  */
 const VIEWS = {
     itemsList: { tab: null, run: () => window.app?.items?.render?.() },
+    itemsTable: { tab: 'items', run: () => window.app?.items?.refreshTable?.() },
     billingDropdown: { tab: 'billing', run: () => window.app?.billing?.loadItemsDropdown?.() },
     salesDropdown: { tab: 'wholesale-sales', run: () => window.app?.sales?.loadItemsDropdown?.() },
     wholesaleHistory: { tab: 'wholesale-sales', run: () => window.app?.wholesaleSales?.renderHistory?.() },
@@ -2081,7 +2082,7 @@ const FirebaseService = {
                 pendingViews.delete(name);
                 runView(name);
             });
-            markDirty([], true);
+            markDirty(['itemsTable'], true);
         }, { mapFn: defaultMapDoc })];
 
         const legacyScanRead = getWithRetry(legacyScanRef(), 'Legacy scan state', { attempts: 2 })

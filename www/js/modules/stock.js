@@ -355,7 +355,7 @@ export class StockManager {
         select.innerHTML = '<option value="">Select item</option>';
         AppState.items.forEach(item => {
             const option = document.createElement("option");
-            option.value = item.name;
+            option.value = item.id;
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
             option.textContent = displayName;
             select.appendChild(option);
@@ -363,52 +363,31 @@ export class StockManager {
     }
 
     static loadAdjustItemStock() {
-        const itemName = document.getElementById("adjustItem")?.value;
+        const itemId = document.getElementById("adjustItem")?.value;
         const display = document.getElementById("currentStockDisplay");
         const avgRateDisplay = document.getElementById("avgRateDisplay");
         const avgRateValue = document.getElementById("avgRateValue");
         
         if (!display) return;
 
-        if (!itemName || itemName === '') {
+        if (!itemId) {
             display.textContent = "";
             if (avgRateDisplay) avgRateDisplay.style.display = "none";
             return;
         }
 
-        // Find the item to get both English and Hindi names
-        const item = AppState.items.find(i => i.name === itemName);
+        const item = AppState.items.find(i => i.id === itemId);
         if (!item) {
             display.textContent = "0.00";
             if (avgRateDisplay) avgRateDisplay.style.display = "none";
             return;
         }
 
-        // Check stock using itemId (primary), name, and Hindi name (legacy)
-        let quantity = 0;
-        let totalValue = 0;
-        
-        // Check by itemId first (most reliable)
-        if (item.id && AppState.stock[item.id]) {
-            const stockData = AppState.stock[item.id];
-            quantity += stockData.quantity || 0;
-            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
-        }
-        
-        // Also check by name (for legacy data)
-        if (AppState.stock[item.name]) {
-            const stockData = AppState.stock[item.name];
-            quantity += stockData.quantity || 0;
-            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
-        }
-        
-        // Also check by Hindi name (for legacy data)
-        if (item.hindiName && AppState.stock[item.hindiName]) {
-            const stockData = AppState.stock[item.hindiName];
-            quantity += stockData.quantity || 0;
-            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
-        }
-        
+        // Stock is keyed by catalogue id: the replay resolves legacy name-only
+        // lines to the id, so a name lookup would only find stale entries.
+        const stockData = AppState.stock[item.id] || {};
+        const quantity = stockData.quantity || 0;
+        const totalValue = quantity * (stockData.rate || 0);
         display.textContent = quantity.toFixed(1);
         
         // Calculate and display average rate
@@ -443,37 +422,25 @@ export class StockManager {
     }
 
     static async applyStockAdjustment() {
-        const itemName = Helpers.getInputText('adjustItem');
+        const itemId = Helpers.getInputText('adjustItem');
         const adjustType = Helpers.getInputText('adjustType');
         const quantity = Helpers.getInputNumber('adjustQuantity');
         const rate = Helpers.getInputNumber('adjustRate');
         const reason = Helpers.getInputText('adjustReason');
 
-        if (!itemName) {
+        const item = itemId ? AppState.items.find(i => i.id === itemId) : null;
+        if (!item) {
             UIManager.showToast("Please select an item");
             return;
         }
+        const itemName = item.name;
 
         if (isNaN(quantity) || quantity <= 0) {
             UIManager.showToast("Please enter a valid quantity");
             return;
         }
 
-        // Find item to get itemId
-        const item = AppState.items.find(i => i.name === itemName);
-        
-        // Calculate current stock from all possible keys (itemId, name, hindiName)
-        let currentStock = 0;
-        if (item?.id && AppState.stock[item.id]) {
-            currentStock += AppState.stock[item.id].quantity || 0;
-        }
-        if (AppState.stock[itemName]) {
-            currentStock += AppState.stock[itemName].quantity || 0;
-        }
-        if (item?.hindiName && AppState.stock[item.hindiName]) {
-            currentStock += AppState.stock[item.hindiName].quantity || 0;
-        }
-        
+        const currentStock = AppState.stock[item.id]?.quantity || 0;
         let newStock = currentStock;
 
         switch (adjustType) {
@@ -489,7 +456,7 @@ export class StockManager {
         }
         
         const adjustment = {
-            itemId: item?.id || null,
+            itemId: item.id,
             itemName,
             adjustType,
             quantity,
@@ -506,10 +473,10 @@ export class StockManager {
         try {
             await FirebaseService.saveStockAdjustment(adjustment);
             
-            if (!AppState.stock[itemName]) {
-                AppState.stock[itemName] = { quantity: 0, rate: 0 };
+            if (!AppState.stock[item.id]) {
+                AppState.stock[item.id] = { quantity: 0, rate: 0 };
             }
-            AppState.stock[itemName].quantity = newStock;
+            AppState.stock[item.id].quantity = newStock;
 
             document.getElementById("adjustQuantity").value = "";
             document.getElementById("adjustRate").value = "0";

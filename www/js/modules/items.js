@@ -11,6 +11,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { ensureXLSX } from '../utils/lazy-scripts.js';
+import { findItemById, findDuplicateItem, duplicateItemMessage } from '../utils/item-catalog.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -25,10 +26,11 @@ const ItemsManager = {
     updateTimers: {},
     
     /**
-     * Currently editing item index for modal operations
-     * @type {number|null}
+     * Id of the item open in the edit modal (null when adding). An id, not a
+     * list position: the live listener replaces AppState.items at any time.
+     * @type {string|null}
      */
-    currentEditingItemIndex: null,
+    currentEditingItemId: null,
     
     /**
      * Modal rates for editing
@@ -41,6 +43,27 @@ const ItemsManager = {
     },
 
     /**
+     * Looks up an item by id at the moment of action.
+     * @param {string} id
+     * @returns {Object|null}
+     */
+    getItem(id) {
+        return findItemById(AppState.items, id);
+    },
+
+    /**
+     * Looks up an item by id; shows a toast when it no longer exists
+     * (e.g. deleted from another phone).
+     * @param {string} id
+     * @returns {Object|null}
+     */
+    requireItem(id) {
+        const item = this.getItem(id);
+        if (!item) UIManager.showToast('Item no longer exists / आइटम अब मौजूद नहीं है');
+        return item;
+    },
+
+    /**
      * Render the items list in the DOM
      * Creates item cards with rate inputs for each category
      */
@@ -50,12 +73,13 @@ const ItemsManager = {
         
         container.innerHTML = '';
         
-        AppState.items.forEach((item, index) => {
+        AppState.items.forEach((item) => {
             // Initialize rates arrays if they don't exist
             if (!item.rates) item.rates = [];
             if (!item.saleRates) item.saleRates = [];
             if (!item.wholesaleRates) item.wholesaleRates = [];
             
+            const id = `'${Helpers.escapeJsAttr(item.id)}'`;
             const itemCard = document.createElement('div');
             itemCard.className = 'item-card';
             
@@ -64,9 +88,9 @@ const ItemsManager = {
                 <div class="rate-group">
                     <input type="number" class="rate-input purchase" 
                            value="${Helpers.escapeHtml(rate)}" 
-                           oninput="window.app.items.updateRate(${index}, ${rateIndex}, this.value)"
+                           oninput="window.app.items.updateRate(${id}, ${rateIndex}, this.value)"
                            placeholder="Rate">
-                    <button class="delete-rate" onclick="window.app.items.deleteRate(${index}, ${rateIndex})">×</button>
+                    <button class="delete-rate" onclick="window.app.items.deleteRate(${id}, ${rateIndex})">×</button>
                 </div>
             `).join('');
             
@@ -75,9 +99,9 @@ const ItemsManager = {
                 <div class="rate-group">
                     <input type="number" class="rate-input sale" 
                            value="${Helpers.escapeHtml(rate)}" 
-                           oninput="window.app.items.updateSaleRate(${index}, ${rateIndex}, this.value)"
+                           oninput="window.app.items.updateSaleRate(${id}, ${rateIndex}, this.value)"
                            placeholder="Rate">
-                    <button class="delete-rate" onclick="window.app.items.deleteSaleRate(${index}, ${rateIndex})">×</button>
+                    <button class="delete-rate" onclick="window.app.items.deleteSaleRate(${id}, ${rateIndex})">×</button>
                 </div>
             `).join('');
             
@@ -86,9 +110,9 @@ const ItemsManager = {
                 <div class="rate-group">
                     <input type="number" class="rate-input wholesale" 
                            value="${Helpers.escapeHtml(rate)}" 
-                           oninput="window.app.items.updateWholesaleRate(${index}, ${rateIndex}, this.value)"
+                           oninput="window.app.items.updateWholesaleRate(${id}, ${rateIndex}, this.value)"
                            placeholder="Rate">
-                    <button class="delete-rate" onclick="window.app.items.deleteWholesaleRate(${index}, ${rateIndex})">×</button>
+                    <button class="delete-rate" onclick="window.app.items.deleteWholesaleRate(${id}, ${rateIndex})">×</button>
                 </div>
             `).join('');
             
@@ -96,30 +120,30 @@ const ItemsManager = {
                 <div class="item-header">
                     <input type="text" class="item-name-input" 
                            value="${Helpers.escapeHtml(item.name)}" 
-                           oninput="window.app.items.updateName(${index}, this.value)"
+                           oninput="window.app.items.updateName(${id}, this.value)"
                            placeholder="Enter item name (English)">
-                    <button class="delete-item-btn" onclick="window.app.items.deleteItem(${index})">Delete</button>
+                    <button class="delete-item-btn" onclick="window.app.items.deleteItem(${id})">Delete</button>
                 </div>
                 <div style="margin-bottom: 12px;">
                     <label style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px; display: block;">Hindi Name:</label>
                     <input type="text" 
                            value="${Helpers.escapeHtml(item.hindiName || '')}" 
-                           oninput="window.app.items.updateHindiName(${index}, this.value)"
+                           oninput="window.app.items.updateHindiName(${id}, this.value)"
                            placeholder="हिंदी नाम"
                            style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 8px; font-size: 15px;">
                 </div>
                 <div class="item-row">
                     <div style="margin-bottom: 8px;">
                         <label style="font-size: 14px; font-weight: 600; color: #007bff; margin-bottom: 8px; display: block;">Purchase Rates (₹/kg):</label>
-                        <div class="rates-container">${purchaseRatesHTML}<button class="add-rate-plus purchase" onclick="window.app.items.addRate(${index})">+</button></div>
+                        <div class="rates-container">${purchaseRatesHTML}<button class="add-rate-plus purchase" onclick="window.app.items.addRate(${id})">+</button></div>
                     </div>
                     <div style="margin-bottom: 8px;">
                         <label style="font-size: 14px; font-weight: 600; color: #ff6b6b; margin-bottom: 8px; display: block;">Wholesale Rates (₹/kg):</label>
-                        <div class="rates-container">${wholesaleRatesHTML}<button class="add-rate-plus wholesale" onclick="window.app.items.addWholesaleRate(${index})">+</button></div>
+                        <div class="rates-container">${wholesaleRatesHTML}<button class="add-rate-plus wholesale" onclick="window.app.items.addWholesaleRate(${id})">+</button></div>
                     </div>
                     <div>
                         <label style="font-size: 14px; font-weight: 600; color: #28a745; margin-bottom: 8px; display: block;">Retail Sale Rates (₹/kg):</label>
-                        <div class="rates-container">${saleRatesHTML}<button class="add-rate-plus sale" onclick="window.app.items.addSaleRate(${index})">+</button></div>
+                        <div class="rates-container">${saleRatesHTML}<button class="add-rate-plus sale" onclick="window.app.items.addSaleRate(${id})">+</button></div>
                     </div>
                 </div>
             `;
@@ -151,189 +175,165 @@ const ItemsManager = {
     },
 
     /**
-     * Update item name with auto-save
-     * Debounced to prevent excessive Firebase calls
-     * @param {number} index - Item index in AppState.items
-     * @param {string} value - New item name
+     * Debounced save of one item, looked up by id when the timer fires.
+     * @private
+     * @param {string} key - timer key (already includes the item id)
+     * @param {string} id - item id
+     * @param {function(Object): void} [afterSave] - runs after a successful save
      */
-    updateItemName(index, value) {
-        clearTimeout(this.updateTimers[`name_${index}`]);
-        AppState.items[index].name = value;
-        
-        this.updateTimers[`name_${index}`] = setTimeout(async () => {
+    scheduleSave(key, id, afterSave) {
+        clearTimeout(this.updateTimers[key]);
+        this.updateTimers[key] = setTimeout(async () => {
+            delete this.updateTimers[key];
+            const item = this.getItem(id);
+            if (!item) return;
             try {
-                await FirebaseService.saveItem(AppState.items[index]);
+                await FirebaseService.saveItem(item);
+                if (afterSave) afterSave(item);
             } catch (error) {
-                console.error('Error updating item name:', error);
+                console.error('Error saving item:', error);
             }
         }, 500);
+    },
+
+    /**
+     * Update item name with auto-save
+     * Debounced to prevent excessive Firebase calls
+     * @param {string} id - Item id
+     * @param {string} value - New item name
+     */
+    updateItemName(id, value) {
+        const item = this.getItem(id);
+        if (!item) return;
+        const dup = findDuplicateItem(AppState.items, { name: value }, id);
+        if (dup) {
+            clearTimeout(this.updateTimers[`name_${id}`]);
+            UIManager.showToast(duplicateItemMessage(dup.name));
+            return;
+        }
+        item.name = value;
+        this.scheduleSave(`name_${id}`, id);
     },
 
     // Update item Hindi name (AUTO-SAVE with debounce)
-    updateItemHindiName(index, value) {
-        clearTimeout(this.updateTimers[`hindi_${index}`]);
-        AppState.items[index].hindiName = value;
-        
-        this.updateTimers[`hindi_${index}`] = setTimeout(async () => {
-            try {
-                await FirebaseService.saveItem(AppState.items[index]);
-            } catch (error) {
-                console.error('Error updating Hindi name:', error);
-            }
-        }, 500);
+    updateItemHindiName(id, value) {
+        const item = this.getItem(id);
+        if (!item) return;
+        const dup = findDuplicateItem(AppState.items, { hindiName: value }, id);
+        if (dup) {
+            clearTimeout(this.updateTimers[`hindi_${id}`]);
+            UIManager.showToast(duplicateItemMessage(dup.name));
+            return;
+        }
+        item.hindiName = value;
+        this.scheduleSave(`hindi_${id}`, id);
     },
 
-    // Add purchase rate
-    async addRate(index) {
-        if (!AppState.items[index].rates) {
-            AppState.items[index].rates = [];
-        }
-        AppState.items[index].rates.push('');
-        await FirebaseService.saveItem(AppState.items[index]);
+    /**
+     * Rate list helpers shared by the purchase / sale / wholesale handlers.
+     * @private
+     */
+    async addRateOfType(id, field) {
+        const item = this.requireItem(id);
+        if (!item) return;
+        if (!item[field]) item[field] = [];
+        item[field].push('');
+        await FirebaseService.saveItem(item);
         this.renderItems();
     },
 
-    // Update purchase rate (AUTO-SAVE with debounce)
-    updateRate(itemIndex, rateIndex, value) {
-        clearTimeout(this.updateTimers[`rate_${itemIndex}_${rateIndex}`]);
-        const oldRate = AppState.items[itemIndex].rates[rateIndex] || 0;
+    updateRateOfType(id, field, kind, rateIndex, value) {
+        const item = this.getItem(id);
+        if (!item) return;
+        if (!item[field]) item[field] = [];
+        const oldRate = item[field][rateIndex] || 0;
         const newRate = Number(value);
-        AppState.items[itemIndex].rates[rateIndex] = newRate;
-        
-        this.updateTimers[`rate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
-            try {
-                await FirebaseService.saveItem(AppState.items[itemIndex]);
-                // Notify all users about rate change (fire-and-forget; never rejects)
-                if (oldRate !== newRate && newRate > 0) {
-                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'purchase', oldRate, newRate);
-                }
-            } catch (error) {
-                console.error('Error updating rate:', error);
+        item[field][rateIndex] = newRate;
+        this.scheduleSave(`${field}_${id}_${rateIndex}`, id, (saved) => {
+            // Notify all users about rate change (fire-and-forget; never rejects)
+            if (oldRate !== newRate && newRate > 0) {
+                FirebaseService.notifyRateChange(saved, kind, oldRate, newRate);
             }
-        }, 500);
+        });
     },
 
-    // Delete purchase rate
-    async deleteRate(itemIndex, rateIndex) {
-        AppState.items[itemIndex].rates.splice(rateIndex, 1);
-        await FirebaseService.saveItem(AppState.items[itemIndex]);
+    async deleteRateOfType(id, field, rateIndex) {
+        const item = this.requireItem(id);
+        if (!item || !item[field]) return;
+        item[field].splice(rateIndex, 1);
+        await FirebaseService.saveItem(item);
         this.renderItems();
     },
 
-    // Add sale rate
-    async addSaleRate(index) {
-        if (!AppState.items[index].saleRates) {
-            AppState.items[index].saleRates = [];
-        }
-        AppState.items[index].saleRates.push('');
-        await FirebaseService.saveItem(AppState.items[index]);
-        this.renderItems();
-    },
+    // Purchase rates
+    addRate(id) { return this.addRateOfType(id, 'rates'); },
+    updateRate(id, rateIndex, value) { this.updateRateOfType(id, 'rates', 'purchase', rateIndex, value); },
+    deleteRate(id, rateIndex) { return this.deleteRateOfType(id, 'rates', rateIndex); },
 
-    // Update sale rate (AUTO-SAVE with debounce)
-    updateSaleRate(itemIndex, rateIndex, value) {
-        clearTimeout(this.updateTimers[`salerate_${itemIndex}_${rateIndex}`]);
-        if (!AppState.items[itemIndex].saleRates) {
-            AppState.items[itemIndex].saleRates = [];
-        }
-        const oldRate = AppState.items[itemIndex].saleRates[rateIndex] || 0;
-        const newRate = Number(value);
-        AppState.items[itemIndex].saleRates[rateIndex] = newRate;
+    // Retail sale rates
+    addSaleRate(id) { return this.addRateOfType(id, 'saleRates'); },
+    updateSaleRate(id, rateIndex, value) { this.updateRateOfType(id, 'saleRates', 'sale', rateIndex, value); },
+    deleteSaleRate(id, rateIndex) { return this.deleteRateOfType(id, 'saleRates', rateIndex); },
+
+    // Wholesale rates
+    addWholesaleRate(id) { return this.addRateOfType(id, 'wholesaleRates'); },
+    updateWholesaleRate(id, rateIndex, value) { this.updateRateOfType(id, 'wholesaleRates', 'wholesale', rateIndex, value); },
+    deleteWholesaleRate(id, rateIndex) { return this.deleteRateOfType(id, 'wholesaleRates', rateIndex); },
+
+    /**
+     * Deletes an item by id after confirmation. The item is looked up again
+     * after the confirm dialog so a list change while it was open can't
+     * redirect the delete to another item.
+     * @param {string} id
+     * @returns {Promise<boolean>} true when deleted
+     */
+    async deleteItem(id) {
+        const item = this.requireItem(id);
+        if (!item) return false;
+        const itemName = item.name || 'Unnamed';
         
-        this.updateTimers[`salerate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
-            try {
-                await FirebaseService.saveItem(AppState.items[itemIndex]);
-                // Notify all users about rate change (fire-and-forget; never rejects)
-                if (oldRate !== newRate && newRate > 0) {
-                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'sale', oldRate, newRate);
-                }
-            } catch (error) {
-                console.error('Error updating sale rate:', error);
-            }
-        }, 500);
-    },
-
-    // Delete sale rate
-    async deleteSaleRate(itemIndex, rateIndex) {
-        if (AppState.items[itemIndex].saleRates) {
-            AppState.items[itemIndex].saleRates.splice(rateIndex, 1);
-            await FirebaseService.saveItem(AppState.items[itemIndex]);
-            this.renderItems();
-        }
-    },
-
-    // Add wholesale rate
-    async addWholesaleRate(index) {
-        if (!AppState.items[index].wholesaleRates) {
-            AppState.items[index].wholesaleRates = [];
-        }
-        AppState.items[index].wholesaleRates.push('');
-        await FirebaseService.saveItem(AppState.items[index]);
-        this.renderItems();
-    },
-
-    // Update wholesale rate (AUTO-SAVE with debounce)
-    updateWholesaleRate(itemIndex, rateIndex, value) {
-        clearTimeout(this.updateTimers[`wholesalerate_${itemIndex}_${rateIndex}`]);
-        if (!AppState.items[itemIndex].wholesaleRates) {
-            AppState.items[itemIndex].wholesaleRates = [];
-        }
-        const oldRate = AppState.items[itemIndex].wholesaleRates[rateIndex] || 0;
-        const newRate = Number(value);
-        AppState.items[itemIndex].wholesaleRates[rateIndex] = newRate;
-        
-        this.updateTimers[`wholesalerate_${itemIndex}_${rateIndex}`] = setTimeout(async () => {
-            try {
-                await FirebaseService.saveItem(AppState.items[itemIndex]);
-                // Notify all users about rate change (fire-and-forget; never rejects)
-                if (oldRate !== newRate && newRate > 0) {
-                    FirebaseService.notifyRateChange(AppState.items[itemIndex], 'wholesale', oldRate, newRate);
-                }
-            } catch (error) {
-                console.error('Error updating wholesale rate:', error);
-            }
-        }, 500);
-    },
-
-    // Delete wholesale rate
-    async deleteWholesaleRate(itemIndex, rateIndex) {
-        if (AppState.items[itemIndex].wholesaleRates) {
-            AppState.items[itemIndex].wholesaleRates.splice(rateIndex, 1);
-            await FirebaseService.saveItem(AppState.items[itemIndex]);
-            this.renderItems();
-        }
-    },
-
-    // Delete item
-    async deleteItem(index) {
         const confirmed = await UIManager.showModal(
-            `Delete "${AppState.items[index].name}"?`,
+            `Delete "${itemName}"?`,
             'Confirm Delete',
             true
         );
         
-        if (!confirmed) return;
-        
-        const itemName = AppState.items[index].name || 'Unnamed';
+        if (!confirmed) return false;
+        if (!this.requireItem(id)) return false;
         
         UIManager.showLoading();
         try {
-            await FirebaseService.deleteItem(AppState.items[index].id);
-            AppState.items.splice(index, 1);
+            await FirebaseService.deleteItem(id);
+            const idx = AppState.items.findIndex(i => i.id === id);
+            if (idx !== -1) AppState.items.splice(idx, 1);
             this.renderItems();
+            this.renderItemsTable(this.currentSearchQuery());
             
             // Log audit entry
             await AuditService.log(AuditService.ACTIONS.DELETE_ITEM, {
+                itemId: id,
                 itemName: itemName
             });
             
             UIManager.hideLoading();
             UIManager.showToast('Item deleted');
+            return true;
         } catch (error) {
             console.error('Error deleting item:', error);
             UIManager.hideLoading();
             UIManager.showToast('Failed to delete item');
+            return false;
         }
+    },
+
+    /** Current text in the Items search box (kept across re-renders). */
+    currentSearchQuery() {
+        return document.getElementById('itemsSearchInput')?.value || '';
+    },
+
+    /** Re-renders the Items table keeping the search filter. */
+    refreshTable() {
+        this.renderItemsTable(this.currentSearchQuery());
     },
 
     // Export items to Excel
@@ -558,16 +558,14 @@ const ItemsManager = {
             // Calculate average rate from stock for staff view
             let avgRate = '-';
             if (isStaff && AppState.stock) {
-                // Try to find stock by item id or name
-                const stockEntry = AppState.stock[item.id] || AppState.stock[item.name];
+                // Stock is keyed by catalogue id (stock-replay resolves names to ids)
+                const stockEntry = AppState.stock[item.id];
                 if (stockEntry && stockEntry.rate) {
                     avgRate = `₹${stockEntry.rate.toFixed(2)}`;
                 }
             }
             
             const itemFrequency = frequency[item.name] || 0;
-            
-            const itemIndex = AppState.items.findIndex(i => i.id === item.id);
             
             const row = document.createElement('tr');
             row.style.borderBottom = '1px solid #e5e7eb';
@@ -585,7 +583,7 @@ const ItemsManager = {
                     row.style.transform = 'scale(1)';
                     row.style.boxShadow = 'none';
                 };
-                row.onclick = () => this.openEditModal(itemIndex);
+                row.onclick = () => this.openEditModal(item.id);
             }
             
             // Staff view: show item name, purchase rates, and retail sale rates
@@ -621,7 +619,7 @@ const ItemsManager = {
     
     // Open modal to add new item
     openAddModal() {
-        this.currentEditingItemIndex = null;
+        this.currentEditingItemId = null;
         this.modalRates = { purchase: [], wholesale: [], sale: [] };
         
         document.getElementById('itemModalName').value = '';
@@ -634,9 +632,10 @@ const ItemsManager = {
     },
     
     // Open modal to edit existing item
-    openEditModal(index) {
-        this.currentEditingItemIndex = index;
-        const item = AppState.items[index];
+    openEditModal(id) {
+        const item = this.requireItem(id);
+        if (!item) return;
+        this.currentEditingItemId = id;
         
         document.getElementById('itemModalName').value = item.name || '';
         document.getElementById('itemModalHindiName').value = item.hindiName || '';
@@ -719,6 +718,23 @@ const ItemsManager = {
             return;
         }
         
+        const editingId = this.currentEditingItemId;
+        const dup = findDuplicateItem(AppState.items, { name, hindiName }, editingId);
+        if (dup) {
+            UIManager.showToast(duplicateItemMessage(dup.name));
+            return;
+        }
+        
+        let existing = null;
+        if (editingId !== null) {
+            existing = this.requireItem(editingId);
+            if (!existing) {
+                this.closeItemModal();
+                this.refreshTable();
+                return;
+            }
+        }
+        
         UIManager.showLoading();
         
         try {
@@ -733,11 +749,12 @@ const ItemsManager = {
                 saleRates: this.modalRates.sale.filter(r => r > 0)
             };
             
-            if (this.currentEditingItemIndex !== null) {
-                // Update existing item
-                itemData.id = AppState.items[this.currentEditingItemIndex].id;
-                AppState.items[this.currentEditingItemIndex] = itemData;
-                await FirebaseService.saveItem(itemData);
+            if (existing) {
+                // Keep fields this dialog doesn't edit; write by id, never by list position
+                const updated = { ...existing, ...itemData, id: editingId };
+                await FirebaseService.saveItem(updated);
+                const idx = AppState.items.findIndex(i => i.id === editingId);
+                if (idx !== -1) AppState.items[idx] = updated;
                 UIManager.showToast('Item updated');
             } else {
                 // Add new item
@@ -747,7 +764,7 @@ const ItemsManager = {
             }
             
             this.closeItemModal();
-            this.renderItemsTable();
+            this.refreshTable();
             UIManager.hideLoading();
         } catch (error) {
             console.error('Error saving item:', error);
@@ -758,39 +775,18 @@ const ItemsManager = {
     
     // Delete item from modal
     async deleteItemFromModal() {
-        if (this.currentEditingItemIndex === null) return;
-        
-        const item = AppState.items[this.currentEditingItemIndex];
-        const confirmed = await UIManager.showModal(
-            `Delete "${item.name}"?`,
-            'Confirm Delete',
-            true
-        );
-        
-        if (!confirmed) return;
-        
-        UIManager.showLoading();
-        try {
-            await FirebaseService.deleteItem(item.id);
-            AppState.items.splice(this.currentEditingItemIndex, 1);
-            this.closeItemModal();
-            this.renderItemsTable();
-            UIManager.hideLoading();
-            UIManager.showToast('Item deleted');
-        } catch (error) {
-            console.error('Error deleting item:', error);
-            UIManager.hideLoading();
-            UIManager.showToast('Failed to delete item');
-        }
+        const id = this.currentEditingItemId;
+        if (id === null) return;
+        const deleted = await this.deleteItem(id);
+        if (deleted) this.closeItemModal();
     },
     
     // Close item modal
     closeItemModal() {
         document.getElementById('itemEditOverlay').style.display = 'none';
-        this.currentEditingItemIndex = null;
+        this.currentEditingItemId = null;
         this.modalRates = { purchase: [], wholesale: [], sale: [] };
     }
 };
-
 // Export ItemsManager
 export { ItemsManager };
