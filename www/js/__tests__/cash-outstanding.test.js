@@ -6,6 +6,7 @@
 import { CashManagementManager } from '../modules/cash-management.js';
 import { OutstandingManager } from '../modules/outstanding.js';
 import { WholesaleSalesManager } from '../modules/wholesale-sales.js';
+import { ExpensesManager } from '../modules/miscellaneous.js';
 import { DayManager } from '../modules/day.js';
 import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
@@ -611,5 +612,52 @@ describe('#104 "Mark as cleared" asks how and records it (no silent write-off)',
         answer('writeOff', 'Settled by discount');
         await WholesaleSalesManager.markSaleAsCleared('w1');
         expect(ctx.fake.raw('wholesaleSales').get('w1')).toMatchObject({ cleared: true, payment: { due: 0, writtenOff: 2000 } });
+    });
+});
+
+describe('#89 expenses appear / disappear at once, before the server answers', () => {
+    const EXPENSES_TEMPLATE = fs.readFileSync(path.join(__dirname, '../../templates/expenses.html'), 'utf8');
+    beforeEach(() => {
+        // A server that never answers (offline): writes stay pending
+        const db = {
+            collection: () => ({
+                doc: (id) => ({
+                    id: id || 'exp-new-1',
+                    set: jest.fn(() => new Promise(() => {})),
+                    delete: jest.fn(() => new Promise(() => {}))
+                })
+            })
+        };
+        global.firebase = { firestore: () => db };
+        jest.spyOn(UIManager, 'withLoading').mockImplementation(async (fn) => fn());
+        jest.spyOn(AuditService, 'log').mockResolvedValue(undefined);
+        document.body.innerHTML = EXPENSES_TEMPLATE;
+        AppState.expensesHistory = [{ id: 'old1', category: 'business', type: 'Tea', amount: 40, date: '20/10/2026, 9:00:00 am' }];
+        window.app = {};
+    });
+    afterEach(() => {
+        delete global.firebase;
+        delete window.app;
+        AppState.expensesHistory = [];
+    });
+    const listText = () => document.getElementById('businessExpenseHistoryList').textContent;
+
+    test('a new expense is listed immediately (no duplicate) while the write is still pending', async () => {
+        setVal('businessExpenseType', 'Diesel');
+        setVal('businessExpenseAmount', 500);
+        await ExpensesManager.saveBusinessExpense();
+        expect(AppState.expensesHistory.filter(e => e.type === 'Diesel')).toEqual([expect.objectContaining({ id: 'exp-new-1', amount: 500, category: 'business' })]);
+        expect(listText()).toContain('Diesel');
+        expect(listText()).toContain('Tea');
+        expect(toast).toHaveBeenCalledWith('✓ Business expense saved');
+    });
+
+    test('a deleted expense disappears immediately', async () => {
+        ExpensesManager.renderexpensesHistory();
+        expect(listText()).toContain('Tea');
+        ExpensesManager.deleteExpense('old1', 'business', false); // server never answers
+        await Promise.resolve();
+        expect(AppState.expensesHistory).toEqual([]);
+        expect(listText()).not.toContain('Tea');
     });
 });

@@ -1845,16 +1845,40 @@ const FirebaseService = {
      * @returns {Promise<Object>} The saved expense with ID
      */
     async saveExpense(expense) {
+        const { record, committed } = this.startSaveExpense(expense);
+        await committed;
+        return record;
+    },
+
+    /**
+     * Starts saving a new expense and shows it in AppState.expensesHistory
+     * straight away (#89), without waiting for the server (works offline).
+     * The listener later replaces the local copy (same doc id, no duplicate);
+     * if the write fails the local copy is removed again.
+     * @param {Object} expense
+     * @returns {{record: Object, committed: Promise<void>}}
+     */
+    startSaveExpense(expense) {
         if (!expense.userId && AppState.currentUser) {
             expense.userId = AppState.currentUser.uid;
         }
         if (!expense.userName && AppState.userName) {
             expense.userName = AppState.userName;
         }
-        
+
         ensureTimestamp(expense, true);
-        const docRef = await getDb().collection(col('expenses')).add(expense);
-        return { id: docRef.id, ...expense };
+        const ref = getDb().collection(col('expenses')).doc();
+        const record = { id: ref.id, ...expense };
+        noteLocalRecordWrite('expenses', ref.id, record);
+        const list = AppState.expensesHistory || (AppState.expensesHistory = []);
+        if (!list.some(e => String(e.id) === ref.id)) list.unshift(record);
+        const committed = ref.set(expense).catch(err => {
+            forgetRecord('expenses', ref.id);
+            const i = (AppState.expensesHistory || []).findIndex(e => String(e.id) === ref.id);
+            if (i !== -1) AppState.expensesHistory.splice(i, 1);
+            throw err;
+        });
+        return { record, committed };
     },
 
     /**

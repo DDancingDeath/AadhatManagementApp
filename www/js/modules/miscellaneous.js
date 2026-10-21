@@ -33,7 +33,14 @@ export class ExpensesManager {
     static async persistExpense(expense) {
         const editing = this.editingExpense;
         if (!editing || editing.category !== expense.category) {
-            await FirebaseService.saveExpense(expense);
+            // Shown at once (also offline); the listener reconciles it (#89)
+            const { committed } = FirebaseService.startSaveExpense(expense);
+            committed.catch(err => {
+                console.error('Expense save failed:', err);
+                UIManager.showToast('Expense not saved: ' + (err?.message || err));
+                this.refreshExpenseViews();
+            });
+            this.refreshExpenseViews();
             return false;
         }
 
@@ -159,9 +166,6 @@ export class ExpensesManager {
             updated = await this.persistExpense(expense);
         });
         
-        // Add to AppState for immediate reflection
-        if (!AppState.expenseHistory) AppState.expenseHistory = [];
-        if (!updated) AppState.expenseHistory.push(expense);
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast(updated ? '✓ Business expense updated' : '✓ Business expense saved');
@@ -225,9 +229,6 @@ export class ExpensesManager {
         UIManager.hapticFeedback('medium');
         UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');
         
-        // Add to AppState for immediate reflection
-        if (!AppState.expenseHistory) AppState.expenseHistory = [];
-        if (!updated) AppState.expenseHistory.push(expense);
         
         document.getElementById('personalExpenseType').value = '';
         document.getElementById('personalExpenseAmount').value = '';
@@ -243,6 +244,20 @@ export class ExpensesManager {
             window.app.cashManagement.calculateTodayTransactions()
                 .catch(e => console.error('Cash refresh after expense failed:', e));
             window.app.cashManagement.updateUI();
+        }
+    }
+
+    /**
+     * Redraw every view that shows expenses after a local add/delete (#89).
+     */
+    static refreshExpenseViews() {
+        try {
+            if (document.getElementById('businessExpenseHistoryList') || document.getElementById('personalExpenseHistoryList')) {
+                this.renderexpensesHistory();
+            }
+            if (document.getElementById('todayTotalIn')) window.app?.day?.loadTodayData?.();
+        } catch (e) {
+            console.error('Expense view refresh failed:', e);
         }
     }
 
@@ -609,8 +624,13 @@ export class ExpensesManager {
             return;
         }
 
+        const list = AppState.expensesHistory || [];
+        const index = list.findIndex(e => String(e.id) === String(expenseId));
+        const existing = index !== -1 ? list[index] : null;
         try {
-            const existing = (AppState.expensesHistory || []).find(e => String(e.id) === String(expenseId));
+            // Remove from the screen at once (#89); restored if the delete fails
+            if (index !== -1) list.splice(index, 1);
+            this.refreshExpenseViews();
             await FirebaseService.deleteExpense(String(expenseId));
             if (this.editingExpense && String(this.editingExpense.id) === String(expenseId)) {
                 this.cancelExpenseEdit();
@@ -629,6 +649,10 @@ export class ExpensesManager {
             }
         } catch (error) {
             console.error('Error deleting expense:', error);
+            if (existing && !(AppState.expensesHistory || []).some(e => String(e.id) === String(expenseId))) {
+                AppState.expensesHistory = [...(AppState.expensesHistory || []), existing];
+            }
+            this.refreshExpenseViews();
             UIManager.showToast('Failed to delete expense');
         }
     }
