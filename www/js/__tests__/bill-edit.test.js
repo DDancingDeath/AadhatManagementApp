@@ -110,3 +110,44 @@ describe('canEditBill', () => {
         toast.mockRestore();
     });
 });
+
+describe('Print comments toggle survives edit (#86)', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '<input id="billComments"><input type="checkbox" id="billPrintComments">';
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(UIManager, 'showToast').mockImplementation(() => {});
+        jest.spyOn(PurchaseManager, 'renderBill').mockImplementation(() => {});
+        jest.spyOn(PurchaseManager, 'updateTotals').mockImplementation(() => {});
+        jest.spyOn(PurchaseManager, 'clearBill').mockImplementation(() => {});
+        jest.spyOn(BillingManager, '_refreshAfterEdit').mockImplementation(() => {});
+        jest.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true);
+        window.app = { nav: { showTab: jest.fn() } };
+        AppState.currentUser = { uid: 'creator' };
+        AppState.userRole = 'owner';
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+        BillingManager.editingBillIndex = undefined;
+        AppState.purchaseHistory = [];
+        AppState.currentUser = null;
+        AppState.userRole = 'staff';
+        delete window.app;
+    });
+
+    it('editBill restores the toggle from the bill', async () => {
+        AppState.purchaseHistory = [{ ...BILL, comments: 'Paid via GPay', printComments: true }];
+        window.currentBillId = 'b1';
+        BillingManager.currentMode = 'purchase';
+        await BillingManager.editBill(0, 'purchase');
+        expect(document.getElementById('billPrintComments').checked).toBe(true);
+    });
+
+    it('saving a purchase edit stores the toggle instead of dropping it', async () => {
+        startEditing();
+        document.getElementById('billPrintComments').checked = true;
+        jest.spyOn(FirebaseService, 'updatePurchase').mockImplementation(async b => b);
+        const saved = await BillingManager.saveEditedBill();
+        expect(saved.printComments).toBe(true);
+    });
+});
