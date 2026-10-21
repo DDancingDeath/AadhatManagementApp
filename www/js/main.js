@@ -39,7 +39,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022i-history-reprint';
+const BUILD_ID = '20261022j-cash-outstanding';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -989,6 +989,7 @@ window.app = {
         signOut: () => CashManagementManager.signOut(),
         recordTransaction: () => CashManagementManager.recordTransaction(),
         showDetails: (sessionDate) => CashManagementManager.showSessionDetails(sessionDate),
+        recordLateCount: (sessionId) => CashManagementManager.recordLateCount(sessionId),
         loadTodaySession: () => CashManagementManager.loadTodaySession(),
         renderHistory: () => CashManagementManager.renderHistory(),
         calculateTodayTransactions: () => CashManagementManager.calculateTodayTransactions(),

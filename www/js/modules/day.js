@@ -4,8 +4,11 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
-import { readPayment } from '../utils/money.js';
-import { parseAnyBillDate } from '../utils/dates.js';
+import { outstandingDue, round2 } from '../utils/money.js';
+import { parseAnyBillDate, todayLocalISO } from '../utils/dates.js';
+import { dueEvents, sumDueEvents, saleTimePayment } from '../utils/due-payments.js';
+import { FirebaseService } from '../firebase/firestore-service.js';
+import { CashManagementManager } from './cash-management.js';
 
 // Use helper functions
 const formatCurrency = (amount) => Helpers.formatCurrency(amount);
@@ -20,6 +23,23 @@ export const DayManager = {
     init() {
         this.updateTodayHeader();
         this.loadTodayData();
+        this.loadTodaySession();
+    },
+
+    /**
+     * Today's cash session carries drawer legs of due payments whose bills may
+     * not be in memory (#95). Load it once if the Cash tab hasn't, then redraw.
+     */
+    loadTodaySession() {
+        const today = todayLocalISO();
+        if (CashManagementManager.todaySession?.date === today) return;
+        FirebaseService.loadCashSessionsForDate(today)
+            .then(sessions => {
+                if (CashManagementManager.todaySession?.date === today || sessions.length === 0) return;
+                CashManagementManager.todaySession = sessions.find(s => !s.signedOut) || sessions[0];
+                this.loadTodayData();
+            })
+            .catch(e => console.warn('Could not load today\'s cash session:', e?.message || e));
     },
 
     /**
@@ -150,44 +170,47 @@ export const DayManager = {
         let cashReceived = 0, onlineReceived = 0, cashPaid = 0, onlinePaid = 0;
         let dueToReceive = 0, dueToPay = 0;
 
-        // From purchases (cash/online paid out, due to pay)
+        // From purchases (cash/online paid when saved, due to pay). Money paid
+        // later on a bill is a due payment, counted on the day it was paid.
         todayPurchases.forEach(p => {
-            const pay = readPayment(p);
-            cashPaid += pay.cash;
-            onlinePaid += pay.online;
-            dueToPay += pay.due;
+            const paid = saleTimePayment(p);
+            cashPaid += paid.cash;
+            onlinePaid += paid.online;
+            dueToPay += outstandingDue(p); // 0 once cleared
         });
 
-        // From sales (cash/online received, due to receive)
+        // From sales (cash/online received when saved, due to receive)
         [...todayWholesaleSales, ...todayRetailSales].forEach(s => {
-            const pay = readPayment(s);
-            cashReceived += pay.cash;
-            onlineReceived += pay.online;
-            dueToReceive += pay.due;
+            const paid = saleTimePayment(s);
+            cashReceived += paid.cash;
+            onlineReceived += paid.online;
+            dueToReceive += outstandingDue(s);
         });
 
-        // Calculate due paid and due received from cash management transactions
-        let duePaid = 0, dueReceived = 0;
-        const todayCashTransactions = (AppState.cashManagement || []).filter(t => {
-            const date = parseAnyBillDate(t.date);
-            return date && date >= today && date < tomorrow;
-        });
-        
-        todayCashTransactions.forEach(t => {
-            if (t.type === 'paid' || t.transactionType === 'paid') {
-                duePaid += (t.amount || 0);
-            } else if (t.type === 'received' || t.transactionType === 'received') {
-                dueReceived += (t.amount || 0);
-            }
-        });
+        // Due payments made today (#95): entries on any loaded bill plus the
+        // drawer legs in today's cash session, counted once (cash + online).
+        const todayIso = todayLocalISO();
+        const session = CashManagementManager.todaySession;
+        const dues = sumDueEvents(dueEvents({
+            bills: { retail: AppState.retailSalesHistory || [], wholesale: AppState.salesHistory || [], purchase: AppState.purchaseHistory || [] },
+            sessions: session && session.date === todayIso ? [session] : [],
+            from: today.getTime(),
+            to: tomorrow.getTime()
+        }));
+        const dueReceived = round2(dues.receivedCash + dues.receivedOnline);
+        const duePaid = round2(dues.paidCash + dues.paidOnline);
 
-        // Total cash flow (all cash + online in - all cash + online out)
-        const totalCashIn = cashReceived + onlineReceived + dueReceived;
-        const totalCashOut = cashPaid + onlinePaid + totalExpenses + duePaid;
+        // Breakdown by method, including due payments; the hero totals are their sums
+        const cashIn = round2(cashReceived + dues.receivedCash);
+        const onlineIn = round2(onlineReceived + dues.receivedOnline);
+        const cashOut = round2(cashPaid + totalExpenses + dues.paidCash);
+        const onlineOut = round2(onlinePaid + dues.paidOnline);
+        const totalCashIn = round2(cashIn + onlineIn);
+        const totalCashOut = round2(cashOut + onlineOut);
         const totalCashFlow = totalCashIn - totalCashOut;
 
         // Net outflow (Out - In): positive means money went out, negative means money came in
-        const netOutflow = (cashPaid + onlinePaid + totalExpenses) - (cashReceived + onlineReceived);
+        const netOutflow = totalCashOut - totalCashIn;
 
         // Update UI - Main Stats
         this.updateElement('todayTotalPurchases', formatCurrency(totalPurchases));
@@ -203,8 +226,8 @@ export const DayManager = {
         this.updateElement('todayPersonalExpenseCount', `${personalExpenses.length} entries`);
         
         // Total In and Total Out for hero card
-        this.updateElement('todayTotalIn', formatCurrency(cashReceived + onlineReceived));
-        this.updateElement('todayTotalOut', formatCurrency(cashPaid + onlinePaid + totalExpenses));
+        this.updateElement('todayTotalIn', formatCurrency(totalCashIn));
+        this.updateElement('todayTotalOut', formatCurrency(totalCashOut));
         
         // Net outflow with color coding
         const cashFlowLabel = document.getElementById('todayCashFlowLabel');
@@ -219,10 +242,10 @@ export const DayManager = {
         }
 
         // Payment summary
-        this.updateElement('todayCashReceived', formatCurrency(cashReceived));
-        this.updateElement('todayOnlineReceived', formatCurrency(onlineReceived));
-        this.updateElement('todayCashPaid', formatCurrency(cashPaid + totalExpenses));
-        this.updateElement('todayOnlinePaid', formatCurrency(onlinePaid));
+        this.updateElement('todayCashReceived', formatCurrency(cashIn));
+        this.updateElement('todayOnlineReceived', formatCurrency(onlineIn));
+        this.updateElement('todayCashPaid', formatCurrency(cashOut));
+        this.updateElement('todayOnlinePaid', formatCurrency(onlineOut));
         
         // Total cash flow with color
         const totalCashFlowEl = document.getElementById('todayTotalCashFlow');

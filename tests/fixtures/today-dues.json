@@ -1,0 +1,52 @@
+{
+  "name": "today-dues",
+  "description": "One day (2026-10-21) with sales, purchases, expenses and due payments recorded on bills (cash, online, split), a drawer leg whose bill is not loaded, a duplicate leg of a bill payment and an unlinked Cash-tab entry. Expected values are worked out by hand in the comments of cash-outstanding.test.js.",
+  "day": "2026-10-21",
+  "retailSales": [
+    { "id": "r1", "billNumber": "S1", "date": "2026-10-21T10:00:00", "customerName": "Sita", "total": 795,
+      "cashPayment": 300, "onlinePayment": 0, "dueAmount": 195,
+      "payment": { "cash": 500, "online": 100, "due": 195, "total": 600 },
+      "payments": [ { "id": "e1", "amount": 300, "cash": 200, "online": 100, "date": "21/10/2026, 2:00:00 pm", "recordedBy": "Owner" } ] },
+    { "id": "r0", "billNumber": "S0", "date": "20/10/2026", "customerName": "Kamla", "total": 1000,
+      "cashPayment": 400, "dueAmount": 350,
+      "payment": { "cash": 650, "online": 0, "due": 350, "total": 650 },
+      "payments": [ { "id": "e2", "amount": 250, "cash": 250, "online": 0, "date": "21/10/2026, 3:00:00 pm", "recordedBy": "Owner" } ] }
+  ],
+  "wholesaleSales": [
+    { "id": "w1", "billNumber": "W1", "date": "2026-10-21T11:00:00", "customerName": "Gupta", "total": 5000,
+      "payment": { "cash": 3000, "online": 0, "due": 2000 } }
+  ],
+  "purchases": [
+    { "id": "p1", "billNumber": "P1", "date": "2026-10-21T09:00:00", "customerName": "Mohan", "grandTotal": 2568, "laborCharges": 12,
+      "cashPayment": 1000, "onlinePayment": 500, "dueAmount": 1068,
+      "payment": { "cash": 1000, "online": 500, "due": 1068 } },
+    { "id": "p0", "billNumber": "P0", "date": "2026-10-14T09:00:00", "customerName": "Ram", "grandTotal": 3000,
+      "payment": { "cash": 2000, "online": 400, "due": 600 },
+      "payments": [ { "id": "e3", "amount": 400, "cash": 0, "online": 400, "date": "21/10/2026, 12:00:00 pm", "recordedBy": "Owner" } ] }
+  ],
+  "expenses": [
+    { "id": "x1", "date": "21/10/2026, 1:00:00 pm", "amount": 150, "category": "business" },
+    { "id": "x2", "date": "2026-10-21", "amount": 80, "category": "personal" }
+  ],
+  "session": {
+    "id": "s21", "date": "2026-10-21", "openingBalance": 1000, "signedOut": false,
+    "duePayments": [
+      { "id": "e2", "billId": "r0", "type": "received", "amount": 250, "cash": 250, "online": 0, "method": "cash", "timestamp": "2026-10-21T09:30:00.000Z" },
+      { "id": "e9", "billId": "r-old", "type": "received", "amount": 120, "cash": 120, "online": 0, "method": "cash", "timestamp": "2026-10-21T10:30:00.000Z" },
+      { "id": "u1", "type": "received", "customer": "Old udhaar", "amount": 60, "method": "cash", "unlinked": true, "timestamp": "2026-10-21T11:30:00.000Z" }
+    ]
+  },
+  "expected": {
+    "today": {
+      "cashIn": 3930, "onlineIn": 100, "totalIn": 4030,
+      "cashOut": 1230, "onlineOut": 900, "totalOut": 2130,
+      "dueReceived": 730, "duePaid": 400,
+      "dueToReceive": 2195, "dueToPay": 1068,
+      "netLabel": "Net Inflow:", "net": 1900
+    },
+    "drawer": {
+      "cashSales": 3300, "cashPurchases": 1000, "businessExpenses": 150, "personalExpenses": 80,
+      "dueReceived": 630, "duePaid": 0, "cashDeposits": 0, "expected": 3700
+    }
+  }
+}

@@ -11,7 +11,9 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 import { readPayment, round2 } from '../utils/money.js';
-import { parseAnyBillDate } from '../utils/dates.js';
+import { parseAnyBillDate, todayLocalISO } from '../utils/dates.js';
+import { checkPaymentSplit, directionFor } from '../utils/due-payments.js';
+import { CashManagementManager } from './cash-management.js';
 
 const PAYMENT_TOLERANCE = 0.01;
 const COLLECTION_BY_TYPE = { purchase: 'purchases', retail: 'retailSales', wholesale: 'wholesaleSales' };
@@ -193,16 +195,14 @@ export class OutstandingManager {
                         <span style="font-weight: 600;">Outstanding:</span>
                         <strong style="color: ${headerColor}; font-size: 16px;">₹${Math.round(transaction.outstanding)}</strong>
                     </div>
-                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; align-items: center; gap: 8px;">
-                        <label style="flex-shrink: 0;">Payment (₹):</label>
-                        <input type="number" id="payment_${Helpers.escapeHtml(transaction.id)}" placeholder="Enter amount" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <label style="flex-shrink: 0;">${isPurchase ? 'Pay' : 'Received'}:</label>
+                        <input type="number" inputmode="decimal" min="0" id="payment_${Helpers.escapeHtml(transaction.id)}" placeholder="Cash ₹" aria-label="Cash amount" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
+                        <input type="number" inputmode="decimal" min="0" id="paymentOnline_${Helpers.escapeHtml(transaction.id)}" placeholder="Online ₹" aria-label="Online amount" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
                         <button onclick="window.app.outstanding.recordPayment('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">Record</button>
                     </div>
                     <div style="margin-top: 8px;">
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" ${transaction.cleared ? 'checked' : ''} onchange="window.app.outstanding.markAsCleared('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;" />
-                            <span style="font-size: 14px; color: #333; font-weight: 600;">Mark as Cleared</span>
-                        </label>
+                        <button type="button" onclick="window.app.outstanding.markAsCleared('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background: white; color: #333; border: 1px solid #999; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">Mark as Cleared…</button>
                     </div>
                 </div>
             `;
@@ -212,67 +212,88 @@ export class OutstandingManager {
     }
 
     static async recordPayment(transactionId, transactionType) {
+        // Cash and online parts (#107): only the cash part reaches the drawer
+        const paymentInput = document.getElementById(`payment_${transactionId}`);
+        const onlineInput = document.getElementById(`paymentOnline_${transactionId}`);
+        const cash = Number(paymentInput?.value) || 0;
+        const online = Number(onlineInput?.value) || 0;
+        const ok = await this.recordDuePayment({ billType: transactionType, billId: transactionId, cash, online });
+        if (ok) {
+            if (paymentInput) paymentInput.value = '';
+            if (onlineInput) onlineInput.value = '';
+        }
+    }
+
+    /** Bill of a type ('purchase' | 'retail' | 'wholesale') from AppState. */
+    static findBill(billType, billId) {
+        const list = billType === 'purchase' ? AppState.purchaseHistory
+            : billType === 'retail' ? AppState.retailSalesHistory
+                : AppState.salesHistory;
+        return (list || []).find(b => String(b.id) === String(billId)) || null;
+    }
+
+    /**
+     * The one way to record a due payment (#98), used by Outstanding and the
+     * Cash tab: reduces the bill's due (payment.due + dueAmount + payments[])
+     * and, when a cash session is open today, adds the payment to it as a
+     * drawer leg — all in one transaction.
+     * @param {Object} args
+     * @param {'purchase'|'retail'|'wholesale'} args.billType
+     * @param {string} args.billId
+     * @param {number} args.cash Cash part
+     * @param {number} [args.online=0] Online part
+     * @param {string} [args.note]
+     * @returns {Promise<boolean>} true when recorded
+     */
+    static async recordDuePayment({ billType, billId, cash, online = 0, note = '', clear = false }) {
         try {
-            const paymentInput = document.getElementById(`payment_${transactionId}`);
-            const paymentAmount = round2(Number(paymentInput.value) || 0);
-            
-            if (paymentAmount <= 0) {
-                UIManager.showToast('Please enter a valid payment amount');
-                return;
-            }
-            
-            let transaction;
-            if (transactionType === 'purchase') {
-                transaction = AppState.purchaseHistory.find(b => String(b.id) === String(transactionId));
-            } else if (transactionType === 'retail') {
-                transaction = AppState.retailSalesHistory.find(s => String(s.id) === String(transactionId));
-            } else {
-                // wholesale
-                transaction = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
-            }
-            
+            const transaction = this.findBill(billType, billId);
             if (!transaction) {
                 UIManager.showToast('Error: Transaction not found');
-                return;
+                return false;
             }
-            
+
             const outstanding = readPayment(transaction).due;
-            
-            if (paymentAmount > outstanding + PAYMENT_TOLERANCE) {
-                UIManager.showToast('Payment amount exceeds outstanding amount');
-                return;
+            const split = checkPaymentSplit(cash, online, outstanding, PAYMENT_TOLERANCE);
+            if (!split.ok) {
+                UIManager.showToast(split.error === 'exceeds-due'
+                    ? 'Payment amount exceeds outstanding amount'
+                    : 'Please enter a valid payment amount');
+                return false;
             }
-            
+
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                 UIManager.showToast('Internet required to record payment');
-                return;
+                return false;
             }
-            
-            const payment = {
-                amount: paymentAmount,
+
+            const entry = {
+                amount: split.total,
                 date: Helpers.getCurrentDateTime(),
                 recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             };
-            
+            if (note) entry.note = note;
+
             // Server-side read-modify-write so concurrent payments from two devices can't overwrite each other
-            const written = await this.applyPaymentTransaction(transactionType, transaction, paymentAmount, payment);
+            if (clear) entry.settlesDue = true;
+            const written = await this.applyPaymentTransaction(billType, transaction, { cash: split.cash, online: split.online }, entry, { clear });
             Object.assign(transaction, written);
-            
-            paymentInput.value = '';
-            this.renderDue();
-            
+
+            this.refreshAfterPayment();
+
             // Log audit entry
             await AuditService.log(AuditService.ACTIONS.UPDATE_PAYMENT, {
                 billNumber: transaction.billNumber || 'N/A',
-                paymentAmount: paymentAmount,
-                transactionType: transactionType,
-                customer: transaction.customer || transaction.supplier || 'N/A'
+                paymentAmount: split.total,
+                cash: split.cash,
+                online: split.online,
+                transactionType: billType,
+                customer: transaction.customerName || transaction.customer || transaction.supplier || 'N/A'
             });
-            
-            const paymentLabel = transactionType === 'purchase' ? 'Payment' : 'Payment';
-            UIManager.showToast(`✓ ${paymentLabel} of ₹${paymentAmount} recorded`);
+
+            UIManager.showToast(clear ? `✓ Due cleared: ₹${split.total} ${split.online > 0 ? 'online' : 'in cash'}` : `✓ Payment of ₹${split.total} recorded`);
             UIManager.hapticFeedback('light');
-            
+            return true;
         } catch (error) {
             console.error('Error recording payment:', error);
             if (error && error.code === 'exceeds-due') {
@@ -283,6 +304,24 @@ export class OutstandingManager {
             } else {
                 UIManager.showToast('Error: ' + error.message);
             }
+            return false;
+        }
+    }
+
+    /** Re-render every screen that shows dues or today's money. */
+    static refreshAfterPayment() {
+        this.renderDue();
+        const app = typeof window !== 'undefined' ? window.app : null;
+        try {
+            app?.wholesaleSales?.renderOutstanding?.();
+            if (document.getElementById('todayTotalIn')) app?.day?.loadTodayData?.();
+            if (CashManagementManager.todaySession) {
+                CashManagementManager.calculateTodayTransactions()
+                    .then(() => CashManagementManager.updateUI())
+                    .catch(e => console.error('Cash refresh after payment failed:', e));
+            }
+        } catch (e) {
+            console.error('Refresh after payment failed:', e);
         }
     }
 
@@ -294,56 +333,140 @@ export class OutstandingManager {
     }
 
     /**
+     * Today's open cash session, if any (one small query when the Cash tab
+     * hasn't loaded it). Failures just mean "no drawer leg".
+     * @returns {Promise<?string>} session id
+     */
+    static async findOpenSessionId() {
+        const today = todayLocalISO();
+        const local = CashManagementManager.todaySession;
+        if (local && local.date === today) return local.signedOut ? null : String(local.id);
+        try {
+            const sessions = await FirebaseService.loadCashSessionsForDate(today);
+            const open = sessions.find(s => !s.signedOut);
+            return open ? String(open.id) : null;
+        } catch (e) {
+            console.warn('Could not look up today\'s cash session:', e?.message || e);
+            return null;
+        }
+    }
+
+    /**
      * Record a payment against a bill inside a Firestore transaction.
      * Re-reads the bill from the server, recomputes due from the fresh doc and
-     * writes only payment fields (payment.*, payments[], and dueAmount if present).
-     * @returns {Promise<Object>} The fields written (for patching local state)
+     * writes only payment fields (payment.*, payments[], and dueAmount if
+     * present). When today's cash session is open, the same payment (same id)
+     * is added to its duePayments in the same transaction.
+     * @param {string} transactionType 'purchase' | 'retail' | 'wholesale'
+     * @param {Object} bill
+     * @param {number|{cash: number, online: number}} amount A number = all cash
+     * @param {Object} entry payments[] entry (amount/date/recordedBy…)
+     * @returns {Promise<Object>} The bill fields written (for patching local state)
      */
-    static async applyPaymentTransaction(transactionType, bill, amount, entry) {
+    static async applyPaymentTransaction(transactionType, bill, amount, entry, { clear = false } = {}) {
+        const parts = typeof amount === 'number' ? { cash: amount, online: 0 } : amount;
+        const cash = round2(parts.cash || 0);
+        const online = round2(parts.online || 0);
+        const total = round2(cash + online);
+        const at = Date.now();
+        const fullEntry = {
+            ...entry,
+            id: entry.id || Helpers.generateId(),
+            amount: total,
+            cash,
+            online,
+            at,
+            recordedById: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
+        };
+
+        const sessionId = await this.findOpenSessionId();
+        const sessionRef = sessionId ? FirebaseService.cashSessionRef(sessionId) : null;
+        const today = todayLocalISO();
+        let legWritten = null;
+
+        const written = await this.withBillRef(transactionType, bill, (db, ref) => db.runTransaction(async (tx) => {
+            legWritten = null;
+            const snap = await tx.get(ref);
+            const sessionSnap = sessionRef ? await tx.get(sessionRef) : null;
+            if (!snap.exists) return null;
+            const fresh = snap.data() || {};
+            const pay = readPayment(fresh);
+
+            if (total > pay.due + PAYMENT_TOLERANCE) {
+                const err = new Error('Payment amount exceeds outstanding amount');
+                err.code = 'exceeds-due';
+                err.due = pay.due;
+                throw err;
+            }
+
+            const newCash = round2(pay.cash + cash);
+            const newOnline = round2(pay.online + online);
+            let newDue = round2(pay.due - total);
+            if (newDue < PAYMENT_TOLERANCE) newDue = 0;
+
+            const update = {
+                payment: {
+                    ...(fresh.payment && typeof fresh.payment === 'object' ? fresh.payment : {}),
+                    online: newOnline,
+                    cash: newCash,
+                    due: newDue,
+                    total: round2(newOnline + newCash)
+                },
+                payments: [...(Array.isArray(fresh.payments) ? fresh.payments : []), fullEntry]
+            };
+            if (Object.prototype.hasOwnProperty.call(fresh, 'dueAmount')) {
+                update.dueAmount = newDue;
+            }
+            // "Mark as cleared" with cash/online: the payment settles the whole due
+            if (clear && newDue === 0) Object.assign(update, this.clearedFields());
+            update.openDue = FirebaseService.billHasOpenDue(COLLECTION_BY_TYPE[transactionType] || 'wholesaleSales', { ...fresh, ...update });
+            update.clientVersion = FirebaseService.CLIENT_VERSION;
+            tx.update(ref, update);
+
+            const session = sessionSnap && sessionSnap.exists ? sessionSnap.data() : null;
+            if (session && !session.signedOut && session.date === today) {
+                const leg = {
+                    id: fullEntry.id,
+                    billId: String(fresh.id ?? bill.id),
+                    billType: transactionType,
+                    billNumber: fresh.billNumber || bill.billNumber || '',
+                    type: directionFor(transactionType),
+                    customer: fresh.customerName || bill.customerName || 'N/A',
+                    amount: total,
+                    cash,
+                    online,
+                    // Older app versions count only method 'cash' legs (by amount)
+                    method: cash > 0 && online > 0 ? 'split' : (cash > 0 ? 'cash' : 'online'),
+                    notes: entry.note || '',
+                    timestamp: new Date(at).toISOString(),
+                    recordedBy: fullEntry.recordedBy || 'Unknown'
+                };
+                tx.update(sessionRef, { duePayments: [...(Array.isArray(session.duePayments) ? session.duePayments : []), leg] });
+                legWritten = leg;
+            }
+            return update;
+        }));
+
+        const local = CashManagementManager.todaySession;
+        if (legWritten && local && String(local.id) === sessionId) {
+            local.duePayments = [...(local.duePayments || []).filter(l => l.id !== legWritten.id), legWritten];
+        }
+        return written;
+    }
+
+    /**
+     * Runs `run(db, ref)` on the bill's document; FirebaseService saves bills
+     * at doc(String(bill.id)), but legacy docs may only carry an `id` field,
+     * so a null result retries once with the doc found by that field.
+     * @returns {Promise<Object>} run's result
+     */
+    static async withBillRef(transactionType, bill, run) {
         const db = FirebaseService.db;
         const coll = db.collection(colName(COLLECTION_BY_TYPE[transactionType] || 'wholesaleSales'));
-        // FirebaseService saves/updates bills at doc(String(bill.id)); legacy docs may only carry an `id` field
         let ref = coll.doc(String(bill.id));
-
         for (let attempt = 0; attempt < 2; attempt++) {
-            const written = await db.runTransaction(async (tx) => {
-                const snap = await tx.get(ref);
-                if (!snap.exists) return null;
-                const fresh = snap.data() || {};
-                const pay = readPayment(fresh);
-
-                if (amount > pay.due + PAYMENT_TOLERANCE) {
-                    const err = new Error('Payment amount exceeds outstanding amount');
-                    err.code = 'exceeds-due';
-                    err.due = pay.due;
-                    throw err;
-                }
-
-                const newCash = round2(pay.cash + amount);
-                let newDue = round2(pay.due - amount);
-                if (newDue < PAYMENT_TOLERANCE) newDue = 0;
-
-                const update = {
-                    payment: {
-                        ...(fresh.payment && typeof fresh.payment === 'object' ? fresh.payment : {}),
-                        online: pay.online,
-                        cash: newCash,
-                        due: newDue,
-                        total: round2(pay.online + newCash)
-                    },
-                    payments: [...(Array.isArray(fresh.payments) ? fresh.payments : []), entry]
-                };
-                if (Object.prototype.hasOwnProperty.call(fresh, 'dueAmount')) {
-                    update.dueAmount = newDue;
-                }
-                update.openDue = FirebaseService.billHasOpenDue(COLLECTION_BY_TYPE[transactionType] || 'wholesaleSales', { ...fresh, ...update });
-                update.clientVersion = FirebaseService.CLIENT_VERSION;
-                tx.update(ref, update);
-                return update;
-            });
-
+            const written = await run(db, ref);
             if (written) return written;
-
             if (attempt === 0) {
                 const snap = await coll.where('id', '==', bill.id).limit(2).get();
                 if (snap.size !== 1) break;
@@ -353,44 +476,143 @@ export class OutstandingManager {
         throw new Error('Transaction not found');
     }
 
+    /**
+     * "Mark as cleared" (#104): asks how the remaining due was settled —
+     * received in cash, received online, or written off (reason required) —
+     * and records it. Never zeroes a due silently.
+     * @param {string} transactionId
+     * @param {'purchase'|'retail'|'wholesale'} transactionType
+     * @returns {Promise<boolean>} true when the bill was cleared
+     */
     static async markAsCleared(transactionId, transactionType) {
-        try {
-            let collection;
-            if (transactionType === 'purchase') {
-                collection = 'purchases';
-            } else if (transactionType === 'retail') {
-                collection = 'retailSales';
-            } else {
-                collection = 'wholesaleSales';
-            }
-            
-            await db.collection(colName(collection)).doc(String(transactionId)).update({
-                cleared: true,
-                openDue: false,
-                clientVersion: FirebaseService.CLIENT_VERSION,
-                clearedAt: Helpers.getCurrentDateTime(),
-                clearedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
-                clearedByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
-            });
-            
-            // Update local state
-            let transaction;
-            if (transactionType === 'purchase') {
-                transaction = AppState.purchaseHistory.find(b => String(b.id) === String(transactionId));
-            } else if (transactionType === 'retail') {
-                transaction = AppState.retailSalesHistory.find(s => String(s.id) === String(transactionId));
-            } else {
-                transaction = AppState.salesHistory.find(s => String(s.id) === String(transactionId));
-            }
-            if (transaction) transaction.cleared = true;
-            
-            UIManager.hapticFeedback('light');
-            UIManager.showToast('✓ Outstanding marked as cleared');
-            this.renderDue();
-        } catch (error) {
-            console.error('Error marking outstanding as cleared:', error);
-            UIManager.showModal('Error: ' + error.message);
+        const transaction = this.findBill(transactionType, transactionId);
+        if (!transaction) {
+            UIManager.showToast('Error: Transaction not found');
+            return false;
         }
+        const due = readPayment(transaction).due;
+        if (due <= PAYMENT_TOLERANCE) {
+            UIManager.showToast('Nothing is due on this bill');
+            return false;
+        }
+
+        const isPurchase = transactionType === 'purchase';
+        const party = transaction.customerName ? ` — ${Helpers.escapeHtml(transaction.customerName)}` : '';
+        const html = `
+            <div style="text-align: left;">
+                <div style="margin-bottom: 10px;">Bill #${Helpers.escapeHtml(transaction.billNumber || String(transaction.id).slice(0, 8))}${party}<br>
+                    Remaining due: <strong>₹${Helpers.escapeHtml(due)}</strong></div>
+                <div style="margin-bottom: 6px; font-weight: 600;">How was it settled?</div>
+                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="cash"> ${isPurchase ? 'Paid' : 'Received'} in cash (₹${Helpers.escapeHtml(due)})</label>
+                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="online"> ${isPurchase ? 'Paid' : 'Received'} online (₹${Helpers.escapeHtml(due)})</label>
+                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="writeOff"> Write off — ${isPurchase ? 'will not be paid' : 'will not be received'}</label>
+                <div style="margin-top: 8px;">Reason / note (required for a write-off):</div>
+                <textarea id="clearReason" rows="2" maxlength="300" style="width: 100%; box-sizing: border-box; padding: 6px;"></textarea>
+            </div>`;
+        const confirmed = await UIManager.showModalWithHtml(html, 'Mark as cleared', true);
+        if (!confirmed) return false;
+
+        const method = document.querySelector('input[name="clearMethod"]:checked')?.value || '';
+        const reason = (document.getElementById('clearReason')?.value || '').trim();
+        if (!method) {
+            UIManager.showToast('Choose how the due was settled');
+            return false;
+        }
+        if (method === 'writeOff' && reason.length < 3) {
+            UIManager.showToast('Please write a reason for the write-off');
+            return false;
+        }
+
+        if (method === 'cash' || method === 'online') {
+            return this.recordDuePayment({
+                billType: transactionType,
+                billId: transactionId,
+                cash: method === 'cash' ? due : 0,
+                online: method === 'online' ? due : 0,
+                note: reason,
+                clear: true
+            });
+        }
+
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            UIManager.showToast('Internet required to clear a due');
+            return false;
+        }
+        try {
+            const written = await this.applyWriteOffTransaction(transactionType, transaction, reason);
+            Object.assign(transaction, written);
+            this.refreshAfterPayment();
+            await AuditService.log(AuditService.ACTIONS.CLEAR_DUE, {
+                billNumber: transaction.billNumber || 'N/A',
+                transactionType,
+                method: 'writeOff',
+                amount: written.payment?.writtenOff,
+                reason,
+                customer: transaction.customerName || 'N/A'
+            });
+            UIManager.hapticFeedback('light');
+            UIManager.showToast('✓ Due written off');
+            return true;
+        } catch (error) {
+            console.error('Error writing off due:', error);
+            UIManager.showToast(OutstandingManager.isOfflineError(error) ? 'Internet required to clear a due' : 'Error: ' + error.message);
+            return false;
+        }
+    }
+
+    /** Who/when fields for a cleared bill (all allowed bookkeeping fields in firestore.rules). */
+    static clearedFields() {
+        return {
+            cleared: true,
+            clearedAt: Helpers.getCurrentDateTime(),
+            clearedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
+            clearedByName: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
+        };
+    }
+
+    /**
+     * Write off the remaining due in one transaction: both due fields to 0,
+     * payment.writtenOff raised by the amount, and a payments[] entry
+     * { kind: 'writeOff', amount, reason, who, when } — never counted as money.
+     * @returns {Promise<Object>} fields written
+     */
+    static async applyWriteOffTransaction(transactionType, bill, reason) {
+        return this.withBillRef(transactionType, bill, (db, ref) => db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            if (!snap.exists) return null;
+            const fresh = snap.data() || {};
+            const pay = readPayment(fresh);
+            const amount = pay.due > PAYMENT_TOLERANCE ? pay.due : 0;
+            const base = fresh.payment && typeof fresh.payment === 'object' ? fresh.payment : {};
+            const update = {
+                payment: {
+                    ...base,
+                    cash: pay.cash,
+                    online: pay.online,
+                    due: 0,
+                    writtenOff: round2((Number(base.writtenOff) || 0) + amount)
+                },
+                ...this.clearedFields()
+            };
+            if (amount > 0) {
+                const by = this.clearedFields();
+                update.payments = [...(Array.isArray(fresh.payments) ? fresh.payments : []), {
+                    id: Helpers.generateId(),
+                    kind: 'writeOff',
+                    amount,
+                    reason,
+                    date: by.clearedAt,
+                    at: Date.now(),
+                    recordedBy: by.clearedByName,
+                    recordedById: by.clearedBy
+                }];
+            }
+            if (Object.prototype.hasOwnProperty.call(fresh, 'dueAmount')) update.dueAmount = 0;
+            update.openDue = false;
+            update.clientVersion = FirebaseService.CLIENT_VERSION;
+            tx.update(ref, update);
+            return update;
+        }));
     }
 
     static async showDetails(transactionId, transactionType) {

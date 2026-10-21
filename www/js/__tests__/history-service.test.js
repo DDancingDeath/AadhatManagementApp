@@ -588,17 +588,27 @@ describe('review fixes (2)', () => {
         const { WholesaleSalesManager } = await import('../modules/wholesale-sales.js');
         jest.spyOn(WholesaleSalesManager, 'renderSalesOutstanding').mockImplementation(() => {});
         window.app = { outstanding: { renderDue: () => {} } };
-        const sale = AppState.salesHistory.find(s => !s.cleared);
-        const toast = jest.spyOn((await import('../ui/ui-manager.js')).UIManager, 'showToast').mockImplementation(() => {});
+        const { readPayment } = await import('../utils/money.js');
+        const sale = AppState.salesHistory.find(s => !s.cleared && readPayment(s).due > 0);
+        const { UIManager } = await import('../ui/ui-manager.js');
+        const toast = jest.spyOn(UIManager, 'showToast').mockImplementation(() => {});
+        // #104: clearing asks how; answer "write off" with a reason
+        document.body.insertAdjacentHTML('beforeend', '<div id="clearDialogHost"></div>');
+        jest.spyOn(UIManager, 'showModalWithHtml').mockImplementation(async (html) => {
+            document.getElementById('clearDialogHost').innerHTML = html;
+            document.querySelector('input[name="clearMethod"][value="writeOff"]').checked = true;
+            document.getElementById('clearReason').value = 'Settled by discount';
+            return true;
+        });
         const runTx = fake.db.runTransaction;
         fake.db.runTransaction = async () => { throw Object.assign(new Error('offline'), { code: 'unavailable' }); };
         await WholesaleSalesManager.markSaleAsCleared(sale.id);
         expect(sale.cleared).toBeFalsy();
-        expect(toast).toHaveBeenCalledWith('Internet required to clear a sale');
+        expect(toast).toHaveBeenCalledWith('Internet required to clear a due');
         fake.db.runTransaction = runTx;
         await WholesaleSalesManager.markSaleAsCleared(sale.id);
         expect(sale.cleared).toBe(true);
-        expect(fake.raw('wholesaleSales').get(sale.id)).toMatchObject({ cleared: true, openDue: false });
+        expect(fake.raw('wholesaleSales').get(sale.id)).toMatchObject({ cleared: true, openDue: false, payment: expect.objectContaining({ due: 0 }) });
         delete window.app;
     });
 
