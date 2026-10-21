@@ -9,6 +9,17 @@
  */
 export class Helpers {
     // -------------------- FORMATTING --------------------
+
+    /**
+     * Display label for a stored user role. The stored value 'staff' is shown as "Member":
+     * the owner doesn't want people using the app to be called staff.
+     * @param {string} role - Stored role value ('owner' | 'manager' | 'staff')
+     * @returns {string} Label to show in the UI
+     */
+    static roleLabel(role) {
+        const labels = { owner: 'Owner', manager: 'Manager', staff: 'Member' };
+        return labels[role] || String(role ?? '');
+    }
     
     /**
      * Escape HTML to prevent XSS attacks

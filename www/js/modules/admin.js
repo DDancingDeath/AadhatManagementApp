@@ -240,7 +240,7 @@ const AdminManager = {
                 </div>
                 <div class="user-actions">
                     <select id="role-${Helpers.escapeHtml(user.id)}">
-                        <option value="staff">Staff</option>
+                        <option value="staff">Member</option>
                         <option value="manager">Manager</option>
                     </select>
                     <button class="btn-approve" onclick="window.app.admin.approveUser('${Helpers.escapeJsAttr(user.id)}')">
@@ -286,7 +286,7 @@ const AdminManager = {
                         <div class="user-name">${Helpers.escapeHtml(user.name || 'Unknown')} ${isCurrentUser ? '<span style="color: #999; font-size: 12px;">(You)</span>' : ''}</div>
                         <div class="user-email">${Helpers.escapeHtml(user.email)}</div>
                     </div>
-                    <span class="user-role-badge ${Helpers.escapeHtml(user.role)}">${Helpers.escapeHtml(user.role)}</span>
+                    <span class="user-role-badge ${Helpers.escapeHtml(user.role)}">${Helpers.escapeHtml(Helpers.roleLabel(user.role))}</span>
                 </div>
                 ${!isCurrentUser ? `
                 <div class="user-actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
@@ -325,7 +325,7 @@ const AdminManager = {
                 approvedBy: AppState.currentUser?.uid
             });
 
-            UIManager.showToast(`User approved as ${role}`);
+            UIManager.showToast(`User approved as ${Helpers.roleLabel(role)}`);
             await this.loadUsers();
         } catch (error) {
             console.error('Error approving user:', error);
@@ -375,7 +375,7 @@ const AdminManager = {
         const newRole = currentRole === 'staff' ? 'manager' : 'staff';
         
         const confirmed = await UIManager.showModal(
-            `Change ${userName}'s role from ${currentRole} to ${newRole}?`,
+            `Change ${userName}'s role from ${Helpers.roleLabel(currentRole)} to ${Helpers.roleLabel(newRole)}?`,
             'Change Role',
             true
         );
@@ -390,7 +390,7 @@ const AdminManager = {
                 role: newRole
             });
 
-            UIManager.showToast(`Role changed to ${newRole}`);
+            UIManager.showToast(`Role changed to ${Helpers.roleLabel(newRole)}`);
             await this.loadUsers();
         } catch (error) {
             console.error('Error changing role:', error);

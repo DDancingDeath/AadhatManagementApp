@@ -326,7 +326,7 @@ const DiagnosticsManager = {
                     <span class="diag-audit-time">${formattedDate}</span>
                 </div>
                 <div class="diag-audit-user">
-                    <strong>${Helpers.escapeHtml(log.userName)}</strong> (${Helpers.escapeHtml(log.userRole)})
+                    <strong>${Helpers.escapeHtml(log.userName)}</strong> (${Helpers.escapeHtml(Helpers.roleLabel(log.userRole))})
                 </div>
                 ${details ? `<div class="diag-audit-details">${Helpers.escapeHtml(details)}</div>` : ''}
             </div>

@@ -78,7 +78,7 @@ export class UsersManager {
                         👔 Manager
                     </button>
                     <button onclick="window.app.users.approveUser('${Helpers.escapeJsAttr(user.id)}', 'staff')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 8px; cursor: pointer;">
-                        👤 Staff
+                        👤 Member
                     </button>
                     <button onclick="window.app.users.rejectUser('${Helpers.escapeJsAttr(user.id)}')" style="flex: 1; min-width: 100px; padding: 8px 16px; background: #f56565; color: white; border: none; border-radius: 8px; cursor: pointer;">
                         ❌ Reject
@@ -122,7 +122,7 @@ export class UsersManager {
                             <strong style="font-size: 16px;">${Helpers.escapeHtml(user.name)}</strong>
                             <p style="color: #666; margin: 4px 0;">${Helpers.escapeHtml(user.email)}</p>
                             <span style="display: inline-block; padding: 4px 12px; background: ${Helpers.escapeHtml(roleColors[user.role])}; color: white; border-radius: 12px; font-size: 12px; margin-top: 4px;">
-                                ${Helpers.escapeHtml(roleIcons[user.role])} ${Helpers.escapeHtml(String(user.role).toUpperCase())}
+                                ${Helpers.escapeHtml(roleIcons[user.role])} ${Helpers.escapeHtml(Helpers.roleLabel(user.role).toUpperCase())}
                             </span>
                         </div>
                         ${isCurrentUser ? '<span style="color: #999; font-size: 12px; padding: 8px;">(You)</span>' : ''}
@@ -155,7 +155,7 @@ export class UsersManager {
             });
             
             UIManager.hapticFeedback('medium');
-            UIManager.showToast(`User approved as ${role}`);
+            UIManager.showToast(`User approved as ${Helpers.roleLabel(role)}`);
             this.loadUsers();
         } catch (error) {
             console.error('Error approving user:', error);
@@ -183,7 +183,7 @@ export class UsersManager {
     static async showChangeRoleDialog(userId, userName, currentRole) {
         const roles = ['owner', 'manager', 'staff'];
         const roleOptions = roles.map(r => 
-            `<option value="${r}" ${r === currentRole ? 'selected' : ''}>${r.toUpperCase()}</option>`
+            `<option value="${r}" ${r === currentRole ? 'selected' : ''}>${Helpers.roleLabel(r).toUpperCase()}</option>`
         ).join('');
         
         const html = `
@@ -217,7 +217,7 @@ export class UsersManager {
             });
             
             UIManager.hapticFeedback('medium');
-            UIManager.showToast(`Role updated to ${newRole}`);
+            UIManager.showToast(`Role updated to ${Helpers.roleLabel(newRole)}`);
             this.loadUsers();
         } catch (error) {
             console.error('Error changing role:', error);
