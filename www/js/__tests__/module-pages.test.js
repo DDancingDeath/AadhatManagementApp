@@ -338,6 +338,7 @@ describe('Admin → Users and Users manager', () => {
     test('admin users tab splits pending (status pending or no role) from active users', async () => {
         AdminManager.activeTab = 'users';
         await AdminManager.init();
+        await new Promise((r) => setTimeout(r)); // init() starts loadUsers without awaiting it
         const pending = document.getElementById('adminPendingUsers').textContent;
         const active = document.getElementById('adminActiveUsers').textContent;
         expect(pending).toContain('Newbie');
@@ -350,6 +351,7 @@ describe('Admin → Users and Users manager', () => {
     test('approve writes role from the picker, active status and approver', async () => {
         AdminManager.activeTab = 'users';
         await AdminManager.init();
+        await new Promise((r) => setTimeout(r)); // init() starts loadUsers without awaiting it
         document.getElementById('role-new1').value = 'manager';
         await AdminManager.approveUser('new1');
         expect(fake.raw('users').get('new1')).toMatchObject({ role: 'manager', status: 'active', approvedBy: 'owner1' });
@@ -369,6 +371,7 @@ describe('Admin → Users and Users manager', () => {
         AppState.userRole = 'manager';
         AdminManager.activeTab = 'users';
         await AdminManager.init();
+        await new Promise((r) => setTimeout(r)); // init() starts loadUsers without awaiting it
         expect(document.getElementById('adminTabsContainer').innerHTML).toBe('');
         expect(fake.stats.gets).toBe(0);
     });
