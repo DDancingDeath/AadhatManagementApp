@@ -23,6 +23,8 @@
             <div class="bill-details-footer">
                 <button class="bill-action-btn btn-delete" id="billDeleteBtn" onclick="window.app.history.confirmDeleteBill(window.currentBillIndex)">Delete</button>
                 <button class="bill-action-btn btn-edit" id="billEditBtn" onclick="window.app.history.editBillDetails(window.currentBillIndex)">Edit</button>
+                <button class="bill-action-btn btn-reprint" id="billReprintBtn" onclick="window.app.history.reprintBill()" title="Print a copy with the bill's date">Reprint</button>
+                <button class="bill-action-btn btn-share" id="billShareBtn" onclick="window.app.history.shareBill()" title="Share on WhatsApp">Share</button>
                 <button class="bill-action-btn btn-close" onclick="window.app.history.closeBillDetails()">Close</button>
             </div>
         </div>

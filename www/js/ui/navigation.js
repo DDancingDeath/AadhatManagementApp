@@ -134,10 +134,9 @@ const NavigationManager = {
             setTimeout(() => window.app.items.renderTable(), 100);
         }
         
-        // Render history when History tab is shown
+        // Render history when History tab is shown (keeps the session's filter, #160)
         if (tabId === 'history' && window.app?.history) {
-            this.resetFilterButtons('history');
-            setTimeout(() => window.app.history.filterHistory('purchase', { target: document.querySelector('#history .filter-btn') }), 100);
+            setTimeout(() => window.app.history.refresh(), 100);
         }
         
         // Render outstanding when Due tab is shown

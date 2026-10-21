@@ -889,6 +889,10 @@ window.app = {
         filterHistory: (type, event) => HistoryManager.filterHistory(type, event),
         searchHistory: (searchTerm) => HistoryManager.searchHistory(searchTerm),
         toggleView: () => HistoryManager.toggleView(),
+        setDatePreset: (preset) => HistoryManager.setDatePreset(preset),
+        setCustomRange: (from, to) => HistoryManager.setCustomRange(from, to),
+        reprintBill: () => HistoryManager.reprintBill(),
+        shareBill: () => HistoryManager.shareBill(),
         editBillDetails: (billIndex) => {
             if (billIndex !== undefined) {
                 // Pass the bill type along with index

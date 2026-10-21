@@ -1,8 +1,31 @@
 <div id="history" class="tab">
         
-        <div class="filter-buttons" style="margin-bottom: 16px;">
-            <button class="filter-btn filter-purchase active" onclick="window.app.history.filterHistory('purchase', event)">Purchase</button>
-            <button class="filter-btn filter-sale" onclick="window.app.history.filterHistory('sale', event)">Sale</button>
+        <div class="filter-buttons history-type-filter" role="group" aria-label="Bill type" style="margin-bottom: 10px;">
+            <button type="button" class="filter-btn active" data-type="all" onclick="window.app.history.filterHistory('all')">All</button>
+            <button type="button" class="filter-btn filter-purchase" data-type="purchase" onclick="window.app.history.filterHistory('purchase')">Purchase</button>
+            <button type="button" class="filter-btn filter-sale" data-type="retail" onclick="window.app.history.filterHistory('retail')">Retail</button>
+            <button type="button" class="filter-btn filter-sale" data-type="wholesale" onclick="window.app.history.filterHistory('wholesale')">Wholesale</button>
+        </div>
+
+        <div class="history-date-filter">
+            <label for="historyDatePreset" class="history-date-label">Date / तारीख</label>
+            <select id="historyDatePreset" onchange="window.app.history.setDatePreset(this.value)">
+                <option value="all">All dates / सभी तारीख</option>
+                <option value="today">Today / आज</option>
+                <option value="yesterday">Yesterday / कल</option>
+                <option value="week">This week / इस हफ्ते</option>
+                <option value="month">This month / इस महीने</option>
+                <option value="lastMonth">Last month / पिछला महीना</option>
+                <option value="custom">Custom / चुनें</option>
+            </select>
+            <div id="historyCustomRange" class="history-custom-range" hidden>
+                <input type="date" id="historyFromDate" aria-label="From date"
+                       onchange="window.app.history.setCustomRange(this.value, document.getElementById('historyToDate').value)">
+                <span aria-hidden="true">–</span>
+                <input type="date" id="historyToDate" aria-label="To date"
+                       onchange="window.app.history.setCustomRange(document.getElementById('historyFromDate').value, this.value)">
+            </div>
+            <div id="historyRangeLabel" class="history-range-label" hidden></div>
         </div>
 
         <div style="display: flex; gap: 8px; margin-bottom: 16px; align-items: center;">

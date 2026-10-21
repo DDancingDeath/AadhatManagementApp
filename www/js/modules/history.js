@@ -11,10 +11,18 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import { PrinterService } from '../services/printer.js';
 import {
     ensureHistoryFrom, isFullHistoryLoaded, historyLoadedFrom, formatWindowDate, findBillIndex,
-    renderStaleHistoryHint
+    renderStaleHistoryHint, rangeStatus, retryRange, applyRangeState
 } from '../utils/history-window.js';
+import {
+    filterHistoryBills, resolveHistoryRange, normalizeHistoryFilter, formatHistoryRange, billDateOf,
+    HISTORY_FILTER_KEY, HISTORY_TYPES
+} from '../utils/history-filters.js';
+import { buildReprintPayload, buildBillShareText } from '../utils/bill-share.js';
+import { todayLocalISO } from '../utils/dates.js';
+import { whatsAppShareUrl } from '../utils/release-info.js';
 
 /**
  * Stable reference to a bill for inline onclick handlers. Indices into the
@@ -49,8 +57,30 @@ export class HistoryManager {
     static pageKey = '';
     /** Full filtered + sorted list of the last render (search covers all of it). */
     static pageBills = [];
-    static pageType = 'purchase';
+    static pageType = 'all';
     static showMoreObserver = null;
+
+    /** Type + date filter (#160); remembered for the browser session. */
+    static filter = null;
+
+    /** Active date range of the last render ({from, to} ms, null = open). */
+    static activeRange = { from: null, to: null };
+
+    /** @returns {{type: string, preset: string, from: string, to: string}} */
+    static getFilter() {
+        if (!this.filter) {
+            let saved = null;
+            try { saved = sessionStorage.getItem(HISTORY_FILTER_KEY); } catch { /* storage blocked */ }
+            this.filter = normalizeHistoryFilter(saved);
+        }
+        return this.filter;
+    }
+
+    static setFilter(patch) {
+        this.filter = normalizeHistoryFilter({ ...this.getFilter(), ...patch });
+        try { sessionStorage.setItem(HISTORY_FILTER_KEY, JSON.stringify(this.filter)); } catch { /* storage blocked */ }
+        return this.filter;
+    }
 
     /**
      * Save current bill to history with loading indicator
@@ -172,60 +202,49 @@ export class HistoryManager {
     }
 
     /**
-     * Render transaction history with search and filtering
+     * Render transaction history with type/date filters, search and paging.
      * Supports both card and table view modes
-     * @param {'purchase'|'sale'} [type='purchase'] - Type of transactions to show
+     * @param {'all'|'purchase'|'retail'|'wholesale'|'sale'} [type] - Type filter
+     *   (defaults to the remembered one; 'sale' = retail + wholesale)
      * @param {string} [searchTerm=''] - Optional search term to filter by
      */
-    static renderHistory(type = 'purchase', searchTerm = '') {
+    static renderHistory(type, searchTerm = '') {
         const purchaseHistory = AppState.purchaseHistory || [];
         const salesHistory = AppState.salesHistory || [];
         const retailSalesHistory = AppState.retailSalesHistory || [];
         const container = document.getElementById("historyList");
+        if (!container) return;
+
+        if (type && type !== 'sale' && type !== this.getFilter().type) this.setFilter({ type });
+        const filter = this.getFilter();
+        if (!type) type = filter.type;
+        this.syncFilterUi();
+
+        const range = resolveHistoryRange(filter.preset, new Date(), filter);
+        this.activeRange = range;
+        // Ranges older than the loaded window load on demand (with a notice);
+        // "All dates" keeps the month-by-month infinite scroll instead.
+        const status = range.from === null ? 'ready' : rangeStatus('history', range.from, () => this.refreshHistory());
+        applyRangeState(container, status, {
+            loadingText: 'Loading older bills… / पुराने बिल लोड हो रहे हैं…',
+            errorText: `Couldn't load older bills. Showing bills since ${formatWindowDate(historyLoadedFrom())}.`,
+            onRetry: () => { retryRange('history'); this.refreshHistory(); }
+        });
         
         // Combine purchases and sales
-        const purchases = purchaseHistory.map(b => ({ ...b, type: b.type || 'purchase', isPurchase: true }));
+        const purchases = purchaseHistory.map(b => ({ ...b, type: 'purchase', isPurchase: true }));
         const wholesaleSales = salesHistory.map(s => ({ ...s, type: 'wholesale', isPurchase: false }));
         const retailSales = retailSalesHistory.map(s => ({ ...s, type: 'retail', isPurchase: false }));
         const allHistory = [...purchases, ...wholesaleSales, ...retailSales];
         
-        // Filter by type
-        let filteredBills = allHistory.filter(bill => {
-            if (type === 'purchase') return bill.isPurchase;
-            if (type === 'sale') return !bill.isPurchase; // Show both wholesale and retail
-            return bill.type === type;
-        });
-        
-        // Apply search filter if search term exists
-        if (searchTerm && searchTerm.trim()) {
-            const term = searchTerm.toLowerCase().trim();
-            filteredBills = filteredBills.filter(bill => {
-                // Search in bill number
-                const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id.toString());
-                if (billNumber.toLowerCase().includes(term)) return true;
-                
-                // Search in customer name
-                if (bill.customerName && bill.customerName.toLowerCase().includes(term)) return true;
-                
-                // Search in item names
-                if (bill.items && bill.items.some(item => item.name.toLowerCase().includes(term))) return true;
-                
-                return false;
-            });
-        }
-        
-        // Sort by timestamp (newest first)
-        const sortedBills = filteredBills.sort((a, b) => {
-            const timeA = a.timestamp || new Date(a.date).getTime();
-            const timeB = b.timestamp || new Date(b.date).getTime();
-            return timeB - timeA;
-        });
+        const sortedBills = filterHistoryBills(allHistory, { type, range, search: searchTerm });
+        this.updateRangeLabel(range, sortedBills.length);
         
         // Check view mode and render accordingly
         this.activeSearch = (searchTerm || '').trim();
         // Only the first PAGE_SIZE bills go into the DOM; live refreshes keep
         // how many are shown, a new filter/search/view starts over (#24).
-        const pageKey = `${type}|${this.activeSearch}|${this.viewMode}`;
+        const pageKey = `${type}|${filter.preset}|${range.from}|${range.to}|${this.activeSearch}|${this.viewMode}`;
         if (pageKey !== this.pageKey) {
             this.pageKey = pageKey;
             this.visibleCount = this.PAGE_SIZE;
@@ -338,7 +357,7 @@ export class HistoryManager {
         // Use billNumber if available, otherwise generate short number from ID
         const billNumber = bill.billNumber || (typeof bill.id === 'string' ? bill.id.substring(0, 8) : bill.id);
         const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
-        const formattedDate = Helpers.formatDateTime(bill.date);
+        const formattedDate = Helpers.formatDateTime(billDateOf(bill) || bill.date);
         const itemColor = (bill.type === 'retail' || bill.type === 'wholesale') ? '#28a745' : '#007bff';
         
         div.innerHTML = `
@@ -364,10 +383,14 @@ export class HistoryManager {
      */
     static emptyMessage(type, searchTerm) {
         if (searchTerm && searchTerm.trim()) return `No results found for "${searchTerm}"`;
-        if (!isFullHistoryLoaded()) {
-            return `No ${type} history since ${formatWindowDate(historyLoadedFrom())}`;
+        const noun = (type === 'all' || !type) ? 'bills' : `${type} bills`;
+        if (this.activeRange.from !== null || this.activeRange.to !== null) {
+            return `No ${noun} in this period / इस अवधि में कोई बिल नहीं`;
         }
-        return `No ${type} history yet`;
+        if (!isFullHistoryLoaded()) {
+            return `No ${noun} since ${formatWindowDate(historyLoadedFrom())}`;
+        }
+        return `No ${noun} yet`;
     }
 
     /**
@@ -381,7 +404,7 @@ export class HistoryManager {
         attachOlderHistoryScroll(list, {
             noun: 'bills',
             // Older months load only once every loaded bill is on screen.
-            enabled: () => !this.activeSearch && !this.hasHiddenBills(),
+            enabled: () => !this.activeSearch && !this.hasHiddenBills() && this.activeRange.from === null,
             onLoaded: () => this.refreshHistory()
         });
         renderStaleHistoryHint(list, { id: 'historyStaleHint', onRefreshed: () => this.refreshHistory() });
@@ -393,7 +416,7 @@ export class HistoryManager {
             footer.className = 'history-search-footer';
             list.parentNode?.appendChild(footer);
         }
-        if (!this.activeSearch || (isFullHistoryLoaded() && !this.searchingOlder)) {
+        if (!this.activeSearch || this.activeRange.from !== null || (isFullHistoryLoaded() && !this.searchingOlder)) {
             footer.style.display = 'none';
             footer.textContent = '';
             return;
@@ -622,7 +645,7 @@ export class HistoryManager {
                     </div>
                     <div class="bill-info-row">
                         <div class="bill-info-label">Date:</div>
-                        <div class="bill-info-value">${Helpers.formatDateTime(bill.date)}</div>
+                        <div class="bill-info-value">${Helpers.formatDateTime(billDateOf(bill) || bill.date)}</div>
                     </div>
                     ${bill.createdByName || bill.userName ? `
                         <div class="bill-info-row">
@@ -746,11 +769,11 @@ export class HistoryManager {
             history = AppState.salesHistory;
             collectionName = 'wholesaleSales';
         } else {
-            // Fallback to filter button for legacy bills
-            const activeFilterBtn = document.querySelector('#history .filter-btn.active');
-            const isSale = activeFilterBtn?.classList.contains('filter-sale');
-            history = isSale ? AppState.salesHistory : AppState.purchaseHistory;
-            collectionName = isSale ? 'wholesaleSales' : 'purchases';
+            // viewBill always records the type; without it we can't tell which
+            // collection the bill is in, so don't guess on a delete.
+            this.closeBillDetails();
+            UIManager.showToast('Bill not found');
+            return;
         }
         
         const billIndex = findBillIndex(history, window.currentBillId, index);
@@ -819,10 +842,7 @@ export class HistoryManager {
     }
 
     static searchHistory(searchTerm) {
-        const activeFilterBtn = document.querySelector('#history .filter-btn.active');
-        const currentType = activeFilterBtn?.classList.contains('filter-sale') ? 'sale' : 'purchase';
-        
-        this.renderHistory(currentType, searchTerm);
+        this.renderHistory(this.getFilter().type, searchTerm);
     }
 
     static refreshHistory() {
@@ -830,17 +850,109 @@ export class HistoryManager {
         this.searchHistory(searchInput ? searchInput.value : '');
     }
 
-    static filterHistory(type, event) {
-        // Update button states
-        const buttons = event.target.parentElement.querySelectorAll('.filter-btn');
-        buttons.forEach(btn => btn.classList.remove('active'));
-        event.target.classList.add('active');
-        
-        // Clear search when switching tabs
-        const searchInput = document.getElementById('historySearch');
-        if (searchInput) searchInput.value = '';
-        
-        this.renderHistory(type);
+    /**
+     * Type chip (All / Purchase / Retail / Wholesale). Keeps the search text
+     * and date range so they work together.
+     * @param {string} type
+     */
+    static filterHistory(type) {
+        const next = type === 'sale' ? 'all' : type;
+        if (!HISTORY_TYPES.includes(next)) return;
+        this.setFilter({ type: next });
+        this.refreshHistory();
+    }
+
+    /** Date preset select (all/today/yesterday/week/month/lastMonth/custom). */
+    static setDatePreset(preset) {
+        const patch = { preset };
+        if (preset === 'custom' && !this.getFilter().from && !this.getFilter().to) {
+            patch.from = patch.to = todayLocalISO();
+        }
+        this.setFilter(patch);
+        this.refreshHistory();
+    }
+
+    /** Custom range date inputs ('YYYY-MM-DD'; either may be empty). */
+    static setCustomRange(from, to) {
+        this.setFilter({ preset: 'custom', from: from || '', to: to || '' });
+        this.refreshHistory();
+    }
+
+    /** Reflect the remembered filter in the History controls. */
+    static syncFilterUi() {
+        const filter = this.getFilter();
+        document.querySelectorAll('#history .history-type-filter .filter-btn').forEach(btn => {
+            const active = btn.dataset.type === filter.type;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        const preset = document.getElementById('historyDatePreset');
+        if (preset && preset.value !== filter.preset) preset.value = filter.preset;
+        const custom = document.getElementById('historyCustomRange');
+        if (custom) custom.hidden = filter.preset !== 'custom';
+        const from = document.getElementById('historyFromDate');
+        const to = document.getElementById('historyToDate');
+        if (from && from.value !== filter.from) from.value = filter.from;
+        if (to && to.value !== filter.to) to.value = filter.to;
+    }
+
+    /** "01/10/2026 – 22/10/2026 · 12 bills" under the filters. */
+    static updateRangeLabel(range, count) {
+        const label = document.getElementById('historyRangeLabel');
+        if (!label) return;
+        const text = formatHistoryRange(range);
+        label.textContent = text ? `${text} · ${count} ${count === 1 ? 'bill' : 'bills'}` : '';
+        label.hidden = !text;
+    }
+
+    /**
+     * The bill open in the details overlay (re-resolved by id; arrays shift).
+     * @returns {{bill: Object, type: string}|null}
+     */
+    static currentBill() {
+        const type = window.currentBillType;
+        const history = type === 'purchase' ? AppState.purchaseHistory
+            : type === 'retail' ? AppState.retailSalesHistory
+                : type === 'wholesale' ? AppState.salesHistory : null;
+        if (!Array.isArray(history)) return null;
+        const index = findBillIndex(history, window.currentBillId, window.currentBillIndex);
+        const bill = history[index];
+        return bill ? { bill, type } : null;
+    }
+
+    /**
+     * Reprint the open bill with its own date and a "COPY / प्रति" mark.
+     * Uses the normal print path (Bluetooth, else image preview with
+     * share/download), works from cached bills offline, never changes the bill.
+     */
+    static async reprintBill() {
+        const current = this.currentBill();
+        if (!current) {
+            UIManager.showToast('Bill not found');
+            return;
+        }
+        try {
+            await PrinterService.printBill(buildReprintPayload(current.bill, current.type));
+        } catch (error) {
+            console.error('Reprint failed:', error);
+            UIManager.showToast('Reprint failed / प्रिंट नहीं हो पाया');
+        }
+    }
+
+    /** Share the open bill on WhatsApp (bill date, COPY mark, bilingual). */
+    static shareBill() {
+        const current = this.currentBill();
+        if (!current) {
+            UIManager.showToast('Bill not found');
+            return;
+        }
+        const url = whatsAppShareUrl(buildBillShareText(current.bill, current.type));
+        if (window.Capacitor?.isNativePlatform?.()) {
+            window.open(url, '_system');
+            return;
+        }
+        const win = window.open(url, '_blank', 'noopener');
+        if (!win) window.location.href = url;
     }
 
     static toggleView() {
@@ -849,14 +961,7 @@ export class HistoryManager {
         if (toggleBtn) {
             toggleBtn.textContent = this.viewMode === 'card' ? 'Table View' : 'Card View';
         }
-        
-        // Re-render with current filter and search
-        const activeFilterBtn = document.querySelector('#history .filter-btn.active');
-        const currentType = activeFilterBtn?.classList.contains('filter-sale') ? 'sale' : 'purchase';
-        const searchInput = document.getElementById('historySearch');
-        const searchTerm = searchInput ? searchInput.value : '';
-        
-        this.renderHistory(currentType, searchTerm);
+        this.refreshHistory();
     }
 
     static renderHistoryTable(bills, type) {
@@ -869,7 +974,7 @@ export class HistoryManager {
             return;
         }
 
-        const itemColor = type === 'sale' ? '#28a745' : '#007bff';
+        const itemColor = type === 'purchase' ? '#007bff' : (type === 'all' ? '#6366f1' : '#28a745');
         
         // Define alternating colors for different days - creative gradient backgrounds
         const dayColors = [
@@ -902,7 +1007,7 @@ export class HistoryManager {
             const billTotal = bill.grandTotal || bill.amountPayable || bill.saleTotal || bill.total || 0;
             
             // Extract date (DD/MM/YYYY) from bill date
-            const billDate = new Date(bill.date);
+            const billDate = billDateOf(bill) || new Date(0);
             const dateKey = `${billDate.getDate()}-${billDate.getMonth()}-${billDate.getFullYear()}`;
             
             // Change color when date changes
