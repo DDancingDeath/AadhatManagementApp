@@ -184,6 +184,27 @@
   background: linear-gradient(135deg, #ffebee, #ffcdd2) !important;
 }
 
+/* Cash + Online + Due must add up to the bill total (#23) */
+.payment-row.split-remaining-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.payment-row.split-remaining-row strong {
+  font-size: 15px;
+}
+
+.split-rest-btn {
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--card-bg, #fff);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
 .payment-row.payment-excess strong {
   color: var(--danger-color) !important;
   animation: pulse 1.5s ease-in-out infinite;

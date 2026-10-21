@@ -439,6 +439,27 @@ export class Helpers {
     }
 
     /**
+     * Show how much of a bill is not yet split into Cash / Online / Due.
+     * @param {string} elementId
+     * @param {{ok: boolean, difference: number}} check - result of checkPaymentSplit
+     */
+    static showSplitRemaining(elementId, check) {
+        const el = typeof document !== 'undefined' ? document.getElementById(elementId) : null;
+        if (!el || !check) return;
+        const amount = Math.abs(Math.round(check.difference * 100) / 100).toLocaleString('en-IN');
+        if (check.ok) {
+            el.textContent = '✓ ₹0';
+            el.style.color = '#16a34a';
+        } else if (check.difference > 0) {
+            el.textContent = `₹${amount} left / बाकी`;
+            el.style.color = '#dc2626';
+        } else {
+            el.textContent = `₹${amount} extra / ज़्यादा`;
+            el.style.color = '#dc2626';
+        }
+    }
+
+    /**
      * Run `fn` unless another call with the same key is still running.
      * While running, the matching buttons are disabled so a double tap
      * cannot create a duplicate bill. Returns undefined when ignored.

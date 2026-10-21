@@ -10,7 +10,9 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
-import { computePurchaseTotals, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, round2 } from '../utils/money.js';
+import {
+    checkPaymentSplit, computePurchaseTotals, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2
+} from '../utils/money.js';
 
 /** Buttons disabled while a purchase save/print is in flight */
 const PURCHASE_BUTTONS = '#saveBillBtn, #printBillBtn';
@@ -405,15 +407,44 @@ const PurchaseManager = {
      * Update payment total display
      */
     updatePaymentTotal() {
-        const onlinePayment = Helpers.getInputInt('onlinePayment');
-        const cashPayment = Helpers.getInputInt('cashPayment');
+        const split = this.readPaymentSplit();
         
-        const totalPaid = onlinePayment + cashPayment;
+        const totalPaid = split.online + split.cash;
         
         const totalPaymentElement = document.getElementById('totalPayment');
         if (totalPaymentElement) {
             totalPaymentElement.textContent = Math.round(totalPaid);
         }
+        Helpers.showSplitRemaining('purchaseSplitRemaining', checkPaymentSplit(this.computeTotals().grandTotal, split));
+    },
+
+    /**
+     * Cash / online / due typed on the purchase form
+     * @returns {{cash: number, online: number, due: number}}
+     */
+    readPaymentSplit() {
+        return {
+            online: round2(Helpers.getInputNumber('onlinePayment')),
+            cash: round2(Helpers.getInputNumber('cashPayment')),
+            due: round2(Helpers.getInputNumber('dueAmount'))
+        };
+    },
+
+    /**
+     * One tap: put whatever is not yet paid (total − cash − online) in Due.
+     */
+    putRestInDue() {
+        const { cash, online } = this.readPaymentSplit();
+        const rest = round2(this.computeTotals().grandTotal - cash - online);
+        if (rest < 0) {
+            UIManager.showToast(paymentSplitMessage(checkPaymentSplit(this.computeTotals().grandTotal, { cash, online })));
+            return;
+        }
+        const dueInput = document.getElementById('dueAmount');
+        if (dueInput) dueInput.value = rest;
+        const dueCheckbox = document.getElementById('dueCheckbox');
+        if (dueCheckbox) dueCheckbox.checked = rest > 0;
+        this.updatePaymentTotal();
     },
 
     /**
@@ -538,6 +569,13 @@ const PurchaseManager = {
         if (dueNeedsName(dueAmount, customerName)) {
             UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
             document.getElementById('customerName')?.focus();
+            return;
+        }
+        
+        const split = checkPaymentSplit(grandTotal, { cash: cashPayment, online: onlinePayment, due: dueAmount });
+        if (!split.ok) {
+            Helpers.showSplitRemaining('purchaseSplitRemaining', split);
+            UIManager.showToast(paymentSplitMessage(split));
             return;
         }
         

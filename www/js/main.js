@@ -751,6 +751,7 @@ window.app = {
         updateSalePaymentTotal: () => BillingManager.updateSalePaymentTotal(),
         fillSalePayableAmount: (type) => BillingManager.fillSalePayableAmount(type),
         fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
+        putRestInDue: (mode) => BillingManager.putRestInDue(mode),
         completeSale: () => BillingManager.completeSale(),
         
         // Print bill (saves and prints; printing starts as soon as the save is issued)

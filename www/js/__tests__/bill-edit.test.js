@@ -72,6 +72,15 @@ describe('saveEditedBill', () => {
         document.body.innerHTML = '';
     });
 
+    it('refuses an edit whose payment split does not match the new total (#23)', async () => {
+        document.body.innerHTML = '<input id="cashPayment" value="50">';
+        const update = jest.spyOn(FirebaseService, 'updatePurchase');
+        expect(await BillingManager.saveEditedBill()).toBeUndefined();
+        expect(update).not.toHaveBeenCalled();
+        expect(toast).toHaveBeenCalledWith(expect.stringContaining('₹50 more than the bill total'));
+        document.body.innerHTML = '';
+    });
+
     it('prints, replaces and clears only after the transaction committed', async () => {
         let commit;
         const onWriteIssued = jest.fn();

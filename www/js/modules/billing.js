@@ -10,7 +10,9 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
-import { dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, round2, sumMoney } from '../utils/money.js';
+import {
+    checkPaymentSplit, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2, sumMoney
+} from '../utils/money.js';
 import { findBillIndex } from '../utils/history-window.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 import { PurchaseManager } from './purchase.js';
@@ -1075,6 +1077,11 @@ const BillingManager = {
                     document.getElementById('customerName')?.focus();
                     return undefined;
                 }
+                const split = checkPaymentSplit(grandTotal, { cash: cashPayment, online: onlinePayment, due: dueAmount });
+                if (!split.ok) {
+                    UIManager.showToast(paymentSplitMessage(split));
+                    return undefined;
+                }
                 
                 const laborCalculationSpan = document.getElementById('laborCalculation');
                 const laborCalc = laborCalculationSpan?.textContent || null;
@@ -1142,6 +1149,11 @@ const BillingManager = {
                 if (dueNeedsName(saleDue, saleCustomer)) {
                     UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
                     document.getElementById('saleCustomerName')?.focus();
+                    return undefined;
+                }
+                const saleSplit = checkPaymentSplit(salesTotal, { cash: saleCash, online: saleOnline, due: saleDue });
+                if (!saleSplit.ok) {
+                    UIManager.showToast(paymentSplitMessage(saleSplit));
                     return undefined;
                 }
 
@@ -1266,6 +1278,7 @@ const BillingManager = {
     updateSalePaymentTotal: () => RetailSaleManager.updateSalePaymentTotal(),
     fillReceivableAmount: (type) => RetailSaleManager.fillReceivableAmount(type),
     fillSalePayableAmount: (type) => RetailSaleManager.fillReceivableAmount(type),
+    putRestInDue: (mode) => (mode === 'sale' ? RetailSaleManager.putRestInDue() : PurchaseManager.putRestInDue()),
     completeSale: () => RetailSaleManager.completeSale(),
     shareSaleWhatsApp: () => RetailSaleManager.shareSaleWhatsApp(),
     printSale: () => RetailSaleManager.printSale(),

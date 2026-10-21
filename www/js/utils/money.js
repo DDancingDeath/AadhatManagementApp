@@ -172,6 +172,34 @@ export function computeWholesaleTotals(items, stock = {}, expenses = 0) {
     return { total, cost, profit, profitPercent };
 }
 
+/** Allowed gap (₹) between cash + online + due and the bill total. */
+export const SPLIT_TOLERANCE = 1;
+
+/**
+ * Checks that cash + online + due adds up to the bill total (within ₹1).
+ * @param {number} total - bill total
+ * @param {{cash?: number, online?: number, due?: number}} split
+ * @returns {{ok: boolean, entered: number, difference: number}} difference = total − entered
+ *   (positive: amount still to allocate; negative: entered too much)
+ */
+export function checkPaymentSplit(total, { cash = 0, online = 0, due = 0 } = {}) {
+    const entered = round2((toMoney(cash) || 0) + (toMoney(online) || 0) + (toMoney(due) || 0));
+    const difference = round2((toMoney(total) || 0) - entered);
+    return { ok: Math.abs(difference) <= SPLIT_TOLERANCE, entered, difference };
+}
+
+/**
+ * Bilingual message for a payment split that does not match the bill total.
+ * @param {{difference: number}} check - result of checkPaymentSplit
+ * @returns {string}
+ */
+export function paymentSplitMessage({ difference }) {
+    const amount = Math.abs(round2(difference)).toLocaleString('en-IN');
+    return difference > 0
+        ? `Cash + Online + Due is ₹${amount} less than the bill total. Add ₹${amount} to Cash, Online or Due. / नकद + ऑनलाइन + उधार बिल से ₹${amount} कम है। ₹${amount} नकद, ऑनलाइन या उधार में जोड़ें।`
+        : `Cash + Online + Due is ₹${amount} more than the bill total. Reduce it by ₹${amount}. / नकद + ऑनलाइन + उधार बिल से ₹${amount} ज़्यादा है। ₹${amount} कम करें।`;
+}
+
 /** Message shown when a bill with an unpaid part has no party name. */
 export const NAME_REQUIRED_FOR_DUE_MESSAGE =
     'Enter the name — a bill with Due needs a customer/supplier name. / नाम लिखें — उधार वाले बिल पर ग्राहक/व्यापारी का नाम ज़रूरी है।';

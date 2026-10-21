@@ -11,7 +11,9 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
-import { dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, round2, sumMoney } from '../utils/money.js';
+import {
+    checkPaymentSplit, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2, sumMoney
+} from '../utils/money.js';
 
 /** Buttons disabled while a retail save/print is in flight */
 const RETAIL_BUTTONS = '#saveSaleBtn, #printSaleBtn';
@@ -380,13 +382,43 @@ const RetailSaleManager = {
      * Update sale payment total display
      */
     updateSalePaymentTotal() {
-        const saleOnline = Helpers.getInputInt('saleOnlinePayment');
-        const saleCash = Helpers.getInputInt('saleCashPayment');
+        const split = this.readPaymentSplit();
         
-        const totalReceived = saleOnline + saleCash;
+        const totalReceived = split.online + split.cash;
         
         const totalReceivedEl = document.getElementById('totalReceived');
         if (totalReceivedEl) totalReceivedEl.textContent = Math.round(totalReceived);
+        Helpers.showSplitRemaining('saleSplitRemaining', checkPaymentSplit(sumMoney(saleItems, item => item.total), split));
+    },
+
+    /**
+     * Cash / online / due typed on the retail sale form
+     * @returns {{cash: number, online: number, due: number}}
+     */
+    readPaymentSplit() {
+        return {
+            online: round2(Helpers.getInputNumber('saleOnlinePayment')),
+            cash: round2(Helpers.getInputNumber('saleCashPayment')),
+            due: round2(Helpers.getInputNumber('saleDueAmount'))
+        };
+    },
+
+    /**
+     * One tap: put whatever is not yet received (total − cash − online) in Due.
+     */
+    putRestInDue() {
+        const total = sumMoney(saleItems, item => item.total);
+        const { cash, online } = this.readPaymentSplit();
+        const rest = round2(total - cash - online);
+        if (rest < 0) {
+            UIManager.showToast(paymentSplitMessage(checkPaymentSplit(total, { cash, online })));
+            return;
+        }
+        const dueInput = document.getElementById('saleDueAmount');
+        if (dueInput) dueInput.value = rest;
+        const dueCheckbox = document.getElementById('saleDueCheckbox');
+        if (dueCheckbox) dueCheckbox.checked = rest > 0;
+        this.updateSalePaymentTotal();
     },
 
     /**
@@ -494,6 +526,13 @@ const RetailSaleManager = {
         if (dueNeedsName(saleDue, saleCustomer)) {
             UIManager.showToast(NAME_REQUIRED_FOR_DUE_MESSAGE);
             document.getElementById('saleCustomerName')?.focus();
+            return;
+        }
+        
+        const split = checkPaymentSplit(salesTotal, { cash: saleCash, online: saleOnline, due: saleDue });
+        if (!split.ok) {
+            Helpers.showSplitRemaining('saleSplitRemaining', split);
+            UIManager.showToast(paymentSplitMessage(split));
             return;
         }
         

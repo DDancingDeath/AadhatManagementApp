@@ -1,7 +1,7 @@
 /**
  * @fileoverview Tests for money helpers / payment schema normalisation
  */
-import { round2, sumMoney, readPayment, billTotal, outstandingDue, computePurchaseTotals, computeWholesaleTotals } from '../utils/money.js';
+import { round2, sumMoney, readPayment, billTotal, outstandingDue, computePurchaseTotals, computeWholesaleTotals, checkPaymentSplit, paymentSplitMessage, dueNeedsName } from '../utils/money.js';
 
 describe('round2', () => {
     test('rounds half-paise correctly', () => {
@@ -112,3 +112,27 @@ describe('computeWholesaleTotals (#26)', () => {
     });
 });
 
+
+describe('checkPaymentSplit (#23)', () => {
+    test('match, short, over and rounding within ₹1', () => {
+        expect(checkPaymentSplit(1000, { cash: 600, online: 100, due: 300 })).toEqual({ ok: true, entered: 1000, difference: 0 });
+        expect(checkPaymentSplit(5000, { cash: 500 })).toEqual({ ok: false, entered: 500, difference: 4500 });
+        expect(checkPaymentSplit(5000, { cash: 50000 })).toEqual({ ok: false, entered: 50000, difference: -45000 });
+        expect(checkPaymentSplit(2567.5, { cash: 2568 }).ok).toBe(true);
+        expect(checkPaymentSplit(100, { cash: 0.1, online: 0.2, due: 98.7 })).toMatchObject({ ok: true, entered: 99 });
+        expect(checkPaymentSplit(100, { cash: 98.9 }).ok).toBe(false);
+    });
+    test('message says how much is missing or extra, in English and Hindi', () => {
+        expect(paymentSplitMessage({ difference: 4500 })).toMatch(/₹4,500 less .*₹4,500 कम/);
+        expect(paymentSplitMessage({ difference: -45000 })).toMatch(/₹45,000 more .*₹45,000 ज़्यादा/);
+    });
+});
+
+describe('dueNeedsName (#68)', () => {
+    test('blocks only when something is due and the name is blank', () => {
+        expect(dueNeedsName(10, '  ')).toBe(true);
+        expect(dueNeedsName(10, 'Sita')).toBe(false);
+        expect(dueNeedsName(0, '')).toBe(false);
+        expect(dueNeedsName(0.001, '')).toBe(false);
+    });
+});

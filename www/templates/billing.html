@@ -127,6 +127,12 @@
                 <input type="checkbox" id="dueCheckbox" onchange="window.app.billing.fillPayableAmount('due')" />
                 <input type="number" inputmode="decimal" id="dueAmount" oninput="window.app.billing.updatePaymentTotal();" placeholder="0" />
             </div>
+
+            <div class="payment-row split-remaining-row">
+                <span>Not split yet / बाकी:</span>
+                <strong id="purchaseSplitRemaining">₹0</strong>
+                <button type="button" class="split-rest-btn" onclick="window.app.billing.putRestInDue('purchase')">Rest → Due / बाकी उधार</button>
+            </div>
         </div>
 
         <div class="form-row" style="margin-top: 16px;">
@@ -250,6 +256,12 @@
                 <label>Due (₹):</label>
                 <input type="checkbox" id="saleDueCheckbox" onchange="window.app.billing.fillReceivableAmount('due')" />
                 <input type="number" inputmode="decimal" id="saleDueAmount" oninput="window.app.billing.updateSalePaymentTotal();" placeholder="0" />
+            </div>
+
+            <div class="payment-row split-remaining-row">
+                <span>Not split yet / बाकी:</span>
+                <strong id="saleSplitRemaining">₹0</strong>
+                <button type="button" class="split-rest-btn" onclick="window.app.billing.putRestInDue('sale')">Rest → Due / बाकी उधार</button>
             </div>
         </div>
 

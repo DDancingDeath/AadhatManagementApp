@@ -28,7 +28,7 @@ const PURCHASE_DOM = `
   <span id="billTotal">0</span><span id="totalPacketsInBill">0</span>
   <input type="checkbox" id="autoLaborCharge" checked><input id="manualLaborCharges" value="0"><span id="laborCalculation"></span>
   <span id="amountPayable">0</span><span id="totalPayment">0</span>
-  <input id="onlinePayment"><input id="cashPayment"><input id="dueAmount">
+  <input id="onlinePayment"><input id="cashPayment"><input id="dueAmount"><strong id="purchaseSplitRemaining"></strong>
   <input type="checkbox" id="onlineCheckbox"><input type="checkbox" id="cashCheckbox"><input type="checkbox" id="dueCheckbox">
   <input id="customerName"><input id="billComments"><input type="checkbox" id="billPrintComments">
   <button id="saveBillBtn"></button><button id="printBillBtn"></button><div id="toast"></div>`;
@@ -159,12 +159,29 @@ describe('new purchase save', () => {
         expect(toast).toHaveBeenCalledWith(expect.stringContaining('at least one payment method'));
     });
 
-    // BUG: see #23 — the cash + online + due split is never checked against the bill total.
-    test.skip('refuses to save when cash + online + due does not equal the grand total', async () => {
+    test('refuses to save when cash + online + due does not equal the grand total (#23)', async () => {
         await buildBill();
         setVal('cashPayment', 100);
         expect(await PurchaseManager.saveBillToHistory()).toBeUndefined();
         expect(savePurchase).not.toHaveBeenCalled();
+        expect(toast).toHaveBeenCalledWith(expect.stringContaining('₹2,468 less than the bill total'));
+        expect(document.getElementById('purchaseSplitRemaining').textContent).toBe('₹2,468 left / बाकी');
+
+        setVal('cashPayment', 3000);
+        expect(await PurchaseManager.saveBillToHistory()).toBeUndefined();
+        expect(toast).toHaveBeenCalledWith(expect.stringContaining('₹432 more than the bill total'));
+        expect(savePurchase).not.toHaveBeenCalled();
+    });
+
+    test('"Rest → Due" fills only the unpaid part; within ₹1 of the total saves (#23)', async () => {
+        await buildBill();
+        setVal('cashPayment', 1000);
+        setVal('customerName', 'Ramesh');
+        PurchaseManager.putRestInDue();
+        expect(document.getElementById('dueAmount').value).toBe('1568');
+        expect(document.getElementById('purchaseSplitRemaining').textContent).toBe('✓ ₹0');
+        setVal('dueAmount', 1567.5);
+        expect(await PurchaseManager.saveBillToHistory()).toMatchObject({ cashPayment: 1000, dueAmount: 1567.5, payment: { due: 1567.5 } });
     });
 
     test('saved totals come from the items even if the on-screen total is stale', async () => {
@@ -264,12 +281,12 @@ describe('new retail sale save', () => {
         expect(saveRetailSale).toHaveBeenCalledTimes(1);
     });
 
-    // BUG: see #23 — the payment split is not checked against the sale total.
-    test.skip('refuses a sale whose payment split does not add up', async () => {
+    test('refuses a sale whose payment split does not add up (#23)', async () => {
         await addLine(0, 36, [10]);
         setVal('saleCashPayment', 100);
         expect(await RetailSaleManager.completeSale()).toBeUndefined();
         expect(saveRetailSale).not.toHaveBeenCalled();
+        expect(toast).toHaveBeenCalledWith(expect.stringContaining('₹260 less than the bill total'));
     });
 });
 
