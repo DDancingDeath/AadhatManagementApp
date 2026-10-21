@@ -25,7 +25,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AppState } from '../utils/state.js';
 import { ItemsManager } from '../modules/items.js';
-import { findDuplicateItem, normalizeItemName } from '../utils/item-catalog.js';
+import { findDuplicateItem, normalizeItemName, itemUsageFrequency } from '../utils/item-catalog.js';
 
 const A = () => ({ id: 'a', name: 'Chana', hindiName: 'चना', rates: [50], saleRates: [], wholesaleRates: [] });
 const B = () => ({ id: 'b', name: 'Gehu', hindiName: 'गेहूं', rates: [30], saleRates: [], wholesaleRates: [], createdAt: 123 });
@@ -159,5 +159,40 @@ describe('duplicate item names are blocked', () => {
         expect(findDuplicateItem(items, { name: 'chana' }, 'a')).toBeNull();
         expect(findDuplicateItem(items, { name: '', hindiName: '' })).toBeNull();
         expect(normalizeItemName('  Piyar   Dana ')).toBe('piyar dana');
+    });
+});
+
+describe('most-used badge and sort (#75)', () => {
+    const histories = () => ({
+        purchaseHistory: [
+            { items: [{ itemId: 'c', name: 'Moong' }, { name: 'gehu ' }] },
+            { items: [{ itemId: 'c', name: 'Moong' }] }
+        ],
+        salesHistory: [{ items: [{ name: 'मूंग', itemId: 'gone' }, { itemId: 'c', name: 'Moong' }] }],
+        retailSalesHistory: [{ items: [{ itemName: 'गेहूं' }, { name: 'unknown thing' }] }]
+    });
+
+    afterEach(() => {
+        AppState.purchaseHistory = [];
+        AppState.salesHistory = [];
+        AppState.retailSalesHistory = [];
+    });
+
+    test('itemUsageFrequency counts bill lines per item id across all three histories', () => {
+        const items = [A(), B(), { ...C(), hindiName: 'मूंग' }];
+        const h = histories();
+        expect(itemUsageFrequency({
+            purchases: h.purchaseHistory, wholesaleSales: h.salesHistory, retailSales: h.retailSalesHistory
+        }, items)).toEqual({ c: 4, b: 2 });
+    });
+
+    test('Items table shows badges and sorts most used first', () => {
+        Object.assign(AppState, histories());
+        ItemsManager.renderItemsTable();
+        const rows = [...document.querySelectorAll('#itemsViewTableBody tr')];
+        expect(rows.map(r => r.cells[0].childNodes[0].textContent.trim())).toEqual(['Moong', 'Gehu', 'Chana']);
+        expect(rows[0].querySelector('span').textContent).toBe('3');
+        expect(rows[1].querySelector('span').textContent).toBe('2');
+        expect(rows[2].querySelector('span')).toBeNull();
     });
 });

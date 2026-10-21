@@ -11,7 +11,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { ensureXLSX } from '../utils/lazy-scripts.js';
-import { findItemById, findDuplicateItem, duplicateItemMessage } from '../utils/item-catalog.js';
+import { findItemById, findDuplicateItem, duplicateItemMessage, itemUsageFrequency, sortItemsByUsage } from '../utils/item-catalog.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -456,35 +456,17 @@ const ItemsManager = {
         }
     },
 
-    // Calculate item usage frequency from bills and sales
+    /**
+     * Item usage (bill lines per item id) from the loaded purchase, wholesale
+     * and retail histories.
+     * @returns {Object.<string, number>}
+     */
     calculateItemFrequency() {
-        const frequency = {};
-        
-        // Count from purchase bills
-        if (AppState.bills) {
-            AppState.bills.forEach(bill => {
-                if (bill.items) {
-                    bill.items.forEach(billItem => {
-                        const itemName = billItem.itemName || billItem.name;
-                        frequency[itemName] = (frequency[itemName] || 0) + 1;
-                    });
-                }
-            });
-        }
-        
-        // Count from sales
-        if (AppState.sales) {
-            AppState.sales.forEach(sale => {
-                if (sale.items) {
-                    sale.items.forEach(saleItem => {
-                        const itemName = saleItem.itemName || saleItem.name;
-                        frequency[itemName] = (frequency[itemName] || 0) + 1;
-                    });
-                }
-            });
-        }
-        
-        return frequency;
+        return itemUsageFrequency({
+            purchases: AppState.purchaseHistory,
+            wholesaleSales: AppState.salesHistory,
+            retailSales: AppState.retailSalesHistory
+        }, AppState.items);
     },
 
     // Render items table view
@@ -524,15 +506,7 @@ const ItemsManager = {
         }
         
         // Sort by frequency (most used first), then alphabetically
-        const sortedItems = [...filteredItems].sort((a, b) => {
-            const freqA = frequency[a.name] || 0;
-            const freqB = frequency[b.name] || 0;
-            
-            if (freqB !== freqA) {
-                return freqB - freqA; // Higher frequency first
-            }
-            return (a.name || '').localeCompare(b.name || ''); // Alphabetical fallback
-        });
+        const sortedItems = sortItemsByUsage(filteredItems, frequency);
         
         sortedItems.forEach((item) => {
             // Determine which name to display based on settings
@@ -565,7 +539,7 @@ const ItemsManager = {
                 }
             }
             
-            const itemFrequency = frequency[item.name] || 0;
+            const itemFrequency = frequency[item.id] || 0;
             
             const row = document.createElement('tr');
             row.style.borderBottom = '1px solid #e5e7eb';
