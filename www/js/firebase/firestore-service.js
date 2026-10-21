@@ -417,6 +417,24 @@ function publishCollection(c) {
 }
 
 /**
+ * Bill numbers already warned about this session (#41): pre-fix offline
+ * numbering on two phones could issue the same number; tell the user once
+ * when such a bill syncs so it can be told apart by customer/time.
+ */
+const warnedDuplicateBillNumbers = new Set();
+function warnDuplicateBillNumbers(c, changes) {
+    const dups = Helpers.findDuplicateBillNumbers(changes, AppState[c.spec.stateKey], docIdOf)
+        .filter(n => !warnedDuplicateBillNumbers.has(n));
+    if (!dups.length) return;
+    dups.forEach(n => warnedDuplicateBillNumbers.add(n));
+    console.warn(`[${c.spec.label}] duplicate bill number(s) after sync:`, dups);
+    import('../ui/ui-manager.js')
+        .then(({ UIManager }) => UIManager.showToast(
+            `⚠️ Same bill number used twice: ${dups.join(', ')} — check History / एक ही बिल नंबर दो बार`, 6000))
+        .catch(() => {});
+}
+
+/**
  * Keeps the in-memory copy of a record written by this device in step with the
  * write: one-shot (extended) records are not live, so without this the next
  * publish would resurrect the pre-edit version. Live records are left to their
@@ -2172,6 +2190,7 @@ const FirebaseService = {
                         if (spec.stock) noteObservedChange(c, previous, ch.newRec, ch.type);
                     });
                     publishCollection(c);
+                    if (started && spec.dues && changes) warnDuplicateBillNumbers(c, changes);
                     if (started) markDirty(spec.views, affectsStock);
                 }, { optional: !!spec.optional }));
 
