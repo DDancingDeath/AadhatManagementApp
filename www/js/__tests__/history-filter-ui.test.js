@@ -106,6 +106,10 @@ describe('History filters (#160)', () => {
         expect(document.getElementById('historyList').classList.contains('history-range-loading')).toBe(true);
 
         window.FirebaseService.getHistoryWindowStart = () => from;
+        // The stale-data hint is inserted right above the list, below the notice.
+        const hint = document.createElement('div');
+        hint.className = 'history-stale-hint';
+        document.getElementById('historyList').before(hint);
         resolveLoad();
         await new Promise(r => setTimeout(r, 0));
         await new Promise(r => setTimeout(r, 0));

@@ -602,7 +602,7 @@ export class HistoryManager {
             <tr>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb;">${Helpers.escapeHtml(item.name)}</td>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Helpers.escapeHtml(item.rate)}</td>
-                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${(item.qty || 0).toFixed(1)}</td>
+                <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Number(item.qty || item.quantity || 0).toFixed(1)}</td>
                 <td style="padding: 10px 8px; border-bottom: 1px solid #e5e7eb; text-align: right;"><strong>${Helpers.escapeHtml(item.total)}</strong></td>
             </tr>
         `).join('');
@@ -1042,7 +1042,7 @@ export class HistoryManager {
                         ` : ''}
                         <td style="padding: 12px 8px;">${Helpers.escapeHtml(item.name)}</td>
                         <td style="padding: 12px 8px; text-align: right;">₹${Helpers.escapeHtml(item.rate)}</td>
-                        <td style="padding: 12px 8px; text-align: right;">${(item.qty || 0).toFixed(1)}</td>
+                        <td style="padding: 12px 8px; text-align: right;">${Number(item.qty || item.quantity || 0).toFixed(1)}</td>
                         ${isFirstRow ? `
                             <td rowspan="${rowspan}" style="padding: 12px 8px; text-align: right; border-left: 1px solid #e5e7eb; font-weight: 700; color: ${itemColor}; font-size: 15px;">
                                 ₹${Math.round(billTotal)}
