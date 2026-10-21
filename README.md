@@ -58,8 +58,16 @@ A comprehensive business management application for wholesale/retail operations 
 | `expenses` | Business expenses | `AppState.expensesHistory` |
 | `stockAdjustments` | Manual stock corrections | `AppState.stockAdjustments` |
 | `withdrawals` | Cash withdrawals | `AppState.withdrawalsHistory` |
-| `cashSessions` | Cash management sessions | (loaded on demand) |
+| `cashManagement` | Cash management sessions | (loaded on demand) |
 | `users` | User accounts and roles | (loaded on demand) |
+| `stockCheckpoints` | Stock checkpoint + legacy-scan bookkeeping (see below) | — |
+| `settings` | App-wide settings (`settings/app`: client-version gates) | — |
+| `auditLogs` | Audit trail of critical actions (90-day retention) | (loaded on demand) |
+| `itemFrequency`, `drafts`, `autoSaves`, `notifications`, `telemetry` | Item ordering, bill drafts/autosave, in-app notices, diagnostics | — |
+
+Every name gets the environment prefix (`dev_` on localhost, none in
+production) via `window.getCollection(name)`; see
+[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md).
 
 ### Real-time Auto-Update
 
@@ -98,8 +106,8 @@ Each app open reads only recent data (see the section comment above `HISTORY_COL
 
 ### Installation
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (same as CI)
+npm ci --legacy-peer-deps
 ```
 
 ### Development
@@ -156,22 +164,30 @@ npm run test:coverage
 
 ### Test Structure
 
-```
-www/js/__tests__/
-├── __mocks__/
-│   └── firebase-mock.js   # Mock Firebase/Firestore for testing
-├── helpers.test.js        # Tests for utility helper functions (26 tests)
-├── state.test.js          # Tests for AppState module (31 tests)
-└── validator.test.js      # Tests for form validation utilities (45 tests)
-```
+All Jest suites live in `www/js/__tests__/` (one `*.test.js` per area;
+shared fakes in `__mocks__/`). Rough grouping:
 
-### Current Coverage
+- **Pure utilities**: `helpers`, `dates`, `money`, `validator`, `state`,
+  `keyboard-shortcuts`, `release` (changelog / version consistency)
+- **Stock & history maths**: `calculateStock`, `calculateStock-equivalence`,
+  `stock-check`, `history-range`, `history-window`, `history-service`,
+  `realtime-listeners`, `load-perf`, `infinite-scroll`
+- **Bills & payments**: `bill-edit`, `wholesale-payment`
+- **Safety guards**: `xss-rendering`, `firebase-app-shadow`,
+  `pwa-manifest` (service-worker `STATIC_ASSETS`), `install-prompt`
+- **Other**: `printer-raster`, `plan-generate`
 
-| File | Statements | Branches | Functions | Lines |
-|------|------------|----------|-----------|-------|
-| helpers.js | 62.96% | 38.88% | 75% | 62.74% |
-| state.js | 100% | 100% | 100% | 100% |
-| validator.js | 96.22% | 93.47% | 90% | 96% |
+Run `npm test` for the current count (24 suites / 312 tests on `main` as of
+2026-10-21) — don't hard-code numbers elsewhere; they go stale.
+
+### Coverage
+
+`npm run test:coverage` prints the report. Coverage is only *collected* and
+*enforced* for the three files listed in `collectCoverageFrom` /
+`coverageThreshold` in `jest.config.js` (`utils/helpers.js`,
+`utils/validator.js`, `utils/state.js`); the other suites exercise modules
+that are excluded from collection (Firebase/DOM-heavy code), so the
+percentage is not a measure of the whole app.
 
 ### Writing Tests
 
@@ -270,8 +286,19 @@ issues to work on, in order, with progress per phase. It is generated from
 - Preview locally: `GH_TOKEN=... node tools/plan/generate.js --dry-run`
   (`--write-docs` also writes `docs/PLAN.md`).
 
+## Bugs, features and the plan
+
+[GitHub issues](https://github.com/DDancingDeath/AadhatManagementApp/issues)
+are the only bug/feature list (labels `P0`–`P3`, `type:*`, `area:*`,
+`owner-decision`; sprint milestones). The pinned plan issue
+([#171](https://github.com/DDancingDeath/AadhatManagementApp/issues/171))
+shows the pick order — see "Planning" below. The old staging clone and its
+`docs/REVIEW_ISSUES.md` are archived and no longer maintained.
+
 ## Documentation
 
-- **Module Documentation**: [www/js/README.md](www/js/README.md)
-- **Architecture Diagram**: [www/js/ARCHITECTURE_DIAGRAM.md](www/js/ARCHITECTURE_DIAGRAM.md)
-- **Quick Start Guide**: [www/js/QUICK_START.md](www/js/QUICK_START.md)
+- **[AGENTS.md](AGENTS.md)** — conventions and workflows for anyone (human or AI) changing this repo
+- **[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md)** — `dev_` collection prefix, switching environments
+- **[www/js/README.md](www/js/README.md)** — module layout
+- **[scripts/README.md](scripts/README.md)** — Playwright inspection helpers
+- **[docs/archive/](docs/archive/README.md)** — older docs kept for history (may be out of date)

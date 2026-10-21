@@ -11,22 +11,31 @@ www/js/
 │   ├── constants.js          # App constants (time delays, ESC/POS commands)
 │   ├── state.js              # Global application state (AppState)
 │   ├── helpers.js            # Utility functions (escapeHtml, debounce, formatDate, etc.)
+│   ├── dates.js / money.js   # Bill-date parsing (IST-safe), payment/rounding helpers
+│   ├── stock-*.js, history-*.js  # Pure stock replay / history-window logic
+│   ├── keyboard-shortcuts.js # Desktop shortcuts (>= 1024px)
+│   ├── release-info.js       # Pure logic for the update banner / What's new
 │   └── template-loader.js    # Dynamic HTML template loading
 ├── ui/
 │   ├── ui-manager.js         # UI utilities (loading, toast, modal, haptic)
+│   ├── infinite-scroll.js    # Paged history lists
 │   └── navigation.js         # Tab navigation and menu management
 ├── auth/
 │   └── authentication.js     # Login, register, logout, role management
 ├── firebase/
 │   └── firestore-service.js  # Firestore CRUD operations
 ├── modules/
+│   ├── admin.js              # Owner admin panel: configure, users, data
 │   ├── analytics.js          # Usage analytics and charts
+│   ├── app-updates.js        # Update banner + What's new sheet
 │   ├── billing.js            # Core billing coordinator (mode switching, drafts, auto-save)
 │   ├── purchase.js           # Purchase bill creation (weights, rates, labor)
 │   ├── retail-sale.js        # Retail sale creation (weights, rates, payment)
 │   ├── wholesale-sales.js    # Wholesale sales (sales tab)
 │   ├── cash-management.js    # Session-based cash tracking
 │   ├── datefilter.js         # Date range filtering
+│   ├── day.js                # Today page
+│   ├── diagnostics.js        # Owner view of telemetry errors + audit logs
 │   ├── finance.js            # Financial overview and profit/loss
 │   ├── history.js            # Bill history and editing
 │   ├── items.js              # Items and rates management
@@ -38,6 +47,8 @@ www/js/
 │   └── users.js              # User management and roles
 ├── services/
 │   ├── audit.js              # Audit logging (90-day retention)
+│   ├── install-prompt.js     # PWA install card
+│   ├── telemetry.js          # Error capture/grouping -> telemetry collection
 │   └── printer.js            # Bluetooth thermal printer (ESC/POS)
 └── main.js                   # Application initialization
 ```
