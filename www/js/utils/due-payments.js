@@ -19,6 +19,25 @@ import { parseAnyBillDate } from './dates.js';
 /** Bill type → collection key. */
 export const BILL_COLLECTIONS = { purchase: 'purchases', retail: 'retailSales', wholesale: 'wholesaleSales' };
 
+/**
+ * Party name for comparing: Unicode-normalised, trimmed, inner spaces
+ * collapsed, case-insensitive (works for Hindi names too).
+ * @param {*} name
+ * @returns {string}
+ */
+export function normalizeParty(name) {
+    return String(name ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** True when two party names are the same person (exact after normalising; '' never matches). */
+export function sameParty(a, b) {
+    const x = normalizeParty(a);
+    return x !== '' && x === normalizeParty(b);
+}
+
+/** Party name stored on a bill (customer for sales, supplier for purchases). */
+export const billParty = (bill) => String(bill?.customerName || bill?.supplierName || '');
+
 /** Money direction of a due payment on a bill of this type. */
 export const directionFor = (billType) => (billType === 'purchase' ? 'paid' : 'received');
 

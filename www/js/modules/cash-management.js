@@ -14,7 +14,11 @@ import { needsHistoryFrom, ensureHistoryFrom } from '../utils/history-window.js'
 import { sessionTotals, parseCashAmount, isNotCounted, lastCountedSession, autoCloseFields } from '../utils/cash-session.js';
 import { round2, outstandingDue } from '../utils/money.js';
 import { OutstandingManager } from './outstanding.js';
-import { dueEvents, sumDueEvents, saleTimePayment } from '../utils/due-payments.js';
+import { dueEvents, sumDueEvents, saleTimePayment, normalizeParty, sameParty, billParty } from '../utils/due-payments.js';
+
+/** Cash-tab bill picker values that are not bills. */
+const DUE_BILL_NONE = '__none__';
+const DUE_BILL_UNLINKED = '__nobill__';
 
 const sessionRef = (sessionId) => {
     const name = window.getCollection ? window.getCollection('cashManagement') : 'cashManagement';
@@ -93,6 +97,10 @@ export class CashManagementManager {
         if (partyInput) {
             partyInput.addEventListener('input', () => this.populateDueBills());
         }
+        const dueBillSelect = document.getElementById('dueBillSelect');
+        if (dueBillSelect) {
+            dueBillSelect.addEventListener('change', () => this.showDueBillDetails());
+        }
         
         // Initialize form state (hide customer name for default "Cash Added")
         this.updateTransactionForm();
@@ -131,38 +139,69 @@ export class CashManagementManager {
 
     /**
      * Open bills for the Cash tab "Due received/paid" picker (#98): sales
-     * with money to collect, or purchases with money to pay, filtered by the
-     * typed party name. The last option records a payment not linked to any bill.
+     * with money to collect, or purchases with money to pay, for the party
+     * whose name is typed — exact name only (case/space-insensitive), and
+     * nothing until a name is typed. Nothing is pre-selected: the user must
+     * pick a bill or "No bill" explicitly.
      */
     static populateDueBills() {
         const select = document.getElementById('dueBillSelect');
         if (!select) return;
         const type = document.getElementById('cashTransactionType')?.value;
-        const party = (document.getElementById('partyName')?.value || '').trim().toLowerCase();
+        const party = normalizeParty(document.getElementById('partyName')?.value);
         const sources = type === 'paid'
             ? [['purchase', AppState.purchaseHistory]]
             : [['retail', AppState.retailSalesHistory], ['wholesale', AppState.salesHistory]];
         const bills = [];
-        sources.forEach(([billType, list]) => {
-            (list || []).forEach(bill => {
-                const due = outstandingDue(bill);
-                if (due <= 0) return;
-                const name = String(bill.customerName || '');
-                if (party && !name.toLowerCase().includes(party)) return;
-                bills.push({ billType, bill, due, time: billTime(bill.date) || 0 });
+        if (party) {
+            sources.forEach(([billType, list]) => {
+                (list || []).forEach(bill => {
+                    const due = outstandingDue(bill);
+                    if (due <= 0 || !sameParty(billParty(bill), party)) return;
+                    bills.push({ billType, bill, due, time: billTime(bill.date) || 0 });
+                });
             });
-        });
-        bills.sort((a, b) => a.time - b.time); // oldest due first
-        const options = bills.slice(0, 50).map(({ billType, bill, due }) =>
-            `<option value="${Helpers.escapeHtml(`${billType}|${bill.id}`)}">#${Helpers.escapeHtml(bill.billNumber || String(bill.id).slice(0, 8))} · ${Helpers.escapeHtml(bill.customerName || 'N/A')} · Due ₹${Helpers.escapeHtml(round2(due))}</option>`);
-        options.push('<option value="">No bill — old udhaar not in the app</option>');
-        select.innerHTML = options.join('');
-        const hint = document.getElementById('dueBillHint');
-        if (hint) {
-            hint.textContent = bills.length > 0
-                ? 'The payment reduces this bill\'s due on the Outstanding screen too.'
-                : 'No open bill found for this name.';
         }
+        bills.sort((a, b) => a.time - b.time); // oldest due first
+        const options = [`<option value="${DUE_BILL_NONE}" selected>— choose bill / बिल चुनें —</option>`];
+        bills.slice(0, 50).forEach(({ billType, bill, due }) => {
+            options.push(`<option value="${Helpers.escapeHtml(`${billType}|${bill.id}`)}">#${Helpers.escapeHtml(bill.billNumber || String(bill.id).slice(0, 8))} · ${Helpers.escapeHtml(Helpers.formatDate(bill.date))} · Due ₹${Helpers.escapeHtml(round2(due))}</option>`);
+        });
+        options.push(`<option value="${DUE_BILL_UNLINKED}">No bill — old udhaar not in the app / ऐप में बिल नहीं</option>`);
+        select.innerHTML = options.join('');
+        select.value = DUE_BILL_NONE;
+        this.showDueBillDetails();
+        if (!party) {
+            const hint = document.getElementById('dueBillHint');
+            if (hint) hint.textContent = 'Type the full customer/supplier name to see their open bills / पूरा नाम लिखें';
+        } else if (bills.length === 0) {
+            const hint = document.getElementById('dueBillHint');
+            if (hint) hint.textContent = 'No open bill for this exact name / इस नाम का कोई बकाया बिल नहीं';
+        }
+    }
+
+    /** Parse the picker value into a bill reference, or null for none/unlinked. */
+    static parseDueBillChoice(value) {
+        if (!value || value === DUE_BILL_NONE || value === DUE_BILL_UNLINKED) return null;
+        const sep = value.indexOf('|');
+        if (sep <= 0) return null;
+        return { billType: value.slice(0, sep), billId: value.slice(sep + 1) };
+    }
+
+    /** Shows the chosen bill's party, date and current due under the picker. */
+    static showDueBillDetails() {
+        const hint = document.getElementById('dueBillHint');
+        if (!hint) return;
+        const value = document.getElementById('dueBillSelect')?.value;
+        if (value === DUE_BILL_UNLINKED) {
+            hint.textContent = 'Recorded in today\'s cash only; no bill\'s due changes.';
+            return;
+        }
+        const choice = this.parseDueBillChoice(value);
+        const bill = choice ? OutstandingManager.findBill(choice.billType, choice.billId) : null;
+        hint.textContent = bill
+            ? `${billParty(bill) || 'N/A'} · ${Helpers.formatDate(bill.date)} · Due now ₹${round2(outstandingDue(bill))} — this bill's due goes down`
+            : 'Choose a bill, or "No bill" / बिल चुनें';
     }
 
     /**
@@ -825,14 +864,32 @@ export class CashManagementManager {
             }
         } else {
             // Due payment (received or paid)
-            const partyName = document.getElementById('partyName')?.value || 'N/A';
+            const typedParty = (document.getElementById('partyName')?.value || '').trim();
+            const partyName = typedParty || 'N/A';
+
+            // The user must choose explicitly: a bill of this party, or "No bill"
+            const billChoice = document.getElementById('dueBillSelect')?.value || DUE_BILL_NONE;
+            if (billChoice === DUE_BILL_NONE || (billChoice !== DUE_BILL_UNLINKED && !this.parseDueBillChoice(billChoice))) {
+                UIManager.showToast('Choose a bill, or "No bill" / बिल चुनें या "No bill"');
+                return;
+            }
 
             // Linked to a bill: the one shared path (bill due + drawer leg, one transaction)
-            const billChoice = document.getElementById('dueBillSelect')?.value || '';
-            if (billChoice) {
-                const sep = billChoice.indexOf('|');
-                const billType = billChoice.slice(0, sep);
-                const billId = billChoice.slice(sep + 1);
+            const choice = this.parseDueBillChoice(billChoice);
+            if (choice) {
+                const { billType, billId } = choice;
+                const bill = OutstandingManager.findBill(billType, billId);
+                const expectedType = type === 'paid' ? 'purchase' : null;
+                if (!bill || (expectedType ? billType !== expectedType : billType === 'purchase')) {
+                    UIManager.showToast('Bill not found — choose again / बिल नहीं मिला, फिर से चुनें');
+                    this.populateDueBills();
+                    return;
+                }
+                if (!sameParty(billParty(bill), typedParty)) {
+                    UIManager.showToast(`This bill is for ${billParty(bill) || 'N/A'}, not ${partyName} / यह बिल ${billParty(bill) || 'N/A'} का है, ${partyName} का नहीं`);
+                    this.populateDueBills();
+                    return;
+                }
                 const ok = await OutstandingManager.recordDuePayment({ billType, billId, cash: amount, online: 0, note: notes });
                 if (ok) {
                     this.renderHistory();
@@ -858,16 +915,21 @@ export class CashManagementManager {
                 recordedBy: AppState.userName || 'Unknown'
             };
 
-            const updatedSession = {
-                ...this.todaySession,
-                duePayments: [...(this.todaySession.duePayments || []), payment]
-            };
-
+            const session = this.todaySession;
             try {
-                await sessionRef(this.todaySession.id).update({
+                // arrayUnion is queued offline: show it now, don't wait for the server
+                const write = sessionRef(session.id).update({
                     duePayments: firebase.firestore.FieldValue.arrayUnion(payment)
                 });
-                this.todaySession = updatedSession;
+                session.duePayments = [...(session.duePayments || []), payment];
+                write.catch(error => {
+                    console.error('Record payment error:', error);
+                    session.duePayments = (session.duePayments || []).filter(p => p.id !== payment.id);
+                    this.calculateTodayTransactions()
+                        .then(() => this.updateUI())
+                        .catch(e => console.error('Cash refresh failed:', e));
+                    UIManager.showToast('Failed to record payment: ' + error.message);
+                });
                 await this.calculateTodayTransactions();
                 this.updateUI();
                 this.renderHistory();
@@ -879,6 +941,7 @@ export class CashManagementManager {
                 document.getElementById('partyName').value = '';
                 document.getElementById('transactionAmount').value = '';
                 document.getElementById('transactionNotes').value = '';
+                this.populateDueBills();
             } catch (error) {
                 console.error('Record payment error:', error);
                 UIManager.showToast('Failed to record payment: ' + error.message);

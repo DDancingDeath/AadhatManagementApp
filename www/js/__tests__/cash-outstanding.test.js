@@ -11,7 +11,7 @@ import { DayManager } from '../modules/day.js';
 import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 import { readPayment } from '../utils/money.js';
-import { dueEvents, sumDueEvents, saleTimePayment, entryParts, legParts, checkPaymentSplit } from '../utils/due-payments.js';
+import { dueEvents, sumDueEvents, saleTimePayment, entryParts, legParts, checkPaymentSplit, sameParty } from '../utils/due-payments.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AppState } from '../utils/state.js';
@@ -310,7 +310,8 @@ describe('#98 one due-payment path for Outstanding and Cash', () => {
         setVal('partyName', 'sita');
         CashManagementManager.updateTransactionForm();
         const options = [...document.querySelectorAll('#dueBillSelect option')].map(o => o.value);
-        expect(options).toEqual(['retail|r0', 'retail|r1', '']); // oldest first, "no bill" last
+        expect(options).toEqual(['__none__', 'retail|r0', 'retail|r1', '__nobill__']); // placeholder, oldest first, "no bill" last
+        expect(document.getElementById('dueBillSelect').value).toBe('__none__');
         setVal('dueBillSelect', 'retail|r0');
         setVal('transactionAmount', 100);
         jest.spyOn(FirebaseService, 'loadCashSessions').mockResolvedValue([]);
@@ -659,5 +660,98 @@ describe('#89 expenses appear / disappear at once, before the server answers', (
         await Promise.resolve();
         expect(AppState.expensesHistory).toEqual([]);
         expect(listText()).not.toContain('Tea');
+    });
+});
+
+describe('#98 review: the Cash-tab bill picker never guesses the bill', () => {
+    const ctx = useFakeShop();
+    const RAMESH = { id: 'r9', billNumber: 'S9', customerName: 'Ramesh', date: '19/10/2026', total: 500, dueAmount: 500, payment: { cash: 0, online: 0, due: 500 } };
+    const RAM_P = { id: 'p9', billNumber: 'P9', customerName: 'Ram', date: '18/10/2026', grandTotal: 900, dueAmount: 900, payment: { cash: 0, online: 0, due: 900 } };
+    const HINDI = { id: 'r8', billNumber: 'S8', customerName: 'सीता  देवी', date: '18/10/2026', total: 300, dueAmount: 300, payment: { cash: 0, online: 0, due: 300 } };
+    beforeEach(() => {
+        ctx.fake.seed('retailSales', [OLD_SALE, TODAY_SALE, RAMESH, HINDI]);
+        ctx.fake.seed('cashManagement', [OPEN_SESSION]);
+        AppState.retailSalesHistory = [{ ...OLD_SALE }, { ...TODAY_SALE }, { ...RAMESH }, { ...HINDI }];
+        AppState.purchaseHistory = [{ ...RAM_P }];
+        jest.spyOn(OutstandingManager, 'renderDue').mockImplementation(() => {});
+        jest.spyOn(FirebaseService, 'loadCashSessions').mockResolvedValue([]);
+        document.body.innerHTML = CASH_TEMPLATE;
+        CashManagementManager.todaySession = { ...OPEN_SESSION, duePayments: [] };
+    });
+    const options = () => [...document.querySelectorAll('#dueBillSelect option')].map(o => o.value);
+    const pick = (type, party) => {
+        setVal('cashTransactionType', type);
+        setVal('partyName', party);
+        CashManagementManager.updateTransactionForm();
+    };
+
+    test('blank name: no bills listed, and nothing is recorded without an explicit choice', async () => {
+        pick('received', '');
+        expect(options()).toEqual(['__none__', '__nobill__']);
+        expect(document.getElementById('dueBillSelect').value).toBe('__none__');
+        setVal('transactionAmount', 100);
+        const writes = ctx.fake.stats.writes;
+        await CashManagementManager.recordTransaction();
+        expect(ctx.fake.stats.writes).toBe(writes);
+        expect(toast).toHaveBeenCalledWith('Choose a bill, or "No bill" / बिल चुनें या "No bill"');
+    });
+
+    test('a typed name lists bills but none is pre-selected', async () => {
+        pick('received', 'Sita');
+        expect(options()).toEqual(['__none__', 'retail|r0', 'retail|r1', '__nobill__']);
+        setVal('transactionAmount', 100);
+        await CashManagementManager.recordTransaction();
+        expect(ctx.fake.raw('retailSales').get('r0').payment.due).toBe(600);
+        expect(toast).toHaveBeenCalledWith('Choose a bill, or "No bill" / बिल चुनें या "No bill"');
+    });
+
+    test('names match exactly: "Ram" does not list Ramesh; exact, case/space-insensitive and Hindi names do', () => {
+        pick('received', 'Ram');
+        expect(options()).toEqual(['__none__', '__nobill__']);
+        pick('received', '  ramesh ');
+        expect(options()).toEqual(['__none__', 'retail|r9', '__nobill__']);
+        pick('received', 'सीता देवी');
+        expect(options()).toEqual(['__none__', 'retail|r8', '__nobill__']);
+        pick('paid', 'RAM');
+        expect(options()).toEqual(['__none__', 'purchase|p9', '__nobill__']);
+        expect(sameParty('Ram', 'Ramesh')).toBe(false);
+        expect(sameParty('', '')).toBe(false);
+    });
+
+    test('the chosen bill\'s party, date and current due are shown', () => {
+        pick('received', 'Sita');
+        setVal('dueBillSelect', 'retail|r0');
+        document.getElementById('dueBillSelect').dispatchEvent(new Event('change'));
+        CashManagementManager.showDueBillDetails();
+        const hint = document.getElementById('dueBillHint').textContent;
+        expect(hint).toContain('Sita');
+        expect(hint).toContain('Due now ₹600');
+        expect(hint).toContain(Helpers.formatDate('20/10/2026'));
+    });
+
+    test('a bill of another party is refused with a bilingual message (name changed after choosing)', async () => {
+        pick('received', 'Sita');
+        setVal('dueBillSelect', 'retail|r0');
+        setVal('partyName', 'Ramesh'); // typed over without the list refreshing
+        setVal('transactionAmount', 100);
+        const writes = ctx.fake.stats.writes;
+        await CashManagementManager.recordTransaction();
+        expect(ctx.fake.stats.writes).toBe(writes);
+        expect(toast).toHaveBeenCalledWith('This bill is for Sita, not Ramesh / यह बिल Sita का है, Ramesh का नहीं');
+        expect(ctx.fake.raw('retailSales').get('r0').payment.due).toBe(600);
+    });
+
+    test('explicit "No bill" still works offline: shown at once, write queued', async () => {
+        const update = jest.fn(() => new Promise(() => {})); // offline: never acknowledged
+        jest.spyOn(FirebaseService, 'db', 'get').mockReturnValue({ collection: () => ({ doc: () => ({ update }) }) });
+        global.firebase = { firestore: { FieldValue: { arrayUnion: (...v) => ({ arrayUnion: v }) } } };
+        pick('received', 'Old customer');
+        setVal('dueBillSelect', '__nobill__');
+        setVal('transactionAmount', 60);
+        await CashManagementManager.recordTransaction();
+        expect(update).toHaveBeenCalledWith({ duePayments: { arrayUnion: [expect.objectContaining({ amount: 60, cash: 60, unlinked: true, customer: 'Old customer' })] } });
+        expect(CashManagementManager.todaySession.duePayments).toHaveLength(1);
+        expect(CashManagementManager.todayTransactions.dueReceived).toBe(60);
+        expect(toast).toHaveBeenCalledWith('✓ Recorded ₹60 received from Old customer');
     });
 });
