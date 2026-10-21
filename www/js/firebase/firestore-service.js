@@ -2257,6 +2257,8 @@ const FirebaseService = {
                                 const itemName = notification.itemHindiName || notification.itemName;
                                 const message = `${itemName} ${notification.rateTypeLabel} rate: ₹${notification.oldRate} → ₹${notification.newRate} (by ${notification.changedBy})`;
                                 console.log('Showing rate change toast:', message);
+                                // BUG: see #12 — UIManager is not imported here, so this throws.
+                                // eslint-disable-next-line no-undef
                                 UIManager.showToast(message, 5000);
                                 
                                 // Mark as read after showing
@@ -2449,6 +2451,58 @@ const FirebaseService = {
         }
         await getDb().collection(col('cashManagement')).doc(session.id).set(session);
         return session;
+    },
+
+    // ---- Users (admin.js / users.js) -------------------------------------
+
+    /** Server timestamp sentinel for user-profile writes. */
+    serverTimestamp() {
+        return firebase.firestore.FieldValue.serverTimestamp();
+    },
+
+    /**
+     * All user profiles, newest `createdAt` first (sorted client-side so legacy
+     * profiles without `createdAt` are kept, at the end).
+     * @returns {Promise<Object[]>} `{ id, ...data }` per profile
+     */
+    async loadUsers() {
+        const snapshot = await getDb().collection(col('users')).get();
+        const createdMs = (u) => {
+            const c = u.createdAt;
+            return c?.toMillis ? c.toMillis() : (c ? new Date(c).getTime() || 0 : 0);
+        };
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+            .sort((a, b) => createdMs(b) - createdMs(a));
+    },
+
+    /** Partial update of a user profile (role/status/approval fields). */
+    async updateUser(userId, fields) {
+        await getDb().collection(col('users')).doc(userId).update(fields);
+        usersCache = null;
+    },
+
+    /** Deletes a user profile document (reject / delete user). */
+    async deleteUserProfile(userId) {
+        await getDb().collection(col('users')).doc(userId).delete();
+        usersCache = null;
+    },
+
+    /** Number of documents in a collection (full read; Admin → Storage). */
+    async countDocuments(name) {
+        const snapshot = await getDb().collection(col(name)).get();
+        return snapshot.size;
+    },
+
+    /**
+     * Deletes every document of a collection (Admin → Clear Data).
+     * @returns {Promise<number>} documents deleted
+     */
+    async clearCollection(name) {
+        const snapshot = await getDb().collection(col(name)).get();
+        if (snapshot.size > 0) {
+            await Promise.all(snapshot.docs.map(doc => doc.ref.delete()));
+        }
+        return snapshot.size;
     }
 };
 

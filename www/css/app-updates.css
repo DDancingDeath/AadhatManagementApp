@@ -32,11 +32,54 @@
   font-size: 1.15rem;
 }
 
-.app-sheet-lang {
+.app-sheet-lang-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary, #f3f4f6);
+}
+
+.app-sheet-lang-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, #4b5563);
+  font: inherit;
+  font-size: 0.95rem;
   font-weight: 600;
+  min-height: 36px;
+  min-width: 84px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.app-sheet-lang-btn[aria-pressed="true"] {
+  background: var(--primary-color, #2563eb);
+  color: #fff;
+}
+
+.app-sheet-lang-btn:focus-visible {
+  outline: 2px solid var(--primary-color, #2563eb);
+  outline-offset: 2px;
+}
+
+.app-sheet-version {
   color: var(--text-secondary, #6b7280);
   font-size: 0.85rem;
-  margin-top: 8px;
+  margin: -8px 0 8px;
+}
+
+.app-sheet-fallback {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .app-sheet-notes {
@@ -112,4 +155,18 @@
 body.dark-mode .app-sheet {
   background: #1f2937;
   color: #f3f4f6;
+}
+
+body.dark-mode .app-sheet-lang-toggle {
+  background: #111827;
+  border-color: #374151;
+}
+
+body.dark-mode .app-sheet-lang-btn:not([aria-pressed="true"]) {
+  color: #d1d5db;
+}
+
+body.dark-mode .app-sheet-fallback {
+  background: #78350f;
+  color: #fef3c7;
 }

@@ -188,17 +188,12 @@ const AdminManager = {
      */
     async loadUsers() {
         try {
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            const snapshot = await db.collection(col).get();
+            const users = await FirebaseService.loadUsers();
             
             const pendingUsers = [];
             const activeUsers = [];
             
-            // Sorted client-side: orderBy('createdAt') would drop legacy profiles without createdAt
-            const createdMs = (d) => { const c = d.data().createdAt; return c?.toMillis ? c.toMillis() : (c ? new Date(c).getTime() || 0 : 0); };
-            [...snapshot.docs].sort((a, b) => createdMs(b) - createdMs(a)).forEach(doc => {
-                const user = { id: doc.id, ...doc.data() };
+            users.forEach(user => {
                 // Match logic from users.js: pending if status is pending OR no role assigned
                 if (user.status === 'pending' || !user.role) {
                     pendingUsers.push(user);
@@ -244,7 +239,7 @@ const AdminManager = {
                 </div>
                 <div class="user-actions">
                     <select id="role-${Helpers.escapeHtml(user.id)}">
-                        <option value="staff">Staff</option>
+                        <option value="staff">Member</option>
                         <option value="manager">Manager</option>
                     </select>
                     <button class="btn-approve" onclick="window.app.admin.approveUser('${Helpers.escapeJsAttr(user.id)}')">
@@ -290,7 +285,7 @@ const AdminManager = {
                         <div class="user-name">${Helpers.escapeHtml(user.name || 'Unknown')} ${isCurrentUser ? '<span style="color: #999; font-size: 12px;">(You)</span>' : ''}</div>
                         <div class="user-email">${Helpers.escapeHtml(user.email)}</div>
                     </div>
-                    <span class="user-role-badge ${Helpers.escapeHtml(user.role)}">${Helpers.escapeHtml(user.role)}</span>
+                    <span class="user-role-badge ${Helpers.escapeHtml(user.role)}">${Helpers.escapeHtml(Helpers.roleLabel(user.role))}</span>
                 </div>
                 ${!isCurrentUser ? `
                 <div class="user-actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
@@ -319,17 +314,14 @@ const AdminManager = {
 
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            
-            await db.collection(col).doc(userId).update({
+            await FirebaseService.updateUser(userId, {
                 status: 'active',
                 role: role,
-                approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                approvedAt: FirebaseService.serverTimestamp(),
                 approvedBy: AppState.currentUser?.uid
             });
 
-            UIManager.showToast(`User approved as ${role}`);
+            UIManager.showToast(`User approved as ${Helpers.roleLabel(role)}`);
             await this.loadUsers();
         } catch (error) {
             console.error('Error approving user:', error);
@@ -353,10 +345,7 @@ const AdminManager = {
 
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            
-            await db.collection(col).doc(userId).delete();
+            await FirebaseService.deleteUserProfile(userId);
 
             UIManager.showToast('User rejected');
             await this.loadUsers();
@@ -379,7 +368,7 @@ const AdminManager = {
         const newRole = currentRole === 'staff' ? 'manager' : 'staff';
         
         const confirmed = await UIManager.showModal(
-            `Change ${userName}'s role from ${currentRole} to ${newRole}?`,
+            `Change ${userName}'s role from ${Helpers.roleLabel(currentRole)} to ${Helpers.roleLabel(newRole)}?`,
             'Change Role',
             true
         );
@@ -387,14 +376,11 @@ const AdminManager = {
 
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            
-            await db.collection(col).doc(userId).update({
+            await FirebaseService.updateUser(userId, {
                 role: newRole
             });
 
-            UIManager.showToast(`Role changed to ${newRole}`);
+            UIManager.showToast(`Role changed to ${Helpers.roleLabel(newRole)}`);
             await this.loadUsers();
         } catch (error) {
             console.error('Error changing role:', error);
@@ -446,11 +432,8 @@ const AdminManager = {
         
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
-            const col = window.getCollection ? window.getCollection('users') : 'users';
-            
             // Delete user document from Firestore
-            await db.collection(col).doc(userId).delete();
+            await FirebaseService.deleteUserProfile(userId);
             
             UIManager.showToast(`User "${userName}" has been deleted`);
             await this.loadUsers();
@@ -500,7 +483,6 @@ const AdminManager = {
     async loadStorageStats() {
         try {
             UIManager.showLoading();
-            const db = firebase.firestore();
             
             const collections = [
                 { name: 'items', label: 'Items', icon: '📦' },
@@ -521,9 +503,7 @@ const AdminManager = {
 
             for (const col of collections) {
                 try {
-                    const colName = window.getCollection ? window.getCollection(col.name) : col.name;
-                    const snapshot = await db.collection(colName).get();
-                    const count = snapshot.size;
+                    const count = await FirebaseService.countDocuments(col.name);
                     totalDocs += count;
                     breakdown.push({
                         ...col,

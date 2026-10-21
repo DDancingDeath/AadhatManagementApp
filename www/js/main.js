@@ -84,13 +84,8 @@ window.addEventListener('unhandledrejection', function(event) {
 
 // Setup event listeners
 function setupEventListeners() {
-    // Overlay click to close menu
-    const overlay = document.querySelector('.overlay');
-    if (overlay) {
-        overlay.addEventListener('click', () => {
-            NavigationManager.toggleMenu();
-        });
-    }
+    // Close the side menu on overlay tap / Esc / swipe-left
+    NavigationManager.initMenuDismiss();
     
     // Modal buttons
     const modalCancel = document.getElementById('modalCancel');
@@ -227,6 +222,7 @@ async function initializeUserData() {
         
         // Show the billing tab by default
         NavigationManager.showTab('billing');
+        NavigationManager.setActiveNavLink('billing');
         
         // Initialize UI
         AuthManager.updateUserDisplay();
@@ -253,7 +249,7 @@ async function initializeUserData() {
         PrinterService.updateStatus();
         
         // Clean up old audit logs (runs silently for owners)
-        AuditService.cleanupOldLogs();
+        AuditService.cleanupOldLogs().catch(e => console.warn('Audit log cleanup failed:', e));
         
         UIManager.hideLoading();
 
@@ -611,6 +607,7 @@ window.app = {
     // Navigation
     nav: {
         toggleMenu: () => NavigationManager.toggleMenu(),
+        closeMenu: () => NavigationManager.closeMenu(),
         showTab: (tabId, evt) => NavigationManager.showTabFromNav(tabId, evt)
     },
     
@@ -698,12 +695,7 @@ window.app = {
         shareSaleWhatsApp: () => BillingManager.shareSaleWhatsApp(),
         
         // Sale methods
-        loadSaleRates: () => BillingManager.loadSaleRates(),
-        updateSalePaymentTotal: () => BillingManager.updateSalePaymentTotal(),
-        fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
-        completeSale: () => BillingManager.completeSale(),
         printSale: () => BillingManager.printSale(),
-        removeSaleItem: (index) => BillingManager.removeSaleItem(index),
         editSaleItem: (index) => BillingManager.editSaleItem(index),
         
         // Edit bill items
@@ -1005,7 +997,7 @@ window.app = {
     ui: {
         showLoading: () => UIManager.showLoading(),
         hideLoading: () => UIManager.hideLoading(),
-        showToast: (msg, duration) => UIManager.showToast(msg, duration),
+        showToast: (msg, durationOrType, duration) => UIManager.showToast(msg, durationOrType, duration),
         showModal: (msg, title, showCancel) => UIManager.showModal(msg, title, showCancel),
         closeModal: (result) => UIManager.closeModal(result)
     }

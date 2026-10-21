@@ -8,13 +8,13 @@
         "en": [
           "New \"What's new\" screen shows what changed after each update.",
           "Android app now tells you when a new version is ready to download.",
-          "Share the app with staff on WhatsApp from Settings.",
+          "Share the app with everyone on WhatsApp from Settings.",
           "New download page with simple install steps: aadhat-management.web.app/download"
         ],
         "hi": [
           "नया \"क्या नया है\" पेज — हर अपडेट के बाद बदलाव दिखाता है।",
           "नया वर्ज़न आने पर Android ऐप में सूचना दिखेगी।",
-          "सेटिंग्स से ऐप को WhatsApp पर स्टाफ़ के साथ शेयर करें।",
+          "सेटिंग्स से ऐप को WhatsApp पर सभी के साथ शेयर करें।",
           "नया डाउनलोड पेज, आसान इंस्टॉल तरीके के साथ: aadhat-management.web.app/download"
         ]
       }
@@ -27,7 +27,7 @@
         "en": [
           "App opens much faster (about 1 second) and loads only recent history.",
           "Saving and printing bills is faster.",
-          "Safer permissions: only approved staff can see and change data.",
+          "Safer permissions: only approved users can see and change data.",
           "Dues and payments are now calculated correctly.",
           "Finance: purchase cost uses the net payable amount.",
           "Retail sale dues are now counted in totals."
@@ -35,7 +35,7 @@
         "hi": [
           "ऐप अब बहुत जल्दी (लगभग 1 सेकंड में) खुलता है, सिर्फ़ हाल का हिसाब लोड होता है।",
           "बिल सेव और प्रिंट करना तेज़ हुआ।",
-          "ज़्यादा सुरक्षित: सिर्फ़ मंज़ूर स्टाफ़ ही डेटा देख और बदल सकता है।",
+          "ज़्यादा सुरक्षित: सिर्फ़ मंज़ूर उपयोगकर्ता ही डेटा देख और बदल सकते हैं।",
           "बकाया और भुगतान अब सही गिने जाते हैं।",
           "फ़ाइनेंस: खरीद की लागत अब कुल देय रकम से गिनी जाती है।",
           "खुदरा बिक्री का बकाया भी अब जोड़ में गिना जाता है।"

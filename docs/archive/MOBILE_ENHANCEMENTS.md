@@ -1,3 +1,5 @@
+> **Archived 2026-10-21 (#105).** A change log from an early mobile-UI pass, kept for history. Some items were later changed or removed; the source of truth is the code (`www/js/ui/ui-manager.js`, `www/css/`) and the open issues labelled `area:ux`.
+
 # Mobile UI Enhancements - Complete
 
 ## ✅ Implemented Features

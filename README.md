@@ -58,8 +58,16 @@ A comprehensive business management application for wholesale/retail operations 
 | `expenses` | Business expenses | `AppState.expensesHistory` |
 | `stockAdjustments` | Manual stock corrections | `AppState.stockAdjustments` |
 | `withdrawals` | Cash withdrawals | `AppState.withdrawalsHistory` |
-| `cashSessions` | Cash management sessions | (loaded on demand) |
+| `cashManagement` | Cash management sessions | (loaded on demand) |
 | `users` | User accounts and roles | (loaded on demand) |
+| `stockCheckpoints` | Stock checkpoint + legacy-scan bookkeeping (see below) | — |
+| `settings` | App-wide settings (`settings/app`: client-version gates) | — |
+| `auditLogs` | Audit trail of critical actions (90-day retention) | (loaded on demand) |
+| `itemFrequency`, `drafts`, `autoSaves`, `notifications`, `telemetry` | Item ordering, bill drafts/autosave, in-app notices, diagnostics | — |
+
+Every name gets the environment prefix (`dev_` on localhost, none in
+production) via `window.getCollection(name)`; see
+[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md).
 
 ### Real-time Auto-Update
 
@@ -98,8 +106,8 @@ Each app open reads only recent data (see the section comment above `HISTORY_COL
 
 ### Installation
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (same as CI)
+npm ci --legacy-peer-deps
 ```
 
 ### Development
@@ -136,6 +144,47 @@ cd android
 Release signing: create `android/keystore.properties` (git-ignored) with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`,
 or set `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
+### Releasing (Android APK + GitHub Release)
+
+`.github/workflows/android-release.yml` builds, signs and publishes the APK when a `v<version>` tag is pushed.
+Pull requests that touch `android/**`, `capacitor.config.json`, `package*.json`, `www/changelog.json`,
+`www/js/version.js` or the release scripts run the tests and `check:release` and build an unsigned debug APK
+(uploaded as a workflow artifact) to catch breakage — nothing is published.
+
+The version lives in four places that must agree: `www/changelog.json` (top entry), `package.json`,
+`www/js/version.js` and `android/app/build.gradle`.
+
+1. Add the new entry at the **top** of `www/changelog.json`: `version` (x.y.z), `date` (YYYY-MM-DD),
+   `androidVersionCode` (previous + 1) and short `notes.en` / `notes.hi` lists written for shop staff.
+2. Bump every version in one go: `npm run release -- <ver> --code <n>` (e.g. `npm run release -- 1.3.0 --code 4`).
+   It refuses to run until the changelog entry exists and the code increases; `npm run check:release` must pass.
+3. Open a PR, get it reviewed, merge to `main`.
+4. Owner tags the merged commit: `git tag v<ver> && git push origin v<ver>`.
+5. The workflow runs the tests and `check:release`, checks the tag equals `package.json` `version`, builds the signed
+   APK, verifies its signing certificate, and creates the GitHub Release "Aadhat Management v<ver>" (marked latest)
+   with notes from `www/changelog.json` and two assets: `AadhatManagement.apk` (stable name used by
+   `releases/latest/download/AadhatManagement.apk`, the app and the download page) and `AadhatManagement-v<ver>.apk`.
+   The web app still deploys on merge to `main` as before.
+
+Installed Android apps check `releases/latest` (at most every 12 h) and show an "Update available" banner;
+https://aadhat-management.web.app/download always links to the latest APK. After updating, each user sees a one-time
+"What's new" sheet (Settings → App updates reopens it and has "Share on WhatsApp" for sending the download link).
+
+To re-publish an existing tag (e.g. after fixing a secret), run the workflow manually (Actions → Android release →
+Run workflow) with `tag` = `v<ver>`; assets are replaced (`--clobber`).
+
+**One-time owner setup** (Settings → Secrets and variables → Actions):
+
+- Secrets (all four are required; tag builds fail without them rather than publish an unsigned APK):
+  - `ANDROID_KEYSTORE_BASE64` — the release keystore, base64-encoded. In PowerShell:
+    `[Convert]::ToBase64String([IO.File]::ReadAllBytes('aadhat-release.keystore')) | Set-Clipboard`
+  - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
+- Variable (recommended) `ANDROID_CERT_SHA256` — SHA-256 of the production signing certificate. The workflow refuses to
+  publish an APK signed with any other key (phones cannot update an app signed with a different key). Current production
+  value: `2bce82fc9b7f006e070be664185084c2703a83d209e308ba21cc939c25887738`. To re-derive it:
+  `keytool -list -v -keystore aadhat-release.keystore -alias <alias>` (the "SHA256" line; colons are ignored) or
+  `apksigner verify --print-certs AadhatManagement-v1.2-android11plus-release.apk` ("certificate SHA-256 digest").
+
 
 ## Testing
 
@@ -156,22 +205,30 @@ npm run test:coverage
 
 ### Test Structure
 
-```
-www/js/__tests__/
-├── __mocks__/
-│   └── firebase-mock.js   # Mock Firebase/Firestore for testing
-├── helpers.test.js        # Tests for utility helper functions (26 tests)
-├── state.test.js          # Tests for AppState module (31 tests)
-└── validator.test.js      # Tests for form validation utilities (45 tests)
-```
+All Jest suites live in `www/js/__tests__/` (one `*.test.js` per area;
+shared fakes in `__mocks__/`). Rough grouping:
 
-### Current Coverage
+- **Pure utilities**: `helpers`, `dates`, `money`, `validator`, `state`,
+  `keyboard-shortcuts`, `release` (changelog / version consistency)
+- **Stock & history maths**: `calculateStock`, `calculateStock-equivalence`,
+  `stock-check`, `history-range`, `history-window`, `history-service`,
+  `realtime-listeners`, `load-perf`, `infinite-scroll`
+- **Bills & payments**: `bill-edit`, `wholesale-payment`
+- **Safety guards**: `xss-rendering`, `firebase-app-shadow`,
+  `pwa-manifest` (service-worker `STATIC_ASSETS`), `install-prompt`
+- **Other**: `printer-raster`, `plan-generate`
 
-| File | Statements | Branches | Functions | Lines |
-|------|------------|----------|-----------|-------|
-| helpers.js | 62.96% | 38.88% | 75% | 62.74% |
-| state.js | 100% | 100% | 100% | 100% |
-| validator.js | 96.22% | 93.47% | 90% | 96% |
+Run `npm test` for the current count (24 suites / 312 tests on `main` as of
+2026-10-21) — don't hard-code numbers elsewhere; they go stale.
+
+### Coverage
+
+`npm run test:coverage` prints the report. Coverage is only *collected* and
+*enforced* for the three files listed in `collectCoverageFrom` /
+`coverageThreshold` in `jest.config.js` (`utils/helpers.js`,
+`utils/validator.js`, `utils/state.js`); the other suites exercise modules
+that are excluded from collection (Firebase/DOM-heavy code), so the
+percentage is not a measure of the whole app.
 
 ### Writing Tests
 
@@ -202,6 +259,23 @@ cd rules-tests && npm install && cd ..   # one-time: separate deps for the rules
 npm run test:rules                       # starts the emulator (demo-aadhat project, port 8181) and runs rules-tests/test.js
 ```
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and push to `main`:
+
+| Job | Commands |
+|-----|----------|
+| Lint, Jest, release checks | `npm run lint` (ESLint, real-error rules only — `eslint.config.js`), `npm run check:sw`, `npm run check:release`, `npx jest` |
+| Firestore rules tests | Java 21 + `cd rules-tests && npm ci` + `npm run test:rules` |
+| Playwright E2E (nightly, manual dispatch, or PRs labelled `e2e`) | `npm run test:e2e` — phone + desktop projects against the Firebase emulators |
+| Production smoke (nightly, manual dispatch) | `npm run test:smoke` — live site, no login, non-GET Firebase requests blocked |
+
+The hosting workflows (`firebase-hosting-*.yml`) still run Jest and deploy Hosting only; Firestore rules/indexes are deployed by hand (see the deployment order above).
+
+### End-to-end tests (Playwright)
+
+`tests/e2e/` holds Playwright specs: login gate, bill → History → due payment → cash close, edit a bill, open every page without errors. `npm run test:e2e` (needs Java 21; first time `npx playwright install chromium`) starts the auth/Firestore emulators (ports 9099/8181, as `www/firebaseConfig.js` expects with `?emulator=1`) and a static server on `E2E_PORT` (default 8099), then `tests/e2e/global-setup.js` wipes and seeds the emulator (owner/staff/pending users, items, bills). Run one spec with `npx playwright test tests/e2e/bill-flow.spec.js --project=phone`. Failure screenshots and traces land in `test-results/`.
+
 ## Validation
 
 The app includes a comprehensive validation utility (`www/js/utils/validator.js`) for client-side form validation:
@@ -228,26 +302,6 @@ The app includes a service worker (`www/service-worker.js`) that:
 - Uses network-first strategy for Firebase API calls
 - Enables basic offline functionality
 
-## Releasing a new version
-
-The version lives in four places that must agree: `www/changelog.json` (top
-entry), `package.json`, `www/js/version.js` and `android/app/build.gradle`.
-
-1. Add the new release at the **top** of `www/changelog.json` with `version`
-   (x.y.z), `date` (YYYY-MM-DD), `androidVersionCode` (previous + 1) and short
-   `notes.en` / `notes.hi` lists written for shop staff.
-2. Run `npm run release -- 1.4.0 --code 5` (same version/code). It refuses to
-   run until the changelog entry exists and the code increases.
-3. `npm run check:release` verifies everything is consistent (CI-friendly).
-4. Build the APK and publish a GitHub Release tagged `v1.4.0` with the APK
-   attached as **`AadhatManagement.apk`**. Installed Android apps check
-   `releases/latest` (at most every 12 h) and show an "Update available"
-   banner; https://aadhat-management.web.app/download always links to the
-   latest APK.
-
-After updating, each user sees a one-time "What's new" sheet (Settings → App
-updates reopens it and has "Share on WhatsApp" for sending the download link).
-
 ## Install as an app (PWA)
 
 `www/manifest.webmanifest` plus the icons in `www/icons/` make the web app
@@ -270,8 +324,19 @@ issues to work on, in order, with progress per phase. It is generated from
 - Preview locally: `GH_TOKEN=... node tools/plan/generate.js --dry-run`
   (`--write-docs` also writes `docs/PLAN.md`).
 
+## Bugs, features and the plan
+
+[GitHub issues](https://github.com/DDancingDeath/AadhatManagementApp/issues)
+are the only bug/feature list (labels `P0`–`P3`, `type:*`, `area:*`,
+`owner-decision`; sprint milestones). The pinned plan issue
+([#171](https://github.com/DDancingDeath/AadhatManagementApp/issues/171))
+shows the pick order — see "Planning" below. The old staging clone and its
+`docs/REVIEW_ISSUES.md` are archived and no longer maintained.
+
 ## Documentation
 
-- **Module Documentation**: [www/js/README.md](www/js/README.md)
-- **Architecture Diagram**: [www/js/ARCHITECTURE_DIAGRAM.md](www/js/ARCHITECTURE_DIAGRAM.md)
-- **Quick Start Guide**: [www/js/QUICK_START.md](www/js/QUICK_START.md)
+- **[AGENTS.md](AGENTS.md)** — conventions and workflows for anyone (human or AI) changing this repo
+- **[ENVIRONMENT_SETUP.md](ENVIRONMENT_SETUP.md)** — `dev_` collection prefix, switching environments
+- **[www/js/README.md](www/js/README.md)** — module layout
+- **[scripts/README.md](scripts/README.md)** — Playwright inspection helpers
+- **[docs/archive/](docs/archive/README.md)** — older docs kept for history (may be out of date)

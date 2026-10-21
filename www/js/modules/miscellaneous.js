@@ -177,7 +177,8 @@ export class ExpensesManager {
         
         // Refresh cash management if available
         if (window.app.cashManagement) {
-            window.app.cashManagement.calculateTodayTransactions();
+            window.app.cashManagement.calculateTodayTransactions()
+                .catch(e => console.error('Cash refresh after expense failed:', e));
             window.app.cashManagement.updateUI();
         }
     }
@@ -239,7 +240,8 @@ export class ExpensesManager {
         
         // Refresh cash management if available
         if (window.app.cashManagement) {
-            window.app.cashManagement.calculateTodayTransactions();
+            window.app.cashManagement.calculateTodayTransactions()
+                .catch(e => console.error('Cash refresh after expense failed:', e));
             window.app.cashManagement.updateUI();
         }
     }
@@ -398,7 +400,10 @@ export class ExpensesManager {
         }
 
         // Print the expense
-        this.printExpenseReceipt(expense);
+        this.printExpenseReceipt(expense).catch(e => {
+            console.error('Expense print failed:', e);
+            UIManager.showToast('Expense saved, but printing failed · खर्च सेव हुआ, प्रिंट नहीं हुआ', 3500);
+        });
     }
 
     static viewExpenseDetails(expenseId, category) {
@@ -670,7 +675,10 @@ export class ExpensesManager {
         }
 
         // Print the expense
-        this.printExpenseReceipt(expense);
+        this.printExpenseReceipt(expense).catch(e => {
+            console.error('Expense print failed:', e);
+            UIManager.showToast('Expense saved, but printing failed · खर्च सेव हुआ, प्रिंट नहीं हुआ', 3500);
+        });
     }
 }
 

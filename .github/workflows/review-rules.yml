@@ -1,0 +1,23 @@
+name: Review rules
+
+# Regex review rules (.github/review-rules.yml, #54) on the lines a PR adds.
+# Fails on `severity: block`; warn/info findings are only printed.
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  review-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check added lines against review rules
+        run: node scripts/check-review-rules.js
+        env:
+          REVIEW_BASE: origin/${{ github.base_ref }}

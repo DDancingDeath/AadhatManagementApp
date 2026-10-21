@@ -58,6 +58,10 @@
     <!-- SheetJS (Excel) is loaded on demand via js/utils/lazy-scripts.js -->
 </head>
 <body>
+    <!-- Apply the saved theme before first paint (Settings only applies it once opened). -->
+    <script id="themeBoot">
+        try { if (localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode'); } catch (e) {}
+    </script>
     <!-- All HTML content is dynamically loaded from templates/ directory -->
     <!-- See templates/*.html for all readable HTML templates -->
     

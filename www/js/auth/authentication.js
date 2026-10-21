@@ -2,6 +2,7 @@
 
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
+import { Helpers } from '../utils/helpers.js';
 
 const usersCollection = () => (window.getCollection ? window.getCollection('users') : 'users');
 
@@ -417,7 +418,7 @@ const AuthManager = {
         const userEmailDisplay = document.getElementById('userEmail');
         
         if (userNameDisplay) userNameDisplay.textContent = AppState.userName;
-        if (userRoleDisplay) userRoleDisplay.textContent = AppState.userRole.toUpperCase();
+        if (userRoleDisplay) userRoleDisplay.textContent = Helpers.roleLabel(AppState.userRole).toUpperCase();
         
         const user = AppState.currentUser || firebase.auth().currentUser;
         if (userEmailDisplay && user) {

@@ -1,4 +1,4 @@
-import { resolveShortcut, TAB_SHORTCUTS } from '../utils/keyboard-shortcuts.js';
+import { resolveShortcut, TAB_SHORTCUTS, findCloseControl } from '../utils/keyboard-shortcuts.js';
 
 const key = (k, extra = {}) => ({ key: k, code: '', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...extra });
 const billing = { activeTab: 'billing', billingMode: 'purchase' };
@@ -42,5 +42,46 @@ describe('resolveShortcut', () => {
 
     test('nothing fires before login (no active tab)', () => {
         expect(resolveShortcut(key('1', { altKey: true, code: 'Digit1' }), { activeTab: null })).toBeNull();
+    });
+});
+
+describe('Esc closes JS-built popups (#88)', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+        delete window.__aadhatShortcutsInstalled;
+    });
+
+    test('findCloseControl finds Cancel buttons without a known class', () => {
+        const root = document.createElement('div');
+        root.innerHTML = '<button>Change Role</button><button>Cancel</button>';
+        expect(findCloseControl(root).textContent).toBe('Cancel');
+        root.innerHTML = '<button id="confirmDelete">Delete</button><button id="cancelDelete">x</button>';
+        expect(findCloseControl(root).id).toBe('cancelDelete');
+        root.innerHTML = '<button class="modal-close">✕</button><button>Cancel</button>';
+        expect(findCloseControl(root).className).toBe('modal-close');
+        root.innerHTML = '<button>Save</button>';
+        expect(findCloseControl(root)).toBeNull();
+    });
+
+    test('Escape on desktop clicks Cancel in a full-screen popup appended to <body>', () => {
+        jest.spyOn(Element.prototype, 'getClientRects').mockReturnValue([{}]);
+        jest.spyOn(Element.prototype, 'getBoundingClientRect')
+            .mockReturnValue({ width: window.innerWidth, height: window.innerHeight, top: 0, left: 0 });
+        window.matchMedia = () => ({ matches: true });
+        jest.isolateModules(() => { require('../utils/keyboard-shortcuts.js'); });
+
+        document.body.innerHTML = '<div id="appContent"><div class="tab active" id="users"></div></div>';
+        const popup = document.createElement('div');
+        popup.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%;';
+        popup.innerHTML = '<div><button>Cancel</button><button>Change Role</button></div>';
+        const cancel = jest.fn(() => popup.remove());
+        popup.querySelector('button').onclick = cancel;
+        document.body.appendChild(popup);
+
+        const evt = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+        document.body.dispatchEvent(evt);
+        expect(cancel).toHaveBeenCalledTimes(1);
+        expect(evt.defaultPrevented).toBe(true);
+        expect(popup.isConnected).toBe(false);
     });
 });

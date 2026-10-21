@@ -1,0 +1,28 @@
+{
+  "name": "wholesale-partial-payment",
+  "description": "Wholesale sale paid cash + online + due, then a later part payment; a second sale fully on credit.",
+  "items": [ { "id": "item-maize", "name": "Maize", "hindiName": "मक्का" } ],
+  "purchases": [
+    { "id": "p1", "date": "2026-10-10T08:00:00", "customerName": "Farmer Lal",
+      "items": [ { "itemId": "item-maize", "name": "Maize", "qty": 500, "rate": 20, "total": 10000 } ],
+      "billTotal": 10000, "laborCharges": 0, "grandTotal": 10000,
+      "cashPayment": 10000, "onlinePayment": 0, "dueAmount": 0,
+      "payment": { "cash": 10000, "online": 0, "due": 0, "total": 10000 } }
+  ],
+  "wholesaleSales": [
+    { "id": "w1", "date": "2026-10-11T12:00:00", "customer": "Gupta",
+      "items": [ { "itemId": "item-maize", "name": "Maize", "qty": 300, "rate": 23, "total": 6900 } ],
+      "total": 6900, "payment": { "cash": 4000, "online": 1000, "due": 1900, "total": 5000 },
+      "payments": [ { "amount": 2000, "date": "2026-10-15T10:00:00" } ] },
+    { "id": "w2", "date": "12/10/2026", "customer": "Gupta",
+      "items": [ { "itemId": "item-maize", "name": "Maize", "qty": 100, "rate": 23, "total": 2300 } ],
+      "total": 2300, "payment": { "cash": 0, "online": 0, "due": 2300, "total": 0 } }
+  ],
+  "retailSales": [],
+  "stockAdjustments": [],
+  "expected": {
+    "stock": { "item-maize": 100 },
+    "payable": {},
+    "receivable": { "Gupta": 4200 }
+  }
+}

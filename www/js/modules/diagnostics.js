@@ -9,6 +9,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { TelemetryService } from '../services/telemetry.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
+import { formatDateTimeIN } from '../utils/dates.js';
 
 /**
  * Diagnostics Manager - View and manage application telemetry and audit logs
@@ -202,8 +203,8 @@ const DiagnosticsManager = {
             'manual': '🟣 Manual'
         };
 
-        const lastSeen = error.lastSeen ? new Date(error.lastSeen).toLocaleString('en-IN') : 'Unknown';
-        const firstSeen = error.firstSeen ? new Date(error.firstSeen).toLocaleString('en-IN') : lastSeen;
+        const lastSeen = formatDateTimeIN(error.lastSeen);
+        const firstSeen = error.firstSeen ? formatDateTimeIN(error.firstSeen, undefined, lastSeen) : lastSeen;
 
         return `
             <div class="diag-error-card" style="border-left: 4px solid ${typeColors[error.type] || '#666'};">
@@ -229,7 +230,7 @@ const DiagnosticsManager = {
                         <summary>Recent Occurrences (${error.occurrences.length})</summary>
                         <ul>
                             ${error.occurrences.slice(-5).map(o => `
-                                <li>${new Date(o.timestamp).toLocaleString('en-IN')} - ${Helpers.escapeHtml(o.userName || 'Unknown')}</li>
+                                <li>${formatDateTimeIN(o.timestamp)} - ${Helpers.escapeHtml(o.userName || 'Unknown')}</li>
                             `).join('')}
                         </ul>
                     </details>
@@ -305,8 +306,7 @@ const DiagnosticsManager = {
      * @returns {string} HTML string
      */
     renderAuditCard(log) {
-        const date = new Date(log.timestamp);
-        const formattedDate = date.toLocaleString('en-IN', {
+        const formattedDate = formatDateTimeIN(log.timestamp, {
             day: '2-digit',
             month: 'short',
             year: 'numeric',
@@ -326,7 +326,7 @@ const DiagnosticsManager = {
                     <span class="diag-audit-time">${formattedDate}</span>
                 </div>
                 <div class="diag-audit-user">
-                    <strong>${Helpers.escapeHtml(log.userName)}</strong> (${Helpers.escapeHtml(log.userRole)})
+                    <strong>${Helpers.escapeHtml(log.userName)}</strong> (${Helpers.escapeHtml(Helpers.roleLabel(log.userRole))})
                 </div>
                 ${details ? `<div class="diag-audit-details">${Helpers.escapeHtml(details)}</div>` : ''}
             </div>

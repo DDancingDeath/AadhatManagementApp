@@ -20,6 +20,31 @@ function attachToBody(el) {
 
 let toastTimer = null;
 
+const TOAST_TYPES = ['success', 'error', 'warning', 'info'];
+const TOAST_TYPE_DURATIONS = { error: 5000, warning: 4000, info: 3000, success: 2000 };
+
+/**
+ * Normalises showToast's flexible arguments.
+ * Accepts (duration), (type) or (type, duration); a type string must never
+ * reach setTimeout, where it would hide the toast after ~0 ms.
+ * @param {number|string} [durationOrType]
+ * @param {number} [maybeDuration]
+ * @returns {{type: string|null, duration: number}}
+ */
+export function resolveToastOptions(durationOrType, maybeDuration) {
+    let type = null;
+    let duration = durationOrType;
+    if (typeof durationOrType === 'string' && !/^\d+$/.test(durationOrType.trim())) {
+        type = TOAST_TYPES.includes(durationOrType) ? durationOrType : null;
+        duration = maybeDuration;
+    }
+    duration = Number(duration);
+    if (!Number.isFinite(duration) || duration <= 0) {
+        duration = (type && TOAST_TYPE_DURATIONS[type]) || 2000;
+    }
+    return { type, duration };
+}
+
 /**
  * UI Manager object containing all UI utility functions.
  * @namespace UIManager
@@ -76,10 +101,14 @@ const UIManager = {
     /**
      * Shows a toast notification message.
      * @param {string} message - The message to display
-     * @param {number} [duration=2000] - Duration in milliseconds to show the toast
+     * @param {number|string} [durationOrType=2000] - Duration in ms, or a type
+     *   ('success' | 'error' | 'warning' | 'info') that sets the style and a
+     *   sensible default duration (errors stay 5 s)
+     * @param {number} [typeDuration] - Duration in ms when a type is given
      * @returns {void}
      */
-    showToast(message, duration = 2000) {
+    showToast(message, durationOrType, typeDuration) {
+        const { type, duration } = resolveToastOptions(durationOrType, typeDuration);
         const toast = document.getElementById('toast');
         if (!toast) {
             // Fallback: create toast element if not found
@@ -88,11 +117,13 @@ const UIManager = {
             newToast.id = 'toast';
             newToast.className = 'toast';
             document.body.appendChild(newToast);
-            return this.showToast(message, duration); // Retry
+            return this.showToast(message, durationOrType, typeDuration); // Retry
         }
         
         attachToBody(toast);
         toast.textContent = message;
+        toast.classList.remove(...TOAST_TYPES);
+        if (type) toast.classList.add(type);
         toast.classList.add('show');
         
         // Restart the timer so an earlier toast's timeout doesn't hide this one early

@@ -1,3 +1,5 @@
+> **Archived 2026-10-21 (#105).** Written when Firebase was first wired in; no longer accurate. Collection names changed (`bills`/`sales`/`payments` are now `purchases`/`retailSales`/`wholesaleSales`/`expenses`, …), user management and role UI ship today (`www/js/modules/admin.js`, `users.js`), and permissions are in `firestore.rules`. Current setup: the root `README.md` and `AGENTS.md`.
+
 # 🎉 Firebase Integration Complete!
 
 ## ✅ What Has Been Implemented

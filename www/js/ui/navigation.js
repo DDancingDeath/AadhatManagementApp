@@ -18,22 +18,80 @@ const NavigationManager = {
         });
     },
     
-    // Toggle side navigation menu
-    toggleMenu() {
+    isMenuOpen() {
+        const sideNav = document.querySelector('.side-nav');
+        return !!sideNav && sideNav.classList.contains('active');
+    },
+
+    setMenuOpen(open) {
         const sideNav = document.querySelector('.side-nav');
         const overlay = document.querySelector('.overlay');
-        sideNav.classList.toggle('active');
-        overlay.classList.toggle('active');
+        if (sideNav) sideNav.classList.toggle('active', open);
+        if (overlay) overlay.classList.toggle('active', open);
+    },
+
+    openMenu() {
+        this.setMenuOpen(true);
         UIManager.hapticFeedback('light');
     },
 
-    // Show tab from navigation
-    showTabFromNav(tabId, event) {
-        if (event) {
-            event.preventDefault();
+    closeMenu() {
+        if (!this.isMenuOpen()) return;
+        this.setMenuOpen(false);
+        UIManager.hapticFeedback('light');
+    },
+
+    // Toggle side navigation menu
+    toggleMenu() {
+        if (this.isMenuOpen()) this.closeMenu(); else this.openMenu();
+    },
+
+    // Close the drawer on overlay tap, Esc, or a left swipe on the drawer.
+    // Safe to call more than once; listeners are only attached once.
+    initMenuDismiss() {
+        const overlay = document.querySelector('.overlay');
+        if (overlay && !overlay.dataset.dismissBound) {
+            overlay.dataset.dismissBound = '1';
+            overlay.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.closeMenu();
+            });
         }
-        
-        // Update active state for navigation links
+
+        if (!document.__aadhatNavEscBound) {
+            document.__aadhatNavEscBound = true;
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && this.isMenuOpen()) {
+                    e.preventDefault();
+                    this.closeMenu();
+                }
+            });
+        }
+
+        const sideNav = document.querySelector('.side-nav');
+        if (sideNav && !sideNav.dataset.swipeBound) {
+            sideNav.dataset.swipeBound = '1';
+            let startX = null;
+            let startY = null;
+            sideNav.addEventListener('touchstart', (e) => {
+                const t = e.touches && e.touches[0];
+                startX = t ? t.clientX : null;
+                startY = t ? t.clientY : null;
+            }, { passive: true });
+            sideNav.addEventListener('touchend', (e) => {
+                const t = e.changedTouches && e.changedTouches[0];
+                if (!t || startX === null) return;
+                const dx = t.clientX - startX;
+                const dy = t.clientY - startY;
+                startX = null;
+                if (dx < -60 && Math.abs(dx) > Math.abs(dy) * 1.5) this.closeMenu();
+            }, { passive: true });
+        }
+    },
+
+    // Highlight the side-nav link for tabId (also used on startup, which bypasses showTabFromNav)
+    setActiveNavLink(tabId) {
         const links = document.querySelectorAll('.nav-menu a');
         links.forEach(link => {
             link.classList.remove('active');
@@ -43,12 +101,18 @@ const NavigationManager = {
                 link.classList.add('active');
             }
         });
+    },
+
+    // Show tab from navigation
+    showTabFromNav(tabId, event) {
+        if (event) {
+            event.preventDefault();
+        }
+        
+        this.setActiveNavLink(tabId);
         
         // Close menu
-        const sideNav = document.querySelector('.side-nav');
-        const overlay = document.querySelector('.overlay');
-        sideNav.classList.remove('active');
-        overlay.classList.remove('active');
+        this.setMenuOpen(false);
         
         // Show tab (use tabId directly, not tabId + 'Tab')
         this.showTab(tabId);

@@ -231,6 +231,22 @@ const ItemsManager = {
     },
 
     /**
+     * Saves an item after a rate was added/removed in AppState. On failure the
+     * local change is undone and the user is told (inline handlers can't catch).
+     * @private
+     */
+    async _saveItemRates(item, undo) {
+        try {
+            await FirebaseService.saveItem(item);
+        } catch (error) {
+            undo();
+            console.error('Error saving item rates:', error);
+            UIManager.showToast('Rate not saved - check internet and try again · रेट सेव नहीं हुआ', 3500);
+        }
+        this.renderItems();
+    },
+
+    /**
      * Rate list helpers shared by the purchase / sale / wholesale handlers.
      * @private
      */
@@ -239,8 +255,7 @@ const ItemsManager = {
         if (!item) return;
         if (!item[field]) item[field] = [];
         item[field].push('');
-        await FirebaseService.saveItem(item);
-        this.renderItems();
+        await this._saveItemRates(item, () => item[field].pop());
     },
 
     updateRateOfType(id, field, kind, rateIndex, value) {
@@ -253,7 +268,8 @@ const ItemsManager = {
         this.scheduleSave(`${field}_${id}_${rateIndex}`, id, (saved) => {
             // Notify all users about rate change (fire-and-forget; never rejects)
             if (oldRate !== newRate && newRate > 0) {
-                FirebaseService.notifyRateChange(saved, kind, oldRate, newRate);
+                FirebaseService.notifyRateChange(saved, kind, oldRate, newRate)
+                    .catch(e => console.warn('Rate-change notification failed:', e));
             }
         });
     },
@@ -261,9 +277,8 @@ const ItemsManager = {
     async deleteRateOfType(id, field, rateIndex) {
         const item = this.requireItem(id);
         if (!item || !item[field]) return;
-        item[field].splice(rateIndex, 1);
-        await FirebaseService.saveItem(item);
-        this.renderItems();
+        const [removed] = item[field].splice(rateIndex, 1);
+        await this._saveItemRates(item, () => item[field].splice(rateIndex, 0, removed));
     },
 
     // Purchase rates
@@ -430,7 +445,7 @@ const ItemsManager = {
                 updated: plan.updates.length,
                 added: plan.adds.length,
                 errors: plan.errors.length
-            });
+            }).catch(e => console.warn('Audit log failed:', e));
             
             this.renderItems();
             this.refreshTable();

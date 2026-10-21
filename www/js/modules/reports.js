@@ -2,11 +2,42 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
-import { readPayment, outstandingDue } from '../utils/money.js';
+import { readPayment, outstandingDue, readLineItem, perUnitRate } from '../utils/money.js';
 import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
 import {
     rangeStatus, retryRange, applyRangeState, needsHistoryFrom, ensureHistoryFrom
 } from '../utils/history-window.js';
+
+/**
+ * Per-item totals for the given bills, reading legacy line-item fields too.
+ * @param {Array<Object>} bills
+ * @returns {Object<string, {count: number, qty: number, value: number}>}
+ */
+export function aggregateLineItems(bills) {
+    const itemData = {};
+    (bills || []).forEach(bill => {
+        (bill?.items || []).forEach(raw => {
+            const item = readLineItem(raw);
+            if (!itemData[item.name]) itemData[item.name] = { count: 0, qty: 0, value: 0 };
+            itemData[item.name].count++;
+            itemData[item.name].qty += item.qty;
+            itemData[item.name].value += item.total;
+        });
+    });
+    return itemData;
+}
+
+/** Chart scale: the largest value, but never 0 (all-zero periods would divide by 0). */
+export function chartScaleMax(values) {
+    const max = Math.max(0, ...values.map(v => Number(v) || 0));
+    return max > 0 ? max : 1;
+}
+
+/** "₹12.50" + suffix, or "—" when quantity is 0. */
+export function formatPerUnitRate(value, qty, suffix = '') {
+    const rate = perUnitRate(value, qty);
+    return rate === null ? '—' : `₹${rate.toFixed(2)}${suffix}`;
+}
 
 export class ReportsManager {
     static currentTab = 'overview';
@@ -396,7 +427,7 @@ export class ReportsManager {
             return;
         }
 
-        const maxValue = Math.max(...dates.map(d => Math.max(dailyData[d].purchases, dailyData[d].sales)));
+        const maxValue = chartScaleMax(dates.flatMap(d => [dailyData[d].purchases, dailyData[d].sales]));
         const chartHeight = canvas.height - 60;
         const chartWidth = canvas.width - 60;
         const barWidth = (chartWidth / dates.length) / 2.5;
@@ -442,18 +473,7 @@ export class ReportsManager {
         const container = document.getElementById('reportsTopItems');
         if (!container) return;
 
-        const itemData = {};
-
-        [...purchases, ...sales].forEach(bill => {
-            (bill.items || []).forEach(item => {
-                if (!itemData[item.name]) {
-                    itemData[item.name] = { count: 0, value: 0, qty: 0 };
-                }
-                itemData[item.name].count++;
-                itemData[item.name].value += item.total || 0;
-                itemData[item.name].qty += item.qty || 0;
-            });
-        });
+        const itemData = aggregateLineItems([...purchases, ...sales]);
 
         const topItems = Object.entries(itemData)
             .sort((a, b) => b[1].value - a[1].value)
@@ -670,7 +690,7 @@ export class ReportsManager {
             return;
         }
 
-        const maxValue = Math.max(...dates.map(d => Math.max(dailyData[d].purchases, dailyData[d].sales)));
+        const maxValue = chartScaleMax(dates.flatMap(d => [dailyData[d].purchases, dailyData[d].sales]));
         const chartHeight = canvas.height - 60;
         const chartWidth = canvas.width - 80;
         const pointGap = chartWidth / (dates.length - 1 || 1);
@@ -745,24 +765,15 @@ export class ReportsManager {
         const container = document.getElementById('itemComparisonList');
         if (!container) return;
 
+        const purchaseItems = aggregateLineItems(purchases);
+        const saleItems = aggregateLineItems(sales);
         const itemData = {};
-
-        purchases.forEach(p => {
-            (p.items || []).forEach(item => {
-                if (!itemData[item.name]) {
-                    itemData[item.name] = { purchase: 0, sale: 0 };
-                }
-                itemData[item.name].purchase += item.total || 0;
-            });
+        Object.entries(purchaseItems).forEach(([name, d]) => {
+            itemData[name] = { purchase: d.value, sale: 0 };
         });
-
-        sales.forEach(s => {
-            (s.items || []).forEach(item => {
-                if (!itemData[item.name]) {
-                    itemData[item.name] = { purchase: 0, sale: 0 };
-                }
-                itemData[item.name].sale += item.total || 0;
-            });
+        Object.entries(saleItems).forEach(([name, d]) => {
+            if (!itemData[name]) itemData[name] = { purchase: 0, sale: 0 };
+            itemData[name].sale = d.value;
         });
 
         const items = Object.entries(itemData)
@@ -774,7 +785,7 @@ export class ReportsManager {
             return;
         }
 
-        const maxValue = Math.max(...items.map(([_, data]) => Math.max(data.purchase, data.sale)));
+        const maxValue = chartScaleMax(items.flatMap(([_, data]) => [data.purchase, data.sale]));
 
         container.innerHTML = items.map(([name, data]) => `
             <div class="item-comparison-row">
@@ -804,17 +815,7 @@ export class ReportsManager {
         const container = document.getElementById(containerId);
         if (!container) return;
 
-        const itemData = {};
-        bills.forEach(bill => {
-            (bill.items || []).forEach(item => {
-                if (!itemData[item.name]) {
-                    itemData[item.name] = { count: 0, qty: 0, value: 0 };
-                }
-                itemData[item.name].count++;
-                itemData[item.name].qty += item.qty || 0;
-                itemData[item.name].value += item.total || 0;
-            });
-        });
+        const itemData = aggregateLineItems(bills);
 
         const items = Object.entries(itemData).sort((a, b) => b[1].value - a[1].value);
 
@@ -831,7 +832,7 @@ export class ReportsManager {
                 </div>
                 <div class="item-breakdown-value">
                     <div class="item-breakdown-amount">₹${this.formatNumber(data.value)}</div>
-                    <div class="item-breakdown-rate">₹${(data.value / data.qty).toFixed(2)}/kg</div>
+                    <div class="item-breakdown-rate">${formatPerUnitRate(data.value, data.qty, '/kg')}</div>
                 </div>
             </div>
         `).join('');
@@ -886,8 +887,9 @@ export class ReportsManager {
             const billTotal = bill.billTotal || bill.grandTotal || bill.total || 0;
             const pay = readPayment(bill);
 
-            (bill.items || []).forEach(item => {
-                csv += `${bill.id},"${dateStr}","${timeStr}","${type}","${customer}","${item.name}",${item.qty || 0},${item.rate || 0},${item.total || 0},${bill.laborCharges || 0},${billTotal},${pay.cash},${pay.online},${pay.due}\n`;
+            (bill.items || []).forEach(raw => {
+                const item = readLineItem(raw);
+                csv += `${bill.id},"${dateStr}","${timeStr}","${type}","${customer}","${item.name}",${item.qty},${item.rate},${item.total},${bill.laborCharges || 0},${billTotal},${pay.cash},${pay.online},${pay.due}\n`;
             });
         };
 
@@ -943,17 +945,7 @@ export class ReportsManager {
         const generatedAt = new Date().toLocaleString('en-IN');
 
         // Item-wise data
-        const itemData = {};
-        [...filteredPurchases, ...filteredSales].forEach(bill => {
-            (bill.items || []).forEach(item => {
-                if (!itemData[item.name]) {
-                    itemData[item.name] = { count: 0, qty: 0, value: 0 };
-                }
-                itemData[item.name].count++;
-                itemData[item.name].qty += item.qty || 0;
-                itemData[item.name].value += item.total || 0;
-            });
-        });
+        const itemData = aggregateLineItems([...filteredPurchases, ...filteredSales]);
 
         const html = `
 <!DOCTYPE html>
@@ -1032,7 +1024,7 @@ export class ReportsManager {
                             <td class="text-right">${Helpers.escapeHtml(data.count)}</td>
                             <td class="text-right">${data.qty.toFixed(2)}</td>
                             <td class="text-right">₹${Helpers.escapeHtml(data.value.toLocaleString('en-IN'))}</td>
-                            <td class="text-right">₹${(data.value / data.qty).toFixed(2)}</td>
+                            <td class="text-right">${formatPerUnitRate(data.value, data.qty)}</td>
                         </tr>
                     `).join('')}
             </tbody>
