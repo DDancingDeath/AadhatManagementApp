@@ -23,6 +23,7 @@ import {
 import { buildReprintPayload, buildBillShareText } from '../utils/bill-share.js';
 import { todayLocalISO } from '../utils/dates.js';
 import { whatsAppShareUrl } from '../utils/release-info.js';
+import { openExternal } from '../utils/open-external.js';
 
 /**
  * Stable reference to a bill for inline onclick handlers. Indices into the
@@ -1097,13 +1098,7 @@ export class HistoryManager {
             UIManager.showToast('Bill not found');
             return;
         }
-        const url = whatsAppShareUrl(buildBillShareText(current.bill, current.type));
-        if (window.Capacitor?.isNativePlatform?.()) {
-            window.open(url, '_system');
-            return;
-        }
-        const win = window.open(url, '_blank', 'noopener');
-        if (!win) window.location.href = url;
+        openExternal(whatsAppShareUrl(buildBillShareText(current.bill, current.type)));
     }
 
     static toggleView() {

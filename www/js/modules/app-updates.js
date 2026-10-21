@@ -6,6 +6,7 @@
 
 import { APP_VERSION } from '../version.js';
 import { UIManager } from '../ui/ui-manager.js';
+import { openExternal } from '../utils/open-external.js';
 import {
     APK_DOWNLOAD_URL, DOWNLOAD_PAGE_URL, LATEST_RELEASE_API,
     buildShareMessage, findRelease, shouldCheckForUpdate, updateToOffer,
@@ -204,13 +205,7 @@ export class AppUpdatesManager {
 
     /** Opens a URL outside the app (system browser / WhatsApp on Android). */
     static openExternal(url) {
-        if (isNative()) {
-            // Capacitor hands navigations to non-allowed hosts to the system (browser/WhatsApp).
-            window.open(url, '_system');
-            return;
-        }
-        const win = window.open(url, '_blank', 'noopener');
-        if (!win) window.location.href = url;
+        openExternal(url);
     }
 
     static async getShareMessage() {

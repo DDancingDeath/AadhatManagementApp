@@ -14,6 +14,15 @@ import { readPayment, round2 } from '../utils/money.js';
 import { parseAnyBillDate, todayLocalISO } from '../utils/dates.js';
 import { checkPaymentSplit, directionFor } from '../utils/due-payments.js';
 import { CashManagementManager } from './cash-management.js';
+import { PrinterService } from '../services/printer.js';
+import { openExternal } from '../utils/open-external.js';
+import { billDateOf } from '../utils/history-filters.js';
+import {
+    AGING_BUCKETS, ageInDays, bucketIndex, buildAging, chaseFirst, filterBillsByBucket, sortParties
+} from '../utils/aging.js';
+import {
+    buildReminderText, buildStatement, formatINR, normalizePhone, whatsAppReminderUrl
+} from '../utils/due-reminder.js';
 
 const PAYMENT_TOLERANCE = 0.01;
 const COLLECTION_BY_TYPE = { purchase: 'purchases', retail: 'retailSales', wholesale: 'wholesaleSales' };
@@ -38,6 +47,11 @@ export class OutstandingManager {
         const container = document.getElementById("dueList");
         
         if (!container) return;
+
+        // Party rows of the aging panel follow the same search (#46)
+        document.querySelectorAll('#dueAgingParties .aging-party').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(searchTerm) ? '' : 'none';
+        });
         
         const items = container.querySelectorAll('.history-item');
         
@@ -79,6 +93,7 @@ export class OutstandingManager {
      */
     static filterDue(filter, evt) {
         AppState.currentDueFilter = filter;
+        this.agingBucket = null;
         
         document.querySelectorAll('#due .filter-btn').forEach(btn => btn.classList.remove('active'));
         if (evt) evt.target.classList.add('active');
@@ -149,15 +164,20 @@ export class OutstandingManager {
             });
         }
         
+        // Aging summary + per-party rows for the same bills (#46)
+        this.renderAging(dueTransactions, currentDueFilter === 'purchase' ? 'payable' : 'receivable');
+        const shownTransactions = filterBillsByBucket(dueTransactions, this.agingBucket);
+
         // Sort by date (newest first) - use timestamp if available, otherwise parse date
-        dueTransactions.sort((a, b) => {
+        shownTransactions.sort((a, b) => {
             const dateA = a.timestamp || parseAnyBillDate(a.date)?.getTime() || 0;
             const dateB = b.timestamp || parseAnyBillDate(b.date)?.getTime() || 0;
             return dateB - dateA;
         });
         
-        if (dueTransactions.length === 0) {
-            const message = currentDueFilter === 'purchase' ? 'No outstanding purchase amounts' : 'No outstanding sale amounts';
+        if (shownTransactions.length === 0) {
+            const message = dueTransactions.length > 0 ? 'No bills in this age group'
+                : currentDueFilter === 'purchase' ? 'No outstanding purchase amounts' : 'No outstanding sale amounts';
             container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
             return;
         }
@@ -171,10 +191,14 @@ export class OutstandingManager {
         const totalLabel = isPurchase ? 'Total Payable' : 'Total Receivable';
         const paidLabel = isPurchase ? 'Paid' : 'Received';
 
-        dueTransactions.forEach(transaction => {
+        const today = new Date();
+        shownTransactions.forEach(transaction => {
             const div = document.createElement("div");
             div.className = "history-item";
             div.setAttribute('data-type', transaction.transactionType);
+            const billDate = billDateOf(transaction);
+            const ageDays = billDate ? ageInDays(billDate, today) : null;
+            const ageBadge = `<span class="aging-age aging-b${bucketIndex(ageDays)}">${ageDays === null ? 'date unknown' : `${ageDays} ${ageDays === 1 ? 'day' : 'days'}`}</span>`;
             
             const itemColor = transaction.transactionType === 'purchase' ? '#007bff' : '#28a745';
             const billNumber = transaction.billNumber || transaction.id?.toString().substring(0, 8) || 'N/A';
@@ -184,7 +208,7 @@ export class OutstandingManager {
                     <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')">#${Helpers.escapeHtml(billNumber)}</span>${transaction.customerName ? `  <strong>${Helpers.escapeHtml(transaction.customerName)}</strong>` : ''}
                     <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
                 </div>
-                <div class="history-date">${Helpers.formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${Helpers.escapeHtml(transaction.createdByName)}</strong>` : ''}</div>
+                <div class="history-date">${Helpers.formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${Helpers.escapeHtml(transaction.createdByName)}</strong>` : ''} ${ageBadge}</div>
                 <div style="background: ${bgColor}; border-left: 4px solid ${borderColor}; padding: 12px; margin: 12px 0; border-radius: 4px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                         <span>${totalLabel}:</span>
@@ -212,6 +236,163 @@ export class OutstandingManager {
             
             container.appendChild(div);
         });
+    }
+
+    /** Selected aging bucket key (null = all) and party sort, kept while the tab is open. */
+    static agingBucket = null;
+    static agingSort = 'amount';
+    static partiesOpen = true;
+
+    /**
+     * Aging panel above the bill list (#46): bucket totals (tap to filter),
+     * who to chase first (receivables) and one row per party with
+     * Remind / Statement actions (#77).
+     * @param {Array<Object>} bills Open bills of the current filter
+     * @param {'receivable'|'payable'} kind
+     */
+    static renderAging(bills, kind) {
+        const el = document.getElementById('dueAging');
+        if (!el) return;
+        const aging = buildAging(bills);
+        if (aging.count === 0) {
+            el.innerHTML = '';
+            return;
+        }
+        const isPayable = kind === 'payable';
+        const esc = (v) => Helpers.escapeHtml(v);
+        const attr = (v) => Helpers.escapeJsAttr(v);
+        const daysText = (d) => (d === null ? 'date unknown' : `${d} ${d === 1 ? 'day' : 'days'}`);
+        const billsText = (n) => `${n} ${n === 1 ? 'bill' : 'bills'}`;
+        const partyName = (p) => (p.name ? esc(p.name) : '<em>No name / बिना नाम</em>');
+
+        const buckets = aging.buckets.map((b, i) => `
+            <button type="button" class="aging-bucket aging-b${i}${this.agingBucket === b.key ? ' active' : ''}"
+                aria-pressed="${this.agingBucket === b.key}"
+                onclick="window.app.outstanding.setAgingBucket('${attr(b.key)}')">
+                <span class="aging-bucket-label">${esc(b.label)} days</span>
+                <strong class="aging-bucket-amount">${esc(formatINR(b.total))}</strong>
+                <span class="aging-bucket-count">${esc(billsText(b.count))}</span>
+            </button>`).join('');
+
+        const chase = isPayable ? [] : chaseFirst(aging.parties);
+        const chaseHtml = isPayable ? '' : `
+            <div class="aging-chase">
+                <div class="aging-subtitle">Who to chase first / पहले किससे वसूली करें</div>
+                ${chase.length ? `<ol>${chase.map(p => `
+                    <li class="aging-b${p.bucket}"><strong>${partyName(p)}</strong> — ${esc(formatINR(p.total))}
+                        <span class="aging-age aging-b${p.bucket}">oldest ${esc(daysText(p.oldestDays))}</span></li>`).join('')}</ol>`
+                    : '<div class="aging-empty">No one owes for more than 30 days 👍</div>'}
+            </div>`;
+
+        const parties = sortParties(aging.parties, this.agingSort)
+            .filter(p => !this.agingBucket || p.bills.some(b => AGING_BUCKETS[b.bucket].key === this.agingBucket));
+        const rows = parties.map(p => `
+            <div class="aging-party aging-b${p.bucket}">
+                <div class="aging-party-main">
+                    <div class="aging-party-name">${partyName(p)}${p.longOverdue ? ' <span class="aging-badge">Long overdue / बहुत पुराना</span>' : ''}</div>
+                    <div class="aging-party-meta">${esc(billsText(p.bills.length))} · oldest <span class="aging-age aging-b${p.bucket}">${esc(daysText(p.oldestDays))}</span></div>
+                </div>
+                <strong class="aging-party-total">${esc(formatINR(p.total))}</strong>
+                <div class="aging-party-actions">
+                    ${isPayable ? '' : `<button type="button" class="aging-btn aging-remind" onclick="window.app.outstanding.sendReminder('${attr(p.key)}')">💬 Remind</button>`}
+                    <button type="button" class="aging-btn" onclick="window.app.outstanding.printStatement('${attr(p.key)}')">🧾 Statement</button>
+                </div>
+            </div>`).join('');
+
+        const sortBtn = (by, label) => `<button type="button" class="aging-sort-btn${this.agingSort === by ? ' active' : ''}" aria-pressed="${this.agingSort === by}" onclick="window.app.outstanding.setAgingSort('${by}')">${label}</button>`;
+
+        el.innerHTML = `
+            <div class="aging-panel">
+                <div class="aging-head">
+                    <span class="aging-title">${isPayable ? 'Payables by age / देनदारी की उम्र' : 'Receivables by age / बकाया की उम्र'}</span>
+                    <strong class="aging-total">${esc(formatINR(aging.total))}</strong>
+                </div>
+                <div class="aging-buckets">${buckets}</div>
+                ${this.agingBucket ? '<div class="aging-filter-note">Showing one age group — tap it again to show all.</div>' : ''}
+                ${chaseHtml}
+                <details class="aging-parties"${this.partiesOpen ? ' open' : ''} ontoggle="window.app?.outstanding?.setPartiesOpen(this.open)">
+                    <summary>By party / पार्टी अनुसार (${parties.length})</summary>
+                    <div class="aging-sort">Sort: ${sortBtn('amount', 'Amount / रकम')} ${sortBtn('age', 'Oldest / सबसे पुराना')}</div>
+                    <div id="dueAgingParties">${rows}</div>
+                </details>
+                <div class="aging-subtitle aging-bills-title">Bills / बिल</div>
+            </div>`;
+    }
+
+    /** Tap a bucket to show only its bills/parties; tap again for all. */
+    static setAgingBucket(key) {
+        this.agingBucket = this.agingBucket === key ? null : key;
+        this.renderDue();
+    }
+
+    static setAgingSort(by) {
+        this.agingSort = by === 'age' ? 'age' : 'amount';
+        this.renderDue();
+    }
+
+    static setPartiesOpen(open) {
+        this.partiesOpen = !!open;
+    }
+
+    /**
+     * A party's open bills on the current Outstanding filter, aged now.
+     * @param {string} partyKey normalized name
+     * @returns {{party: ?Object, kind: 'receivable'|'payable'}}
+     */
+    static findParty(partyKey) {
+        const kind = AppState.currentDueFilter === 'purchase' ? 'payable' : 'receivable';
+        const bills = kind === 'payable' ? AppState.purchaseHistory : AppState.retailSalesHistory;
+        const party = buildAging(bills).parties.find(p => p.key === String(partyKey ?? '')) || null;
+        return { party, kind };
+    }
+
+    /** Shop details for messages/statements, when set in settings. */
+    static shopDetails() {
+        const s = AppState.settings || {};
+        return { shopName: s.shopName || '', upiId: s.upiId || '' };
+    }
+
+    /**
+     * Opens WhatsApp with a polite bilingual reminder of the party's open
+     * bills (#77): straight to their chat when a phone is on their bills,
+     * otherwise the share sheet / WhatsApp contact picker.
+     */
+    static async sendReminder(partyKey) {
+        const { party } = this.findParty(partyKey);
+        if (!party) {
+            UIManager.showToast('Nothing is due from this party');
+            return false;
+        }
+        const text = buildReminderText(party, this.shopDetails());
+        const phone = normalizePhone(party.phone);
+        try {
+            if (!phone && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+                try {
+                    await navigator.share({ text });
+                    return true;
+                } catch (e) {
+                    if (e && e.name === 'AbortError') return false;
+                    // Share sheet unavailable: fall back to WhatsApp
+                }
+            }
+            openExternal(whatsAppReminderUrl(text, phone));
+            return true;
+        } catch (error) {
+            console.error('Could not open WhatsApp:', error);
+            UIManager.showToast('Could not open WhatsApp / व्हाट्सऐप नहीं खुला');
+            return false;
+        }
+    }
+
+    /** Read-only statement of the party's open bills, printed or shown as an image (#77). */
+    static async printStatement(partyKey) {
+        const { party, kind } = this.findParty(partyKey);
+        if (!party) {
+            UIManager.showToast('Nothing is due for this party');
+            return false;
+        }
+        const statement = buildStatement(party, { kind, shopName: this.shopDetails().shopName });
+        return PrinterService.printStatement(statement);
     }
 
     static async recordPayment(transactionId, transactionType) {

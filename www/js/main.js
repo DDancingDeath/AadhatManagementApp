@@ -38,7 +38,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022l-release-1-5-0';
+const BUILD_ID = '20261022n-outstanding-aging';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -920,7 +920,12 @@ window.app = {
         searchOutstanding: () => OutstandingManager.searchOutstanding(),
         recordPayment: (txnId, txnType) => OutstandingManager.recordPayment(txnId, txnType),
         markAsCleared: (txnId, txnType) => OutstandingManager.markAsCleared(txnId, txnType),
-        showDetails: (txnId, txnType) => OutstandingManager.showDetails(txnId, txnType)
+        showDetails: (txnId, txnType) => OutstandingManager.showDetails(txnId, txnType),
+        setAgingBucket: (key) => OutstandingManager.setAgingBucket(key),
+        setAgingSort: (by) => OutstandingManager.setAgingSort(by),
+        setPartiesOpen: (open) => OutstandingManager.setPartiesOpen(open),
+        sendReminder: (partyKey) => OutstandingManager.sendReminder(partyKey),
+        printStatement: (partyKey) => OutstandingManager.printStatement(partyKey)
     },
     
     // Reports
