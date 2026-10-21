@@ -191,12 +191,17 @@ jobs:
           fi
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           "$build_tools/apksigner" verify --verbose --print-certs "$apk" | tee apksigner.txt
-          signers="$(grep -c '^Signer #[0-9]* certificate SHA-256 digest:' apksigner.txt || true)"
+          # apksigner prints "Signer #1 ..." or, in newer build-tools, "V2 Signer: ..."
+          signers="$(grep -m1 '^Number of signers:' apksigner.txt | awk -F': ' '{print $2}' | tr -d ' \r' || true)"
           if [[ "$signers" != "1" ]]; then
-            echo "::error::Expected exactly one signer, found $signers."
+            echo "::error::Expected exactly one signer, found ${signers:-0}."
             exit 1
           fi
-          actual="$(grep '^Signer #1 certificate SHA-256 digest:' apksigner.txt | awk -F': ' '{print $2}' | tr -d ': ' | tr 'A-F' 'a-f')"
+          actual="$(grep -E -m1 '^(Signer #1|V[0-9.]+ Signer): certificate SHA-256 digest:|^Signer #1 certificate SHA-256 digest:' apksigner.txt | awk -F'digest: ' '{print $2}' | tr -d ': \r' | tr 'A-F' 'a-f')"
+          if [[ -z "$actual" ]]; then
+            echo "::error::Could not read the signing certificate SHA-256 from apksigner output."
+            exit 1
+          fi
           echo "Signing certificate SHA-256: $actual"
           echo "Signing certificate SHA-256: \`$actual\`" >> "$GITHUB_STEP_SUMMARY"
           if [[ -n "$EXPECTED_CERT_SHA256" ]]; then
