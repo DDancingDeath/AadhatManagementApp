@@ -1,0 +1,210 @@
+/* Notifications bell + inbox (#12). Desktop placement lives in desktop.css. */
+.notif-bell {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  width: 46px;
+  height: 46px;
+  border: none;
+  border-radius: var(--radius-md, 12px);
+  background: var(--primary-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.notif-bell-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.notif-bell.notif-error .notif-bell-icon {
+  opacity: 0.55;
+}
+
+.notif-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.notif-badge[hidden] {
+  display: none;
+}
+
+.notif-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1002;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.notif-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1003;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.notif-backdrop[hidden],
+.notif-panel[hidden] {
+  display: none;
+}
+
+.notif-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 6px;
+}
+
+.notif-panel-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.notif-panel-hi {
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.notif-close {
+  border: none;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px 8px;
+}
+
+.notif-panel-actions {
+  padding: 0 16px 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.notif-mark-all,
+.notif-more {
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notif-more {
+  margin: 10px 16px 14px;
+}
+
+.notif-more[hidden] {
+  display: none;
+}
+
+.notif-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.notif-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fff;
+  padding: 12px 16px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.notif-row.unread {
+  background: #eff6ff;
+  box-shadow: inset 4px 0 0 #3b82f6;
+}
+
+.notif-icon {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.notif-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notif-en {
+  font-weight: 600;
+  color: #111827;
+  word-break: break-word;
+}
+
+.notif-hi {
+  color: #374151;
+  word-break: break-word;
+}
+
+.notif-meta {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.notif-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: #6b7280;
+}
+
+body.dark-mode .notif-panel,
+body.dark-mode .notif-row {
+  background: #1f2937;
+  color: #e5e7eb;
+}
+
+body.dark-mode .notif-row.unread {
+  background: #1e3a5f;
+}
+
+body.dark-mode .notif-en {
+  color: #f9fafb;
+}
+
+body.dark-mode .notif-hi,
+body.dark-mode .notif-meta,
+body.dark-mode .notif-panel-hi {
+  color: #d1d5db;
+}
+
+body.dark-mode .notif-row,
+body.dark-mode .notif-panel-actions {
+  border-color: #374151;
+}

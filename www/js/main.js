@@ -26,6 +26,7 @@ import { TelemetryService } from './services/telemetry.js';
 import { DiagnosticsManager } from './modules/diagnostics.js';
 import { AdminManager } from './modules/admin.js';
 import { AppUpdatesManager } from './modules/app-updates.js';
+import { NotificationsManager } from './modules/notifications.js';
 import { markStartup, noteStartup, logStartupTimings } from './utils/startup-timings.js';
 
 // Import template loader utility
@@ -38,7 +39,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022g-quota-guards';
+const BUILD_ID = '20261022h-notifications';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -149,6 +150,7 @@ let outdatedBlocked = false;
 function blockOutdatedApp() {
     outdatedBlocked = true;
     FirebaseService.cleanup();
+    NotificationsManager.stop();
     document.getElementById('appContent')?.classList.add('hidden');
     UIManager.hideLoading();
     UIManager.showModal('This app version is outdated. Please update the app to continue.');
@@ -224,6 +226,10 @@ async function initializeUserData() {
         }
         
         markStartup('listeners', { online: navigator.onLine });
+
+        // Notifications: the profile is loaded, so the uid is known (#12).
+        const notifUid = AppState.currentUser?.uid || firebase.auth().currentUser?.uid;
+        if (notifUid) NotificationsManager.start(notifUid);
 
         // Don't hold the first screen for a slow version read (up to ~24 s on a
         // weak network): wait briefly, then let it finish in the background and
@@ -339,6 +345,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             } else {
                 // Clean up Firebase listeners when user signs out
                 FirebaseService.cleanup();
+                NotificationsManager.stop();
                 AppState.currentUser = null;
                 document.getElementById('authScreen').style.display = 'flex';
             }
@@ -661,6 +668,18 @@ window.app = {
         showTab: (tabId, evt) => NavigationManager.showTabFromNav(tabId, evt)
     },
     
+    // Notifications inbox (#12)
+    notifications: {
+        toggle: () => NotificationsManager.toggle(),
+        open: () => NotificationsManager.openInbox(),
+        close: () => NotificationsManager.close(),
+        loadMore: () => NotificationsManager.loadMore(),
+        markAllRead: () => NotificationsManager.markAllRead(),
+        openNotification: (id) => NotificationsManager.openNotification(id),
+        toggleSystem: (checked) => NotificationsManager.toggleSystem(checked),
+        refreshSettings: () => NotificationsManager.refreshSettings()
+    },
+
     // Items Management
     items: {
         render: () => ItemsManager.renderItems(),
@@ -682,12 +701,15 @@ window.app = {
         updateHindiName: (id, val) => ItemsManager.updateItemHindiName(id, val),
         addRate: (id) => ItemsManager.addRate(id),
         updateRate: (id, rIdx, val) => ItemsManager.updateRate(id, rIdx, val),
+        commitRate: (id, rIdx) => ItemsManager.commitRate(id, rIdx),
         deleteRate: (id, rIdx) => ItemsManager.deleteRate(id, rIdx),
         addWholesaleRate: (id) => ItemsManager.addWholesaleRate(id),
         updateWholesaleRate: (id, rIdx, val) => ItemsManager.updateWholesaleRate(id, rIdx, val),
+        commitWholesaleRate: (id, rIdx) => ItemsManager.commitWholesaleRate(id, rIdx),
         deleteWholesaleRate: (id, rIdx) => ItemsManager.deleteWholesaleRate(id, rIdx),
         addSaleRate: (id) => ItemsManager.addSaleRate(id),
         updateSaleRate: (id, rIdx, val) => ItemsManager.updateSaleRate(id, rIdx, val),
+        commitSaleRate: (id, rIdx) => ItemsManager.commitSaleRate(id, rIdx),
         deleteSaleRate: (id, rIdx) => ItemsManager.deleteSaleRate(id, rIdx),
         deleteItem: (id) => ItemsManager.deleteItem(id),
         exportExcel: () => ItemsManager.exportToExcel(),

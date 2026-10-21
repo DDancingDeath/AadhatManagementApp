@@ -1,6 +1,7 @@
 /**
  * @fileoverview Minimal in-memory Firestore (compat API subset) for unit tests:
- * collection/doc refs, where (==, >, >=, <, <=) / orderBy / limit queries,
+ * collection/doc refs, where (==, in, >, >=, <, <=) / orderBy / limit /
+ * startAfter(doc) queries,
  * get(), onSnapshot() with sequential docChanges(), set (merge) / update
  * (dotted paths) / delete / add, batches, transactions and
  * FieldValue.increment. Also counts billed document reads.
@@ -99,6 +100,10 @@ export function createFakeFirestore(options = {}) {
             const c = a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
             return lastDir === 'desc' ? -c : c;
         });
+        if (q.after) {
+            const at = rows.findIndex(([id]) => id === q.after);
+            rows = at === -1 ? rows : rows.slice(at + 1);
+        }
         if (q.limitN) rows = rows.slice(0, q.limitN);
         return rows.map(([id, d]) => ({ id, data: d }));
     };
@@ -213,6 +218,7 @@ export function createFakeFirestore(options = {}) {
             where: (field, op, value) => makeQuery({ ...q, filters: [...q.filters, { field, op, value }] }),
             orderBy: (field, dir = 'asc') => makeQuery({ ...q, order: [...q.order, { field, dir }] }),
             limit: (n) => makeQuery({ ...q, limitN: n }),
+            startAfter: (doc) => makeQuery({ ...q, after: doc.id }),
             get: async () => {
                 stats.gets++;
                 stats.queryLog.push(q);

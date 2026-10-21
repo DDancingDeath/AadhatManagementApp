@@ -5,6 +5,24 @@
         <span></span>
     </button>
 
+    <!-- Notifications bell + inbox (#12) -->
+    <button type="button" class="notif-bell" id="notifBell" style="display: none;" onclick="window.app.notifications.toggle()" aria-label="Notifications / सूचनाएं" title="Notifications / सूचनाएं">
+        <span class="notif-bell-icon" aria-hidden="true">🔔</span>
+        <span class="notif-badge" id="notifBadge" hidden></span>
+    </button>
+    <div class="notif-backdrop" id="notifBackdrop" hidden onclick="window.app.notifications.close()"></div>
+    <div class="notif-panel" id="notifPanel" role="dialog" aria-label="Notifications / सूचनाएं" hidden>
+        <div class="notif-panel-header">
+            <h3>🔔 Notifications <span class="notif-panel-hi">/ सूचनाएं</span></h3>
+            <button type="button" class="notif-close" onclick="window.app.notifications.close()" aria-label="Close / बंद करें">×</button>
+        </div>
+        <div class="notif-panel-actions">
+            <button type="button" class="notif-mark-all" onclick="window.app.notifications.markAllRead()">✓ Mark all read / सब पढ़ लिया</button>
+        </div>
+        <div class="notif-list" id="notifList"></div>
+        <button type="button" class="notif-more" id="notifMore" hidden onclick="window.app.notifications.loadMore()">Show more / और देखें</button>
+    </div>
+
     <!-- Side Navigation -->
     <div class="side-nav" id="sideNav">
         <div class="nav-header">

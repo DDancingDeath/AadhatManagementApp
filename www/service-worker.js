@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v44';
+const CACHE_NAME = 'aadhat-v45';
 // Generated/verified by scripts/check-sw-assets.js (npm run check:sw).
 // Every entry must exist: a 404 here used to make the whole precache fail.
 const STATIC_ASSETS = [
@@ -34,6 +34,7 @@ const STATIC_ASSETS = [
     '/css/items.css',
     '/css/loading.css',
     '/css/navigation.css',
+    '/css/notifications.css',
     '/css/overlay.css',
     '/css/reports.css',
     '/css/settings.css',
@@ -59,6 +60,7 @@ const STATIC_ASSETS = [
     '/js/modules/history.js',
     '/js/modules/items.js',
     '/js/modules/miscellaneous.js',
+    '/js/modules/notifications.js',
     '/js/modules/outstanding.js',
     '/js/modules/purchase.js',
     '/js/modules/reports.js',
@@ -86,6 +88,7 @@ const STATIC_ASSETS = [
     '/js/utils/keyboard-shortcuts.js',
     '/js/utils/lazy-scripts.js',
     '/js/utils/money.js',
+    '/js/utils/notification-format.js',
     '/js/utils/release-info.js',
     '/js/utils/render-memo.js',
     '/js/utils/startup-timings.js',

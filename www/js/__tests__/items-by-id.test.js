@@ -8,6 +8,8 @@ jest.mock('../firebase/firestore-service.js', () => ({
         saveItem: jest.fn(async (item) => item),
         deleteItem: jest.fn(async () => {}),
         notifyRateChange: jest.fn(async () => {}),
+        notifyRateChanges: jest.fn(async () => {}),
+        notifyItemEdit: jest.fn(async () => {}),
         addRateHistoryEntries: jest.fn(async () => {})
     }
 }));
@@ -267,7 +269,11 @@ describe('rate / name history on save (#82)', () => {
             await Promise.resolve();
             await Promise.resolve();
             expect(entriesWritten()).toEqual([expect.objectContaining({ itemId: 'b', field: 'purchase', old: 30, new: 45, source: 'inline' })]);
+            // The notification goes out once, when the input is committed (#12)
+            expect(FirebaseService.notifyRateChange).not.toHaveBeenCalled();
+            ItemsManager.commitRate('b', 0);
             expect(FirebaseService.notifyRateChange).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }), 'purchase', 30, 45);
+            expect(FirebaseService.notifyRateChange).toHaveBeenCalledTimes(1);
         } finally {
             jest.useRealTimers();
         }
