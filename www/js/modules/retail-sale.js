@@ -11,6 +11,7 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
+import { round2, sumMoney } from '../utils/money.js';
 
 /** Buttons disabled while a retail save/print is in flight */
 const RETAIL_BUTTONS = '#saveSaleBtn, #printSaleBtn';
@@ -477,10 +478,10 @@ const RetailSaleManager = {
             }
         }
 
-        const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
-        const saleOnline = Helpers.getInputInt('saleOnlinePayment');
-        const saleCash = Helpers.getInputInt('saleCashPayment');
-        const saleDue = Helpers.getInputInt('saleDueAmount');
+        const salesTotal = sumMoney(saleItems, item => item.total);
+        const saleOnline = round2(Helpers.getInputNumber('saleOnlinePayment'));
+        const saleCash = round2(Helpers.getInputNumber('saleCashPayment'));
+        const saleDue = round2(Helpers.getInputNumber('saleDueAmount'));
         const saleCustomer = Helpers.getInputText('saleCustomerName');
         const saleComments = Helpers.getInputText('saleComments');
         const printComments = document.getElementById('salePrintComments')?.checked || false;
@@ -518,7 +519,7 @@ const RetailSaleManager = {
                     online: saleOnline,
                     cash: saleCash,
                     due: saleDue,
-                    total: saleOnline + saleCash + saleDue
+                    total: round2(saleOnline + saleCash + saleDue)
                 }
             };
             

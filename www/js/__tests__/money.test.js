@@ -1,7 +1,7 @@
 /**
  * @fileoverview Tests for money helpers / payment schema normalisation
  */
-import { round2, sumMoney, readPayment, billTotal, outstandingDue } from '../utils/money.js';
+import { round2, sumMoney, readPayment, billTotal, outstandingDue, computePurchaseTotals, computeWholesaleTotals } from '../utils/money.js';
 
 describe('round2', () => {
     test('rounds half-paise correctly', () => {
@@ -85,3 +85,30 @@ describe('billTotal / outstandingDue', () => {
         expect(outstandingDue({ dueAmount: 300 })).toBe(300);
     });
 });
+
+describe('computePurchaseTotals (#26)', () => {
+    const items = [
+        { total: 1530.25, weights: [40, 20.5] },
+        { total: 1049.5, weights: [35] },
+        { qty: 2.5, rate: 10.1 } // legacy line without total/weights
+    ];
+    test('totals come from the lines with paise kept, labour deducted', () => {
+        expect(computePurchaseTotals(items, 12.5, 30)).toEqual({
+            billTotal: 2605.0, laborCharges: 12.5, grandTotal: 2592.5, totalPackets: 3, heavyPackets: 2
+        });
+    });
+    test('heavy packets use the threshold; no labour / junk labour → 0', () => {
+        expect(computePurchaseTotals(items, undefined, 36)).toMatchObject({ heavyPackets: 1, laborCharges: 0, grandTotal: 2605 });
+        expect(computePurchaseTotals([], 'x')).toEqual({ billTotal: 0, laborCharges: 0, grandTotal: 0, totalPackets: 0, heavyPackets: 0 });
+    });
+});
+
+describe('computeWholesaleTotals (#26)', () => {
+    test('total, cost from stock average rates, profit and profit % from the lines', () => {
+        const lines = [{ itemId: 'a', qty: 10.5, total: 420 }, { itemId: 'b', quantity: 4, total: 100.5 }, { itemId: 'c', qty: 1, total: 50 }];
+        const stock = { a: { rate: 30.2 }, b: { rate: 20 } };
+        expect(computeWholesaleTotals(lines, stock, 20.5)).toEqual({ total: 570.5, cost: 397.1, profit: 152.9, profitPercent: 26.8 });
+        expect(computeWholesaleTotals([], {}, 0)).toEqual({ total: 0, cost: 0, profit: 0, profitPercent: 0 });
+    });
+});
+

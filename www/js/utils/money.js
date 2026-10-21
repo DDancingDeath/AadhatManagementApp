@@ -132,6 +132,47 @@ export function readLineItem(item) {
 }
 
 /**
+ * Purchase bill totals computed from the line items (never from on-screen text).
+ * @param {Array<Object>} items - bill lines ({ total, weights })
+ * @param {number} laborCharges - labour deducted from the item total (0 when Labour is unticked)
+ * @param {number} [heavyWeightThreshold=30] - packets heavier than this (kg) count as heavy
+ * @returns {{billTotal: number, laborCharges: number, grandTotal: number, totalPackets: number, heavyPackets: number}}
+ */
+export function computePurchaseTotals(items, laborCharges = 0, heavyWeightThreshold = 30) {
+    const list = Array.isArray(items) ? items : [];
+    const billTotal = sumMoney(list, item => readLineItem(item).total);
+    let totalPackets = 0;
+    let heavyPackets = 0;
+    for (const item of list) {
+        const weights = Array.isArray(item?.weights) ? item.weights : [];
+        totalPackets += weights.length;
+        heavyPackets += weights.filter(w => Number(w) > heavyWeightThreshold).length;
+    }
+    const labour = round2(toMoney(laborCharges) || 0);
+    return { billTotal, laborCharges: labour, grandTotal: round2(billTotal - labour), totalPackets, heavyPackets };
+}
+
+/**
+ * Wholesale sale total, cost (from stock average rates) and profit computed
+ * from the line data.
+ * @param {Array<Object>} items - sale lines ({ itemId, qty|quantity, total })
+ * @param {Object} stock - AppState.stock ({ [itemId]: { rate } })
+ * @param {number} [expenses=0]
+ * @returns {{total: number, cost: number, profit: number, profitPercent: number}}
+ */
+export function computeWholesaleTotals(items, stock = {}, expenses = 0) {
+    const list = Array.isArray(items) ? items : [];
+    const total = sumMoney(list, item => readLineItem(item).total);
+    const cost = sumMoney(list, item => {
+        const rate = toMoney(stock?.[item?.itemId]?.rate);
+        return rate ? rate * readLineItem(item).qty : 0;
+    });
+    const profit = round2(total - cost - (toMoney(expenses) || 0));
+    const profitPercent = total > 0 ? Math.round((profit / total) * 1000) / 10 : 0;
+    return { total, cost, profit, profitPercent };
+}
+
+/**
  * Average price per unit, or null when the quantity is 0/invalid
  * (callers show "—" instead of Infinity/NaN).
  * @param {number} value

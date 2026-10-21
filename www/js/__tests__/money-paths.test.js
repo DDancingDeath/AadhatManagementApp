@@ -154,8 +154,7 @@ describe('new purchase save', () => {
         expect(savePurchase).not.toHaveBeenCalled();
     });
 
-    // BUG: see #26 — totals are read back from the rounded on-screen text, not computed from the items.
-    test.skip('saved totals come from the items even if the on-screen total is stale', async () => {
+    test('saved totals come from the items even if the on-screen total is stale', async () => {
         await buildBill();
         document.getElementById('billTotal').textContent = '9999';
         document.getElementById('amountPayable').textContent = '9999';

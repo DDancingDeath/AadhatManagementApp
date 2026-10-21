@@ -10,6 +10,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { AuditService } from '../services/audit.js';
 import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
+import { computePurchaseTotals, round2 } from '../utils/money.js';
 
 /** Buttons disabled while a purchase save/print is in flight */
 const PURCHASE_BUTTONS = '#saveBillBtn, #printBillBtn';
@@ -270,15 +271,7 @@ const PurchaseManager = {
         }).join('');
         
         // Update totals
-        const billTotal = billItems.reduce((sum, item) => sum + item.total, 0);
-        const totalPackets = billItems.reduce((sum, item) => sum + item.weights.length, 0);
-        
-        // Calculate heavy packets
-        const heavyWeightThreshold = AppState.settings?.heavyWeightThreshold || 30;
-        const totalHeavyPackets = billItems.reduce((sum, item) => {
-            const heavyCount = item.weights.filter(w => w > heavyWeightThreshold).length;
-            return sum + heavyCount;
-        }, 0);
+        const { billTotal, totalPackets } = this.computeTotals(0);
         
         if (billTotalSpan) billTotalSpan.textContent = Math.round(billTotal);
         if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = totalPackets;
@@ -289,7 +282,7 @@ const PurchaseManager = {
             delete laborChargesInput.dataset.manuallySet;
         }
         
-        this.updateTotals(totalHeavyPackets);
+        this.updateTotals();
     },
 
     /**
@@ -342,11 +335,26 @@ const PurchaseManager = {
     // -------------------- TOTALS --------------------
 
     /**
-     * Update totals display
-     * @param {number} heavyPacketsCount - Number of heavy packets for labor calculation
+     * Totals of the current bill computed from its items (the screen is display-only).
+     * @param {number} [laborCharges] - labour to deduct; defaults to the labour field
+     *   (0 when the Labour checkbox is unticked)
+     * @returns {{billTotal: number, laborCharges: number, grandTotal: number, totalPackets: number, heavyPackets: number}}
      */
-    updateTotals(heavyPacketsCount = 0) {
-        const billTotal = Helpers.getElementInt('billTotal');
+    computeTotals(laborCharges) {
+        if (laborCharges === undefined) {
+            const autoLaborCheckbox = document.getElementById('autoLaborCharge');
+            const labourOn = autoLaborCheckbox ? autoLaborCheckbox.checked : true;
+            laborCharges = labourOn ? Helpers.getInputNumber('manualLaborCharges') : 0;
+        }
+        const heavyWeightThreshold = AppState.settings?.heavyWeightThreshold || 30;
+        return computePurchaseTotals(billItems, laborCharges, heavyWeightThreshold);
+    },
+
+    /**
+     * Update totals display. Heavy packets are counted from the bill items.
+     */
+    updateTotals() {
+        const { billTotal, heavyPackets: heavyPacketsCount } = this.computeTotals(0);
         const autoLaborCheckbox = document.getElementById('autoLaborCharge');
         const laborCalculationSpan = document.getElementById('laborCalculation');
         const laborChargesInput = document.getElementById('manualLaborCharges');
@@ -413,7 +421,7 @@ const PurchaseManager = {
      * @param {'online'|'cash'|'due'} type - Payment type
      */
     fillPayableAmount(type) {
-        const grandTotal = Helpers.getElementInt('amountPayable');
+        const { grandTotal } = this.computeTotals();
         const onlineInput = document.getElementById('onlinePayment');
         const cashInput = document.getElementById('cashPayment');
         const dueInput = document.getElementById('dueAmount');
@@ -513,13 +521,11 @@ const PurchaseManager = {
             return;
         }
         
-        const billTotal = Helpers.getElementInt('billTotal');
-        const laborCharges = Helpers.getInputInt('manualLaborCharges');
-        const totalPackets = Helpers.getElementInt('totalPacketsInBill');
-        const grandTotal = Helpers.getElementInt('amountPayable');
-        const onlinePayment = Helpers.getInputInt('onlinePayment');
-        const cashPayment = Helpers.getInputInt('cashPayment');
-        const dueAmount = Helpers.getInputInt('dueAmount');
+        // Totals come from the items, never from the (rounded) text on screen
+        const { billTotal, laborCharges, totalPackets, grandTotal } = this.computeTotals();
+        const onlinePayment = round2(Helpers.getInputNumber('onlinePayment'));
+        const cashPayment = round2(Helpers.getInputNumber('cashPayment'));
+        const dueAmount = round2(Helpers.getInputNumber('dueAmount'));
         const customerName = Helpers.getInputText('customerName');
         const comments = Helpers.getInputText('billComments');
         const printComments = document.getElementById('billPrintComments')?.checked || false;
@@ -565,7 +571,7 @@ const PurchaseManager = {
                     online: onlinePayment,
                     cash: cashPayment,
                     due: dueAmount,
-                    total: onlinePayment + cashPayment + dueAmount
+                    total: round2(onlinePayment + cashPayment + dueAmount)
                 }
             };
             

@@ -9,7 +9,7 @@ import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-c
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { OutstandingManager } from './outstanding.js';
-import { readPayment, round2 } from '../utils/money.js';
+import { computeWholesaleTotals, readPayment, round2 } from '../utils/money.js';
 
 const PAYMENT_TOLERANCE = 0.01;
 
@@ -194,50 +194,25 @@ export class WholesaleSalesManager {
             `;
         }).join('');
         
-        // Calculate sale total
-        const saleTotal = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
+        const { total: saleTotal } = this.computeTotals();
         totalEl.textContent = Math.round(saleTotal);
         
-        // Auto-calculate buy amount (cost) from stock average rates
-        let totalBuyAmount = 0;
-        wholesaleSaleItems.forEach(item => {
-            const stockData = AppState.stock[item.itemId];
-            if (stockData && stockData.rate) {
-                totalBuyAmount += stockData.rate * item.qty;
-            }
-        });
-        
-        // Update profit calculation with current expenses
-        this.updateProfitCalculation(saleTotal, totalBuyAmount);
+        this.updateProfitCalculation();
     }
 
-    static updateProfitCalculation(saleTotal = null, buyAmount = null) {
-        const totalEl = document.getElementById('salesTotalAmount');
-        const expensesInput = document.getElementById('salesExpensesAmount');
+    /**
+     * Sale total, cost (stock average rates) and profit (sale − cost − expenses),
+     * computed from the bill lines — the screen is display-only.
+     * @returns {{total: number, cost: number, profit: number, profitPercent: number}}
+     */
+    static computeTotals() {
+        return computeWholesaleTotals(wholesaleSaleItems, AppState.stock, Helpers.getInputNumber('salesExpensesAmount'));
+    }
+
+    static updateProfitCalculation() {
         const profitEl = document.getElementById('salesProfitAmount');
         const profitPercentEl = document.getElementById('salesProfitPercent');
-        
-        // Get sale total if not provided
-        if (saleTotal === null) {
-            saleTotal = parseFloat(totalEl?.textContent) || 0;
-        }
-        
-        // Recalculate buy amount if not provided
-        if (buyAmount === null) {
-            buyAmount = 0;
-            wholesaleSaleItems.forEach(item => {
-                const stockData = AppState.stock[item.itemId];
-                if (stockData && stockData.rate) {
-                    buyAmount += stockData.rate * item.qty;
-                }
-            });
-        }
-        
-        const expenses = parseFloat(expensesInput?.value) || 0;
-        
-        // Calculate profit: Sale Amount - Buy Amount - Expenses
-        const profit = saleTotal - buyAmount - expenses;
-        const profitPercent = saleTotal > 0 ? (profit / saleTotal) * 100 : 0;
+        const { profit, profitPercent } = this.computeTotals();
         
         if (profitEl) profitEl.textContent = Math.round(profit);
         if (profitPercentEl) profitPercentEl.textContent = profitPercent.toFixed(1);
@@ -274,13 +249,11 @@ export class WholesaleSalesManager {
         }
 
         const customerName = Helpers.getInputText('wholesaleCustomerName');
-        const total = wholesaleSaleItems.reduce((sum, item) => sum + item.total, 0);
         const comments = Helpers.getInputText('salesComments');
-        const expenses = Helpers.getInputInt('salesExpensesAmount');
+        const expenses = round2(Helpers.getInputNumber('salesExpensesAmount'));
         
-        // Get profit from display
-        const profit = Helpers.getElementInt('salesProfitAmount');
-        const profitPercent = Helpers.getElementNumber('salesProfitPercent');
+        // Total and profit come from the bill lines, never from the text on screen
+        const { total, profit, profitPercent } = this.computeTotals();
         
         try {
             // Generate bill number

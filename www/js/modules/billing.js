@@ -10,6 +10,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
+import { round2, sumMoney } from '../utils/money.js';
 import { findBillIndex } from '../utils/history-window.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 import { PurchaseManager } from './purchase.js';
@@ -462,10 +463,10 @@ const BillingManager = {
             draft.items = [...billItems];
             draft.weights = [...weights];
             draft.customerName = Helpers.getInputText('customerName');
-            draft.laborCharges = Helpers.getInputInt('manualLaborCharges');
+            draft.laborCharges = Helpers.getInputNumber('manualLaborCharges');
             draft.comments = Helpers.getInputText('billComments');
             draft.printComments = readPrintComments('billPrintComments');
-            draft.billTotal = Helpers.getElementInt('billTotal');
+            draft.billTotal = PurchaseManager.computeTotals(0).billTotal;
         } else {
             const saleWeightInput = document.getElementById('saleWeight');
             const pendingSaleWeight = parseFloat(saleWeightInput?.value);
@@ -489,7 +490,7 @@ const BillingManager = {
             draft.customerName = Helpers.getInputText('saleCustomerName');
             draft.comments = Helpers.getInputText('saleComments');
             draft.printComments = readPrintComments('salePrintComments');
-            draft.saleTotal = Helpers.getElementInt('saleTotal');
+            draft.saleTotal = sumMoney(saleItems, item => item.total);
         }
 
         try {
@@ -724,10 +725,10 @@ const BillingManager = {
                 selectedItem: Helpers.getInputText('billItem'),
                 rate: Helpers.getInputText('billRate'),
                 customerName: Helpers.getInputText('customerName'),
-                laborCharges: Helpers.getInputInt('manualLaborCharges'),
+                laborCharges: Helpers.getInputNumber('manualLaborCharges'),
                 comments: Helpers.getInputText('billComments'),
                 printComments: readPrintComments('billPrintComments'),
-                billTotal: Helpers.getElementInt('billTotal')
+                billTotal: PurchaseManager.computeTotals(0).billTotal
             };
 
             autoSaveData.sale = {
@@ -739,7 +740,7 @@ const BillingManager = {
                 customerName: Helpers.getInputText('saleCustomerName'),
                 comments: Helpers.getInputText('saleComments'),
                 printComments: readPrintComments('salePrintComments'),
-                saleTotal: Helpers.getElementInt('saleTotal')
+                saleTotal: sumMoney(saleItems, item => item.total)
             };
 
             await db.collection(window.getCollection ? window.getCollection('autoSaves') : 'autoSaves').doc(AppState.currentUser.uid).set(autoSaveData);
@@ -1060,13 +1061,11 @@ const BillingManager = {
 
             if (this.currentMode === 'purchase') {
                 const billItems = PurchaseManager.getBillItems();
-                const billTotal = Helpers.getElementInt('billTotal');
-                const laborCharges = Helpers.getInputInt('manualLaborCharges');
-                const totalPackets = Helpers.getElementInt('totalPacketsInBill');
-                const grandTotal = Helpers.getElementInt('amountPayable');
-                const onlinePayment = Helpers.getInputInt('onlinePayment');
-                const cashPayment = Helpers.getInputInt('cashPayment');
-                const dueAmount = Helpers.getInputInt('dueAmount');
+                // Totals come from the items, never from the (rounded) text on screen
+                const { billTotal, laborCharges, totalPackets, grandTotal } = PurchaseManager.computeTotals();
+                const onlinePayment = round2(Helpers.getInputNumber('onlinePayment'));
+                const cashPayment = round2(Helpers.getInputNumber('cashPayment'));
+                const dueAmount = round2(Helpers.getInputNumber('dueAmount'));
                 const customerName = Helpers.getInputText('customerName');
                 const comments = Helpers.getInputText('billComments');
                 const printComments = readPrintComments('billPrintComments');
@@ -1093,7 +1092,7 @@ const BillingManager = {
                         online: onlinePayment,
                         cash: cashPayment,
                         due: dueAmount,
-                        total: onlinePayment + cashPayment + dueAmount
+                        total: round2(onlinePayment + cashPayment + dueAmount)
                     },
                     editedAt: new Date().toISOString(),
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
@@ -1125,11 +1124,11 @@ const BillingManager = {
                 return updatedBill;
             } else {
                 const saleItems = RetailSaleManager.getSaleItems();
-                const salesTotal = saleItems.reduce((sum, item) => sum + item.total, 0);
+                const salesTotal = sumMoney(saleItems, item => item.total);
                 const totalPackets = saleItems.reduce((sum, item) => sum + (item.packets || 0), 0);
-                const saleOnline = Helpers.getInputInt('saleOnlinePayment');
-                const saleCash = Helpers.getInputInt('saleCashPayment');
-                const saleDue = Helpers.getInputInt('saleDueAmount');
+                const saleOnline = round2(Helpers.getInputNumber('saleOnlinePayment'));
+                const saleCash = round2(Helpers.getInputNumber('saleCashPayment'));
+                const saleDue = round2(Helpers.getInputNumber('saleDueAmount'));
                 const saleCustomer = Helpers.getInputText('saleCustomerName');
                 const saleComments = Helpers.getInputText('saleComments');
                 const printComments = readPrintComments('salePrintComments');
@@ -1150,7 +1149,7 @@ const BillingManager = {
                         online: saleOnline,
                         cash: saleCash,
                         due: saleDue,
-                        total: saleOnline + saleCash + saleDue
+                        total: round2(saleOnline + saleCash + saleDue)
                     },
                     editedAt: new Date().toISOString(),
                     editedBy: AppState.currentUser ? AppState.currentUser.uid : 'unknown'
