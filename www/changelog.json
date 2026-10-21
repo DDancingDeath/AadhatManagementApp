@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "1.5.0",
+      "date": "2026-10-22",
+      "androidVersionCode": 6,
+      "notes": {
+        "en": [
+          "New notifications bell with an inbox, so you don't miss what happened in the shop.",
+          "History: reprint or share any old bill (marked COPY), and filter bills by type and date.",
+          "Bills: Cash + Online + Due must add up to the bill total; credit bills need a customer name; wholesale bills have Cash/Online/Due too.",
+          "Recording a due payment now updates Cash, Outstanding and Today's dues together. Write-offs need a reason.",
+          "A cash day that was not counted no longer shows a fake shortage, and a ₹0 opening amount is allowed.",
+          "Labour rate is now the same on every phone (default ₹6).",
+          "New \"Not selling\" list shows items that aren't moving, and each item keeps its rate-change history.",
+          "Clear message when the daily data limit is reached, instead of the app just failing."
+        ],
+        "hi": [
+          "नई सूचना घंटी और इनबॉक्स — दुकान में क्या हुआ, कुछ छूटेगा नहीं।",
+          "हिस्ट्री: कोई भी पुराना बिल दोबारा प्रिंट या शेयर करें (COPY लिखा होगा), और बिलों को प्रकार व तारीख से छाँटें।",
+          "बिल: नकद + ऑनलाइन + बाकी का जोड़ बिल के कुल के बराबर होना ज़रूरी है; उधार बिल पर ग्राहक का नाम ज़रूरी है; थोक बिल में भी नकद/ऑनलाइन/बाकी है।",
+          "बाकी का भुगतान दर्ज करने पर अब कैश, बकाया और आज के बाकी — तीनों एक साथ अपडेट होते हैं। बट्टे खाते (write-off) के लिए कारण लिखना ज़रूरी है।",
+          "जिस दिन कैश गिना नहीं गया, उसमें अब झूठी कमी नहीं दिखेगी, और ₹0 से दिन शुरू कर सकते हैं।",
+          "मज़दूरी की दर अब हर फ़ोन पर एक जैसी है (शुरू में ₹6)।",
+          "नई \"नहीं बिक रहा\" सूची — जो माल नहीं बिक रहा वह दिखेगा; हर आइटम का रेट बदलने का इतिहास भी दिखेगा।",
+          "रोज़ की डेटा सीमा पूरी होने पर अब साफ़ संदेश दिखता है, ऐप बस अटकता नहीं।"
+        ]
+      }
+    },
+    {
       "version": "1.4.0",
       "date": "2026-10-21",
       "androidVersionCode": 5,
