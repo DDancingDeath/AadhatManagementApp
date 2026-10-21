@@ -992,7 +992,7 @@ window.app = {
     ui: {
         showLoading: () => UIManager.showLoading(),
         hideLoading: () => UIManager.hideLoading(),
-        showToast: (msg, duration) => UIManager.showToast(msg, duration),
+        showToast: (msg, durationOrType, duration) => UIManager.showToast(msg, durationOrType, duration),
         showModal: (msg, title, showCancel) => UIManager.showModal(msg, title, showCancel),
         closeModal: (result) => UIManager.closeModal(result)
     }
