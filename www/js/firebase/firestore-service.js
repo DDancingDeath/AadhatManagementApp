@@ -412,7 +412,7 @@ function publishCollection(c) {
         if (c.extended.get(id) === rec) c.publishedExtended.add(id);
     });
     AppState[c.spec.stateKey] = list;
-    dataVersion++;
+    AppState.dataVersion = ++dataVersion;
     if (c.spec.stock) stockChangeGen++;
 }
 
@@ -499,7 +499,7 @@ function adoptCheckpoint(data) {
     const cur = activeCheckpoint;
     if (cur && cur.asOf === cp.asOf && cur.builtAt === cp.builtAt && cur.staleCount === cp.staleCount) return true;
     activeCheckpoint = cp;
-    dataVersion++;
+    AppState.dataVersion = ++dataVersion;
     return true;
 }
 
@@ -535,7 +535,7 @@ function invalidateCheckpoint(reason, affectsLocal) {
     console.info(`Stock checkpoint invalidated (${reason})`);
     if (affectsLocal && activeCheckpoint) {
         activeCheckpoint = null;
-        dataVersion++;
+        AppState.dataVersion = ++dataVersion;
         if (windowState) markDirty(['stockView'], true);
     }
     // Rebuild once the stale mark has reached the server (otherwise the
@@ -1067,7 +1067,7 @@ function listenCheckpoint(gen) {
                         // Another device changed history before the checkpoint: stop using it
                         // (full replay) until a rebuilt one arrives.
                         activeCheckpoint = null;
-                        dataVersion++;
+                        AppState.dataVersion = ++dataVersion;
                         markDirty(['stockView'], true);
                         requestRebuild();
                     }
@@ -1358,7 +1358,7 @@ const FirebaseService = {
         pendingViews.clear();
         stockDirty = false;
         stockCache = {};
-        dataVersion++;
+        AppState.dataVersion = ++dataVersion;
         sessionGen++;
         windowState = null;
         checkpointDoc = undefined;
@@ -2152,7 +2152,7 @@ const FirebaseService = {
         const itemsLive = { docs: [], initialized: false, server: false };
         const firstSnapshots = [listen(db.collection(col('items')), 'Items', itemsLive, (changes, started) => {
             AppState.items = itemsLive.docs.slice();
-            dataVersion++;
+            AppState.dataVersion = ++dataVersion;
             if (!started) return;
             // Index-based views (item dropdown values, item cards) must
             // never lag behind AppState.items, so refresh them right away.

@@ -67,6 +67,8 @@ export const AppState = {
      * @type {number}
      */
     historyLoadedFrom: 0,
+    /** @type {number} Bumped by FirebaseService on every listener data change (render memo) */
+    dataVersion: 0,
     
     // UI State
     /** @type {string} Current date filter: 'today', 'week', 'month', 'custom', 'all' */

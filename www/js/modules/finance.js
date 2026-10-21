@@ -15,9 +15,12 @@ import {
     ensureHistoryFrom, historyLoadedFrom, monthStart
 } from '../utils/history-window.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
+import { createRenderMemo } from '../utils/render-memo.js';
 
 /** Placeholder for all-time figures until the full history is loaded. */
 const NOT_LOADED = '—';
+/** Skips recomputing the dashboard on a tab revisit when nothing changed (#24). */
+const dashboardMemo = createRenderMemo();
 
 const isShown = (el) => !!el && el.style.display !== 'none';
 
@@ -48,7 +51,7 @@ export class FinanceManager {
      */
     static init() {
         this.loadCustomAccounts();
-        this.filterTab('dashboard');
+        this.filterTab('dashboard', undefined, { skipUnchanged: true });
         this.setupIconPicker();
         this.setDefaultDate();
     }
@@ -102,7 +105,7 @@ export class FinanceManager {
      * @param {'dashboard'|'assets'|'withdrawals'} view - View to display
      * @param {Event} [evt] - Optional click event for button styling
      */
-    static filterTab(view, evt) {
+    static filterTab(view, evt, { skipUnchanged = false } = {}) {
         // Update button states - only main tab buttons
         const buttons = document.querySelectorAll('#finance > .filter-buttons > .filter-btn');
         buttons.forEach(btn => btn.classList.remove('active'));
@@ -127,6 +130,7 @@ export class FinanceManager {
         if (view === 'dashboard') {
             // Also ensure date filter button is correctly selected
             this.updateDateFilterButtons();
+            if (skipUnchanged && dashboardMemo.isCurrent(this.dashboardMemoState())) return;
             this.renderDashboard();
         } else if (view === 'assets') {
             this.renderAssets();
@@ -326,7 +330,10 @@ export class FinanceManager {
                 }
             });
         }
-        if (status === 'loading') return;
+        if (status === 'loading') {
+            dashboardMemo.reset();
+            return;
+        }
 
         const salesHistory = AppState.salesHistory || [];
         const retailSalesHistory = AppState.retailSalesHistory || [];
@@ -411,6 +418,12 @@ export class FinanceManager {
         
         // Render monthly chart
         this.renderMonthlyChart();
+        dashboardMemo.record(this.dashboardMemoState());
+    }
+
+    /** Filter state the dashboard depends on (besides data). */
+    static dashboardMemoState() {
+        return [this.currentDateFilter, this.customStartDate?.getTime?.() ?? this.customStartDate, this.customEndDate?.getTime?.() ?? this.customEndDate];
     }
 
     /**

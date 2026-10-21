@@ -842,6 +842,7 @@ window.app = {
         setDateFilter: (filter, evt) => ReportsManager.setDateFilter(filter, evt),
         applyCustomDateFilter: () => ReportsManager.applyCustomDateFilter(),
         renderReports: () => ReportsManager.renderReports(),
+        renderReportsIfStale: () => ReportsManager.renderReportsIfStale(),
         applyFilters: () => ReportsManager.applyFilters(),
         exportCSV: () => ReportsManager.exportCSV(),
         exportPDF: () => ReportsManager.exportPDF()
