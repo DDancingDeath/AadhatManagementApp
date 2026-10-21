@@ -195,9 +195,10 @@ export class OutstandingManager {
                         <span style="font-weight: 600;">Outstanding:</span>
                         <strong style="color: ${headerColor}; font-size: 16px;">₹${Math.round(transaction.outstanding)}</strong>
                     </div>
-                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; align-items: center; gap: 8px;">
-                        <label style="flex-shrink: 0;">Payment (₹):</label>
-                        <input type="number" id="payment_${Helpers.escapeHtml(transaction.id)}" placeholder="Enter amount" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <label style="flex-shrink: 0;">${isPurchase ? 'Pay' : 'Received'}:</label>
+                        <input type="number" inputmode="decimal" min="0" id="payment_${Helpers.escapeHtml(transaction.id)}" placeholder="Cash ₹" aria-label="Cash amount" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
+                        <input type="number" inputmode="decimal" min="0" id="paymentOnline_${Helpers.escapeHtml(transaction.id)}" placeholder="Online ₹" aria-label="Online amount" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
                         <button onclick="window.app.outstanding.recordPayment('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">Record</button>
                     </div>
                     <div style="margin-top: 8px;">
@@ -214,10 +215,16 @@ export class OutstandingManager {
     }
 
     static async recordPayment(transactionId, transactionType) {
+        // Cash and online parts (#107): only the cash part reaches the drawer
         const paymentInput = document.getElementById(`payment_${transactionId}`);
+        const onlineInput = document.getElementById(`paymentOnline_${transactionId}`);
         const cash = Number(paymentInput?.value) || 0;
-        const ok = await this.recordDuePayment({ billType: transactionType, billId: transactionId, cash, online: 0 });
-        if (ok && paymentInput) paymentInput.value = '';
+        const online = Number(onlineInput?.value) || 0;
+        const ok = await this.recordDuePayment({ billType: transactionType, billId: transactionId, cash, online });
+        if (ok) {
+            if (paymentInput) paymentInput.value = '';
+            if (onlineInput) onlineInput.value = '';
+        }
     }
 
     /** Bill of a type ('purchase' | 'retail' | 'wholesale') from AppState. */

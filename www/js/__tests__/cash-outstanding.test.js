@@ -385,3 +385,52 @@ describe('due-payment helpers', () => {
         expect(checkPaymentSplit(cash, online, due)).toEqual(expected);
     });
 });
+
+describe('#107 Outstanding: cash + online split', () => {
+    const ctx = useFakeShop();
+    beforeEach(() => {
+        ctx.fake.seed('retailSales', [OLD_SALE]);
+        ctx.fake.seed('cashManagement', [OPEN_SESSION]);
+        AppState.retailSalesHistory = [{ ...OLD_SALE }];
+        AppState.currentDueFilter = 'sale';
+        document.body.innerHTML = '<input id="outstandingSearchInput"><div id="dueList"></div>';
+        CashManagementManager.todaySession = null;
+    });
+
+    test('each row has a cash and an online box', () => {
+        OutstandingManager.renderDue();
+        expect(document.getElementById('payment_r0').placeholder).toBe('Cash ₹');
+        expect(document.getElementById('paymentOnline_r0').placeholder).toBe('Online ₹');
+    });
+
+    test('cash and online parts go to payment.cash / payment.online; only cash reaches the drawer', async () => {
+        OutstandingManager.renderDue();
+        setVal('payment_r0', 100);
+        setVal('paymentOnline_r0', 200);
+        await OutstandingManager.recordPayment('r0', 'retail');
+
+        const bill = ctx.fake.raw('retailSales').get('r0');
+        expect(bill.payment).toMatchObject({ cash: 500, online: 200, due: 300 });
+        expect(bill.dueAmount).toBe(300);
+        const pay = readPayment(bill);
+        expect(pay.cash + pay.online + pay.due).toBe(bill.total); // M1
+        expect(bill.payments[0]).toMatchObject({ amount: 300, cash: 100, online: 200 });
+        const leg = ctx.fake.raw('cashManagement').get('s21').duePayments[0];
+        expect(leg).toMatchObject({ method: 'split', cash: 100, online: 200, amount: 300 });
+
+        AppState.retailSalesHistory = [{ ...OLD_SALE, ...bill }];
+        const t = CashManagementManager.calculateTransactionsForDate('2026-10-21', { id: 's21', ...ctx.fake.raw('cashManagement').get('s21') });
+        expect(t.dueReceived).toBe(100);
+        expect(toast).toHaveBeenCalledWith('✓ Payment of ₹300 recorded');
+    });
+
+    test('a split larger than the due is refused without writing', async () => {
+        OutstandingManager.renderDue();
+        setVal('payment_r0', 500);
+        setVal('paymentOnline_r0', 101);
+        const writes = ctx.fake.stats.writes;
+        await OutstandingManager.recordPayment('r0', 'retail');
+        expect(ctx.fake.stats.writes).toBe(writes);
+        expect(toast).toHaveBeenCalledWith('Payment amount exceeds outstanding amount');
+    });
+});
