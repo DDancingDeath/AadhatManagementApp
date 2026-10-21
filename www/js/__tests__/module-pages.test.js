@@ -404,11 +404,20 @@ describe('Admin → Users and Users manager', () => {
         expect(document.querySelector('#adminPendingUsers img')).toBeNull();
     });
 
-    // BUG: see #21 — Admin → Configure writes localStorage keys that billing never reads.
-    test.skip('Admin → Configure labour rate is used by billing', () => {
-        document.getElementById('adminContainer').innerHTML = '<input id="adminHeavyWeight" value="30"><input id="adminLaborRate" value="8"><input type="checkbox" id="adminAutoLabor" checked>';
-        AdminManager.saveConfigure();
+    test('Admin → Configure saves the shared labour rate that billing uses (#21)', async () => {
+        const shared = jest.spyOn(FirebaseService, 'saveSharedLabourSettings').mockResolvedValue(undefined);
+        localStorage.setItem('laborChargeRate', '9'); // orphan key from the old screen
+        AdminManager.renderConfigure();
+        expect(document.getElementById('adminLaborRate').value).toBe('6');
+        document.getElementById('adminLaborRate').value = '8';
+        expect(await AdminManager.saveConfigure()).toBe(true);
         expect(AppState.settings.laborRate).toBe(8);
+        expect(shared).toHaveBeenCalledWith({ laborRate: 8, heavyWeightThreshold: 30 });
+        expect(localStorage.getItem('laborChargeRate')).toBeNull();
+        // Re-opening Configure shows the same value Settings and billing use
+        AdminManager.renderConfigure();
+        expect(document.getElementById('adminLaborRate').value).toBe('8');
+        localStorage.clear();
     });
 });
 

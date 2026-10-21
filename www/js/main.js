@@ -15,7 +15,6 @@ import { OutstandingManager } from './modules/outstanding.js';
 import { ReportsManager } from './modules/reports.js';
 import { ExpensesManager } from './modules/miscellaneous.js';
 import { SettingsManager } from './modules/settings.js';
-import { DateFilterManager } from './modules/datefilter.js';
 import { UsersManager } from './modules/users.js';
 import { FinanceManager } from './modules/finance.js';
 import { AnalyticsManager } from './modules/analytics.js';
@@ -1035,12 +1034,6 @@ window.app = {
     install: {
         prompt: () => InstallManager.prompt(),
         refresh: () => InstallManager.refresh()
-    },
-    
-    // Date Filter
-    dateFilter: {
-        setFilter: (filter, evt) => DateFilterManager.setDateFilter(filter, evt),
-        applyCustomFilter: () => DateFilterManager.applyCustomDateFilter()
     },
     
     // Users
