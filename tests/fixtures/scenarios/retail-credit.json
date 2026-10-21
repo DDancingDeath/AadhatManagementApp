@@ -1,0 +1,38 @@
+{
+  "name": "retail-credit",
+  "description": "Purchase partly on credit; retail sales on credit to two customers, one partly paid later, one bill marked cleared.",
+  "items": [ { "id": "item-rice", "name": "Rice", "hindiName": "चावल" } ],
+  "purchases": [
+    { "id": "p1", "billNumber": "P20261003-001", "date": "2026-10-03T08:30:00", "customerName": "Mohan",
+      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 200, "rate": 30, "total": 6000 } ],
+      "billTotal": 6000, "laborCharges": 0, "grandTotal": 6000,
+      "cashPayment": 2000, "onlinePayment": 0, "dueAmount": 4000,
+      "payment": { "cash": 2000, "online": 0, "due": 4000, "total": 6000 } }
+  ],
+  "wholesaleSales": [],
+  "retailSales": [
+    { "id": "r1", "date": "2026-10-03T10:00:00", "customerName": "Sita",
+      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 10, "rate": 36, "total": 360 } ],
+      "total": 360, "cashPayment": 0, "onlinePayment": 0, "dueAmount": 360,
+      "payment": { "cash": 0, "online": 0, "due": 360, "total": 360 } },
+    { "id": "r2", "date": "2026-10-03T11:00:00", "customerName": "Sita",
+      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 5, "rate": 36, "total": 180 } ],
+      "total": 180, "cashPayment": 80, "onlinePayment": 0, "dueAmount": 100,
+      "payment": { "cash": 80, "online": 0, "due": 100, "total": 180 } },
+    { "id": "r3", "date": "04/10/2026", "customerName": "Kamla",
+      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 20, "rate": 36, "total": 720 } ],
+      "total": 720, "cashPayment": 0, "onlinePayment": 0, "dueAmount": 420,
+      "payment": { "cash": 300, "online": 0, "due": 420, "total": 300 },
+      "payments": [ { "amount": 300, "date": "2026-10-06T17:00:00", "recordedBy": "Owner" } ] },
+    { "id": "r4", "date": "2026-10-05T09:15:00", "customerName": "Kamla", "cleared": true,
+      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 4, "rate": 37.5, "total": 150 } ],
+      "total": 150, "cashPayment": 0, "onlinePayment": 0, "dueAmount": 150,
+      "payment": { "cash": 0, "online": 0, "due": 150, "total": 150 } }
+  ],
+  "stockAdjustments": [],
+  "expected": {
+    "stock": { "item-rice": 161 },
+    "payable": { "Mohan": 4000 },
+    "receivable": { "Sita": 460, "Kamla": 420 }
+  }
+}
