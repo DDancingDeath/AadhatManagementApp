@@ -12,7 +12,8 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import {
-    ensureHistoryFrom, isFullHistoryLoaded, historyLoadedFrom, formatWindowDate, findBillIndex
+    ensureHistoryFrom, isFullHistoryLoaded, historyLoadedFrom, formatWindowDate, findBillIndex,
+    renderStaleHistoryHint
 } from '../utils/history-window.js';
 
 /**
@@ -383,6 +384,7 @@ export class HistoryManager {
             enabled: () => !this.activeSearch && !this.hasHiddenBills(),
             onLoaded: () => this.refreshHistory()
         });
+        renderStaleHistoryHint(list, { id: 'historyStaleHint', onRefreshed: () => this.refreshHistory() });
 
         let footer = document.getElementById('historySearchFooter');
         if (!footer) {

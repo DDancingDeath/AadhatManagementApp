@@ -233,3 +233,49 @@ describe('applyRangeState', () => {
         expect(document.querySelector('.history-range-notice')).toBeNull();
     });
 });
+
+describe('stale on-demand history hint (#132)', () => {
+    const setup = (info, refreshResult = true) => {
+        document.body.innerHTML = '<div id="wrap"><div id="list"></div></div>';
+        const svc = {
+            getOnDemandHistoryInfo: jest.fn(() => info),
+            refreshOnDemandHistory: jest.fn(async () => refreshResult)
+        };
+        window.FirebaseService = svc;
+        return { svc, list: document.getElementById('list') };
+    };
+
+    test('no on-demand history: no hint', () => {
+        const { list } = setup(null);
+        hw.renderStaleHistoryHint(list, { id: 'hint' });
+        expect(document.getElementById('hint')).toBeNull();
+    });
+
+    test('shows "as of" time and Refresh re-fetches, then re-renders', async () => {
+        const asOf = new Date(2026, 9, 21, 9, 5).getTime();
+        const { svc, list } = setup({ from: JAN_1, liveFrom: MAR_1, asOf });
+        expect(hw.staleHistoryHintText({ liveFrom: MAR_1, asOf }, new Date(2026, 9, 21, 12)))
+            .toMatch(/^Bills before 1 Mar 2026 don't update live \(as of 09:05( am)?\) and may be out of date\.$/i);
+        const onRefreshed = jest.fn();
+        hw.renderStaleHistoryHint(list, { id: 'hint', onRefreshed });
+        const hint = document.getElementById('hint');
+        expect(hint.nextElementSibling).toBe(list);
+        hint.querySelector('button').click();
+        await flush();
+        expect(svc.refreshOnDemandHistory).toHaveBeenCalledTimes(1);
+        expect(onRefreshed).toHaveBeenCalledTimes(1);
+        // Re-rendering reuses the same element.
+        hw.renderStaleHistoryHint(list, { id: 'hint' });
+        expect(document.querySelectorAll('#hint')).toHaveLength(1);
+    });
+
+    test('failed refresh offers Retry and does not re-render', async () => {
+        const { list } = setup({ from: JAN_1, liveFrom: MAR_1, asOf: 1 }, false);
+        const onRefreshed = jest.fn();
+        hw.renderStaleHistoryHint(list, { id: 'hint', onRefreshed });
+        document.querySelector('#hint button').click();
+        await flush();
+        expect(document.querySelector('#hint button').textContent).toBe('Retry');
+        expect(onRefreshed).not.toHaveBeenCalled();
+    });
+});

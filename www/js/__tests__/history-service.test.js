@@ -644,4 +644,35 @@ describe('review fixes (2)', () => {
             ['expenses', 'stockAdjustments', 'withdrawals'].reduce((n, c) => n + Math.max(1, docsOf(c).filter(d => d.timestamp >= W).length), 0);
         expect(fake.stats.reads).toBeLessThanOrEqual(expected + 3);
     });
+
+    it('#132 on-demand history reports its age and Refresh re-reads it (edits and deletes from other devices)', async () => {
+        install(35);
+        await open();
+        await rebuildSettled();
+        await open();
+        expect(FirebaseService.getOnDemandHistoryInfo()).toBeNull();
+
+        const from = monthsBefore(W, 3);
+        const before = Date.now();
+        await FirebaseService.ensureHistoryFrom(from);
+        const info = FirebaseService.getOnDemandHistoryInfo();
+        expect(info).toMatchObject({ from, liveFrom: W });
+        expect(info.asOf).toBeGreaterThanOrEqual(before);
+
+        const old = AppState.purchaseHistory.filter(p => p.timestamp >= from && p.timestamp < W && !p.openDue);
+        expect(old.length).toBeGreaterThan(1);
+        const [edited, removed] = old;
+        // Another device edits one old bill and deletes another (no listener sees it).
+        await fake.db.collection('purchases').doc(edited.id).set({ ...fake.raw('purchases').get(edited.id), customerName: 'Edited elsewhere' });
+        await fake.db.collection('purchases').doc(removed.id).delete();
+        await settle();
+        expect(AppState.purchaseHistory.find(p => p.id === edited.id).customerName).not.toBe('Edited elsewhere');
+
+        await expect(FirebaseService.refreshOnDemandHistory()).resolves.toBe(true);
+        expect(AppState.purchaseHistory.find(p => p.id === edited.id).customerName).toBe('Edited elsewhere');
+        expect(AppState.purchaseHistory.some(p => p.id === removed.id)).toBe(false);
+        expect(FirebaseService.getOnDemandHistoryInfo().asOf).toBeGreaterThanOrEqual(info.asOf);
+        const ids = AppState.purchaseHistory.map(p => p.id);
+        expect(new Set(ids).size).toBe(ids.length);
+    });
 });

@@ -5,7 +5,8 @@ import { Helpers } from '../utils/helpers.js';
 import { readPayment, outstandingDue, readLineItem, perUnitRate } from '../utils/money.js';
 import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
 import {
-    rangeStatus, retryRange, applyRangeState, needsHistoryFrom, ensureHistoryFrom
+    rangeStatus, retryRange, applyRangeState, needsHistoryFrom, ensureHistoryFrom,
+    onDemandHistoryInfo, renderStaleHistoryHint
 } from '../utils/history-window.js';
 import { createRenderMemo } from '../utils/render-memo.js';
 
@@ -322,6 +323,15 @@ export class ReportsManager {
         if (status === 'loading') {
             reportsMemo.reset();
             return;
+        }
+
+        // Periods reaching into on-demand (non-live) history may be stale (#132).
+        const firstSection = document.querySelector('#reports .reports-section');
+        const onDemand = onDemandHistoryInfo();
+        if (firstSection && onDemand && (!start || start.getTime() < onDemand.liveFrom)) {
+            renderStaleHistoryHint(firstSection, { id: 'reportsStaleHint', onRefreshed: () => this.renderReports() });
+        } else {
+            document.getElementById('reportsStaleHint')?.remove();
         }
 
         this.populateFilters();

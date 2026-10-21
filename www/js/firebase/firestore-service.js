@@ -338,6 +338,8 @@ let stockChangeGen = 0;
 /** stockCheckpoints/legacyScan: per collection {complete, foundAt} of the timestamp backfill. */
 let legacyScanDoc = null;
 let oldestTimestampPromise = null;
+/** When the on-demand (non-live) history currently in memory was first fetched (0 = none). */
+let onDemandAsOf = 0;
 let extendQueue = Promise.resolve();
 const pendingExtends = new Map();
 const invalidationTags = new Set();
@@ -749,6 +751,7 @@ async function extendHistory(target) {
         publishCollection(c);
     });
     if (fromServer) {
+        if (!onDemandAsOf) onDemandAsOf = Date.now();
         if (full) {
             AppState.historyLoadedFrom = 0;
             ws.rawFull = true;
@@ -765,6 +768,53 @@ async function extendHistory(target) {
 }
 
 let forcedExtends = 0;
+
+/**
+ * Re-reads every on-demand (non-live) record in [historyLoadedFrom, liveFrom)
+ * from the server and replaces the in-memory copies, so edits/deletes made on
+ * another device since they were loaded show up (#132).
+ * @private
+ * @returns {Promise<boolean>} false if offline / served from cache
+ */
+async function refreshOnDemand() {
+    const ws = windowState;
+    if (!ws) return false;
+    const from = AppState.historyLoadedFrom;
+    if (from >= ws.liveFrom) return true;
+    const gen = sessionGen;
+    const full = from === 0;
+    const db = getDb();
+    const snaps = [];
+    for (const spec of HISTORY_COLLECTIONS) {
+        const makeQuery = (attempt) => {
+            let q = db.collection(col(spec.key));
+            if (!full) q = q.where('timestamp', '>=', from).where('timestamp', '<', ws.liveFrom);
+            return attempt ? q.limit(RETRY_LIMIT_BASE + attempt) : q;
+        };
+        snaps.push(await getWithRetry(makeQuery, `${spec.label} refresh`).catch(err => {
+            if (spec.optional) return null;
+            throw err;
+        }));
+        if (gen !== sessionGen || windowState !== ws) return false;
+    }
+    if (snaps.some(s => s && s.metadata?.fromCache)) return false;
+    const inRange = (rec) => full || (typeof rec?.timestamp === 'number' && rec.timestamp >= from && rec.timestamp < ws.liveFrom);
+    snaps.forEach((snap, i) => {
+        if (!snap) return;
+        const c = ws.colls[HISTORY_COLLECTIONS[i].key];
+        const live = liveIdSet(c);
+        c.extended.forEach((rec, id) => {
+            if (inRange(rec)) c.extended.delete(id);
+        });
+        snap.docs.forEach(doc => {
+            if (!live.has(doc.id)) c.extended.set(doc.id, mapDoc(doc));
+        });
+        publishCollection(c);
+    });
+    onDemandAsOf = Date.now();
+    markDirty(ALL_HISTORY_VIEWS, true);
+    return true;
+}
 /** force: always do a fresh read (checkpoint rebuild must not reuse in-session data). */
 function queueExtend(target, raw = false, force = false) {
     const covered = () => !windowState || (!force && (raw
@@ -2008,6 +2058,27 @@ const FirebaseService = {
     },
 
     /**
+     * On-demand history currently in memory (records older than the live
+     * window; not live-updated), or null when only live data is loaded.
+     * @returns {?{from: number, liveFrom: number, asOf: number}}
+     */
+    getOnDemandHistoryInfo() {
+        if (!windowState || AppState.historyLoadedFrom >= windowState.liveFrom) return null;
+        return { from: AppState.historyLoadedFrom, liveFrom: windowState.liveFrom, asOf: onDemandAsOf };
+    },
+
+    /**
+     * Re-fetches the on-demand range from the server (queued behind any
+     * running history load).
+     * @returns {Promise<boolean>} false if it could not reach the server
+     */
+    refreshOnDemandHistory() {
+        const p = extendQueue.then(() => refreshOnDemand());
+        extendQueue = p.catch(() => {});
+        return p;
+    },
+
+    /**
      * Diagnostics: the stock checkpoint in use, if any.
      * @returns {?{asOf: number, builtAt: number, liveFrom: number}}
      */
@@ -2172,6 +2243,7 @@ const FirebaseService = {
             const cp = parseCheckpoint(checkpointDoc);
             const liveFrom = cp ? Math.min(W, cp.asOf) : W;
             windowState = { gen, liveFrom, rawFull: false, colls: {}, backfills: {} };
+            onDemandAsOf = 0;
             AppState.historyLoadedFrom = liveFrom;
             if (cp) adoptCheckpoint(checkpointDoc);
 
