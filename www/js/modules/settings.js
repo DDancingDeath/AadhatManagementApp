@@ -336,7 +336,7 @@ export class SettingsManager {
                             <span style="font-size: 11px; color: #888;">${formattedDate}</span>
                         </div>
                         <div style="font-size: 12px; color: #666;">
-                            <strong>${Helpers.escapeHtml(log.userName)}</strong> (${Helpers.escapeHtml(log.userRole)})
+                            <strong>${Helpers.escapeHtml(log.userName)}</strong> (${Helpers.escapeHtml(Helpers.roleLabel(log.userRole))})
                         </div>
                         ${details ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${Helpers.escapeHtml(details)}</div>` : ''}
                     </div>
