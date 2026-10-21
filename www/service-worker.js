@@ -111,7 +111,10 @@ const STATIC_ASSETS = [
     '/templates/settings.html',
     '/templates/stock.html',
     '/templates/users.html',
-    '/templates/wholesale-sales.html'
+    '/templates/wholesale-sales.html',
+    '/vendor/firebase/10.7.1/firebase-app-compat.js',
+    '/vendor/firebase/10.7.1/firebase-auth-compat.js',
+    '/vendor/firebase/10.7.1/firebase-firestore-compat.js'
 ];
 
 /**
@@ -233,7 +236,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         caches.match(event.request)
             .then((cachedResponse) => {
-                if (cachedResponse) {
+                // A non-OK entry (e.g. a stored error page) is treated as a
+                // miss so it gets refetched instead of replayed forever.
+                if (cachedResponse && cachedResponse.ok) {
                     // Return cached version and update cache in background
                     event.waitUntil(
                         fetch(event.request)

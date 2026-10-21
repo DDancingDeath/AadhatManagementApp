@@ -1,0 +1,2 @@
+# Vendored SDK files are SRI-pinned in index.html: never rewrite their line endings.
+www/vendor/**/*.js -text

@@ -7,7 +7,7 @@
  *
  * Fails if any entry does not exist on disk (a 404 during precache used to make
  * cache.addAll reject, silently disabling offline caching) or if an app file
- * (js/css/templates/img/icons, download.html, changelog.json, manifest) is missing from the list.
+ * (js/css/templates/img/icons/vendor, download.html, changelog.json, manifest) is missing from the list.
  */
 const fs = require('fs');
 const path = require('path');
@@ -34,6 +34,7 @@ function expectedAssets() {
         ...walk(path.join(WWW, 'templates')).filter((f) => f.endsWith('.html')),
         ...(fs.existsSync(path.join(WWW, 'img')) ? walk(path.join(WWW, 'img')) : []),
         ...walk(path.join(WWW, 'icons')).filter((f) => f.endsWith('.png')),
+        ...(fs.existsSync(path.join(WWW, 'vendor')) ? walk(path.join(WWW, 'vendor')).filter((f) => f.endsWith('.js')) : []),
     ].map(toUrl).sort();
     return [
         '/', '/index.html', '/firebaseConfig.js', '/download.html', '/changelog.json', '/manifest.webmanifest',
