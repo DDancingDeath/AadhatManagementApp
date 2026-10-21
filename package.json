@@ -7,7 +7,8 @@
     "test:rules": "npx --yes firebase-tools@latest emulators:exec --only firestore --project demo-aadhat \"node rules-tests/test.js\"",
     "check:sw": "node scripts/check-sw-assets.js",
     "release": "node scripts/release.js",
-    "check:release": "node scripts/release.js --check"
+    "check:release": "node scripts/release.js --check",
+    "check:review": "node scripts/check-review-rules.js"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^7.2.0",
