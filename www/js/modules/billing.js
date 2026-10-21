@@ -27,6 +27,13 @@ export function canEditBill(bill) {
 }
 export const EDIT_NOT_ALLOWED_MESSAGE = 'Only the person who created this bill, a manager or an owner can edit it';
 
+// Per-bill "Print comments" toggle: carried through edit, drafts and autosave.
+const readPrintComments = (id) => !!document.getElementById(id)?.checked;
+function setPrintComments(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.checked = !!value;
+}
+
 /** Waits for a bill edit transaction; gives up waiting after EDIT_TIMEOUT_MS. */
 async function commitBillEdit(writePromise) {
     let timer = null;
@@ -457,6 +464,7 @@ const BillingManager = {
             draft.customerName = Helpers.getInputText('customerName');
             draft.laborCharges = Helpers.getInputInt('manualLaborCharges');
             draft.comments = Helpers.getInputText('billComments');
+            draft.printComments = readPrintComments('billPrintComments');
             draft.billTotal = Helpers.getElementInt('billTotal');
         } else {
             const saleWeightInput = document.getElementById('saleWeight');
@@ -480,6 +488,7 @@ const BillingManager = {
             draft.weights = [...saleWeights];
             draft.customerName = Helpers.getInputText('saleCustomerName');
             draft.comments = Helpers.getInputText('saleComments');
+            draft.printComments = readPrintComments('salePrintComments');
             draft.saleTotal = Helpers.getElementInt('saleTotal');
         }
 
@@ -597,6 +606,7 @@ const BillingManager = {
                 if (draft.customerName) document.getElementById('customerName').value = draft.customerName;
                 if (draft.laborCharges) document.getElementById('manualLaborCharges').value = draft.laborCharges;
                 if (draft.comments) document.getElementById('billComments').value = draft.comments;
+                setPrintComments('billPrintComments', draft.printComments);
             } else {
                 RetailSaleManager.setSaleItems(draft.items || []);
                 RetailSaleManager.setSaleWeights(draft.weights || []);
@@ -604,6 +614,7 @@ const BillingManager = {
                 RetailSaleManager.renderSaleWeights();
                 if (draft.customerName) document.getElementById('saleCustomerName').value = draft.customerName;
                 if (draft.comments) document.getElementById('saleComments').value = draft.comments;
+                setPrintComments('salePrintComments', draft.printComments);
             }
 
             PurchaseManager.updateTotals();
@@ -715,6 +726,7 @@ const BillingManager = {
                 customerName: Helpers.getInputText('customerName'),
                 laborCharges: Helpers.getInputInt('manualLaborCharges'),
                 comments: Helpers.getInputText('billComments'),
+                printComments: readPrintComments('billPrintComments'),
                 billTotal: Helpers.getElementInt('billTotal')
             };
 
@@ -726,6 +738,7 @@ const BillingManager = {
                 rate: Helpers.getInputText('saleRate'),
                 customerName: Helpers.getInputText('saleCustomerName'),
                 comments: Helpers.getInputText('saleComments'),
+                printComments: readPrintComments('salePrintComments'),
                 saleTotal: Helpers.getElementInt('saleTotal')
             };
 
@@ -826,6 +839,7 @@ const BillingManager = {
                 if (purchaseData.customerName) document.getElementById('customerName').value = purchaseData.customerName;
                 if (purchaseData.laborCharges) document.getElementById('manualLaborCharges').value = purchaseData.laborCharges;
                 if (purchaseData.comments) document.getElementById('billComments').value = purchaseData.comments;
+                setPrintComments('billPrintComments', purchaseData.printComments);
                 
                 PurchaseManager.renderBill();
                 PurchaseManager.renderWeights();
@@ -859,6 +873,7 @@ const BillingManager = {
                 
                 if (saleData.customerName) document.getElementById('saleCustomerName').value = saleData.customerName;
                 if (saleData.comments) document.getElementById('saleComments').value = saleData.comments;
+                setPrintComments('salePrintComments', saleData.printComments);
                 
                 RetailSaleManager.renderSalesBill();
                 RetailSaleManager.renderSaleWeights();
@@ -930,6 +945,7 @@ const BillingManager = {
                 
                 if (bill.customerName) document.getElementById('customerName').value = bill.customerName;
                 if (bill.comments) document.getElementById('billComments').value = bill.comments;
+                setPrintComments('billPrintComments', bill.printComments);
                 if (bill.laborCharges) document.getElementById('manualLaborCharges').value = bill.laborCharges;
                 
                 if (bill.payment) {
@@ -958,6 +974,7 @@ const BillingManager = {
                 
                 if (bill.customerName) document.getElementById('saleCustomerName').value = bill.customerName;
                 if (bill.comments) document.getElementById('saleComments').value = bill.comments;
+                setPrintComments('salePrintComments', bill.printComments);
                 
                 // Check payments from payment object or top-level properties
                 const onlineValue = bill.payment?.online || bill.onlinePayment || 0;
@@ -1052,6 +1069,7 @@ const BillingManager = {
                 const dueAmount = Helpers.getInputInt('dueAmount');
                 const customerName = Helpers.getInputText('customerName');
                 const comments = Helpers.getInputText('billComments');
+                const printComments = readPrintComments('billPrintComments');
                 
                 const laborCalculationSpan = document.getElementById('laborCalculation');
                 const laborCalc = laborCalculationSpan?.textContent || null;
@@ -1070,6 +1088,7 @@ const BillingManager = {
                     dueAmount,
                     customerName,
                     comments,
+                    printComments,
                     payment: {
                         online: onlinePayment,
                         cash: cashPayment,
@@ -1113,7 +1132,7 @@ const BillingManager = {
                 const saleDue = Helpers.getInputInt('saleDueAmount');
                 const saleCustomer = Helpers.getInputText('saleCustomerName');
                 const saleComments = Helpers.getInputText('saleComments');
-                const printComments = document.getElementById('salePrintComments')?.checked || false;
+                const printComments = readPrintComments('salePrintComments');
 
                 const updatedSale = {
                     ...bill,

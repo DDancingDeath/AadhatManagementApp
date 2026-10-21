@@ -120,3 +120,42 @@ export function localISODaysAgo(daysAgo) {
     const now = new Date();
     return toLocalISODate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo));
 }
+
+const DMY_DASH = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
+
+/**
+ * Convert any stored timestamp shape to a valid Date, or null.
+ * Handles Firestore Timestamp, {seconds}/{_seconds} objects, epoch ms,
+ * ISO strings, DD/MM/YYYY and DD-MM-YYYY. `new Date(timestamp)` on a
+ * Firestore Timestamp gives "Invalid Date".
+ * @param {*} value
+ * @returns {Date|null}
+ */
+export function toJsDate(value) {
+    if (value && typeof value === 'object' && !(value instanceof Date) &&
+        typeof value.toDate !== 'function' && typeof value.seconds !== 'number' &&
+        typeof value._seconds === 'number') {
+        value = { seconds: value._seconds, nanoseconds: value._nanoseconds || 0 };
+    }
+    if (typeof value === 'string') {
+        const m = DMY_DASH.exec(value.trim());
+        if (m) {
+            const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+            return d.getMonth() === Number(m[2]) - 1 ? d : null;
+        }
+    }
+    const d = parseAnyBillDate(value);
+    return d && !isNaN(d.getTime()) ? d : null;
+}
+
+/**
+ * en-IN date/time text for any timestamp shape, or `fallback` when unparseable.
+ * @param {*} value
+ * @param {Intl.DateTimeFormatOptions} [options]
+ * @param {string} [fallback='Unknown']
+ * @returns {string}
+ */
+export function formatDateTimeIN(value, options, fallback = 'Unknown') {
+    const d = toJsDate(value);
+    return d ? d.toLocaleString('en-IN', options) : fallback;
+}

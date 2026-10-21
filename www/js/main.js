@@ -37,7 +37,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261021p-no-staff-wording';
+const BUILD_ID = '20261021q-ui-bugs';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -222,6 +222,7 @@ async function initializeUserData() {
         
         // Show the billing tab by default
         NavigationManager.showTab('billing');
+        NavigationManager.setActiveNavLink('billing');
         
         // Initialize UI
         AuthManager.updateUserDisplay();
@@ -992,7 +993,7 @@ window.app = {
     ui: {
         showLoading: () => UIManager.showLoading(),
         hideLoading: () => UIManager.hideLoading(),
-        showToast: (msg, duration) => UIManager.showToast(msg, duration),
+        showToast: (msg, durationOrType, duration) => UIManager.showToast(msg, durationOrType, duration),
         showModal: (msg, title, showCancel) => UIManager.showModal(msg, title, showCancel),
         closeModal: (result) => UIManager.closeModal(result)
     }

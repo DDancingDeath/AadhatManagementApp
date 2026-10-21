@@ -10,7 +10,9 @@ import {
     parseAnyBillDate,
     startOfLocalDay,
     endOfLocalDayExclusive,
-    localISODaysAgo
+    localISODaysAgo,
+    toJsDate,
+    formatDateTimeIN
 } from '../utils/dates.js';
 
 describe('todayLocalISO (IST)', () => {
@@ -89,5 +91,30 @@ describe('startOfLocalDay / endOfLocalDayExclusive', () => {
         expect(end.getTime() - start.getTime()).toBe(24 * 60 * 60 * 1000);
         const t = parseAnyBillDate(billIso).getTime();
         expect(t >= start.getTime() && t < end.getTime()).toBe(true);
+    });
+});
+
+describe('toJsDate / formatDateTimeIN (#114)', () => {
+    const ms = new Date(2026, 9, 21, 14, 30).getTime();
+
+    test('handles Timestamp, {seconds}, {_seconds}, ms, ISO and DD-MM strings', () => {
+        expect(toJsDate({ toDate: () => new Date(ms) }).getTime()).toBe(ms);
+        expect(toJsDate({ seconds: ms / 1000, nanoseconds: 0 }).getTime()).toBe(ms);
+        expect(toJsDate({ _seconds: ms / 1000, _nanoseconds: 0 }).getTime()).toBe(ms);
+        expect(toJsDate(ms).getTime()).toBe(ms);
+        expect(toJsDate(new Date(ms).toISOString()).getTime()).toBe(ms);
+        expect(toJsDate('21/10/2026').getDate()).toBe(21);
+        const dash = toJsDate('21-10-2026');
+        expect([dash.getFullYear(), dash.getMonth(), dash.getDate()]).toEqual([2026, 9, 21]);
+    });
+
+    test('never yields "Invalid Date"', () => {
+        expect(toJsDate({ foo: 1 })).toBeNull();
+        expect(toJsDate('not a date')).toBeNull();
+        expect(toJsDate('31-02-2026')).toBeNull();
+        expect(formatDateTimeIN({ seconds: ms / 1000 })).not.toMatch(/Invalid/);
+        expect(formatDateTimeIN({ seconds: ms / 1000 })).toContain('2026');
+        expect(formatDateTimeIN(undefined)).toBe('Unknown');
+        expect(formatDateTimeIN('garbage', undefined, '-')).toBe('-');
     });
 });
