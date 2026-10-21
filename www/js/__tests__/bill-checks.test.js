@@ -5,7 +5,7 @@
  */
 import {
     DEFAULT_THRESHOLDS, normalizeThresholds, evaluateBill, saveGate, bannerText, canOverride,
-    toFlags, toOverrides, buildCheckContext, evaluateCashCount, evaluateStockAdjustment, isEntryIssue
+    toFlags, toOverrides, buildCheckContext, stockCreditFor, evaluateCashCount, evaluateStockAdjustment, isEntryIssue
 } from '../utils/bill-checks.js';
 
 const NOW = new Date(2026, 9, 22, 12, 0, 0).getTime(); // 22 Oct 2026 12:00 IST
@@ -329,6 +329,19 @@ describe('buildCheckContext', () => {
         expect(buildCheckContext(state, 'purchase').recentBills).toEqual(['p']);
         const w = buildCheckContext({ ...state, userRole: 'manager' }, 'wholesale', { editingBill: { items: ['x'] } });
         expect(w).toMatchObject({ recentBills: ['w'], oversellCanBlock: true, showCost: true, credit: ['x'] });
+    });
+
+    test('a retried new bill already in history (and stock) is credited by its id; others are not', () => {
+        const s = { ...state, stock: { rice: { quantity: 20, rate: 30 } }, stockReady: true, salesHistory: [
+            { id: 'other', items: [{ itemId: 'rice', qty: 5 }] },
+            { id: 'pend1', items: [{ itemId: 'rice', quantity: 30 }] }
+        ] };
+        expect(stockCreditFor(s, 'wholesale', { draftId: 'pend1' })).toEqual([{ itemId: 'rice', quantity: 30 }]);
+        expect(stockCreditFor(s, 'wholesale', { draftId: 'nope' })).toEqual([]);
+        expect(stockCreditFor(s, 'retail', { draftId: 'pend1' })).toEqual([]);
+        const sale = draft({ kind: 'wholesale', id: 'pend1', items: [{ itemId: 'rice', name: 'Rice', rate: 40, qty: 30, total: 1200 }], total: 1200, payment: { cash: 1200 } });
+        expect(ids(evaluateBill(sale, buildCheckContext(s, 'wholesale', { now: NOW, draftId: 'pend1' })))).toEqual([]);
+        expect(find(evaluateBill(sale, buildCheckContext(s, 'wholesale', { now: NOW })), 'oversell').severity).toBe('block');
     });
 });
 

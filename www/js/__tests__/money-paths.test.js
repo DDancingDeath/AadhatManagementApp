@@ -323,6 +323,27 @@ describe('new retail sale save', () => {
         expect(saveRetailSale).not.toHaveBeenCalled();
     });
 
+    test('retry after a failed save: the bill already in history/stock is not counted twice (no false oversell)', async () => {
+        AppState.stock = { 'item-rice': { quantity: 50 } };
+        AppState.retailSalesHistory = [];
+        const modal = jest.spyOn(UIManager, 'showModal').mockResolvedValue(true);
+        // First attempt reaches local history (and the listener deducts it) but the save then fails
+        saveRetailSale.mockImplementationOnce(async (sale) => {
+            AppState.retailSalesHistory.unshift(sale);
+            AppState.stock = { 'item-rice': { quantity: 20 } };
+            throw new Error('timeout');
+        });
+        await addLine(0, 36, [30]);
+        setVal('saleCashPayment', 1080);
+        await expect(RetailSaleManager.completeSale()).rejects.toThrow('timeout');
+
+        const sale = await RetailSaleManager.completeSale();
+        expect(modal).not.toHaveBeenCalled();
+        expect(saveRetailSale).toHaveBeenCalledTimes(2);
+        expect(sale.flags).toBeUndefined();
+        AppState.retailSalesHistory = [];
+    });
+
     test('retail oversell far beyond the limit still only warns (#33 open); accepted warning saved as a flag (#37)', async () => {
         AppState.stock = { 'item-rice': { quantity: 1 } };
         jest.spyOn(UIManager, 'showModal').mockResolvedValue(true);

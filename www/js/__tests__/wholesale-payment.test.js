@@ -214,6 +214,39 @@ describe('wholesale sale save: payment split (#113, #23, #68, #26)', () => {
         expect(saved).toHaveLength(1);
     });
 
+    test('retry after a failed save: own quantities already deducted from stock are credited back (no block, no warn)', async () => {
+        WholesaleSalesManager.setItems([]);
+        AppState.stock = { rice: { quantity: 50, rate: 30.5 } };
+        AppState.salesHistory = [];
+        AppState.userRole = 'staff';
+        setVal('sellRate', 40);
+        setVal('sellQuantity', 30);
+        await WholesaleSalesManager.addToWholesaleBill(); // 1200
+        setVal('wholesaleCashPayment', 1200);
+        const modal = jest.spyOn(UIManager, 'showModal').mockResolvedValue(true);
+        FirebaseService.saveWholesaleSale = jest.fn(async (sale) => {
+            AppState.salesHistory.unshift(sale);
+            AppState.stock = { rice: { quantity: 20, rate: 30.5 } };
+            throw new Error('timeout');
+        });
+        expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
+        expect(toast()).toBe('Error: timeout');
+
+        // Adding another 5 kg on the retry bill: 35 of 50 kg, the add check must credit the 30 kg too
+        setVal('sellQuantity', 5);
+        await WholesaleSalesManager.addToWholesaleBill();
+        expect(WholesaleSalesManager.getItems()).toHaveLength(2);
+        setVal('wholesaleCashPayment', 1400);
+
+        FirebaseService.saveWholesaleSale = jest.fn(async (sale) => sale);
+        const sale = await WholesaleSalesManager.completeSale();
+        expect(modal).not.toHaveBeenCalled();
+        expect(sale).toMatchObject({ total: 1400 });
+        expect(sale.flags).toBeUndefined();
+        expect(sale.overrides).toBeUndefined();
+        AppState.salesHistory = [];
+    });
+
     test('a fully paid cash sale needs no name and its cash reaches the drawer', async () => {
         setVal('wholesaleCashPayment', 4025);
         const sale = await WholesaleSalesManager.completeSale();

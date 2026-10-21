@@ -386,16 +386,35 @@ export function toOverrides(blocks, reason, by, at) {
         .map(b => ({ rule: b.id, reason: String(reason || '').trim(), by, at }));
 }
 
+const historyFor = (s, kind) => (kind === 'purchase' ? s.purchaseHistory : kind === 'retail' ? s.retailSalesHistory : s.salesHistory);
+
+/**
+ * Bill lines that current stock already reflects for the bill being saved:
+ * the saved copy of a bill being edited, or a new bill whose earlier save
+ * attempt already reached local history (and stock) before failing (#70 retry).
+ * Counting them back avoids blocking a bill against its own quantities.
+ * @param {Object} state - AppState-like
+ * @param {'purchase'|'retail'|'wholesale'} kind
+ * @param {{editingBill?: Object|null, draftId?: string|null}} [opts]
+ * @returns {Array<Object>}
+ */
+export function stockCreditFor(state, kind, { editingBill = null, draftId = null } = {}) {
+    const history = historyFor(state || {}, kind);
+    const own = editingBill
+        || (draftId && Array.isArray(history) ? history.find(b => b && b.id === draftId) : null);
+    return own && Array.isArray(own.items) ? own.items : [];
+}
+
 /**
  * Build the rule context from app state (pure: pass AppState in).
  * @param {Object} state - AppState-like ({ items, stock, stockReady, purchaseHistory, retailSalesHistory, salesHistory, userRole, settings })
  * @param {'purchase'|'retail'|'wholesale'} kind
- * @param {{now?: number, editingBill?: Object|null}} [opts]
+ * @param {{now?: number, editingBill?: Object|null, draftId?: string|null}} [opts]
  * @returns {Object}
  */
-export function buildCheckContext(state, kind, { now = Date.now(), editingBill = null } = {}) {
+export function buildCheckContext(state, kind, { now = Date.now(), editingBill = null, draftId = null } = {}) {
     const s = state || {};
-    const history = kind === 'purchase' ? s.purchaseHistory : kind === 'retail' ? s.retailSalesHistory : s.salesHistory;
+    const history = historyFor(s, kind);
     return {
         kind,
         now,
@@ -403,8 +422,7 @@ export function buildCheckContext(state, kind, { now = Date.now(), editingBill =
         catalogue: Array.isArray(s.items) ? s.items : [],
         stock: s.stock || {},
         stockReady: s.stockReady !== false,
-        // Lines of the saved bill being edited are already out of stock: count them back.
-        credit: editingBill && Array.isArray(editingBill.items) ? editingBill.items : [],
+        credit: stockCreditFor(s, kind, { editingBill, draftId }),
         recentBills: Array.isArray(history) ? history : [],
         // #33 (should retail reduce stock?) is open: retail oversell only warns, as before.
         oversellCanBlock: kind === 'wholesale',

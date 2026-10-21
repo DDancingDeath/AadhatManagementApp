@@ -6,7 +6,7 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeShortfallsFrom } from '../utils/stock-check.js';
-import { normalizeThresholds } from '../utils/bill-checks.js';
+import { normalizeThresholds, stockCreditFor } from '../utils/bill-checks.js';
 import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
@@ -157,7 +157,8 @@ export class WholesaleSalesManager {
         // Same limit as at save (#37, Q18/Q57): a small oversell only warns, beyond the limit it blocks
         const { oversellBlockKg } = normalizeThresholds(AppState.settings?.checkThresholds);
         const short = computeShortfallsFrom([...wholesaleSaleItems, { itemId: item.id, name: itemName, qty: quantity }],
-            { items: AppState.items, stock: AppState.stock, stockReady: AppState.stockReady })
+            { items: AppState.items, stock: AppState.stock, stockReady: AppState.stockReady },
+            stockCreditFor(AppState, 'wholesale', { draftId: pendingBill?.id }))
             .find(s => s.key === item.id);
         if (short && short.shortfall > oversellBlockKg + 1e-6) {
             UIManager.showToast(`Insufficient stock! Available: ${short.available.toFixed(1)}kg`);

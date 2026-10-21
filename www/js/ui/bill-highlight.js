@@ -247,7 +247,9 @@ function evaluate(kind, overrides = null) {
     const base = cfg.getDraft();
     if (!base) return [];
     const draft = overrides ? { ...base, ...overrides } : base;
-    const ctx = buildCheckContext(AppState, draft.kind, { now: Date.now(), editingBill: draft.editingBill || null });
+    const ctx = buildCheckContext(AppState, draft.kind, {
+        now: Date.now(), editingBill: draft.editingBill || null, draftId: draft.id || null
+    });
     return evaluateBill(draft, ctx);
 }
 
