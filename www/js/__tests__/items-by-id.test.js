@@ -7,7 +7,8 @@ jest.mock('../firebase/firestore-service.js', () => ({
     FirebaseService: {
         saveItem: jest.fn(async (item) => item),
         deleteItem: jest.fn(async () => {}),
-        notifyRateChange: jest.fn()
+        notifyRateChange: jest.fn(async () => {}),
+        addRateHistoryEntries: jest.fn(async () => {})
     }
 }));
 jest.mock('../services/audit.js', () => ({ AuditService: { log: jest.fn(async () => {}), ACTIONS: { DELETE_ITEM: 'DELETE_ITEM' } } }));
@@ -17,6 +18,7 @@ jest.mock('../ui/ui-manager.js', () => ({
         showLoading: jest.fn(),
         hideLoading: jest.fn(),
         showModal: jest.fn(async () => true),
+        showModalWithHtml: jest.fn(async () => true),
         withLoading: jest.fn(async (fn) => fn())
     }
 }));
@@ -192,5 +194,82 @@ describe('most-used sort (#75)', () => {
         const rows = [...document.querySelectorAll('#itemsViewTableBody tr')];
         expect(rows.map(r => r.cells[0].textContent.trim())).toEqual(['Moong', 'Gehu', 'Chana']);
         expect(rows.every(r => r.cells[0].querySelector('span') === null)).toBe(true);
+    });
+});
+describe('rate / name history on save (#82)', () => {
+    beforeEach(() => {
+        FirebaseService.addRateHistoryEntries.mockClear();
+        UIManager.showModalWithHtml.mockClear();
+        UIManager.showModalWithHtml.mockImplementation(async () => true);
+        AppState.currentUser = { uid: 'owner1' };
+        AppState.userName = 'Owner';
+        ItemsManager.lastChangeAt = {};
+    });
+
+    const entriesWritten = () => FirebaseService.addRateHistoryEntries.mock.calls.flatMap(c => c[0].map(e => e.data));
+
+    test('typing 4 then 45 in the dialog writes one entry 50 → 45 (value at edit start)', async () => {
+        ItemsManager.openEditModal('a');
+        ItemsManager.updateModalRate('purchase', 0, '4');
+        ItemsManager.updateModalRate('purchase', 0, '45');
+        await ItemsManager.saveItemFromModal();
+        const written = entriesWritten();
+        expect(written).toHaveLength(1);
+        expect(written[0]).toMatchObject({ itemId: 'a', field: 'purchase', old: 50, new: 45, byUserId: 'owner1', source: 'modal', flags: [] });
+        expect(UIManager.showModalWithHtml).not.toHaveBeenCalled();
+    });
+
+    test('rate more than 2× asks first; cancel saves nothing', async () => {
+        UIManager.showModalWithHtml.mockImplementation(async () => false);
+        ItemsManager.openEditModal('a');
+        ItemsManager.updateModalRate('purchase', 0, '500');
+        await ItemsManager.saveItemFromModal();
+        expect(UIManager.showModalWithHtml.mock.calls[0][0]).toMatch(/₹50 → ₹500/);
+        expect(FirebaseService.saveItem).not.toHaveBeenCalled();
+        expect(FirebaseService.addRateHistoryEntries).not.toHaveBeenCalled();
+    });
+
+    test('rename asks first, explains old bills, and records name history when confirmed', async () => {
+        ItemsManager.openEditModal('b');
+        document.getElementById('itemModalName').value = 'Wheat';
+        await ItemsManager.saveItemFromModal();
+        expect(UIManager.showModalWithHtml.mock.calls[0][0]).toMatch(/Old bills keep the old name/);
+        expect(entriesWritten()).toEqual([expect.objectContaining({ field: 'name', old: 'Gehu', new: 'Wheat' })]);
+    });
+
+    test('second change of the same field within 60 s is flagged', async () => {
+        ItemsManager.openEditModal('a');
+        ItemsManager.updateModalRate('purchase', 0, '52');
+        await ItemsManager.saveItemFromModal();
+        ItemsManager.openEditModal('a');
+        ItemsManager.updateModalRate('purchase', 0, '53');
+        await ItemsManager.saveItemFromModal();
+        expect(entriesWritten()[1]).toMatchObject({ old: 52, new: 53, flags: ['quick-repeat'] });
+    });
+
+    test('no history writes for a user who is not owner/manager, or when nothing changed', async () => {
+        ItemsManager.openEditModal('a');
+        await ItemsManager.saveItemFromModal();
+        AppState.userRole = 'staff';
+        ItemsManager.openEditModal('a');
+        ItemsManager.updateModalRate('purchase', 0, '55');
+        await ItemsManager.saveItemFromModal();
+        expect(FirebaseService.saveItem).toHaveBeenCalledTimes(2);
+        expect(FirebaseService.addRateHistoryEntries).not.toHaveBeenCalled();
+    });
+
+    test('inline rate typing records the value from before the burst, once', async () => {
+        jest.useFakeTimers();
+        try {
+            ItemsManager.updateRate('b', 0, '4');
+            ItemsManager.updateRate('b', 0, '45');
+            jest.advanceTimersByTime(600);
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(entriesWritten()).toEqual([expect.objectContaining({ itemId: 'b', field: 'purchase', old: 30, new: 45, source: 'inline' })]);
+            expect(FirebaseService.notifyRateChange).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }), 'purchase', 30, 45);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });

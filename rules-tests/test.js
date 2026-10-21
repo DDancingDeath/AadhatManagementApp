@@ -397,6 +397,44 @@ function defineSuite(prefix) {
         await assertFails(as('staff1').collection(`${prefix}telemetry`).doc('fp1').get());
         await assertSucceeds(as('legacyOwner').collection(`${prefix}telemetry`).doc('fp1').get());
     });
+
+    // ---- rateHistory (#82): append-only, owner/manager only ----
+
+    const rateHistory = `${prefix}rateHistory`;
+    const entry = (uid, extra = {}) => ({
+        itemId: 'i1', itemName: 'Wheat', field: 'purchase', old: 40, new: 45,
+        by: 'X', byUserId: uid, at: 1700000000000, source: 'modal', flags: [], ...extra
+    });
+
+    t('rateHistory: owner and manager can create and read entries', async () => {
+        await assertSucceeds(as('legacyOwner').collection(rateHistory).doc('i1_a').set(entry('legacyOwner')));
+        await assertSucceeds(as('manager1').collection(rateHistory).doc('i1_b').set(entry('manager1', { field: 'name', old: 'Gehu', new: 'Wheat' })));
+        await assertSucceeds(as('manager1').collection(rateHistory).doc('i1_a').get());
+        await assertSucceeds(as('legacyOwner').collection(rateHistory).get());
+    });
+
+    t('rateHistory: staff and pending users cannot create or read', async () => {
+        await assertFails(as('staff1').collection(rateHistory).doc('s').set(entry('staff1')));
+        await assertFails(as('pending1').collection(rateHistory).doc('p').set(entry('pending1')));
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(rateHistory).doc('x').set(entry('manager1')));
+        await assertFails(as('staff1').collection(rateHistory).doc('x').get());
+        await assertFails(as('staff1').collection(rateHistory).get());
+    });
+
+    t('rateHistory: entries cannot be updated or deleted, even by the owner', async () => {
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(rateHistory).doc('x').set(entry('legacyOwner')));
+        await assertFails(as('legacyOwner').collection(rateHistory).doc('x').update({ new: 50 }));
+        await assertFails(as('legacyOwner').collection(rateHistory).doc('x').set(entry('legacyOwner', { new: 50 })));
+        await assertFails(as('legacyOwner').collection(rateHistory).doc('x').delete());
+        await assertFails(as('manager1').collection(rateHistory).doc('x').delete());
+    });
+
+    t('rateHistory: rejects another user\'s uid, unknown fields and bad field names', async () => {
+        await assertFails(as('manager1').collection(rateHistory).doc('a').set(entry('legacyOwner')));
+        await assertFails(as('manager1').collection(rateHistory).doc('b').set(entry('manager1', { extra: 1 })));
+        await assertFails(as('manager1').collection(rateHistory).doc('c').set(entry('manager1', { field: 'stock' })));
+        await assertFails(as('manager1').collection(rateHistory).doc('d').set(entry('manager1', { at: 'yesterday' })));
+    });
 }
 
 defineSuite('');

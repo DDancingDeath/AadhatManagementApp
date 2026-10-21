@@ -38,7 +38,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261021u-release-1-4-0';
+const BUILD_ID = '20261022f-stock-insights';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -675,6 +675,7 @@ window.app = {
         deleteModalRate: (type, idx) => ItemsManager.deleteModalRate(type, idx),
         saveItemFromModal: () => ItemsManager.saveItemFromModal(),
         deleteItemFromModal: () => ItemsManager.deleteItemFromModal(),
+        loadModalHistory: () => ItemsManager.loadModalHistory(),
         add: () => ItemsManager.addItem(),
         // Item handlers take the item id, never a list position (#29)
         updateName: (id, val) => ItemsManager.updateItemName(id, val),
@@ -827,7 +828,9 @@ window.app = {
         loadAdjustItemStock: () => StockManager.loadAdjustItemStock(),
         updateAdjustmentPlaceholder: () => StockManager.updateAdjustmentPlaceholder(),
         applyAdjustment: () => StockManager.applyStockAdjustment(),
-        renderAdjustmentHistory: () => StockManager.renderAdjustmentHistory()
+        renderAdjustmentHistory: () => StockManager.renderAdjustmentHistory(),
+        renderDeadStock: () => StockManager.renderDeadStock(),
+        setDeadStockDays: (days) => StockManager.setDeadStockDays(days)
     },
     
     // Wholesale Sales

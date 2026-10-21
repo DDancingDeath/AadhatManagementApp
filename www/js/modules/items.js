@@ -12,7 +12,11 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { ensureXLSX } from '../utils/lazy-scripts.js';
 import { findItemById, findDuplicateItem, duplicateItemMessage, itemUsageFrequency, sortItemsByUsage, itemToSheetRow, planItemImport } from '../utils/item-catalog.js';
-import { todayLocalISO } from '../utils/dates.js';
+import { todayLocalISO, formatDateTimeIN } from '../utils/dates.js';
+import {
+    snapshotItem, diffItemSnapshots, changeWarnings, buildHistoryEntries, historyDocId,
+    formatHistoryValue, FIELD_LABELS, RATE_SANITY_FACTOR, RATE_FIELDS
+} from '../utils/rate-history.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -42,6 +46,27 @@ const ItemsManager = {
         wholesale: [],
         sale: []
     },
+
+    /**
+     * Item values when the edit dialog opened (#82): history diffs against
+     * this once on save, not against each keystroke.
+     * @type {?ReturnType<typeof snapshotItem>}
+     */
+    editStartSnapshot: null,
+
+    /**
+     * Inline edits: value before the current typing burst, keyed like the
+     * save timers, so "4 → 45" is recorded as one change from the old value.
+     * @type {Object.<string, *>}
+     */
+    pendingOldValues: {},
+
+    /**
+     * Time of the last recorded change per `${itemId}:${field}` in this
+     * session, for the "two changes within 60 s" review flag.
+     * @type {Object.<string, number>}
+     */
+    lastChangeAt: {},
 
     /**
      * Looks up an item by id at the moment of action.
@@ -212,8 +237,10 @@ const ItemsManager = {
             UIManager.showToast(duplicateItemMessage(dup.name));
             return;
         }
+        const key = `name_${id}`;
+        this.rememberOldValue(key, item.name || '');
         item.name = value;
-        this.scheduleSave(`name_${id}`, id);
+        this.scheduleSave(key, id, (saved) => this.recordInlineChange(key, saved, 'name', saved.name));
     },
 
     // Update item Hindi name (AUTO-SAVE with debounce)
@@ -226,8 +253,61 @@ const ItemsManager = {
             UIManager.showToast(duplicateItemMessage(dup.name));
             return;
         }
+        const key = `hindi_${id}`;
+        this.rememberOldValue(key, item.hindiName || '');
         item.hindiName = value;
-        this.scheduleSave(`hindi_${id}`, id);
+        this.scheduleSave(key, id, (saved) => this.recordInlineChange(key, saved, 'hindiName', saved.hindiName));
+    },
+
+    /**
+     * Keeps the value from before a typing burst (first keystroke wins).
+     * @private
+     */
+    rememberOldValue(key, value) {
+        if (!(key in this.pendingOldValues)) this.pendingOldValues[key] = value;
+    },
+
+    /**
+     * After an inline debounced save: records one history entry from the
+     * value before the typing burst to the saved value.
+     * @private
+     */
+    recordInlineChange(key, item, field, newValue) {
+        const oldValue = this.pendingOldValues[key];
+        delete this.pendingOldValues[key];
+        const norm = (v) => (v === '' || v === undefined || v === 0 ? null : v);
+        if (norm(oldValue) === norm(newValue)) return;
+        this.recordHistory(item, [{ field, old: norm(oldValue), new: norm(newValue) }], 'inline');
+    },
+
+    /** Only owner/manager may write (and read) the history (firestore.rules). */
+    canUseHistory() {
+        return ['owner', 'manager'].includes(AppState.userRole);
+    },
+
+    /**
+     * Appends rate/name history entries for one save (#82). Fire-and-forget
+     * like the audit log: the item is already saved, a failed history write
+     * is only logged.
+     * @param {Object} item saved item (with id)
+     * @param {Array<{field: string, old: *, new: *}>} changes
+     * @param {string} source 'modal' | 'inline'
+     */
+    recordHistory(item, changes, source) {
+        if (!item?.id || !changes || changes.length === 0 || !this.canUseHistory()) return;
+        const at = Date.now();
+        const entries = buildHistoryEntries(changes, {
+            itemId: item.id,
+            itemName: item.name || '',
+            by: AppState.userName || AppState.currentUser?.email || '',
+            byUserId: AppState.currentUser?.uid || '',
+            at,
+            source,
+            lastChangeAt: this.lastChangeAt
+        });
+        entries.forEach(e => { this.lastChangeAt[`${e.itemId}:${e.field}`] = at; });
+        FirebaseService.addRateHistoryEntries(entries.map((data, i) => ({ id: historyDocId(item.id, at, i), data })))
+            .catch(e => console.warn('Rate history not saved:', e));
     },
 
     /**
@@ -236,14 +316,17 @@ const ItemsManager = {
      * @private
      */
     async _saveItemRates(item, undo) {
+        let ok = true;
         try {
             await FirebaseService.saveItem(item);
         } catch (error) {
+            ok = false;
             undo();
             console.error('Error saving item rates:', error);
             UIManager.showToast('Rate not saved - check internet and try again · रेट सेव नहीं हुआ', 3500);
         }
         this.renderItems();
+        return ok;
     },
 
     /**
@@ -262,10 +345,15 @@ const ItemsManager = {
         const item = this.getItem(id);
         if (!item) return;
         if (!item[field]) item[field] = [];
-        const oldRate = item[field][rateIndex] || 0;
+        const key = `${field}_${id}_${rateIndex}`;
+        // Old value = before this typing burst, not the previous keystroke ("4 → 45")
+        this.rememberOldValue(key, Number(item[field][rateIndex]) || 0);
         const newRate = Number(value);
         item[field][rateIndex] = newRate;
-        this.scheduleSave(`${field}_${id}_${rateIndex}`, id, (saved) => {
+        const historyField = kind === 'sale' ? 'retail' : kind;
+        this.scheduleSave(key, id, (saved) => {
+            const oldRate = this.pendingOldValues[key];
+            this.recordInlineChange(key, saved, historyField, newRate);
             // Notify all users about rate change (fire-and-forget; never rejects)
             if (oldRate !== newRate && newRate > 0) {
                 FirebaseService.notifyRateChange(saved, kind, oldRate, newRate)
@@ -278,7 +366,11 @@ const ItemsManager = {
         const item = this.requireItem(id);
         if (!item || !item[field]) return;
         const [removed] = item[field].splice(rateIndex, 1);
-        await this._saveItemRates(item, () => item[field].splice(rateIndex, 0, removed));
+        const saved = await this._saveItemRates(item, () => item[field].splice(rateIndex, 0, removed));
+        const historyField = Object.keys(RATE_FIELDS).find(k => RATE_FIELDS[k] === field);
+        if (saved && Number(removed) > 0 && historyField) {
+            this.recordHistory(item, [{ field: historyField, old: Number(removed), new: null }], 'inline');
+        }
     },
 
     // Purchase rates
@@ -599,6 +691,8 @@ const ItemsManager = {
         document.getElementById('itemModalHindiName').value = '';
         document.getElementById('itemModalContactPerson').value = '';
         document.getElementById('itemModalDeleteBtn').style.display = 'none';
+        this.editStartSnapshot = null;
+        this.resetModalHistory(false);
         
         this.renderModalRates();
         document.getElementById('itemEditOverlay').style.display = 'flex';
@@ -620,9 +714,96 @@ const ItemsManager = {
             wholesale: [...(item.wholesaleRates || [])],
             sale: [...(item.saleRates || [])]
         };
+        // Values at edit start; history is diffed against these once on save
+        this.editStartSnapshot = snapshotItem(item);
+        this.resetModalHistory(this.canUseHistory());
         
         this.renderModalRates();
         document.getElementById('itemEditOverlay').style.display = 'flex';
+    },
+
+    /**
+     * Shows/hides the "Change history" block and clears loaded entries.
+     * @param {boolean} visible
+     */
+    resetModalHistory(visible) {
+        const section = document.getElementById('itemModalHistorySection');
+        if (section) section.style.display = visible ? 'block' : 'none';
+        const list = document.getElementById('itemModalHistoryList');
+        if (list) list.innerHTML = '';
+        const btn = document.getElementById('itemModalHistoryBtn');
+        if (btn) btn.style.display = '';
+    },
+
+    /**
+     * Loads and shows the open item's rate/name history (newest first).
+     * Only on request, to keep Firestore reads low.
+     */
+    async loadModalHistory() {
+        const id = this.currentEditingItemId;
+        const list = document.getElementById('itemModalHistoryList');
+        if (!id || !list || !this.canUseHistory()) return;
+        list.innerHTML = '<p style="color:#888; font-size:13px;">Loading… / लोड हो रहा है…</p>';
+        try {
+            const entries = await FirebaseService.loadRateHistory(id);
+            if (this.currentEditingItemId !== id) return;
+            const btn = document.getElementById('itemModalHistoryBtn');
+            if (btn) btn.style.display = 'none';
+            list.innerHTML = this.historyListHtml(entries);
+        } catch (error) {
+            console.error('Error loading rate history:', error);
+            list.innerHTML = '<p style="color:#b91c1c; font-size:13px;">Could not load history - check internet · इतिहास लोड नहीं हुआ</p>';
+        }
+    },
+
+    /**
+     * Escaped HTML for history entries.
+     * @param {Array<Object>} entries newest first
+     * @returns {string}
+     */
+    historyListHtml(entries) {
+        const e = (v) => Helpers.escapeHtml(v);
+        if (!entries || entries.length === 0) {
+            return '<p style="color:#888; font-size:13px;">No changes recorded yet / अभी कोई बदलाव दर्ज नहीं</p>';
+        }
+        return entries.map(h => {
+            const flags = Array.isArray(h.flags) ? h.flags : [];
+            const flagText = [
+                flags.includes('out-of-band') ? `⚠ more than ${RATE_SANITY_FACTOR}× change` : '',
+                flags.includes('quick-repeat') ? '⚠ changed twice within 60 s' : ''
+            ].filter(Boolean).join(' · ');
+            return `
+                <div class="rate-history-row" style="padding:8px 0; border-bottom:1px solid #f1f1f1; font-size:13px;">
+                    <div><strong>${e(FIELD_LABELS[h.field] || h.field)}</strong>: ${e(formatHistoryValue(h.field, h.old))} → ${e(formatHistoryValue(h.field, h.new))}</div>
+                    <div style="color:#666;">${e(formatDateTimeIN(h.at))}${h.by ? ` • ${e(h.by)}` : ''}</div>
+                    ${flagText ? `<div style="color:#b45309;">${e(flagText)}</div>` : ''}
+                </div>`;
+        }).join('');
+    },
+
+    /**
+     * Confirms renames and big rate jumps before saving. Resolves true when
+     * there is nothing to confirm or the user agrees.
+     * @param {Array<{field: string, old: *, new: *}>} changes
+     * @param {boolean} isNew
+     * @returns {Promise<boolean>}
+     */
+    async confirmRiskyChanges(changes, isNew) {
+        const { rename, outOfBand } = changeWarnings(changes, { isNew });
+        if (rename.length === 0 && outOfBand.length === 0) return true;
+        const e = (v) => Helpers.escapeHtml(v);
+        const parts = [];
+        if (rename.length) {
+            parts.push(`<p><strong>Rename / नाम बदलना</strong></p><ul style="margin:4px 0 8px 16px">${rename.map(c =>
+                `<li>${e(c.old)} → ${e(c.new || '—')}</li>`).join('')}</ul>
+                <p style="font-size:13px; color:#555">Old bills keep the old name. Stock stays with this item.<br>पुराने बिलों में पुराना नाम ही रहेगा। स्टॉक इसी आइटम में रहेगा।</p>`);
+        }
+        if (outOfBand.length) {
+            parts.push(`<p><strong>Big rate change / रेट में बड़ा बदलाव</strong> (more than ${RATE_SANITY_FACTOR}×)</p><ul style="margin:4px 0 8px 16px">${outOfBand.map(c =>
+                `<li>${e(FIELD_LABELS[c.field])}: ₹${e(c.old)} → ₹${e(c.new)}</li>`).join('')}</ul>
+                <p style="font-size:13px; color:#555">Please check the rate is correct. / कृपया रेट जाँच लें।</p>`);
+        }
+        return UIManager.showModalWithHtml(`<div style="text-align:left">${parts.join('')}</div>`, 'Confirm changes / बदलाव की पुष्टि करें', true);
     },
     
     // Render rates in modal
@@ -708,31 +889,44 @@ const ItemsManager = {
             }
         }
         
+        const contactPerson = document.getElementById('itemModalContactPerson').value.trim();
+        const itemData = {
+            name: name,
+            hindiName: hindiName,
+            contactPerson: contactPerson,
+            rates: this.modalRates.purchase.filter(r => r > 0),
+            wholesaleRates: this.modalRates.wholesale.filter(r => r > 0),
+            saleRates: this.modalRates.sale.filter(r => r > 0)
+        };
+        const before = existing ? (this.editStartSnapshot || snapshotItem(existing)) : snapshotItem(null);
+        const changes = diffItemSnapshots(before, snapshotItem(itemData));
+        if (!(await this.confirmRiskyChanges(changes, !existing))) return;
+        if (existing) {
+            // Re-read: the live listener may have replaced the item while the confirm was open
+            existing = this.requireItem(editingId);
+            if (!existing) {
+                this.closeItemModal();
+                this.refreshTable();
+                return;
+            }
+        }
+        
         UIManager.showLoading();
         
         try {
-            const contactPerson = document.getElementById('itemModalContactPerson').value.trim();
-            
-            const itemData = {
-                name: name,
-                hindiName: hindiName,
-                contactPerson: contactPerson,
-                rates: this.modalRates.purchase.filter(r => r > 0),
-                wholesaleRates: this.modalRates.wholesale.filter(r => r > 0),
-                saleRates: this.modalRates.sale.filter(r => r > 0)
-            };
-            
             if (existing) {
                 // Keep fields this dialog doesn't edit; write by id, never by list position
                 const updated = { ...existing, ...itemData, id: editingId };
                 await FirebaseService.saveItem(updated);
                 const idx = AppState.items.findIndex(i => i.id === editingId);
                 if (idx !== -1) AppState.items[idx] = updated;
+                this.recordHistory(updated, changes, 'modal');
                 UIManager.showToast('Item updated');
             } else {
                 // Add new item
                 const savedItem = await FirebaseService.saveItem(itemData);
                 AppState.items.push(savedItem);
+                this.recordHistory(savedItem, changes, 'modal');
                 UIManager.showToast('Item added');
             }
             
@@ -758,6 +952,7 @@ const ItemsManager = {
     closeItemModal() {
         document.getElementById('itemEditOverlay').style.display = 'none';
         this.currentEditingItemId = null;
+        this.editStartSnapshot = null;
         this.modalRates = { purchase: [], wholesale: [], sale: [] };
     }
 };

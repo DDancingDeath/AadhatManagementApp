@@ -1473,6 +1473,40 @@ const FirebaseService = {
     },
 
     /**
+     * Appends item rate/name history entries (#82) in one batch. Entries are
+     * create-only (rules forbid update/delete); ids sort newest first per item.
+     * @async
+     * @param {Array<{id: string, data: Object}>} entries
+     * @returns {Promise<void>}
+     */
+    async addRateHistoryEntries(entries) {
+        if (!entries || entries.length === 0) return;
+        const db = getDb();
+        const ref = db.collection(col('rateHistory'));
+        const batch = db.batch();
+        entries.forEach(e => batch.set(ref.doc(e.id), e.data));
+        await batch.commit();
+    },
+
+    /**
+     * Reads the newest history entries of one item (document-id range, so no
+     * composite index is needed). Owner/manager only (rules).
+     * @async
+     * @param {string} itemId
+     * @param {number} [max=30]
+     * @returns {Promise<Array<Object>>} newest first
+     */
+    async loadRateHistory(itemId, max = 30) {
+        const snapshot = await getDb().collection(col('rateHistory'))
+            .orderBy(firebase.firestore.FieldPath.documentId())
+            .startAt(`${itemId}_`)
+            .endAt(`${itemId}_\uf8ff`)
+            .limit(max)
+            .get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    /**
      * Applies an item import plan with batched writes (merge updates + new
      * docs). Never deletes. One batch for typical catalogues, so a failure
      * leaves the catalogue unchanged; very large imports are chunked.
