@@ -259,6 +259,23 @@ cd rules-tests && npm install && cd ..   # one-time: separate deps for the rules
 npm run test:rules                       # starts the emulator (demo-aadhat project, port 8181) and runs rules-tests/test.js
 ```
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and push to `main`:
+
+| Job | Commands |
+|-----|----------|
+| Lint, Jest, release checks | `npm run lint` (ESLint, real-error rules only — `eslint.config.js`), `npm run check:sw`, `npm run check:release`, `npx jest` |
+| Firestore rules tests | Java 21 + `cd rules-tests && npm ci` + `npm run test:rules` |
+| Playwright E2E (nightly, manual dispatch, or PRs labelled `e2e`) | `npm run test:e2e` — phone + desktop projects against the Firebase emulators |
+| Production smoke (nightly, manual dispatch) | `npm run test:smoke` — live site, no login, non-GET Firebase requests blocked |
+
+The hosting workflows (`firebase-hosting-*.yml`) still run Jest and deploy Hosting only; Firestore rules/indexes are deployed by hand (see the deployment order above).
+
+### End-to-end tests (Playwright)
+
+`tests/e2e/` holds Playwright specs: login gate, bill → History → due payment → cash close, edit a bill, open every page without errors. `npm run test:e2e` (needs Java 21; first time `npx playwright install chromium`) starts the auth/Firestore emulators (ports 9099/8181, as `www/firebaseConfig.js` expects with `?emulator=1`) and a static server on `E2E_PORT` (default 8099), then `tests/e2e/global-setup.js` wipes and seeds the emulator (owner/staff/pending users, items, bills). Run one spec with `npx playwright test tests/e2e/bill-flow.spec.js --project=phone`. Failure screenshots and traces land in `test-results/`.
+
 ## Validation
 
 The app includes a comprehensive validation utility (`www/js/utils/validator.js`) for client-side form validation:

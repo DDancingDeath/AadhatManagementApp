@@ -1,0 +1,33 @@
+{
+  "name": "legacy-dates-and-edits",
+  "description": "Legacy bills (top-level dueAmount only, amountPaid only, name-only lines with casing/space/Hindi variants), DD/MM dates, an edited bill whose stale top-level dueAmount drifted from payment.due, and add/remove/set stock adjustments in date order.",
+  "items": [ { "id": "item-mustard", "name": "Mustard", "hindiName": "सरसों" } ],
+  "purchases": [
+    { "id": "p1", "date": "05/10/2026", "customerName": "Shyam",
+      "items": [ { "name": " mustard ", "qty": 40, "rate": 55, "total": 2200 } ],
+      "grandTotal": 2200, "cashPayment": 1200, "dueAmount": 1000 },
+    { "id": "p2", "date": "06/10/2026", "customerName": "Shyam",
+      "items": [ { "name": "सरसों", "qty": 10, "rate": 56, "total": 560 } ],
+      "grandTotal": 560, "amountPaid": 260 }
+  ],
+  "wholesaleSales": [],
+  "retailSales": [
+    { "id": "r1", "date": "2026-10-07T10:00:00", "customerName": "Ravi", "editedAt": "2026-10-07T18:00:00",
+      "items": [ { "itemId": "item-mustard", "name": "Mustard", "qty": 8, "rate": 62, "total": 496 } ],
+      "total": 496, "cashPayment": 0, "onlinePayment": 0, "dueAmount": 620,
+      "payment": { "cash": 0, "online": 0, "due": 496, "total": 496 } },
+    { "id": "r2", "date": "10/10/2026", "customerName": "",
+      "items": [ { "itemId": "item-mustard", "name": "Mustard", "qty": 3, "rate": 62, "total": 186 } ],
+      "total": 186, "cashPayment": 186, "dueAmount": 0, "payment": { "cash": 186, "online": 0, "due": 0, "total": 186 } }
+  ],
+  "stockAdjustments": [
+    { "id": "a1", "itemId": "item-mustard", "itemName": "Mustard", "adjustType": "remove", "quantity": 2, "rate": 0, "date": "08/10/2026", "timestamp": 1791398400000 },
+    { "id": "a2", "itemId": "item-mustard", "itemName": "Mustard", "adjustType": "add", "quantity": 5, "rate": 55, "date": "08/10/2026", "timestamp": 1791399000000 },
+    { "id": "a3", "itemId": "item-mustard", "itemName": "Mustard", "adjustType": "set", "quantity": 50, "rate": 0, "date": "09/10/2026", "timestamp": 1791484200000 }
+  ],
+  "expected": {
+    "stock": { "item-mustard": 47 },
+    "payable": { "Shyam": 1300 },
+    "receivable": { "Ravi": 496 }
+  }
+}

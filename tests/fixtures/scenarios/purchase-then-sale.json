@@ -1,0 +1,35 @@
+{
+  "name": "purchase-then-sale",
+  "description": "Stock bought for cash, then sold wholesale and retail (ISO and DD/MM dates). Nothing owed.",
+  "items": [
+    { "id": "item-rice", "name": "Rice", "hindiName": "चावल" },
+    { "id": "item-wheat", "name": "Wheat", "hindiName": "गेहूं" }
+  ],
+  "purchases": [
+    { "id": "p1", "billNumber": "P20261001-001", "date": "2026-10-01T09:00:00", "customerName": "Ramesh",
+      "items": [
+        { "itemId": "item-rice", "name": "Rice", "qty": 100, "rate": 30, "total": 3000 },
+        { "itemId": "item-wheat", "name": "Wheat", "qty": 50, "rate": 24, "total": 1200 }
+      ],
+      "billTotal": 4200, "laborCharges": 0, "grandTotal": 4200,
+      "cashPayment": 4200, "onlinePayment": 0, "dueAmount": 0,
+      "payment": { "cash": 4200, "online": 0, "due": 0, "total": 4200 } }
+  ],
+  "wholesaleSales": [
+    { "id": "w1", "billNumber": "W20261002-001", "date": "2026-10-02T11:00:00", "customer": "Gupta Traders",
+      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 60, "rate": 34, "total": 2040 } ],
+      "total": 2040, "payment": { "cash": 2040, "online": 0, "due": 0, "total": 2040 } }
+  ],
+  "retailSales": [
+    { "id": "r1", "billNumber": "S20261002-001", "date": "02/10/2026", "customerName": "",
+      "items": [ { "itemId": "item-wheat", "name": "Wheat", "qty": 12.5, "rate": 28, "total": 350 } ],
+      "total": 350, "cashPayment": 350, "onlinePayment": 0, "dueAmount": 0,
+      "payment": { "cash": 350, "online": 0, "due": 0, "total": 350 } }
+  ],
+  "stockAdjustments": [],
+  "expected": {
+    "stock": { "item-rice": 40, "item-wheat": 37.5 },
+    "payable": {},
+    "receivable": {}
+  }
+}

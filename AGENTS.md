@@ -43,7 +43,9 @@ and is wrapped in **Capacitor** for Android distribution.
    flag if you hit a `canvas` / `jest-environment-jsdom` peer conflict).
    Run `npm test` (Jest) and, after touching `firestore.rules`,
    `npm run test:rules` (Firestore emulator; needs Java and
-   `cd rules-tests && npm install` once).
+   `cd rules-tests && npm install` once). `npm run lint` (ESLint) must
+   stay at 0 errors. `.github/workflows/ci.yml` runs lint, `check:sw`,
+   `check:release`, Jest and the rules tests on every PR.
 6. **Money-related changes get extra care.** Bills mix top-level
    `dueAmount` with nested `payment.due`. Both can drift; both must be
    read/written — use `readPayment()` / `round2()` from
