@@ -352,6 +352,8 @@ let checkpointDoc;
 /** Checkpoint in use for stock (parsed), or null. */
 let activeCheckpoint = null;
 let checkpointItemsCheck = { items: null, checkpoint: null, ok: false };
+/** settings/app read once per app open (version check + shared labour settings) */
+let appSettingsPromise = null;
 let rebuildPromise = null;
 let rebuildRequestedAgain = false;
 /** Stock objects returned while another device rebuilds the checkpoint (not exact yet). */
@@ -1495,6 +1497,7 @@ const FirebaseService = {
         activeCheckpoint = null;
         checkpointItemsCheck = { items: null, checkpoint: null, ok: false };
         rebuildPromise = null;
+        appSettingsPromise = null;
         rebuildRequestedAgain = false;
         rebuildAttempted = false;
         clearTimeout(leaseWaitTimer);
@@ -1960,13 +1963,49 @@ const FirebaseService = {
      */
     async isClientVersionSupported() {
         try {
-            const snap = await getWithRetry(getDb().collection(col('settings')).doc('app'), 'App settings', { attempts: 2, timeoutMs: 8000 });
-            const min = snap.exists ? Number(snap.data().minClientVersion) : NaN;
+            const data = await this.loadAppSettings();
+            const min = data ? Number(data.minClientVersion) : NaN;
             return !(Number.isFinite(min) && min > CLIENT_VERSION);
         } catch (e) {
             console.warn('Reading minClientVersion failed:', e?.code || e);
             return true;
         }
+    },
+
+    /**
+     * Reads the shared settings/app document once per app open (the version check
+     * and the shared labour settings use the same read). Resolves null when the
+     * document does not exist; rejects when it cannot be read.
+     * @param {{refresh?: boolean}} [options]
+     * @returns {Promise<Object|null>}
+     */
+    loadAppSettings({ refresh = false } = {}) {
+        if (!appSettingsPromise || refresh) {
+            appSettingsPromise = getWithRetry(getDb().collection(col('settings')).doc('app'), 'App settings', { attempts: 2, timeoutMs: 8000 })
+                .then(snap => (snap.exists ? snap.data() || {} : null));
+            appSettingsPromise.catch(() => { appSettingsPromise = null; });
+        }
+        return appSettingsPromise;
+    },
+
+    /**
+     * Saves the labour rate and heavy-packet weight for every device (#20).
+     * settings/app is owner-only (firestore.rules); merge keeps minClientVersion etc.
+     * @param {{laborRate: number, heavyWeightThreshold: number}} labour
+     * @returns {Promise<void>}
+     */
+    async saveSharedLabourSettings({ laborRate, heavyWeightThreshold }) {
+        const fields = {
+            laborRate,
+            heavyWeightThreshold,
+            labourUpdatedAt: Date.now(),
+            labourUpdatedBy: AppState.currentUser?.uid || 'unknown'
+        };
+        const write = getDb().collection(col('settings')).doc('app').set(fields, { merge: true });
+        if (appSettingsPromise) {
+            appSettingsPromise = appSettingsPromise.then(data => ({ ...(data || {}), ...fields }), () => ({ ...fields }));
+        }
+        await settleWrite(write, 'saveSharedLabourSettings');
     },
 
     /**

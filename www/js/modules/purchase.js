@@ -11,7 +11,8 @@ import { AuditService } from '../services/audit.js';
 import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
 import {
-    checkPaymentSplit, computePurchaseTotals, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2
+    checkPaymentSplit, computePurchaseTotals, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, normalizeLabourSettings,
+    paymentSplitMessage, round2
 } from '../utils/money.js';
 
 /** Buttons disabled while a purchase save/print is in flight */
@@ -358,7 +359,7 @@ const PurchaseManager = {
             const labourOn = autoLaborCheckbox ? autoLaborCheckbox.checked : true;
             laborCharges = labourOn ? Helpers.getInputNumber('manualLaborCharges') : 0;
         }
-        const heavyWeightThreshold = AppState.settings?.heavyWeightThreshold || 30;
+        const { heavyWeightThreshold } = normalizeLabourSettings(AppState.settings);
         return computePurchaseTotals(billItems, laborCharges, heavyWeightThreshold);
     },
 
@@ -373,7 +374,8 @@ const PurchaseManager = {
         
         let laborCharges = 0;
         if (autoLaborCheckbox?.checked) {
-            const laborRate = AppState.settings?.laborRate || 6;
+            // Shared rate for every device (#20); blank/invalid falls back to ₹6
+            const { laborRate } = normalizeLabourSettings(AppState.settings);
             const autoCalculatedLabor = laborRate * heavyPacketsCount;
             
             if (laborChargesInput && !laborChargesInput.dataset.manuallySet && this.billingManager?.editingBillIndex === undefined) {

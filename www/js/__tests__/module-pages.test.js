@@ -413,6 +413,7 @@ describe('Admin → Users and Users manager', () => {
 });
 
 describe('Settings', () => {
+    let shared;
     beforeEach(() => {
         document.body.innerHTML = `
           <input id="settingHeavyWeight"><input id="settingLaborRate">
@@ -421,11 +422,12 @@ describe('Settings', () => {
         window.app = { items: { render: jest.fn() }, billing: { loadItemsDropdown: jest.fn() } };
         AppState.printerSettings = { enabled: false };
         jest.spyOn(SettingsManager, 'updatePrinterStatus').mockImplementation(() => {});
+        shared = jest.spyOn(FirebaseService, 'saveSharedLabourSettings').mockResolvedValue(undefined);
         localStorage.clear();
     });
     afterEach(() => { delete window.app; localStorage.clear(); });
 
-    test('loads settings into the form and saves edits to AppState + localStorage', () => {
+    test('loads settings into the form and saves edits to AppState, localStorage and the shared setting', async () => {
         AppState.settings = { heavyWeightThreshold: 35, laborRate: 7, autoLaborEnabled: false, showHindi: true };
         SettingsManager.loadSettings();
         expect(document.getElementById('settingHeavyWeight').value).toBe('35');
@@ -434,18 +436,46 @@ describe('Settings', () => {
 
         document.getElementById('settingLaborRate').value = '8';
         document.getElementById('settingAutoLabor').checked = true;
-        SettingsManager.saveSettings();
+        expect(await SettingsManager.saveSettings()).toBe(true);
         expect(AppState.settings).toMatchObject({ heavyWeightThreshold: 35, laborRate: 8, autoLaborEnabled: true, showHindi: true });
         expect(JSON.parse(localStorage.getItem('settings')).laborRate).toBe(8);
+        expect(shared).toHaveBeenCalledWith({ laborRate: 8, heavyWeightThreshold: 35 });
         expect(window.app.items.render).toHaveBeenCalled();
     });
 
-    // BUG: see #20 — a labour rate of 0 is saved as 6.
-    test.skip('a labour rate of 0 is kept', () => {
+    test('a blank or invalid labour rate is saved as ₹6 for everyone (#20)', async () => {
+        AppState.settings.laborRate = 8;
         document.getElementById('settingHeavyWeight').value = '30';
-        document.getElementById('settingLaborRate').value = '0';
-        SettingsManager.saveSettings();
-        expect(AppState.settings.laborRate).toBe(0);
+        document.getElementById('settingLaborRate').value = '';
+        await SettingsManager.saveSettings();
+        expect(AppState.settings.laborRate).toBe(6);
+        expect(shared).toHaveBeenCalledWith({ laborRate: 6, heavyWeightThreshold: 30 });
+    });
+
+    test('only the owner can change the shared labour rate (#20)', async () => {
+        AppState.userRole = 'manager';
+        SettingsManager.loadSettings();
+        expect(document.getElementById('settingLaborRate').disabled).toBe(true);
+        document.getElementById('settingLaborRate').value = '9';
+        expect(await SettingsManager.saveSettings()).toBe(false);
+        expect(shared).not.toHaveBeenCalled();
+        expect(AppState.settings.laborRate).toBe(6);
+        expect(document.getElementById('settingLaborRate').value).toBe('6');
+    });
+
+    test('startup: the shared value wins on every device; the owner seeds it once from this phone (#20)', async () => {
+        AppState.userRole = 'staff';
+        await SettingsManager.applySharedSettings({ minClientVersion: 3, laborRate: 7.5, heavyWeightThreshold: 'x' });
+        expect(AppState.settings).toMatchObject({ laborRate: 7.5, heavyWeightThreshold: 30 });
+        expect(JSON.parse(localStorage.getItem('settings')).laborRate).toBe(7.5);
+
+        await SettingsManager.applySharedSettings(null);
+        expect(shared).not.toHaveBeenCalled();
+
+        AppState.userRole = 'owner';
+        AppState.settings.laborRate = 5;
+        await SettingsManager.applySharedSettings({ minClientVersion: 3 });
+        expect(shared).toHaveBeenCalledWith({ laborRate: 5, heavyWeightThreshold: 30 });
     });
 
     test('audit log: owner-only, filter by action, user text escaped', async () => {

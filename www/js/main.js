@@ -211,6 +211,10 @@ async function initializeUserData() {
             markStartup('version-check', { ok });
             return ok;
         });
+        // Shared labour rate / heavy-packet weight (#20) come from the same settings/app read
+        FirebaseService.loadAppSettings()
+            .then(data => SettingsManager.applySharedSettings(data))
+            .catch(e => console.warn('Shared labour settings not loaded:', e?.code || e));
 
         // Attach real-time listeners. Their first snapshots populate AppState,
         // so every document is read once per app open (a separate .get() of

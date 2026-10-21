@@ -9,6 +9,17 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
+import { FirebaseService } from '../firebase/firestore-service.js';
+import { normalizeLabourSettings } from '../utils/money.js';
+
+const LABOUR_OWNER_ONLY_NOTE = 'Only the owner can change these. They apply to everyone. / इन्हें केवल मालिक बदल सकते हैं। ये सभी पर लागू होते हैं।';
+
+/** Set an input's value / checked state when it is on the page. */
+function setField(id, prop, value) {
+    const el = document.getElementById(id);
+    if (el) el[prop] = value;
+    return el;
+}
 
 /**
  * Settings Manager - Manages application settings
@@ -21,11 +32,17 @@ export class SettingsManager {
      */
     static loadSettings() {
         const { settings } = AppState;
+        const labour = normalizeLabourSettings(settings);
+        const isOwner = AppState.userRole === 'owner';
         
-        document.getElementById('settingHeavyWeight').value = settings.heavyWeightThreshold;
-        document.getElementById('settingLaborRate').value = settings.laborRate;
-        document.getElementById('settingAutoLabor').checked = settings.autoLaborEnabled;
-        document.getElementById('settingShowHindi').checked = settings.showHindi || false;
+        // Labour settings are shared by every device; only the owner may change them (#20)
+        setField('settingHeavyWeight', 'value', labour.heavyWeightThreshold);
+        setField('settingLaborRate', 'value', labour.laborRate);
+        ['settingHeavyWeight', 'settingLaborRate'].forEach(id => setField(id, 'disabled', !isOwner));
+        const note = document.getElementById('labourSettingsNote');
+        if (note) note.textContent = isOwner ? 'Saved for everyone. / सभी के लिए सहेजा जाता है।' : LABOUR_OWNER_ONLY_NOTE;
+        setField('settingAutoLabor', 'checked', settings.autoLaborEnabled !== false);
+        setField('settingShowHindi', 'checked', settings.showHindi || false);
         
         // Update email display
         const userEmail = document.getElementById('userEmail');
@@ -78,18 +95,96 @@ export class SettingsManager {
      * Updates related UI components after save
      */
     static saveSettings() {
-        AppState.settings.heavyWeightThreshold = Number(document.getElementById('settingHeavyWeight').value) || 30;
-        AppState.settings.laborRate = Number(document.getElementById('settingLaborRate').value) || 6;
-        AppState.settings.autoLaborEnabled = document.getElementById('settingAutoLabor').checked;
-        AppState.settings.showHindi = document.getElementById('settingShowHindi').checked;
+        const autoLabor = document.getElementById('settingAutoLabor');
+        if (autoLabor) AppState.settings.autoLaborEnabled = autoLabor.checked;
+        const showHindi = document.getElementById('settingShowHindi');
+        if (showHindi) AppState.settings.showHindi = showHindi.checked;
         
         localStorage.setItem('settings', JSON.stringify(AppState.settings));
+        
+        const rateInput = document.getElementById('settingLaborRate');
+        const weightInput = document.getElementById('settingHeavyWeight');
+        const current = normalizeLabourSettings(AppState.settings);
+        const typed = normalizeLabourSettings({
+            laborRate: rateInput ? rateInput.value : current.laborRate,
+            heavyWeightThreshold: weightInput ? weightInput.value : current.heavyWeightThreshold
+        });
+        const labourChanged = (rateInput || weightInput)
+            && (typed.laborRate !== current.laborRate || typed.heavyWeightThreshold !== current.heavyWeightThreshold);
+        const labourWrite = labourChanged ? this.saveLabourSettings(typed) : Promise.resolve(false);
         
         UIManager.hapticFeedback('light');
         UIManager.showToast('Settings saved successfully');
         
-        window.app.items.render();
-        window.app.billing.loadItemsDropdown();
+        window.app?.items?.render?.();
+        window.app?.billing?.loadItemsDropdown?.();
+        return labourWrite;
+    }
+
+    /**
+     * Labour rate + heavy-packet weight: one shared value for every device (#20).
+     * Blank or invalid values fall back to ₹6 / 30 kg. Only the owner may change
+     * them (settings/app is owner-only in firestore.rules); for anyone else the
+     * form is reset to the shared values. Admin → Configure uses this too (#21).
+     * @param {{laborRate?: *, heavyWeightThreshold?: *}} values
+     * @returns {Promise<boolean>} true when the shared value was saved
+     */
+    static async saveLabourSettings(values) {
+        const current = normalizeLabourSettings(AppState.settings);
+        if (AppState.userRole !== 'owner') {
+            setField('settingLaborRate', 'value', current.laborRate);
+            setField('settingHeavyWeight', 'value', current.heavyWeightThreshold);
+            UIManager.showToast(LABOUR_OWNER_ONLY_NOTE);
+            return false;
+        }
+        const next = normalizeLabourSettings({
+            laborRate: values?.laborRate ?? current.laborRate,
+            heavyWeightThreshold: values?.heavyWeightThreshold ?? current.heavyWeightThreshold
+        });
+        this.applyLabourLocally(next);
+        try {
+            await FirebaseService.saveSharedLabourSettings(next);
+            return true;
+        } catch (error) {
+            console.error('Saving shared labour settings failed:', error);
+            UIManager.showToast('Labour rate not saved for everyone — check the internet and try again / सभी के लिए सहेजा नहीं गया — इंटरनेट देखकर फिर कोशिश करें');
+            return false;
+        }
+    }
+
+    /**
+     * Use the shared labour settings from settings/app (read once at startup).
+     * When none exist yet, the owner's device seeds them from its own values.
+     * @param {Object|null} appSettings - settings/app data
+     * @returns {Promise<void>}
+     */
+    static async applySharedSettings(appSettings) {
+        const hasShared = !!appSettings && (appSettings.laborRate !== undefined || appSettings.heavyWeightThreshold !== undefined);
+        if (hasShared) {
+            this.applyLabourLocally(normalizeLabourSettings(appSettings));
+            return;
+        }
+        if (AppState.userRole === 'owner') {
+            const seed = normalizeLabourSettings(AppState.settings);
+            this.applyLabourLocally(seed);
+            await FirebaseService.saveSharedLabourSettings(seed);
+        }
+    }
+
+    /**
+     * Put labour settings into AppState (+ the offline cache in localStorage) and
+     * refresh the open purchase bill and the settings form.
+     * @param {{laborRate: number, heavyWeightThreshold: number}} labour
+     */
+    static applyLabourLocally(labour) {
+        AppState.settings.laborRate = labour.laborRate;
+        AppState.settings.heavyWeightThreshold = labour.heavyWeightThreshold;
+        localStorage.setItem('settings', JSON.stringify(AppState.settings));
+        setField('settingLaborRate', 'value', labour.laborRate);
+        setField('settingHeavyWeight', 'value', labour.heavyWeightThreshold);
+        // Clean up the keys the old Admin → Configure screen wrote (never read by billing, #21)
+        ['laborChargeRate', 'heavyWeightThreshold', 'autoLaborCharges'].forEach(key => localStorage.removeItem(key));
+        if (document.getElementById('billTable')) window.app?.billing?.renderBill?.();
     }
 
     static toggleBluetoothPrinter() {

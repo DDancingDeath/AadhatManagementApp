@@ -133,9 +133,23 @@ describe('new purchase save', () => {
         expect(saved).toMatchObject({ billTotal: 2580, laborCharges: 0, grandTotal: 2580 });
     });
 
-    // BUG: see #20 — `AppState.settings.laborRate || 6` turns a configured rate of 0 into ₹6.
-    test.skip('a labour rate of 0 charges no labour', async () => {
-        AppState.settings.laborRate = 0;
+    test('the shared labour rate is used; blank or invalid falls back to ₹6 (#20)', async () => {
+        AppState.settings.laborRate = 8; // shared value from settings/app
+        await buildBill();
+        expect(document.getElementById('manualLaborCharges').value).toBe('16');
+        expect(document.getElementById('laborCalculation').textContent).toBe('8 × 2');
+        expect(document.getElementById('amountPayable').textContent).toBe('2564');
+
+        for (const bad of ['', 'abc', 0, -3, null]) {
+            AppState.settings.laborRate = bad;
+            PurchaseManager.renderBill();
+            expect(document.getElementById('manualLaborCharges').value).toBe('12');
+        }
+    });
+
+    test('with Labour unticked no labour is charged, whatever the rate (#20)', async () => {
+        AppState.settings.laborRate = 8;
+        document.getElementById('autoLaborCharge').checked = false;
         await buildBill();
         expect(document.getElementById('manualLaborCharges').value).toBe('0');
         expect(document.getElementById('amountPayable').textContent).toBe('2580');

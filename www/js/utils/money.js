@@ -215,6 +215,27 @@ export function dueNeedsName(due, name) {
     return round2(due) > 0 && !String(name ?? '').trim();
 }
 
+/** Default labour charge per heavy packet (₹) and heavy-packet weight (kg). */
+export const DEFAULT_LABOUR_RATE = 6;
+export const DEFAULT_HEAVY_WEIGHT = 30;
+
+/**
+ * Labour settings with blank / invalid / non-positive values replaced by the
+ * defaults (owner decision on #20: 6 is intended; to skip labour, untick Labour).
+ * @param {{laborRate?: *, heavyWeightThreshold?: *}} [raw]
+ * @returns {{laborRate: number, heavyWeightThreshold: number}}
+ */
+export function normalizeLabourSettings(raw = {}) {
+    const positive = (v, fallback) => {
+        const n = toMoney(v);
+        return n !== null && n > 0 ? round2(n) : fallback;
+    };
+    return {
+        laborRate: positive(raw?.laborRate, DEFAULT_LABOUR_RATE),
+        heavyWeightThreshold: positive(raw?.heavyWeightThreshold, DEFAULT_HEAVY_WEIGHT)
+    };
+}
+
 /**
  * Average price per unit, or null when the quantity is 0/invalid
  * (callers show "—" instead of Infinity/NaN).
