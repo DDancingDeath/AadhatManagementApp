@@ -4,6 +4,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { DEFAULT_SETTINGS } from '../utils/constants.js';
 import { getAndroidMajorVersion } from '../utils/helpers.js';
+import { COPY_MARK, receiptDateTime } from '../utils/bill-share.js';
 
 /** Dots darker than this (average of R,G,B) print black */
 const RASTER_THRESHOLD = 128;
@@ -333,10 +334,12 @@ class BluetoothPrinterManager {
 
     _drawReceiptHeader(ctx, billData, config, utils, y) {
         y = utils.drawCenter('Receipt', y, config.fonts.title, true);
+        if (billData.isCopy) {
+            y = utils.drawCenter(COPY_MARK, y, config.fonts.header, true);
+        }
         
-        // Bill number on left, Date/time on right (same line)
-        const dateTime = new Date().toLocaleDateString('en-IN') + ' ' + 
-                        new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        // Bill number on left, the bill's own date/time on right (same line)
+        const dateTime = receiptDateTime(billData);
         
         if (billData.billNumber) {
             // Draw bill number on left
@@ -927,7 +930,7 @@ const PrinterService = {
                 paddedCtx.drawImage(canvas, padding, padding);
                 
                 const billType = billData.isPurchase ? 'purchase' : 'sale';
-                const filename = `${billType}_bill_${billData.id || Date.now()}.png`;
+                const filename = `${billType}_bill_${billData.billNumber || billData.id || Date.now()}${billData.isCopy ? '_copy' : ''}.png`;
                 
                 // Convert canvas to blob for better mobile support
                 paddedCanvas.toBlob(async (blob) => {

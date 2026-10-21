@@ -112,7 +112,8 @@ describe('history list escapes record values', () => {
         AppState.purchaseHistory = [maliciousBill({ type: "purchase');window.__pwned=1;//" })];
         HistoryManager.renderHistory('purchase');
         const span = document.querySelector('#historyList span[onclick]');
-        expect(runHandler(span.getAttribute('onclick'))).toEqual([[`id:${QUOTE_ID}`, "purchase');window.__pwned=1;//"]]);
+        // History normalises the type by collection (#160), so the stored value never reaches the handler.
+        expect(runHandler(span.getAttribute('onclick'))).toEqual([[`id:${QUOTE_ID}`, 'purchase']]);
         expect(window.__pwned).toBeUndefined();
     });
 

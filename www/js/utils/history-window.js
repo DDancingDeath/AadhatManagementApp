@@ -225,6 +225,8 @@ export function applyRangeState(scopes, status, opts = {}) {
     if (list.length === 0) return;
     const anchor = list[0];
     let notice = anchor.previousElementSibling;
+    // The "older bills may be out of date" hint can sit between the notice and the list.
+    while (notice && notice.classList.contains('history-stale-hint')) notice = notice.previousElementSibling;
     if (!notice || !notice.classList.contains('history-range-notice')) notice = null;
 
     list.forEach(el => el.classList.toggle('history-range-loading', status === 'loading'));

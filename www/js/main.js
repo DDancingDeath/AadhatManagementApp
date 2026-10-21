@@ -39,7 +39,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022h-notifications';
+const BUILD_ID = '20261022i-history-reprint';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -889,6 +889,11 @@ window.app = {
         filterHistory: (type, event) => HistoryManager.filterHistory(type, event),
         searchHistory: (searchTerm) => HistoryManager.searchHistory(searchTerm),
         toggleView: () => HistoryManager.toggleView(),
+        setDatePreset: (preset) => HistoryManager.setDatePreset(preset),
+        setCustomRange: (from, to) => HistoryManager.setCustomRange(from, to),
+        applyCustomRange: (from, to) => HistoryManager.applyCustomRange(from, to),
+        reprintBill: () => HistoryManager.reprintBill(),
+        shareBill: () => HistoryManager.shareBill(),
         editBillDetails: (billIndex) => {
             if (billIndex !== undefined) {
                 // Pass the bill type along with index
