@@ -9,6 +9,7 @@ jest.mock('../firebase/firestore-service.js', () => ({
         updateWholesaleSale: jest.fn(async () => {}),
         db: null,
         CLIENT_VERSION: 3,
+        keptServerPayment: jest.fn(() => false),
         billHasOpenDue: jest.fn((coll, bill) => !bill.cleared && (bill.payment?.due || 0) > 0)
     }
 }));

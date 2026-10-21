@@ -10,7 +10,7 @@ import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { OutstandingManager } from './outstanding.js';
 import {
-    checkPaymentSplit, computeWholesaleTotals, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, readPayment, round2
+    checkPaymentSplit, computeWholesaleTotals, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, readPayment, round2
 } from '../utils/money.js';
 
 const PAYMENT_TOLERANCE = 0.01;
@@ -28,7 +28,7 @@ let wholesaleSaleItems = [];
 let pendingBill = null;
 
 function ensurePendingBill() {
-    if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null };
+    if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null, attempted: false, date: null, timestamp: null };
     return pendingBill;
 }
 
@@ -377,6 +377,11 @@ export class WholesaleSalesManager {
         try {
             const pending = ensurePendingBill();
             if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
+            // A retry keeps the first attempt's time so an unchanged sale is written identically
+            if (!pending.timestamp) {
+                pending.timestamp = Date.now();
+                pending.date = Helpers.getCurrentDateTime();
+            }
             
             const saleData = {
                 id: pending.id,
@@ -405,14 +410,16 @@ export class WholesaleSalesManager {
                     due,
                     total: round2(online + cash + due)
                 },
-                date: Helpers.getCurrentDateTime(),
-                timestamp: Date.now(),
+                date: pending.date,
+                timestamp: pending.timestamp,
                 createdBy: AppState.currentUser?.uid || 'unknown',
                 createdByName: AppState.userName || 'User',
                 source: 'sales-tab'
             };
             
-            const writePromise = FirebaseService.saveWholesaleSale(saleData, { merge: true });
+            const retry = pending.attempted;
+            pending.attempted = true;
+            const writePromise = FirebaseService.saveWholesaleSale(saleData, { retry });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(saleData);
             }
@@ -453,7 +460,7 @@ export class WholesaleSalesManager {
             // this dropdown. The item detail fields were cleared above so no stale
             // per-item stock is shown in the meantime.
             
-            UIManager.showToast('✓ Sale completed successfully');
+            UIManager.showToast(FirebaseService.keptServerPayment(saleData) ? KEPT_SERVER_PAYMENT_MESSAGE : '✓ Sale completed successfully');
             UIManager.hapticFeedback();
             return saleData;
         } catch (error) {

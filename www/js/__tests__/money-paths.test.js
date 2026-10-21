@@ -17,7 +17,7 @@ import { AuditService } from '../services/audit.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { AppState } from '../utils/state.js';
-import { readPayment, NAME_REQUIRED_FOR_DUE_MESSAGE } from '../utils/money.js';
+import { readPayment, NAME_REQUIRED_FOR_DUE_MESSAGE, KEPT_SERVER_PAYMENT_MESSAGE } from '../utils/money.js';
 import { createFakeFirestore } from './__mocks__/fake-firestore.js';
 import { sampleItems } from '../../../tests/fixtures/sample-items.js';
 
@@ -234,13 +234,27 @@ describe('new purchase save', () => {
         const [first, second] = savePurchase.mock.calls;
         expect(second[0].id).toBe(first[0].id);
         expect(second[0].billNumber).toBe(first[0].billNumber);
-        expect(second[1]).toEqual({ merge: true });
+        expect(first[1]).toEqual({ retry: false });
+        expect(second[1]).toEqual({ retry: true });
+        // Same time as the first attempt, so an unchanged retry is identical on the server
+        expect(second[0].timestamp).toBe(first[0].timestamp);
+        expect(second[0].date).toBe(first[0].date);
         expect(Helpers.generateBillNumber).toHaveBeenCalledTimes(1);
         expect(saved.id).toBe(first[0].id);
         // The next bill gets a new id
         await buildBill();
         setVal('cashPayment', 2568);
         expect((await PurchaseManager.saveBillToHistory()).id).not.toBe(saved.id);
+    });
+
+    test('a retry that kept a payment recorded elsewhere says so (#70)', async () => {
+        await buildBill();
+        setVal('cashPayment', 2568);
+        savePurchase.mockRejectedValueOnce(new Error('Timed out'));
+        await expect(PurchaseManager.saveBillToHistory()).rejects.toThrow('Timed out');
+        jest.spyOn(FirebaseService, 'keptServerPayment').mockReturnValue(true);
+        await PurchaseManager.saveBillToHistory();
+        expect(toast).toHaveBeenCalledWith(KEPT_SERVER_PAYMENT_MESSAGE);
     });
 
     test('a bill restored from auto-save/draft keeps its id (#70)', async () => {

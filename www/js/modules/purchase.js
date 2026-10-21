@@ -11,7 +11,7 @@ import { AuditService } from '../services/audit.js';
 import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
 import {
-    checkPaymentSplit, computePurchaseTotals, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, normalizeLabourSettings,
+    checkPaymentSplit, computePurchaseTotals, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, normalizeLabourSettings,
     paymentSplitMessage, round2
 } from '../utils/money.js';
 
@@ -602,6 +602,11 @@ const PurchaseManager = {
             UIManager.showLoading();
             const pending = this.ensurePendingBill();
             if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('P', 'purchases');
+            // A retry keeps the first attempt's time so an unchanged bill is written identically
+            if (!pending.timestamp) {
+                pending.timestamp = Date.now();
+                pending.date = new Date().toISOString();
+            }
             
             const bill = {
                 id: pending.id,
@@ -621,9 +626,9 @@ const PurchaseManager = {
                 printComments,
                 type: 'purchase',
                 isPurchase: true,
-                date: new Date().toISOString(),
+                date: pending.date,
                 userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
-                timestamp: Date.now(),
+                timestamp: pending.timestamp,
                 payment: {
                     online: onlinePayment,
                     cash: cashPayment,
@@ -632,7 +637,9 @@ const PurchaseManager = {
                 }
             };
             
-            const writePromise = FirebaseService.savePurchase(bill, { merge: true });
+            const retry = pending.attempted;
+            pending.attempted = true;
+            const writePromise = FirebaseService.savePurchase(bill, { retry });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(bill);
             }
@@ -662,7 +669,7 @@ const PurchaseManager = {
             this.resetForm();
             
             UIManager.hideLoading();
-            UIManager.showToast('Bill saved successfully!');
+            UIManager.showToast(FirebaseService.keptServerPayment(bill) ? KEPT_SERVER_PAYMENT_MESSAGE : 'Bill saved successfully!');
             UIManager.hapticFeedback('success');
             
             return bill;
@@ -750,7 +757,7 @@ const PurchaseManager = {
      * @returns {{id: string, billNumber: (string|null)}}
      */
     ensurePendingBill() {
-        if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null };
+        if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null, attempted: false, date: null, timestamp: null };
         return pendingBill;
     },
 
@@ -761,7 +768,13 @@ const PurchaseManager = {
 
     /** Restore the bill id from an auto-save / draft. */
     setPendingBill(pending) {
-        pendingBill = pending && pending.id ? { id: String(pending.id), billNumber: pending.billNumber || null } : null;
+        pendingBill = pending && pending.id ? {
+            id: String(pending.id),
+            billNumber: pending.billNumber || null,
+            attempted: !!pending.attempted,
+            date: pending.date || null,
+            timestamp: pending.timestamp || null
+        } : null;
     },
 
     /**

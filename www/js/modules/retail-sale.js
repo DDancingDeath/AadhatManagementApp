@@ -12,7 +12,7 @@ import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import { computeStockShortfalls, formatShortfallMessage } from '../utils/stock-check.js';
 import {
-    checkPaymentSplit, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2, sumMoney
+    checkPaymentSplit, dueNeedsName, KEPT_SERVER_PAYMENT_MESSAGE, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, round2, sumMoney
 } from '../utils/money.js';
 
 /** Buttons disabled while a retail save/print is in flight */
@@ -550,6 +550,11 @@ const RetailSaleManager = {
             UIManager.showLoading();
             const pending = this.ensurePendingBill();
             if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('S', 'retailSales');
+            // A retry keeps the first attempt's time so an unchanged sale is written identically
+            if (!pending.timestamp) {
+                pending.timestamp = Date.now();
+                pending.date = new Date().toISOString();
+            }
             
             const sale = {
                 id: pending.id,
@@ -565,10 +570,10 @@ const RetailSaleManager = {
                 printComments: printComments,
                 type: 'retail',
                 isPurchase: false,
-                date: new Date().toISOString(),
+                date: pending.date,
                 userId: AppState.currentUser ? AppState.currentUser.uid : 'unknown',
                 userName: AppState.userName || 'User',
-                timestamp: Date.now(),
+                timestamp: pending.timestamp,
                 payment: {
                     online: saleOnline,
                     cash: saleCash,
@@ -577,7 +582,9 @@ const RetailSaleManager = {
                 }
             };
             
-            const writePromise = FirebaseService.saveRetailSale(sale, { merge: true });
+            const retry = pending.attempted;
+            pending.attempted = true;
+            const writePromise = FirebaseService.saveRetailSale(sale, { retry });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(sale);
             }
@@ -606,7 +613,7 @@ const RetailSaleManager = {
             this.resetForm();
             
             UIManager.hideLoading();
-            UIManager.showToast('Sale completed successfully!');
+            UIManager.showToast(FirebaseService.keptServerPayment(sale) ? KEPT_SERVER_PAYMENT_MESSAGE : 'Sale completed successfully!');
             UIManager.hapticFeedback('success');
             
             return sale;
@@ -729,7 +736,7 @@ const RetailSaleManager = {
      * @returns {{id: string, billNumber: (string|null)}}
      */
     ensurePendingBill() {
-        if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null };
+        if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null, attempted: false, date: null, timestamp: null };
         return pendingBill;
     },
 
@@ -740,7 +747,13 @@ const RetailSaleManager = {
 
     /** Restore the sale id from an auto-save / draft. */
     setPendingBill(pending) {
-        pendingBill = pending && pending.id ? { id: String(pending.id), billNumber: pending.billNumber || null } : null;
+        pendingBill = pending && pending.id ? {
+            id: String(pending.id),
+            billNumber: pending.billNumber || null,
+            attempted: !!pending.attempted,
+            date: pending.date || null,
+            timestamp: pending.timestamp || null
+        } : null;
     },
 
     /**

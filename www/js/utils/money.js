@@ -200,6 +200,10 @@ export function paymentSplitMessage({ difference }) {
         : `Cash + Online + Due is ₹${amount} more than the bill total. Reduce it by ₹${amount}. / नकद + ऑनलाइन + उधार बिल से ₹${amount} ज़्यादा है। ₹${amount} कम करें।`;
 }
 
+/** Shown when a retried save found a payment recorded on the bill since the first attempt (#70). */
+export const KEPT_SERVER_PAYMENT_MESSAGE =
+    'Bill was already saved; a payment recorded since was kept. / बिल पहले ही सेव हो चुका था; बाद में दर्ज भुगतान रखा गया।';
+
 /** Message shown when a bill with an unpaid part has no party name. */
 export const NAME_REQUIRED_FOR_DUE_MESSAGE =
     'Enter the name — a bill with Due needs a customer/supplier name. / नाम लिखें — उधार वाले बिल पर ग्राहक/व्यापारी का नाम ज़रूरी है।';
