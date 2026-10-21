@@ -26,6 +26,7 @@ import { TelemetryService } from './services/telemetry.js';
 import { DiagnosticsManager } from './modules/diagnostics.js';
 import { AdminManager } from './modules/admin.js';
 import { AppUpdatesManager } from './modules/app-updates.js';
+import { markStartup, noteStartup, logStartupTimings } from './utils/startup-timings.js';
 
 // Import template loader utility
 import { TemplateLoader } from './utils/template-loader.js';
@@ -44,6 +45,8 @@ console.log(
 );
 // Expose on window so the user can copy/paste it back to us when debugging.
 window.__AADHAT_BUILD__ = BUILD_ID;
+// Deferred Firebase SDK + firebaseConfig.js have run before any module code.
+markStartup('sdk-and-modules-loaded');
 
 InstallManager.init();
 
@@ -138,7 +141,24 @@ function loadUserDataAndInitialize() {
     return initInFlight;
 }
 
+/** How long startup waits for the minClientVersion read once data is ready (ms). */
+const VERSION_CHECK_WAIT_MS = 1500;
+
+let outdatedBlocked = false;
+/** Outdated app: stop syncing and keep the app hidden behind the update message. */
+function blockOutdatedApp() {
+    outdatedBlocked = true;
+    FirebaseService.cleanup();
+    document.getElementById('appContent')?.classList.add('hidden');
+    UIManager.hideLoading();
+    UIManager.showModal('This app version is outdated. Please update the app to continue.');
+}
+
 async function initializeUserData() {
+    if (outdatedBlocked) {
+        blockOutdatedApp();
+        return;
+    }
     UIManager.showLoading();
     
     try {
@@ -147,6 +167,7 @@ async function initializeUserData() {
         if (userId) {
             const userRef = firebase.firestore().collection(window.getCollection ? window.getCollection('users') : 'users').doc(userId);
             let userDoc = await userRef.get();
+            markStartup('profile', { fromCache: !!userDoc.metadata?.fromCache });
             // A stale offline-cache copy must not lock out a user who has since been approved
             if (!userDoc.exists || userDoc.data().status === 'pending') {
                 userDoc = await userRef.get({ source: 'server' }).catch(() => userDoc);
@@ -184,7 +205,10 @@ async function initializeUserData() {
         }
         
         // Outdated app check (settings/app.minClientVersion), read alongside the listeners.
-        const versionCheck = FirebaseService.isClientVersionSupported();
+        const versionCheck = FirebaseService.isClientVersionSupported().then(ok => {
+            markStartup('version-check', { ok });
+            return ok;
+        });
 
         // Attach real-time listeners. Their first snapshots populate AppState,
         // so every document is read once per app open (a separate .get() of
@@ -199,17 +223,33 @@ async function initializeUserData() {
             throw loadError;
         }
         
-        if (!(await versionCheck)) {
-            FirebaseService.cleanup();
-            UIManager.hideLoading();
-            UIManager.showModal('This app version is outdated. Please update the app to continue.');
+        markStartup('listeners', { online: navigator.onLine });
+
+        // Don't hold the first screen for a slow version read (up to ~24 s on a
+        // weak network): wait briefly, then let it finish in the background and
+        // still block the app if it turns out to be outdated.
+        const versionResult = await Promise.race([
+            versionCheck,
+            new Promise(resolve => setTimeout(() => resolve(null), VERSION_CHECK_WAIT_MS))
+        ]);
+        if (versionResult === false) {
+            blockOutdatedApp();
             return;
+        }
+        if (versionResult === null) {
+            const uid = AppState.currentUser?.uid;
+            versionCheck.then(ok => {
+                if (!ok && AppState.currentUser?.uid === uid) blockOutdatedApp();
+            });
         }
 
         // Stock: immediate when the checkpoint covers it, otherwise computed in
         // the background (screens show "Stock updating…") so startup never waits
         // on a full-history read.
         await FirebaseService.prepareStock();
+        // The background version check may have blocked the app meanwhile.
+        if (outdatedBlocked) return;
+        markStartup('stock', { ready: AppState.stockReady });
         
         // Initialize billing manager (connects purchase and retail-sale modules)
         BillingManager.init();
@@ -244,6 +284,10 @@ async function initializeUserData() {
         
         // Check for auto-saved bill
         await BillingManager.checkAutoSave();
+        if (outdatedBlocked) {
+            blockOutdatedApp();
+            return;
+        }
         
         // Update printer status
         PrinterService.updateStatus();
@@ -252,6 +296,9 @@ async function initializeUserData() {
         AuditService.cleanupOldLogs().catch(e => console.warn('Audit log cleanup failed:', e));
         
         UIManager.hideLoading();
+        markStartup('app-shown', { online: navigator.onLine });
+        noteStartup('listeners', FirebaseService.getStartupListenerInfo?.() || {});
+        logStartupTimings();
 
         // What's new + Android update banner (non-blocking, best effort)
         AppUpdatesManager.onAppReady();
@@ -266,7 +313,9 @@ async function initializeUserData() {
 // Initialize app on DOM ready
 document.addEventListener('DOMContentLoaded', async function() {
     // STEP 1: Load and inject all HTML templates from .html files
+    markStartup('dom-ready');
     await injectTemplates();
+    markStartup('templates');
     InstallManager.refresh();
     
     // STEP 2: Initialize auth tabs after templates are loaded
@@ -275,6 +324,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // STEP 3: Initialize Firebase auth listener
     if (typeof firebase !== 'undefined' && firebase.auth) {
         firebase.auth().onAuthStateChanged(user => {
+            markStartup('auth', { signedIn: !!user });
             if (user) {
                 // Registration signs in temporarily to create/recover the profile and then signs
                 // out; don't start loading the app (and showing its errors) for that sign-in.

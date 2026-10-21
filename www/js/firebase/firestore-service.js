@@ -146,6 +146,12 @@ const RENDER_DEBOUNCE_MS = 150;
 
 /** Max wait for server data at startup once cached data is available (ms). */
 const FIRST_SNAPSHOT_SERVER_WAIT_MS = 10000;
+/** ...when this device already has cached data for the app (#13). */
+const FIRST_SNAPSHOT_CACHED_WAIT_MS = 2500;
+/** A first snapshot from cache had documents this session (the device has used the app before). */
+let warmCache = false;
+/** Per-listener startup facts for Diagnostics (first source, doc count, what made it ready). */
+const listenerStartup = {};
 const pendingViews = new Set();
 let stockDirty = false;
 let flushTimer = null;
@@ -1126,7 +1132,9 @@ function listenCheckpoint(gen) {
                 if (!snap.metadata.fromCache || navigator.onLine === false) {
                     done();
                 } else if (!timer) {
-                    timer = setTimeout(done, FIRST_SNAPSHOT_SERVER_WAIT_MS);
+                    // A cached checkpoint is safe to start from: later snapshots
+                    // adopt a newer one or drop it when marked stale (above).
+                    timer = setTimeout(done, snap.exists ? FIRST_SNAPSHOT_CACHED_WAIT_MS : FIRST_SNAPSHOT_SERVER_WAIT_MS);
                 }
             }, error => {
                 console.error('Stock checkpoint listener error:', error);
@@ -2058,6 +2066,14 @@ const FirebaseService = {
     },
 
     /**
+     * Diagnostics: how each listener became ready at the last startup.
+     * @returns {Object<string, {first: string, docs: number, readyBy?: string}>}
+     */
+    getStartupListenerInfo() {
+        return JSON.parse(JSON.stringify(listenerStartup));
+    },
+
+    /**
      * On-demand history currently in memory (records older than the live
      * window; not live-updated), or null when only live data is loaded.
      * @returns {?{from: number, liveFrom: number, asOf: number}}
@@ -2168,6 +2184,8 @@ const FirebaseService = {
         this.cleanup();
         const gen = sessionGen;
         const db = getDb();
+        warmCache = false;
+        Object.keys(listenerStartup).forEach(k => delete listenerStartup[k]);
 
         const listen = (query, label, live, onData, { optional = false, mapFn = mapDoc } = {}) => {
             let settle;
@@ -2195,10 +2213,20 @@ const FirebaseService = {
                 // computes stock and renders the initial views itself.
                 if (changed) onData(changes, ready);
                 if (!ready) {
+                    const source = snapshot.metadata.fromCache ? 'cache' : 'server';
+                    listenerStartup[label] = listenerStartup[label] || { first: source, docs: snapshot.size };
+                    if (snapshot.metadata.fromCache && snapshot.size > 0) warmCache = true;
                     if (!snapshot.metadata.fromCache || navigator.onLine === false) {
+                        listenerStartup[label].readyBy = source === 'server' ? 'server' : 'offline-cache';
                         markReady();
                     } else if (!readyTimer) {
-                        readyTimer = setTimeout(markReady, FIRST_SNAPSHOT_SERVER_WAIT_MS);
+                        // This device already has cached data: show it after a
+                        // short wait instead of the full server grace; the live
+                        // listener applies the server copy as soon as it arrives.
+                        readyTimer = setTimeout(() => {
+                            listenerStartup[label].readyBy = 'cache-timeout';
+                            markReady();
+                        }, warmCache ? FIRST_SNAPSHOT_CACHED_WAIT_MS : FIRST_SNAPSHOT_SERVER_WAIT_MS);
                     }
                 }
             }, error => {

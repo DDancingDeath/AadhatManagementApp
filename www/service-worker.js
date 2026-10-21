@@ -85,6 +85,7 @@ const STATIC_ASSETS = [
     '/js/utils/money.js',
     '/js/utils/release-info.js',
     '/js/utils/render-memo.js',
+    '/js/utils/startup-timings.js',
     '/js/utils/state.js',
     '/js/utils/stock-adjust.js',
     '/js/utils/stock-check.js',
