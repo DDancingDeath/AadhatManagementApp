@@ -44,7 +44,7 @@ At about 15k documents, a nightly backup uses about 30% of a day's free reads. W
    `openssl` asks for the passphrase. On Windows, use Git Bash.
 3. **Restore drill into `dev_*`**. This is safe: production is untouched.
    ```sh
-   cd tools/backup && npm install --no-save --no-package-lock && cd ../..
+   cd tools/backup && npm ci && cd ../..        # needs Node 22+
    # key with Firestore write access, e.g. downloaded to key.json
    export GOOGLE_APPLICATION_CREDENTIALS=$PWD/key.json
    node tools/backup/restore-firestore.js --in backup.json                 # dry run: shows counts
