@@ -7,7 +7,7 @@ name: Firestore backup
 
 on:
   schedule:
-    - cron: '30 21 * * *' # 03:00 IST daily
+    - cron: '15 8 * * *' # 13:45 IST daily, just after the free-tier read quota resets (midnight Pacific)
   workflow_dispatch:
     inputs:
       force:

@@ -2,7 +2,7 @@
 
 `.github/workflows/firestore-backup.yml` backs up the production Firestore data:
 
-- **When:** every night at 03:00 IST, plus on demand (Actions → *Firestore backup* → *Run workflow*).
+- **When:** every day at 13:45 IST (shortly after Firestore's free daily read quota resets at midnight Pacific, so the backup isn't starved by the day's app use), plus on demand (Actions → *Firestore backup* → *Run workflow*).
 - **What:** every root collection except `dev_*`. That includes bills, items, stock adjustments, cash, expenses, users, audit logs, counters and so on. It is one JSON file (`format: aadhat-backup-v1`) with Firestore Timestamps stored as `{__type: "timestamp", seconds, nanoseconds, iso}`.
 - **How it is stored:** gzipped, then **encrypted with AES-256** (`openssl enc -aes-256-cbc -pbkdf2 -iter 200000`) using the `BACKUP_PASSPHRASE` secret. It is uploaded as a workflow artifact and kept for **60 days**. The repository is public, so the archive is never uploaded unencrypted. Without the passphrase, the file is useless.
 - **Failures:** a failed run (missing secret, no permission, size guard tripped) turns the run red. GitHub emails the repo owner about failed scheduled runs.
