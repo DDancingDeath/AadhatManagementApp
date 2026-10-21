@@ -16,6 +16,8 @@ import { findDeadStock, daysSinceLabel, localDaysBetween, DEAD_STOCK_DAY_OPTIONS
 
 const DEAD_STOCK_DAYS_KEY = 'aadhat.deadStockDays';
 
+const STOCK_UPDATING_HTML = '<p class="stock-updating" style="text-align: center; color: #888; margin-top: 40px;">Stock updating… / स्टॉक अपडेट हो रहा है…</p>';
+
 /**
  * Stock Manager - Manages inventory stock operations
  * @class StockManager
@@ -58,7 +60,7 @@ export class StockManager {
             // placeholder instead of blocking the whole app.
             let stock;
             if (AppState.stockReady === false) {
-                container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">Stock updating…</p>';
+                container.innerHTML = STOCK_UPDATING_HTML;
                 stock = await FirebaseService.getStock();
             } else {
                 stock = await UIManager.withLoading(async () => {
@@ -66,6 +68,13 @@ export class StockManager {
                 });
             }
             AppState.stock = stock;
+
+            // Still waiting (e.g. another device is rebuilding the stock checkpoint, #194):
+            // the numbers are not current yet; the data listeners re-render once they are.
+            if (AppState.stockReady === false) {
+                container.innerHTML = STOCK_UPDATING_HTML;
+                return;
+            }
 
             if (Object.keys(stock).length === 0) {
                 container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No stock data available</p>';

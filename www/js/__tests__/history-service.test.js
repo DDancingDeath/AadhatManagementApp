@@ -11,6 +11,7 @@ import { ITEMS, generateHistory } from './__mocks__/history-data.js';
 import { defaultWindowStart, monthsBefore, dateDescComparator } from '../utils/history-range.js';
 import { computeStock, eventTime, buildCheckpointState, serializeState, itemsSignature } from '../utils/stock-replay.js';
 import { outstandingDue } from '../utils/money.js';
+import { LEASE_MAX_WAIT_MS } from '../utils/rebuild-lease.js';
 
 const NOW = Date.now();
 const W = defaultWindowStart(NOW);
@@ -622,6 +623,69 @@ describe('review fixes (2)', () => {
         expect(AppState.stockReady).toBe(true);
         expect(AppState.stock).toEqual(fullStock());
     });
+
+    it('#194 while another device holds the rebuild lease, this one waits for its checkpoint instead of reading all history', async () => {
+        install(37);
+        await open();
+        await rebuildSettled();
+        const built = { ...cpDoc() };
+        // Calculation version changed and another owner device took the lease.
+        await fake.db.collection('stockCheckpoints').doc('current')
+            .set({ ...built, formatVersion: 2, rebuildingUntil: Date.now() + 60000, rebuildingBy: 'other' });
+        const fullReads = () => fake.stats.queryLog.filter(q => ['purchases', 'retailSales', 'wholesaleSales', 'stockAdjustments'].includes(q.coll) &&
+            !q.filters.some(f => f.field === 'timestamp' || f.field === 'openDue')).length;
+        const before = fullReads();
+        FirebaseService.cleanup();
+        await FirebaseService.setupRealtimeListeners();
+        await FirebaseService.prepareStock();
+        await settle();
+        expect(AppState.stockReady).toBe(false);
+        expect(fullReads()).toBe(before);
+        // The other device finishes: its checkpoint is adopted, still without a full read here.
+        await fake.db.collection('stockCheckpoints').doc('current').set({ ...built, builtAt: built.builtAt + 1 });
+        for (let i = 0; i < 30 && !AppState.stockReady; i++) {
+            await settle(2);
+            await new Promise(r => setTimeout(r, 50));
+        }
+        expect(AppState.stockReady).toBe(true);
+        expect(AppState.stock).toEqual(fullStock());
+        expect(fullReads()).toBe(before);
+        expect(FirebaseService.isFullHistoryLoaded()).toBe(false);
+    }, 30000);
+
+    const oldVersionLease = async (rebuildingBy, rebuildingUntil) => {
+        await open();
+        await rebuildSettled();
+        const built = { ...cpDoc() };
+        await fake.db.collection('stockCheckpoints').doc('current').set({ ...built, formatVersion: 2, rebuildingUntil, rebuildingBy });
+        FirebaseService.cleanup();
+        await FirebaseService.setupRealtimeListeners();
+    };
+
+    it('#194 a dead or clock-skewed lease of another user blocks stock for at most the wait cap, then full history is used', async () => {
+        install(38);
+        // Holder's clock is a year ahead / holder closed the app: the lease looks valid for ages.
+        await oldVersionLease('other-user:1:x', Date.now() + 365 * 86400000);
+        const realNow = Date.now;
+        await FirebaseService.prepareStock();
+        await settle();
+        expect(AppState.stockReady).toBe(false);
+        jest.spyOn(Date, 'now').mockImplementation(() => realNow() + LEASE_MAX_WAIT_MS + 1000);
+        await FirebaseService.getStock();
+        await settle();
+        expect(AppState.stockReady).toBe(true);
+        expect(AppState.stock).toEqual(fullStock());
+    }, 30000);
+
+    it("#194 a lease left by the same user (reload mid-rebuild) does not make them wait", async () => {
+        install(39);
+        await oldVersionLease('u1:123:previous-tab', Date.now() + 9 * 60000);
+        await FirebaseService.getStock();
+        await settle();
+        expect(AppState.stockReady).toBe(true);
+        expect(AppState.stock).toEqual(fullStock());
+        expect(cpDoc()).toMatchObject({ formatVersion: 3, rebuildingUntil: 0, stale: false });
+    }, 30000);
 
     it('#8 one dues listener per bill collection, bounded to before the window (no duplicate deliveries)', async () => {
         install(34);

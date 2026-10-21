@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v43';
+const CACHE_NAME = 'aadhat-v44';
 // Generated/verified by scripts/check-sw-assets.js (npm run check:sw).
 // Every entry must exist: a 404 here used to make the whole precache fail.
 const STATIC_ASSETS = [
@@ -45,6 +45,7 @@ const STATIC_ASSETS = [
     '/css/variables.css',
     '/js/auth/authentication.js',
     '/js/firebase/firestore-service.js',
+    '/js/firebase/firestore-meter.js',
     '/js/main.js',
     '/js/modules/admin.js',
     '/js/modules/analytics.js',
@@ -78,6 +79,8 @@ const STATIC_ASSETS = [
     '/js/utils/dates.js',
     '/js/utils/helpers.js',
     '/js/utils/history-range.js',
+    '/js/utils/quota-guard.js',
+    '/js/utils/rebuild-lease.js',
     '/js/utils/history-window.js',
     '/js/utils/item-catalog.js',
     '/js/utils/keyboard-shortcuts.js',
