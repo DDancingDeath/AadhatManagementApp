@@ -11,7 +11,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { todayLocalISO, localISODaysAgo, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
 import { needsHistoryFrom, ensureHistoryFrom } from '../utils/history-window.js';
-import { sessionTotals } from '../utils/cash-session.js';
+import { sessionTotals, parseCashAmount } from '../utils/cash-session.js';
 import { round2 } from '../utils/money.js';
 
 const sessionRef = (sessionId) => {
@@ -669,12 +669,12 @@ export class CashManagementManager {
     }
 
     static validateSignOut() {
-        const actualAmount = Helpers.getInputInt('cashSignOutAmount');
+        const actualAmount = parseCashAmount(document.getElementById('cashSignOutAmount')?.value);
         const expected = this.calculateExpectedCash();
-        const difference = actualAmount - expected;
+        const difference = (actualAmount ?? 0) - expected;
         
         const alertDiv = document.getElementById('cashDifferenceAlert');
-        if (alertDiv && actualAmount > 0) {
+        if (alertDiv && actualAmount !== null) {
             if (Math.abs(difference) < 1) {
                 alertDiv.style.display = 'block';
                 alertDiv.style.background = '#d1f4e0';
@@ -697,9 +697,11 @@ export class CashManagementManager {
     }
 
     static async signIn() {
-        const amount = Helpers.getInputInt('cashSignInAmount');
+        // 0 is a valid opening (empty drawer); only empty/negative input is rejected (#66)
+        const amount = parseCashAmount(document.getElementById('cashSignInAmount')?.value);
+        const openingNotes = Helpers.getInputText('cashSignInNotes');
 
-        if (!amount || amount < 0) {
+        if (amount === null) {
             UIManager.showToast('Please enter a valid opening amount');
             return;
         }
@@ -733,6 +735,7 @@ export class CashManagementManager {
                 signedOut: false,
                 duePayments: []
             };
+            if (openingNotes) session.openingNotes = openingNotes;
 
             await FirebaseService.saveCashSession(session);
             this.todaySession = session;
@@ -744,6 +747,8 @@ export class CashManagementManager {
             
             // Clear inputs
             document.getElementById('cashSignInAmount').value = '';
+            const openingNotesInput = document.getElementById('cashSignInNotes');
+            if (openingNotesInput) openingNotesInput.value = '';
         } catch (error) {
             console.error('Sign in error:', error);
             UIManager.showToast('Failed to sign in: ' + error.message);
@@ -751,15 +756,16 @@ export class CashManagementManager {
     }
 
     static async signOut() {
-        const actualAmount = Helpers.getInputInt('cashSignOutAmount');
+        const actualAmount = parseCashAmount(document.getElementById('cashSignOutAmount')?.value);
+        const closingNotes = Helpers.getInputText('cashSignOutNotes');
 
-        if (!actualAmount || actualAmount < 0) {
+        if (actualAmount === null) {
             UIManager.showToast('Please enter the actual cash amount');
             return;
         }
 
         const expected = this.calculateExpectedCash();
-        const difference = actualAmount - expected;
+        const difference = round2(actualAmount - expected);
 
         // Confirm if there's a difference
         if (Math.abs(difference) > 1) {
@@ -777,6 +783,7 @@ export class CashManagementManager {
             difference: difference,
             signOutTime: new Date().toISOString(),
             signedOut: true,
+            counted: true,
             transactions: {
                 cashSales: this.todayTransactions.cashSales,
                 cashPurchases: this.todayTransactions.cashPurchases,
@@ -787,6 +794,7 @@ export class CashManagementManager {
                 cashDeposits: this.todayTransactions.cashDeposits
             }
         };
+        if (closingNotes) closingFields.closingNotes = closingNotes;
         const updatedSession = { ...this.todaySession, ...closingFields };
 
         try {
@@ -800,6 +808,8 @@ export class CashManagementManager {
             
             // Clear inputs
             document.getElementById('cashSignOutAmount').value = '';
+            const closingNotesInput = document.getElementById('cashSignOutNotes');
+            if (closingNotesInput) closingNotesInput.value = '';
         } catch (error) {
             console.error('Sign out error:', error);
             UIManager.showToast('Failed to sign out: ' + error.message);

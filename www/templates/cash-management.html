@@ -60,7 +60,12 @@
             <h3 style="margin: 0 0 15px 0; color: #333;">Cash Sign In</h3>
             <div class="form-row">
                 <label>Opening Cash Amount (₹):</label>
-                <input type="number" inputmode="decimal" id="cashSignInAmount" placeholder="Enter cash amount you have" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+                <input type="number" inputmode="decimal" min="0" id="cashSignInAmount" placeholder="Enter cash amount you have (0 if empty)" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+                <div id="cashSignInSuggestion" style="display: none; font-size: 12px; color: #6c757d; margin-top: 4px;"></div>
+            </div>
+            <div class="form-row">
+                <label>Opening Note (Optional):</label>
+                <input type="text" id="cashSignInNotes" maxlength="200" placeholder="e.g., Counted by Ramesh" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
             </div>
             <button class="save-btn" onclick="window.app.cashManagement.signIn()" style="width: 100%; padding: 14px; margin-top: 10px; background: #22c55e; font-size: 16px; font-weight: 600;">
                 ✓ Sign In for Today
@@ -169,10 +174,15 @@
 
             <div class="form-row" style="display: flex; align-items: center; gap: 10px;">
                 <label style="white-space: nowrap; margin: 0;">Cash in Hand (₹):</label>
-                <input type="number" inputmode="decimal" id="cashSignOutAmount" placeholder="Enter actual cash" style="flex: 1; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+                <input type="number" inputmode="decimal" id="cashSignOutAmount" min="0" placeholder="Enter actual cash (0 if empty)" style="flex: 1; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
             </div>
             
             <div id="cashDifferenceAlert" style="display: none; padding: 12px; border-radius: 8px; margin: 10px 0; font-weight: 600;"></div>
+
+            <div class="form-row">
+                <label>Closing Note (Optional):</label>
+                <input type="text" id="cashSignOutNotes" maxlength="200" placeholder="e.g., Took ₹2,000 home" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px;" />
+            </div>
             
             <button class="save-btn" onclick="window.app.cashManagement.signOut()" style="width: 100%; padding: 14px; margin-top: 10px; background: #ef4444; font-size: 16px; font-weight: 600;">
                 ✓ Sign Out & Close Day
