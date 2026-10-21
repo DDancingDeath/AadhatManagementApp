@@ -258,6 +258,18 @@ The card is hidden inside the Capacitor Android app and when already running
 installed. New icons/manifest changes must stay in `STATIC_ASSETS`
 (`npm run check:sw`).
 
+## Planning
+
+The pinned issue **"[Plan] Roadmap: pick order (auto-updated)"** shows which
+issues to work on, in order, with progress per phase. It is generated from
+`tools/plan/order.json` by `tools/plan/generate.js` and refreshed by the
+`Plan page` workflow on every issue change (and daily).
+
+- When you add an issue, place it in `tools/plan/order.json`; the plan issue
+  regenerates automatically. Unplaced open issues show up in 🆕.
+- Preview locally: `GH_TOKEN=... node tools/plan/generate.js --dry-run`
+  (`--write-docs` also writes `docs/PLAN.md`).
+
 ## Documentation
 
 - **Module Documentation**: [www/js/README.md](www/js/README.md)

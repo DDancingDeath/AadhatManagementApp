@@ -1,0 +1,224 @@
+{
+  "planIssueTitle": "[Plan] Roadmap: pick order (auto-updated)",
+  "phases": [
+    {
+      "title": "0. Owner actions & decisions",
+      "why": "Answers and console clicks only the owner can do. Each decision unblocks a group of work further down; until it is answered those rows show ⛔.",
+      "items": [
+        { "n": 168, "note": "Owner checklist: merge/release, keystore backup, secrets, real-printer smoke" },
+        { "n": 84, "note": "Staff visibility; unblocks #76, #78, #154 and #18 read rules" },
+        { "n": 87, "note": "Staff edit window; unblocks #76" },
+        { "n": 149, "note": "Decide before rules hardening (#18/#19) and before #169/#170" },
+        { "n": 130, "note": "Wholesale dues in Outstanding; unblocks #110, #146, #164" },
+        { "n": 36, "note": "Profit vs personal expenses; unblocks #47, #45" },
+        { "n": 43, "note": "Calendar vs last-N-days; unblocks #47, #45, #160" },
+        { "n": 99, "note": "Today = cash session or midnight; unblocks #47" },
+        { "n": 33, "note": "Retail sales and stock; needed by oracle tests #45" },
+        { "n": 103, "note": "Cash deposit meaning; unblocks cash tolerance in #37" },
+        { "n": 39, "note": "Net worth; unblocks #80" },
+        { "n": 108, "note": "Expense corrections; unblocks #79" },
+        { "n": 153, "note": "Offline policy; unblocks #31, #109" },
+        { "n": 155, "note": "Desktop/Android distribution; after the #139 spike if needed" },
+        { "n": 12, "note": "Decide in-app inbox vs push first; unblocks #56" },
+        { "n": 15, "note": "Firebase ownership; do the move together with #35" },
+        { "n": 106, "note": "Non-blocking questionnaire; blanks use the listed defaults" }
+      ]
+    },
+    {
+      "title": "1. Stop data loss (backups, rules, destructive ops)",
+      "why": "Nothing else matters if data can be wiped or overwritten. Rules tests in CI first, so every rules change after it is checked.",
+      "items": [
+        { "n": 16, "note": "Run rules tests + check:release in CI before touching rules" },
+        { "n": 148, "note": "Cheap: plain npm ci works; do with #16" },
+        { "n": 17, "note": "Backups + safe Clear Data, before any import/migration work" },
+        { "n": 67, "note": "Excel import; same file as #29 (items.js)" },
+        { "n": 29, "note": "Do with #67" },
+        { "n": 72, "note": "Stock adjustment guards" },
+        { "n": 18, "note": "Write rules; coordinate path shape with #149; read side after #84" },
+        { "n": 19, "note": "Do with #18 (same rules blocks + tests)" },
+        { "n": 81, "note": "Owner disables account (#168 step 4); remove users doc" },
+        { "n": 76, "note": "Staff edit window in UI + rules", "after": [84, 87] },
+        { "n": 78, "note": "Hide personal expenses from staff", "after": [84] },
+        { "n": 74, "note": "Admin → Users buttons; do with #53, #57" },
+        { "n": 53, "note": "Rules + admin.js (after #74)" },
+        { "n": 57 },
+        { "n": 55, "note": "Audit log append-only + key actions" },
+        { "n": 92, "note": "Signed APK release so fixes reach phones" },
+        { "n": 90, "note": "Docs: keep AGENTS.md current" }
+      ]
+    },
+    {
+      "title": "2. Money correctness",
+      "why": "Wrong totals and silent drift erode trust in every report. Small, high-impact fixes in billing/settings.",
+      "items": [
+        { "n": 20, "note": "Labour rate in Firestore; do with #21, #151" },
+        { "n": 21 },
+        { "n": 151, "note": "Remove orphan configure.html after #20/#21" },
+        { "n": 23, "note": "M1 split check; do with #113" },
+        { "n": 113, "note": "Wholesale split at save (same M1 check)" },
+        { "n": 68, "note": "Credit bills need a party" },
+        { "n": 26, "note": "Totals from items, not screen text" },
+        { "n": 14 },
+        { "n": 70, "note": "Idempotent save + payment double-tap guard" }
+      ]
+    },
+    {
+      "title": "3. Trust & tests (CI rules tests, oracle tests, void, save-time checks)",
+      "why": "Tests that guard money paths go in before refactors; then one shared period/profit module, void instead of delete, and save-time checks.",
+      "items": [
+        { "n": 61, "note": "Tests for save/split/profit before any refactor" },
+        { "n": 51, "note": "Cheap: errors stay visible" },
+        { "n": 49, "note": "Date parsing + || money fallbacks; do with #73" },
+        { "n": 73 },
+        { "n": 95 },
+        { "n": 83, "note": "Default: block when avg cost unknown (#106)" },
+        { "n": 47, "note": "PeriodMath", "after": [36, 43, 99] },
+        { "n": 45, "note": "Oracle tests", "after": [36, 43, 33] },
+        { "n": 42, "note": "Void bills; do with #120" },
+        { "n": 120 },
+        { "n": 37, "note": "Save-time checks", "after": [103] },
+        { "n": 112, "note": "Server time; pairs with #37 backdate checks" },
+        { "n": 124, "note": "Items archive/dup names; do with #75" },
+        { "n": 75 },
+        { "n": 64, "note": "billing.js via FirebaseService (after #61 tests)" },
+        { "n": 123, "note": "admin.js/users.js via FirebaseService" },
+        { "n": 126 },
+        { "n": 93 },
+        { "n": 59 },
+        { "n": 96 },
+        { "n": 127 }
+      ]
+    },
+    {
+      "title": "4. Cash & outstanding flows",
+      "why": "Make Cash, Outstanding and Expenses agree with each other and with the bills.",
+      "items": [
+        { "n": 98, "note": "One due-payment path for Cash and Outstanding" },
+        { "n": 104 },
+        { "n": 107 },
+        { "n": 110, "after": [130] },
+        { "n": 38, "note": "Cash session transaction; do with #101" },
+        { "n": 101 },
+        { "n": 66 },
+        { "n": 34, "note": "Cash history perf; do with #69" },
+        { "n": 69 },
+        { "n": 71, "note": "Today → Cash subtab duplicate IDs (same screen)" },
+        { "n": 117, "note": "Expenses (miscellaneous.js); do with #89, #79" },
+        { "n": 89 },
+        { "n": 79, "after": [108] },
+        { "n": 80, "after": [39] }
+      ]
+    },
+    {
+      "title": "5. Speed & offline",
+      "why": "Fast open and safe offline billing for phones with weak network.",
+      "items": [
+        { "n": 28, "note": "Cheap: cache Firebase SDK" },
+        { "n": 13 },
+        { "n": 41, "note": "Offline bill numbers" },
+        { "n": 31, "after": [153] },
+        { "n": 109, "after": [153] },
+        { "n": 132 },
+        { "n": 129 },
+        { "n": 52, "note": "Measure before #22/#119 (chat route waits for #58)", "ignoreDeps": [58] },
+        { "n": 115, "note": "Scrub PII before #121 sends anything" },
+        { "n": 118 },
+        { "n": 121, "after": [115] },
+        { "n": 24 },
+        { "n": 22, "after": [52] },
+        { "n": 145 }
+      ]
+    },
+    {
+      "title": "6. Printer & receipts",
+      "why": "Reliable printing and reprint from History; receipt content after the link is stable.",
+      "items": [
+        { "n": 44, "note": "Link check/reconnect; do with #133" },
+        { "n": 133 },
+        { "n": 141 },
+        { "n": 86 },
+        { "n": 136 },
+        { "n": 138 },
+        { "n": 135 },
+        { "n": 97 },
+        { "n": 139, "note": "Spike feeds decision #155" }
+      ]
+    },
+    {
+      "title": "7. Features wave 1 (review queue, aging, dead stock, reprint, history filters)",
+      "why": "Owner-visible features built on the now-trusted numbers.",
+      "items": [
+        { "n": 40 },
+        { "n": 46 },
+        { "n": 48 },
+        { "n": 160, "after": [43] },
+        { "n": 166 },
+        { "n": 158, "after": [37] },
+        { "n": 25, "note": "Do with #85 (exports)" },
+        { "n": 85 },
+        { "n": 82 },
+        { "n": 63, "note": "Do with #143 (one t(key) catalogue)" },
+        { "n": 143 },
+        { "n": 50 },
+        { "n": 162 },
+        { "n": 77 },
+        { "n": 94, "note": "Desktop polish; do #94, #91, #88 together" },
+        { "n": 91 },
+        { "n": 88 },
+        { "n": 102 },
+        { "n": 100 },
+        { "n": 105 }
+      ]
+    },
+    {
+      "title": "8. Multi-business / rename / rentals",
+      "why": "Big features that need stable ids and the multi-business decision first.",
+      "items": [
+        { "n": 146, "note": "Stable party ids", "after": [130] },
+        { "n": 164, "note": "Spread a payment over bills", "after": [146] },
+        { "n": 169, "after": [149] },
+        { "n": 170, "after": [149] }
+      ]
+    },
+    {
+      "title": "9. Later / backlog",
+      "why": "Worth doing, but not before the phases above.",
+      "items": [
+        { "n": 65, "note": "Staff view scope follows #84", "ignoreDeps": [84] },
+        { "n": 56, "after": [12] },
+        { "n": 62 },
+        { "n": 27 },
+        { "n": 60 },
+        { "n": 58 },
+        { "n": 154, "after": [84] },
+        { "n": 30 },
+        { "n": 32 },
+        { "n": 131, "note": "Backup first (#17)" },
+        { "n": 134 },
+        { "n": 35, "after": [15] },
+        { "n": 54 },
+        { "n": 161 },
+        { "n": 122 },
+        { "n": 125 },
+        { "n": 128 },
+        { "n": 165 },
+        { "n": 119 },
+        { "n": 111 },
+        { "n": 114 },
+        { "n": 116 },
+        { "n": 137, "after": [50] },
+        { "n": 140 },
+        { "n": 142 },
+        { "n": 144 },
+        { "n": 147 },
+        { "n": 150 },
+        { "n": 152 },
+        { "n": 156 },
+        { "n": 157 },
+        { "n": 159 },
+        { "n": 163 },
+        { "n": 167, "note": "Idea parking lot" }
+      ]
+    }
+  ]
+}
