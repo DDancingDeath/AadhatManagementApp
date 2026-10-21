@@ -37,7 +37,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261021q-ui-bugs';
+const BUILD_ID = '20261021r-cleanup';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -249,7 +249,7 @@ async function initializeUserData() {
         PrinterService.updateStatus();
         
         // Clean up old audit logs (runs silently for owners)
-        AuditService.cleanupOldLogs();
+        AuditService.cleanupOldLogs().catch(e => console.warn('Audit log cleanup failed:', e));
         
         UIManager.hideLoading();
 

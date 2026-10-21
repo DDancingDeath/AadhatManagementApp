@@ -437,7 +437,8 @@ export const DayManager = {
             // Re-initialize cash management
             if (window.app && window.app.cashManagement) {
                 setTimeout(() => {
-                    window.app.cashManagement.init();
+                    window.app.cashManagement.init()
+                        .catch(e => console.error('Cash management re-init failed:', e));
                 }, 100);
             }
         }

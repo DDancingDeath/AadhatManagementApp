@@ -591,7 +591,7 @@ const RetailSaleManager = {
         this.renderSalesBill();
         this.renderSaleWeights();
         this.resetForm();
-        if (this.billingManager) this.billingManager.deleteAutoSave();
+        if (this.billingManager) this.billingManager.deleteAutoSave().catch(e => console.warn('Auto-save cleanup failed:', e));
     },
 
     // -------------------- SHARING & PRINTING --------------------
