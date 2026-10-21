@@ -15,6 +15,7 @@ import { parseAnyBillDate, todayLocalISO } from '../utils/dates.js';
 import { checkPaymentSplit, directionFor } from '../utils/due-payments.js';
 import { CashManagementManager } from './cash-management.js';
 import { PrinterService } from '../services/printer.js';
+import { openExternal } from '../utils/open-external.js';
 import { billDateOf } from '../utils/history-filters.js';
 import {
     AGING_BUCKETS, ageInDays, bucketIndex, buildAging, chaseFirst, filterBillsByBucket, sortParties
@@ -374,13 +375,7 @@ export class OutstandingManager {
                     // Share sheet unavailable: fall back to WhatsApp
                 }
             }
-            const url = whatsAppReminderUrl(text, phone);
-            if (window.Capacitor?.isNativePlatform?.()) {
-                window.open(url, '_system');
-                return true;
-            }
-            const win = window.open(url, '_blank', 'noopener');
-            if (!win) window.location.href = url;
+            openExternal(whatsAppReminderUrl(text, phone));
             return true;
         } catch (error) {
             console.error('Could not open WhatsApp:', error);

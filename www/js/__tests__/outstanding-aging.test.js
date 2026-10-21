@@ -12,6 +12,7 @@ import {
     REMINDER_MAX_BILLS, buildReminderText, buildStatement, cleanText, formatINR, normalizePhone, whatsAppReminderUrl
 } from '../utils/due-reminder.js';
 import { OutstandingManager } from '../modules/outstanding.js';
+import { openExternal } from '../utils/open-external.js';
 import { PrinterService } from '../services/printer.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AppState } from '../utils/state.js';
@@ -236,6 +237,7 @@ describe('#46/#77 Outstanding panel', () => {
         const open = jest.spyOn(window, 'open').mockImplementation(() => ({}));
         await OutstandingManager.sendReminder(normalizePartyName('Ram <img src=x onerror=alert(1)>'));
         const url = open.mock.calls[0][0];
+        expect(open).toHaveBeenCalledWith(url, '_blank');
         expect(url.startsWith('https://wa.me/919876543210?text=')).toBe(true);
         expect(decodeURIComponent(url.split('text=')[1])).toContain('Total due / कुल बकाया: ₹500');
     });
@@ -246,5 +248,35 @@ describe('#46/#77 Outstanding panel', () => {
         expect(print).toHaveBeenCalledWith(expect.objectContaining({ partyName: "O'Neil", total: 80 }));
         await OutstandingManager.printStatement('nobody');
         expect(toast).toHaveBeenCalledWith('Nothing is due for this party');
+    });
+});
+
+describe('openExternal (WhatsApp / browser links)', () => {
+    const fakeWin = (opened, native = false) => {
+        const w = { location: { href: 'http://app/' }, open: jest.fn(() => opened) };
+        if (native) w.Capacitor = { isNativePlatform: () => true };
+        return w;
+    };
+
+    test('web: a new tab opens and the app tab does not navigate', () => {
+        const tab = { opener: 'app' };
+        const w = fakeWin(tab);
+        expect(openExternal('https://wa.me/?text=hi', w)).toBe('tab');
+        expect(w.open).toHaveBeenCalledWith('https://wa.me/?text=hi', '_blank');
+        expect(tab.opener).toBeNull();
+        expect(w.location.href).toBe('http://app/');
+    });
+
+    test('web: only a blocked popup falls back to this tab', () => {
+        const w = fakeWin(null);
+        expect(openExternal('https://wa.me/?text=hi', w)).toBe('same-tab');
+        expect(w.location.href).toBe('https://wa.me/?text=hi');
+    });
+
+    test('APK: handed to the system, no navigation', () => {
+        const w = fakeWin(null, true);
+        expect(openExternal('https://wa.me/?text=hi', w)).toBe('system');
+        expect(w.open).toHaveBeenCalledWith('https://wa.me/?text=hi', '_system');
+        expect(w.location.href).toBe('http://app/');
     });
 });
