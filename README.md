@@ -259,6 +259,17 @@ cd rules-tests && npm install && cd ..   # one-time: separate deps for the rules
 npm run test:rules                       # starts the emulator (demo-aadhat project, port 8181) and runs rules-tests/test.js
 ```
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and push to `main`:
+
+| Job | Commands |
+|-----|----------|
+| Lint, Jest, release checks | `npm run lint` (ESLint, real-error rules only — `eslint.config.js`), `npm run check:sw`, `npm run check:release`, `npx jest` |
+| Firestore rules tests | Java 21 + `cd rules-tests && npm ci` + `npm run test:rules` |
+
+The hosting workflows (`firebase-hosting-*.yml`) still run Jest and deploy Hosting only; Firestore rules/indexes are deployed by hand (see the deployment order above).
+
 ## Validation
 
 The app includes a comprehensive validation utility (`www/js/utils/validator.js`) for client-side form validation:

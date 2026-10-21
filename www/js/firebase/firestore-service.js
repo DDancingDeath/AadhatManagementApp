@@ -2196,6 +2196,8 @@ const FirebaseService = {
                                 const itemName = notification.itemHindiName || notification.itemName;
                                 const message = `${itemName} ${notification.rateTypeLabel} rate: ₹${notification.oldRate} → ₹${notification.newRate} (by ${notification.changedBy})`;
                                 console.log('Showing rate change toast:', message);
+                                // BUG: see #12 — UIManager is not imported here, so this throws.
+                                // eslint-disable-next-line no-undef
                                 UIManager.showToast(message, 5000);
                                 
                                 // Mark as read after showing

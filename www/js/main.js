@@ -37,7 +37,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261021d-desktop-toggles';
+const BUILD_ID = '20261021g-tests';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -694,12 +694,7 @@ window.app = {
         shareSaleWhatsApp: () => BillingManager.shareSaleWhatsApp(),
         
         // Sale methods
-        loadSaleRates: () => BillingManager.loadSaleRates(),
-        updateSalePaymentTotal: () => BillingManager.updateSalePaymentTotal(),
-        fillReceivableAmount: (type) => BillingManager.fillReceivableAmount(type),
-        completeSale: () => BillingManager.completeSale(),
         printSale: () => BillingManager.printSale(),
-        removeSaleItem: (index) => BillingManager.removeSaleItem(index),
         editSaleItem: (index) => BillingManager.editSaleItem(index),
         
         // Edit bill items
