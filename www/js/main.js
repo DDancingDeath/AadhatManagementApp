@@ -222,6 +222,7 @@ async function initializeUserData() {
         
         // Show the billing tab by default
         NavigationManager.showTab('billing');
+        NavigationManager.setActiveNavLink('billing');
         
         // Initialize UI
         AuthManager.updateUserDisplay();

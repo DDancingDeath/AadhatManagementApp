@@ -90,13 +90,8 @@ const NavigationManager = {
         }
     },
 
-    // Show tab from navigation
-    showTabFromNav(tabId, event) {
-        if (event) {
-            event.preventDefault();
-        }
-        
-        // Update active state for navigation links
+    // Highlight the side-nav link for tabId (also used on startup, which bypasses showTabFromNav)
+    setActiveNavLink(tabId) {
         const links = document.querySelectorAll('.nav-menu a');
         links.forEach(link => {
             link.classList.remove('active');
@@ -106,6 +101,15 @@ const NavigationManager = {
                 link.classList.add('active');
             }
         });
+    },
+
+    // Show tab from navigation
+    showTabFromNav(tabId, event) {
+        if (event) {
+            event.preventDefault();
+        }
+        
+        this.setActiveNavLink(tabId);
         
         // Close menu
         this.setMenuOpen(false);
