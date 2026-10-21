@@ -321,8 +321,8 @@ describe('Today (day.js)', () => {
         expect(val('todayPurchaseItems')).toBe('No purchases today');
     });
 
-    // BUG: see #95 — "due received" is read from AppState.cashManagement, which nothing fills, so it is always ₹0.
-    test.skip('a due collected today shows as "due received"', () => {
+    // #95: due payments recorded on bills today show as "due received".
+    test('a due collected today shows as "due received"', () => {
         AppState.retailSalesHistory[0].payments = [{ amount: 200, date: '2026-10-21T14:00:00' }];
         DayManager.loadTodayData();
         expect(val('todayDueReceived')).toBe(money(200));

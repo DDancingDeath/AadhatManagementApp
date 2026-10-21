@@ -5,6 +5,8 @@
  */
 import { CashManagementManager } from '../modules/cash-management.js';
 import { OutstandingManager } from '../modules/outstanding.js';
+import { DayManager } from '../modules/day.js';
+import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 import { readPayment } from '../utils/money.js';
 import { dueEvents, sumDueEvents, saleTimePayment, entryParts, legParts, checkPaymentSplit } from '../utils/due-payments.js';
@@ -432,5 +434,84 @@ describe('#107 Outstanding: cash + online split', () => {
         await OutstandingManager.recordPayment('r0', 'retail');
         expect(ctx.fake.stats.writes).toBe(writes);
         expect(toast).toHaveBeenCalledWith('Payment amount exceeds outstanding amount');
+    });
+});
+
+describe('#95 Today shows dues and the hero equals the breakdown (fixture tests/fixtures/today-dues.json)', () => {
+    const FIX = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../tests/fixtures/today-dues.json'), 'utf8'));
+    const DAY_TEMPLATE = fs.readFileSync(path.join(__dirname, '../../templates/day.html'), 'utf8');
+    const money = (n) => Helpers.formatCurrency(n);
+    const val = (id) => document.getElementById(id).textContent;
+    const amount = (id) => Number(val(id).replace(/[^0-9.-]/g, ''));
+
+    beforeEach(() => {
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+        jest.setSystemTime(new Date(2026, 9, 21, 18, 0, 0));
+        document.body.innerHTML = DAY_TEMPLATE;
+        const copy = JSON.parse(JSON.stringify(FIX));
+        AppState.retailSalesHistory = copy.retailSales;
+        AppState.salesHistory = copy.wholesaleSales;
+        AppState.purchaseHistory = copy.purchases;
+        AppState.expensesHistory = copy.expenses;
+        CashManagementManager.todaySession = copy.session;
+    });
+    afterEach(() => {
+        jest.useRealTimers();
+        ['salesHistory', 'retailSalesHistory', 'purchaseHistory', 'expensesHistory'].forEach(k => { AppState[k] = []; });
+    });
+
+    // Worked by hand:
+    //   sales at save time: cash 300 (r1) + 3000 (w1); online 0
+    //   due received: e1 200 cash + 100 online, e2 250 cash (also a session leg: once),
+    //                 e9 120 cash (bill not loaded), u1 60 cash (unlinked)  → 630 cash + 100 online
+    //   purchases at save time: cash 1000, online 500; due paid: e3 400 online (old bill)
+    //   expenses 150 + 80 cash
+    test('exact Today values', () => {
+        DayManager.loadTodayData();
+        const e = FIX.expected.today;
+        expect(val('todayCashReceived')).toBe(money(e.cashIn));
+        expect(val('todayOnlineReceived')).toBe(money(e.onlineIn));
+        expect(val('todayCashPaid')).toBe(money(e.cashOut));
+        expect(val('todayOnlinePaid')).toBe(money(e.onlineOut));
+        expect(val('todayTotalIn')).toBe(money(e.totalIn));
+        expect(val('todayTotalOut')).toBe(money(e.totalOut));
+        expect(val('todayDueReceived')).toBe(money(e.dueReceived));
+        expect(val('todayDuePaid')).toBe(money(e.duePaid));
+        expect(val('todayDueToReceive')).toBe(money(e.dueToReceive));
+        expect(val('todayDueToPay')).toBe(money(e.dueToPay));
+        expect(val('todayCashFlowLabel')).toBe(e.netLabel);
+        expect(val('todayNetCashFlow')).toBe(money(e.net));
+    });
+
+    test('hero In/Out equal the breakdown below them', () => {
+        DayManager.loadTodayData();
+        expect(amount('todayTotalIn')).toBe(amount('todayCashReceived') + amount('todayOnlineReceived'));
+        expect(amount('todayTotalOut')).toBe(amount('todayCashPaid') + amount('todayOnlinePaid'));
+    });
+
+    test('the drawer counts the same day (cash only) with the same de-duplication', () => {
+        const t = CashManagementManager.calculateTransactionsForDate(FIX.day, CashManagementManager.todaySession);
+        const { expected, ...drawer } = FIX.expected.drawer;
+        expect(t).toEqual(drawer);
+        CashManagementManager.todayTransactions = t;
+        expect(CashManagementManager.calculateExpectedCash()).toBe(expected);
+    });
+
+    test('recording a due makes Today\'s due figure move immediately', async () => {
+        const fake = createFakeFirestore();
+        jest.spyOn(FirebaseService, 'db', 'get').mockReturnValue(fake.db);
+        window.getCollection = (n) => n;
+        jest.spyOn(AuditService, 'log').mockResolvedValue(undefined);
+        jest.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(true);
+        jest.spyOn(OutstandingManager, 'renderDue').mockImplementation(() => {});
+        window.app = { day: { loadTodayData: () => DayManager.loadTodayData() } };
+        fake.seed('retailSales', [FIX.retailSales[1]]);
+        fake.seed('cashManagement', [FIX.session]);
+        DayManager.loadTodayData();
+        const before = amount('todayDueReceived');
+        await OutstandingManager.recordDuePayment({ billType: 'retail', billId: 'r0', cash: 50, online: 0 });
+        expect(amount('todayDueReceived')).toBe(before + 50);
+        delete window.app;
+        delete window.getCollection;
     });
 });
