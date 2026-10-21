@@ -44,6 +44,53 @@ export function hasNotes(release) {
     return Boolean(n && ((Array.isArray(n.en) && n.en.length) || (Array.isArray(n.hi) && n.hi.length)));
 }
 
+export const WHATS_NEW_LANGS = ['en', 'hi'];
+export const DEFAULT_WHATS_NEW_LANG = 'en';
+
+/** Sheet labels per language; `fallback` explains that the notes are in the other language. */
+export const WHATS_NEW_LABELS = {
+    en: {
+        title: "What's new",
+        version: (v) => `Version ${v}`,
+        close: 'OK',
+        fallback: 'Notes are not available in English for this version — showing Hindi.'
+    },
+    hi: {
+        title: 'क्या नया है',
+        version: (v) => `वर्ज़न ${v}`,
+        close: 'ठीक है',
+        fallback: 'इस वर्ज़न के नोट्स हिंदी में उपलब्ध नहीं हैं — अंग्रेज़ी में दिखाए जा रहे हैं।'
+    }
+};
+
+/** The stored "What's new" language, or English when missing/invalid. */
+export function normalizeWhatsNewLang(value) {
+    return WHATS_NEW_LANGS.includes(value) ? value : DEFAULT_WHATS_NEW_LANG;
+}
+
+/**
+ * What the "What's new" sheet shows for a release and the (stored) language choice.
+ * `lang` is the chosen UI language; `notesLang` is the language the notes are actually in
+ * (the other one, with `fellBack: true`, when the chosen language has no notes).
+ */
+export function whatsNewContent(release, storedLang) {
+    const lang = normalizeWhatsNewLang(storedLang);
+    const notesFor = (l) => (Array.isArray(release?.notes?.[l]) ? release.notes[l].map(String) : []);
+    let notesLang = lang;
+    let notes = notesFor(lang);
+    let fellBack = false;
+    if (!notes.length) {
+        const other = lang === 'en' ? 'hi' : 'en';
+        const otherNotes = notesFor(other);
+        if (otherNotes.length) {
+            notesLang = other;
+            notes = otherNotes;
+            fellBack = true;
+        }
+    }
+    return { lang, notesLang, notes, fellBack };
+}
+
 /** Whether to ask GitHub again (at most once per interval; also re-checks if the clock went backwards). */
 export function shouldCheckForUpdate(lastCheckMs, nowMs, intervalMs = UPDATE_CHECK_INTERVAL_MS) {
     const last = Number(lastCheckMs);

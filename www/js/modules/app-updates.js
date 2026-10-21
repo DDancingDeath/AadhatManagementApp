@@ -9,14 +9,15 @@ import { UIManager } from '../ui/ui-manager.js';
 import {
     APK_DOWNLOAD_URL, DOWNLOAD_PAGE_URL, LATEST_RELEASE_API,
     buildShareMessage, findRelease, shouldCheckForUpdate, updateToOffer,
-    whatsAppShareUrl, whatsNewToShow
+    whatsAppShareUrl, whatsNewToShow, whatsNewContent, WHATS_NEW_LABELS
 } from '../utils/release-info.js';
 
 const KEYS = {
     lastSeen: 'aadhat.lastSeenVersion',
     lastCheck: 'aadhat.updateLastCheck',
     latestTag: 'aadhat.updateLatestTag',
-    dismissed: 'aadhat.updateDismissedVersion'
+    dismissed: 'aadhat.updateDismissedVersion',
+    lang: 'aadhat.whatsNewLang'
 };
 
 const store = {
@@ -90,30 +91,58 @@ export class AppUpdatesManager {
         sheet.setAttribute('aria-modal', 'true');
         sheet.setAttribute('aria-labelledby', 'whatsNewTitle');
 
-        const title = el('h3', 'app-sheet-title', `क्या नया है / What's new — v${release.version}`);
-        title.id = 'whatsNewTitle';
-        sheet.appendChild(title);
-
-        const sections = [['hi', 'हिंदी'], ['en', 'English']];
-        for (const [lang, label] of sections) {
-            const notes = Array.isArray(release.notes?.[lang]) ? release.notes[lang] : [];
-            if (!notes.length) continue;
-            sheet.appendChild(el('div', 'app-sheet-lang', label));
-            const list = el('ul', 'app-sheet-notes');
-            notes.forEach((note) => list.appendChild(el('li', '', String(note))));
-            if (lang === 'hi') list.lang = 'hi';
-            sheet.appendChild(list);
+        // Changelog text is only ever set via textContent (never innerHTML), so it cannot inject markup.
+        const toggle = el('div', 'app-sheet-lang-toggle');
+        toggle.setAttribute('role', 'group');
+        toggle.setAttribute('aria-label', 'Language / भाषा');
+        const langButtons = {};
+        for (const [lang, label] of [['en', 'English'], ['hi', 'हिंदी']]) {
+            const btn = el('button', 'app-sheet-lang-btn', label);
+            btn.type = 'button';
+            btn.lang = lang;
+            btn.addEventListener('click', () => {
+                store.set(KEYS.lang, lang);
+                render(lang);
+                btn.focus();
+            });
+            langButtons[lang] = btn;
+            toggle.appendChild(btn);
         }
+        sheet.appendChild(toggle);
 
-        const close = el('button', 'add-item-btn app-sheet-close', 'ठीक है / OK');
+        const title = el('h3', 'app-sheet-title');
+        title.id = 'whatsNewTitle';
+        const versionLine = el('div', 'app-sheet-version');
+        const fallbackNote = el('p', 'app-sheet-fallback');
+        fallbackNote.setAttribute('role', 'note');
+        const list = el('ul', 'app-sheet-notes');
+        const close = el('button', 'add-item-btn app-sheet-close');
         close.type = 'button';
+        sheet.append(title, versionLine, fallbackNote, list, close);
+
+        const render = (storedLang) => {
+            const { lang, notesLang, notes, fellBack } = whatsNewContent(release, storedLang);
+            const labels = WHATS_NEW_LABELS[lang];
+            sheet.lang = lang;
+            for (const [l, btn] of Object.entries(langButtons)) {
+                btn.setAttribute('aria-pressed', String(l === lang));
+            }
+            title.textContent = labels.title;
+            versionLine.textContent = labels.version(release.version);
+            fallbackNote.textContent = fellBack ? labels.fallback : '';
+            fallbackNote.hidden = !fellBack;
+            list.lang = notesLang;
+            list.replaceChildren(...notes.map((note) => el('li', '', note)));
+            close.textContent = labels.close;
+        };
+        render(store.get(KEYS.lang));
+
         const dismiss = () => {
             store.set(KEYS.lastSeen, APP_VERSION);
             backdrop.remove();
         };
         close.addEventListener('click', dismiss);
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) dismiss(); });
-        sheet.appendChild(close);
 
         backdrop.appendChild(sheet);
         document.body.appendChild(backdrop);
