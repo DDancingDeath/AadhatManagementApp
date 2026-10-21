@@ -11,6 +11,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
+import { planStockAdjustment } from '../utils/stock-adjust.js';
 
 /**
  * Stock Manager - Manages inventory stock operations
@@ -355,7 +356,7 @@ export class StockManager {
         select.innerHTML = '<option value="">Select item</option>';
         AppState.items.forEach(item => {
             const option = document.createElement("option");
-            option.value = item.name;
+            option.value = item.id;
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
             option.textContent = displayName;
             select.appendChild(option);
@@ -363,52 +364,31 @@ export class StockManager {
     }
 
     static loadAdjustItemStock() {
-        const itemName = document.getElementById("adjustItem")?.value;
+        const itemId = document.getElementById("adjustItem")?.value;
         const display = document.getElementById("currentStockDisplay");
         const avgRateDisplay = document.getElementById("avgRateDisplay");
         const avgRateValue = document.getElementById("avgRateValue");
         
         if (!display) return;
 
-        if (!itemName || itemName === '') {
+        if (!itemId) {
             display.textContent = "";
             if (avgRateDisplay) avgRateDisplay.style.display = "none";
             return;
         }
 
-        // Find the item to get both English and Hindi names
-        const item = AppState.items.find(i => i.name === itemName);
+        const item = AppState.items.find(i => i.id === itemId);
         if (!item) {
             display.textContent = "0.00";
             if (avgRateDisplay) avgRateDisplay.style.display = "none";
             return;
         }
 
-        // Check stock using itemId (primary), name, and Hindi name (legacy)
-        let quantity = 0;
-        let totalValue = 0;
-        
-        // Check by itemId first (most reliable)
-        if (item.id && AppState.stock[item.id]) {
-            const stockData = AppState.stock[item.id];
-            quantity += stockData.quantity || 0;
-            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
-        }
-        
-        // Also check by name (for legacy data)
-        if (AppState.stock[item.name]) {
-            const stockData = AppState.stock[item.name];
-            quantity += stockData.quantity || 0;
-            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
-        }
-        
-        // Also check by Hindi name (for legacy data)
-        if (item.hindiName && AppState.stock[item.hindiName]) {
-            const stockData = AppState.stock[item.hindiName];
-            quantity += stockData.quantity || 0;
-            totalValue += (stockData.quantity || 0) * (stockData.rate || 0);
-        }
-        
+        // Stock is keyed by catalogue id: the replay resolves legacy name-only
+        // lines to the id, so a name lookup would only find stale entries.
+        const stockData = AppState.stock[item.id] || {};
+        const quantity = stockData.quantity || 0;
+        const totalValue = quantity * (stockData.rate || 0);
         display.textContent = quantity.toFixed(1);
         
         // Calculate and display average rate
@@ -443,60 +423,49 @@ export class StockManager {
     }
 
     static async applyStockAdjustment() {
-        const itemName = Helpers.getInputText('adjustItem');
+        const itemId = Helpers.getInputText('adjustItem');
         const adjustType = Helpers.getInputText('adjustType');
-        const quantity = Helpers.getInputNumber('adjustQuantity');
+        // NaN when blank, so an empty box can't become "set stock to 0"
+        const quantity = Helpers.getInputNumber('adjustQuantity', NaN);
         const rate = Helpers.getInputNumber('adjustRate');
-        const reason = Helpers.getInputText('adjustReason');
+        const reasonCode = Helpers.getInputText('adjustReasonCode');
+        const reasonNote = Helpers.getInputText('adjustReason');
 
-        if (!itemName) {
+        const item = itemId ? AppState.items.find(i => i.id === itemId) : null;
+        if (!item) {
             UIManager.showToast("Please select an item");
             return;
         }
+        const itemName = item.name;
 
-        if (isNaN(quantity) || quantity <= 0) {
-            UIManager.showToast("Please enter a valid quantity");
+        const currentStock = AppState.stock[item.id]?.quantity || 0;
+        const plan = planStockAdjustment({ adjustType, quantity, currentStock, reasonCode, reasonNote });
+        if (!plan.ok) {
+            UIManager.showToast(plan.error);
             return;
         }
+        if (plan.capped) {
+            const ok = await UIManager.showModal(
+                `Only ${plan.quantity} kg in stock. Remove ${plan.quantity} kg (stock becomes 0)?\nस्टॉक में सिर्फ ${plan.quantity} kg है। ${plan.quantity} kg हटाएँ (स्टॉक 0 होगा)?`,
+                'Remove more than stock?',
+                true
+            );
+            if (!ok) return;
+        }
+        const newStock = plan.newStock;
+        const reason = plan.reason;
 
-        // Find item to get itemId
-        const item = AppState.items.find(i => i.name === itemName);
-        
-        // Calculate current stock from all possible keys (itemId, name, hindiName)
-        let currentStock = 0;
-        if (item?.id && AppState.stock[item.id]) {
-            currentStock += AppState.stock[item.id].quantity || 0;
-        }
-        if (AppState.stock[itemName]) {
-            currentStock += AppState.stock[itemName].quantity || 0;
-        }
-        if (item?.hindiName && AppState.stock[item.hindiName]) {
-            currentStock += AppState.stock[item.hindiName].quantity || 0;
-        }
-        
-        let newStock = currentStock;
-
-        switch (adjustType) {
-            case 'add':
-                newStock = currentStock + quantity;
-                break;
-            case 'remove':
-                newStock = Math.max(0, currentStock - quantity);
-                break;
-            case 'set':
-                newStock = quantity;
-                break;
-        }
-        
         const adjustment = {
-            itemId: item?.id || null,
+            itemId: item.id,
             itemName,
             adjustType,
-            quantity,
+            quantity: plan.quantity,
+            rawQuantity: plan.rawQuantity,
             rate: rate || 0,
             previousStock: currentStock,
             newStock,
             reason,
+            reasonCode,
             date: Helpers.getCurrentDateTime(),
             timestamp: Date.now(),
             createdBy: AppState.currentUser?.uid || 'unknown',
@@ -506,14 +475,16 @@ export class StockManager {
         try {
             await FirebaseService.saveStockAdjustment(adjustment);
             
-            if (!AppState.stock[itemName]) {
-                AppState.stock[itemName] = { quantity: 0, rate: 0 };
+            if (!AppState.stock[item.id]) {
+                AppState.stock[item.id] = { quantity: 0, rate: 0 };
             }
-            AppState.stock[itemName].quantity = newStock;
+            AppState.stock[item.id].quantity = newStock;
 
             document.getElementById("adjustQuantity").value = "";
             document.getElementById("adjustRate").value = "0";
             document.getElementById("adjustReason").value = "";
+            const reasonSelect = document.getElementById("adjustReasonCode");
+            if (reasonSelect) reasonSelect.value = "";
             
             // Recalculate stock from Firebase data to ensure accuracy
             const freshStock = await FirebaseService.calculateStock();
@@ -523,8 +494,8 @@ export class StockManager {
             this.renderAdjustmentHistory();
             this.loadAdjustItemStock();
             
-            // Refresh current stock tab if it's visible
-            if (document.getElementById('stockCurrentSection')?.classList.contains('active')) {
+            // Keep the Current Stock list in step with the adjustment
+            if (document.getElementById('currentStockSection')) {
                 this.renderStock();
             }
         } catch (error) {
@@ -598,6 +569,7 @@ export class StockManager {
                         ${displayRate > 0 ? `<div style="font-size: 13px; color: #666; margin-bottom: 4px;">Rate: ₹${displayRate.toFixed(2)}/kg${valueImpact ? ` • Value: ₹${Math.round(valueImpact)}` : ''}</div>` : ''}
                         <div style="font-size: 13px; color: #666;">
                             ${(adj.previousStock || 0).toFixed(1)} kg → ${(adj.newStock || 0).toFixed(1)} kg
+                            ${Number(adj.rawQuantity) > Number(adj.quantity) ? ` (asked ${Helpers.escapeHtml(adj.rawQuantity)} kg, capped at stock)` : ''}
                         </div>
                         ${adj.reason ? `<div style="font-size: 13px; color: #666; margin-top: 4px;"><em>${Helpers.escapeHtml(adj.reason)}</em></div>` : '<div style="font-size: 13px; color: #999; margin-top: 4px;"><em>No reason provided</em></div>'}
                     </div>

@@ -125,6 +125,7 @@ const isTabActive = (tabId) => !!document.getElementById(tabId)?.classList.conta
  */
 const VIEWS = {
     itemsList: { tab: null, run: () => window.app?.items?.render?.() },
+    itemsTable: { tab: 'items', run: () => window.app?.items?.refreshTable?.() },
     billingDropdown: { tab: 'billing', run: () => window.app?.billing?.loadItemsDropdown?.() },
     salesDropdown: { tab: 'wholesale-sales', run: () => window.app?.sales?.loadItemsDropdown?.() },
     wholesaleHistory: { tab: 'wholesale-sales', run: () => window.app?.wholesaleSales?.renderHistory?.() },
@@ -1396,6 +1397,66 @@ const FirebaseService = {
     },
 
     /**
+     * Applies an item import plan with batched writes (merge updates + new
+     * docs). Never deletes. One batch for typical catalogues, so a failure
+     * leaves the catalogue unchanged; very large imports are chunked.
+     * @async
+     * @param {Array<{id: string, fields: Object}>} updates
+     * @param {Array<{fields: Object}>} adds
+     * @returns {Promise<Array<Object>>} the added items with their new ids
+     */
+    async importItems(updates, adds) {
+        const db = getDb();
+        const ref = db.collection(col('items'));
+        const ops = [
+            ...(updates || []).map(u => ({ doc: ref.doc(u.id), data: u.fields, merge: true })),
+            ...(adds || []).map(a => ({ doc: ref.doc(), data: a.fields, merge: false }))
+        ];
+        const added = [];
+        for (let i = 0; i < ops.length; i += 450) {
+            const batch = db.batch();
+            ops.slice(i, i + 450).forEach(op => {
+                if (op.merge) batch.set(op.doc, op.data, { merge: true });
+                else {
+                    batch.set(op.doc, op.data);
+                    added.push({ ...op.data, id: op.doc.id });
+                }
+            });
+            await batch.commit();
+        }
+        return added;
+    },
+
+    /**
+     * Reads every document of a collection (env-prefixed) for a backup.
+     * @async
+     * @param {string} name unprefixed collection name
+     * @returns {Promise<Array<{id: string, data: Object}>>}
+     */
+    async readCollectionForBackup(name) {
+        const snapshot = await getDb().collection(col(name)).get();
+        return snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
+    },
+
+    /**
+     * Deletes the given documents of a collection with batched writes.
+     * @async
+     * @param {string} name unprefixed collection name
+     * @param {Array<string>} ids
+     * @returns {Promise<number>} number of documents deleted
+     */
+    async deleteDocsInBatches(name, ids) {
+        const db = getDb();
+        const ref = db.collection(col(name));
+        for (let i = 0; i < ids.length; i += 450) {
+            const batch = db.batch();
+            ids.slice(i, i + 450).forEach(id => batch.delete(ref.doc(id)));
+            await batch.commit();
+        }
+        return ids.length;
+    },
+
+    /**
      * Loads all purchases from Firestore, ordered by date descending.
      * @async
      * @returns {Promise<Array<Object>>} Array of purchase objects
@@ -2081,7 +2142,7 @@ const FirebaseService = {
                 pendingViews.delete(name);
                 runView(name);
             });
-            markDirty([], true);
+            markDirty(['itemsTable'], true);
         }, { mapFn: defaultMapDoc })];
 
         const legacyScanRead = getWithRetry(legacyScanRef(), 'Legacy scan state', { attempts: 2 })

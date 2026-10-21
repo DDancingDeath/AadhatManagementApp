@@ -37,7 +37,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261021r-cleanup';
+const BUILD_ID = '20261021s-data-safety';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -432,13 +432,15 @@ async function debugStockForName(query) {
                     runningValue += ev.qty * ev.rate;
                 }
             } else if (ev.kind === 'adjust:remove') {
-                delta = -ev.qty;
+                // Same cap as stock-replay: never removes more than is on hand
                 const prevQty = runningQty;
-                runningQty = prevQty - ev.qty;
+                const removed = Math.min(ev.qty, Math.max(0, prevQty));
+                delta = -removed;
+                runningQty = prevQty - removed;
                 if (runningQty <= 0 || prevQty <= 0) {
                     runningValue = 0;
                 } else {
-                    const ratio = ev.qty / prevQty;
+                    const ratio = removed / prevQty;
                     runningValue -= runningValue * ratio;
                 }
             } else if (ev.kind === 'adjust:set') {
@@ -613,9 +615,10 @@ window.app = {
     items: {
         render: () => ItemsManager.renderItems(),
         renderTable: () => ItemsManager.renderItemsTable(),
+        refreshTable: () => ItemsManager.refreshTable(),
         search: (query) => ItemsManager.renderItemsTable(query),
         openAddModal: () => ItemsManager.openAddModal(),
-        openEditModal: (idx) => ItemsManager.openEditModal(idx),
+        openEditModal: (id) => ItemsManager.openEditModal(id),
         closeItemModal: () => ItemsManager.closeItemModal(),
         addModalRate: (type) => ItemsManager.addModalRate(type),
         updateModalRate: (type, idx, val) => ItemsManager.updateModalRate(type, idx, val),
@@ -623,18 +626,19 @@ window.app = {
         saveItemFromModal: () => ItemsManager.saveItemFromModal(),
         deleteItemFromModal: () => ItemsManager.deleteItemFromModal(),
         add: () => ItemsManager.addItem(),
-        updateName: (idx, val) => ItemsManager.updateItemName(idx, val),
-        updateHindiName: (idx, val) => ItemsManager.updateItemHindiName(idx, val),
-        addRate: (idx) => ItemsManager.addRate(idx),
-        updateRate: (iIdx, rIdx, val) => ItemsManager.updateRate(iIdx, rIdx, val),
-        deleteRate: (iIdx, rIdx) => ItemsManager.deleteRate(iIdx, rIdx),
-        addWholesaleRate: (idx) => ItemsManager.addWholesaleRate(idx),
-        updateWholesaleRate: (iIdx, rIdx, val) => ItemsManager.updateWholesaleRate(iIdx, rIdx, val),
-        deleteWholesaleRate: (iIdx, rIdx) => ItemsManager.deleteWholesaleRate(iIdx, rIdx),
-        addSaleRate: (idx) => ItemsManager.addSaleRate(idx),
-        updateSaleRate: (iIdx, rIdx, val) => ItemsManager.updateSaleRate(iIdx, rIdx, val),
-        deleteSaleRate: (iIdx, rIdx) => ItemsManager.deleteSaleRate(iIdx, rIdx),
-        deleteItem: (idx) => ItemsManager.deleteItem(idx),
+        // Item handlers take the item id, never a list position (#29)
+        updateName: (id, val) => ItemsManager.updateItemName(id, val),
+        updateHindiName: (id, val) => ItemsManager.updateItemHindiName(id, val),
+        addRate: (id) => ItemsManager.addRate(id),
+        updateRate: (id, rIdx, val) => ItemsManager.updateRate(id, rIdx, val),
+        deleteRate: (id, rIdx) => ItemsManager.deleteRate(id, rIdx),
+        addWholesaleRate: (id) => ItemsManager.addWholesaleRate(id),
+        updateWholesaleRate: (id, rIdx, val) => ItemsManager.updateWholesaleRate(id, rIdx, val),
+        deleteWholesaleRate: (id, rIdx) => ItemsManager.deleteWholesaleRate(id, rIdx),
+        addSaleRate: (id) => ItemsManager.addSaleRate(id),
+        updateSaleRate: (id, rIdx, val) => ItemsManager.updateSaleRate(id, rIdx, val),
+        deleteSaleRate: (id, rIdx) => ItemsManager.deleteSaleRate(id, rIdx),
+        deleteItem: (id) => ItemsManager.deleteItem(id),
         exportExcel: () => ItemsManager.exportToExcel(),
         importExcel: (evt) => ItemsManager.importFromExcel(evt)
     },

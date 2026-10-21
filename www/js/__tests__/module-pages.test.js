@@ -112,8 +112,8 @@ describe('Items', () => {
         expect(AppState.items).toHaveLength(SAMPLE_ITEMS.length + 1);
     });
 
-    // BUG: see #75 — frequency is counted from AppState.bills/sales, which are never populated.
-    test.skip('most-used items sort first', () => {
+    // #75: usage is counted from the real purchase/sale histories.
+    test('most-used items sort first', () => {
         AppState.purchaseHistory = [{ items: [{ itemId: 'item-wheat', name: 'Wheat' }] }];
         ItemsManager.renderItemsTable();
         expect(rowNames()[0]).toMatch(/^Wheat/);
@@ -127,6 +127,7 @@ describe('Stock', () => {
           <input id="stockSearchInput"><div id="stockList"></div>
           <select id="adjustItem"></select><select id="adjustType"><option>add</option><option>remove</option><option>set</option></select>
           <input id="adjustQuantity"><input id="adjustRate" value="0"><input id="adjustReason">
+          <select id="adjustReasonCode"><option value=""></option><option value="count">count</option><option value="other">other</option></select>
           <span id="currentStockDisplay"></span><div id="avgRateDisplay"></div><span id="avgRateValue"></span>`;
         jest.spyOn(UIManager, 'withLoading').mockImplementation(async (fn) => fn());
     });
@@ -194,20 +195,21 @@ describe('Stock', () => {
         expect(rows().filter(r => r.style.display !== 'none')).toHaveLength(1);
     });
 
-    test('add adjustment records previous stock across id + legacy keys', async () => {
+    test('add adjustment records previous stock from the id bucket (#29: replay folds legacy names into the id)', async () => {
         AppState.stock = cloneStock();
         const save = jest.spyOn(FirebaseService, 'saveStockAdjustment').mockResolvedValue(undefined);
         jest.spyOn(FirebaseService, 'calculateStock').mockResolvedValue({});
         jest.spyOn(StockManager, 'renderAdjustmentHistory').mockImplementation(() => {});
         StockManager.loadAdjustItemsDropdown();
-        document.getElementById('adjustItem').value = 'Rice';
+        document.getElementById('adjustItem').value = 'item-rice';
         document.getElementById('adjustType').value = 'add';
+        document.getElementById('adjustReasonCode').value = 'other';
         document.getElementById('adjustQuantity').value = '25';
         document.getElementById('adjustReason').value = 'recount';
         await StockManager.applyStockAdjustment();
         expect(save).toHaveBeenCalledWith(expect.objectContaining({
             itemId: 'item-rice', itemName: 'Rice', adjustType: 'add', quantity: 25,
-            previousStock: 150, newStock: 175, reason: 'recount', createdBy: 'owner1'
+            previousStock: 100, newStock: 125, reason: 'Other / अन्य: recount', createdBy: 'owner1'
         }));
     });
 
@@ -216,25 +218,34 @@ describe('Stock', () => {
         StockManager.loadAdjustItemsDropdown();
         await StockManager.applyStockAdjustment();
         expect(toast).toHaveBeenLastCalledWith('Please select an item');
-        document.getElementById('adjustItem').value = 'Rice';
+        document.getElementById('adjustItem').value = 'item-rice';
         document.getElementById('adjustQuantity').value = '-3';
         await StockManager.applyStockAdjustment();
-        expect(toast).toHaveBeenLastCalledWith('Please enter a valid quantity');
+        expect(toast).toHaveBeenLastCalledWith(expect.stringMatching(/^Please enter a valid quantity/));
         expect(save).not.toHaveBeenCalled();
     });
 
-    // BUG: see #72 — "Set" to 0 is rejected as an invalid quantity, and the reason is optional.
-    test.skip('can set stock to 0 (with a reason)', async () => {
+    // #72: "Set" to 0 is allowed, but only with a reason.
+    test('can set stock to 0 (with a reason)', async () => {
         AppState.stock = cloneStock();
         const save = jest.spyOn(FirebaseService, 'saveStockAdjustment').mockResolvedValue(undefined);
         jest.spyOn(FirebaseService, 'calculateStock').mockResolvedValue({});
+        jest.spyOn(StockManager, 'renderAdjustmentHistory').mockImplementation(() => {});
         StockManager.loadAdjustItemsDropdown();
-        document.getElementById('adjustItem').value = 'Wheat';
+        const select = document.getElementById('adjustItem');
+        select.value = [...select.options].find(o => /Wheat/.test(o.textContent)).value;
         document.getElementById('adjustType').value = 'set';
         document.getElementById('adjustQuantity').value = '0';
+        await StockManager.applyStockAdjustment();
+        expect(save).not.toHaveBeenCalled();
+
+        document.getElementById('adjustReasonCode').value = 'other';
         document.getElementById('adjustReason').value = 'spoiled';
         await StockManager.applyStockAdjustment();
-        expect(save).toHaveBeenCalledWith(expect.objectContaining({ newStock: 0 }));
+        expect(save).toHaveBeenCalledWith(expect.objectContaining({
+            itemId: 'item-wheat', adjustType: 'set', previousStock: 40, newStock: 0,
+            reasonCode: 'other', reason: expect.stringContaining('spoiled')
+        }));
     });
 });
 
@@ -494,8 +505,8 @@ describe('Diagnostics', () => {
         expect(document.getElementById('diagnosticsContainer').innerHTML).toBe('');
     });
 
-    // BUG: see #114 — Firestore Timestamps render as "Invalid Date".
-    test.skip('Firestore Timestamp "last seen" renders as a date', () => {
+    // #114: Firestore Timestamps render as a real date.
+    test('Firestore Timestamp "last seen" renders as a date', () => {
         const ts = { seconds: 1792560000, nanoseconds: 0, toDate: () => new Date(1792560000000), toMillis: () => 1792560000000 };
         const html = DiagnosticsManager.renderErrorCard({ id: 'e9', type: 'manual', message: 'm', lastSeen: ts });
         expect(html).not.toContain('Invalid Date');

@@ -197,13 +197,15 @@ async function referenceCalculateStock() {
                 case 'remove': {
                     // Reduce quantity but keep total value proportional so
                     // the weighted average rate is preserved.
+                    // Updated for #72: a removal is capped at the stock on hand.
                     const prevQty = stock[key].quantity;
-                    const newQty = prevQty - adjQty;
+                    const removed = Math.min(adjQty, Math.max(0, prevQty));
+                    const newQty = prevQty - removed;
                     stock[key].quantity = newQty;
                     if (newQty <= 0 || prevQty <= 0) {
                         stock[key].totalValue = 0;
                     } else {
-                        const removalRatio = adjQty / prevQty;
+                        const removalRatio = removed / prevQty;
                         stock[key].totalValue -= stock[key].totalValue * removalRatio;
                     }
                     break;
