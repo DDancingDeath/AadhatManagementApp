@@ -31,6 +31,13 @@ let saleItems = [];
 let saleWeights = [];
 
 /**
+ * Id (and bill number, once issued) of the sale being entered, reused by every
+ * save attempt so a retry cannot create a second bill (#70).
+ * @type {{id: string, billNumber: (string|null)}|null}
+ */
+let pendingBill = null;
+
+/**
  * Retail Sale Manager - Handles all retail sale operations
  * @namespace RetailSaleManager
  */
@@ -185,6 +192,7 @@ const RetailSaleManager = {
             UIManager.showToast('Item not found');
             return;
         }
+        this.ensurePendingBill();
         
         const itemName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         
@@ -540,11 +548,12 @@ const RetailSaleManager = {
         
         try {
             UIManager.showLoading();
-            const billNumber = await Helpers.generateBillNumber('S', 'retailSales');
+            const pending = this.ensurePendingBill();
+            if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('S', 'retailSales');
             
             const sale = {
-                id: Helpers.generateId(),
-                billNumber,
+                id: pending.id,
+                billNumber: pending.billNumber,
                 items: saleItems,
                 total: salesTotal,
                 totalPackets: totalPackets,
@@ -568,7 +577,7 @@ const RetailSaleManager = {
                 }
             };
             
-            const writePromise = FirebaseService.saveRetailSale(sale);
+            const writePromise = FirebaseService.saveRetailSale(sale, { merge: true });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(sale);
             }
@@ -589,6 +598,7 @@ const RetailSaleManager = {
             ]);
             
             // Clear sale
+            pendingBill = null;
             saleItems = [];
             this.renderSalesBill();
             
@@ -632,6 +642,7 @@ const RetailSaleManager = {
      * Clear the current sale
      */
     clearSale() {
+        pendingBill = null;
         saleItems = [];
         saleWeights = [];
         this.renderSalesBill();
@@ -712,6 +723,25 @@ const RetailSaleManager = {
     },
 
     // -------------------- STATE ACCESS --------------------
+
+    /**
+     * Id/bill number of the sale being entered, created on first use (#70)
+     * @returns {{id: string, billNumber: (string|null)}}
+     */
+    ensurePendingBill() {
+        if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null };
+        return pendingBill;
+    },
+
+    /** @returns {{id: string, billNumber: (string|null)}|null} for auto-save / drafts */
+    getPendingBill() {
+        return pendingBill ? { ...pendingBill } : null;
+    },
+
+    /** Restore the sale id from an auto-save / draft. */
+    setPendingBill(pending) {
+        pendingBill = pending && pending.id ? { id: String(pending.id), billNumber: pending.billNumber || null } : null;
+    },
 
     /**
      * Get current sale items

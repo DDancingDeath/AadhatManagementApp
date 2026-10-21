@@ -20,6 +20,18 @@ const WHOLESALE_BUTTONS = '[onclick*="wholesaleSales.completeSale"], [onclick*="
 
 let wholesaleSaleItems = [];
 
+/**
+ * Id (and bill number, once issued) of the wholesale sale being entered, reused
+ * by every save attempt so a retry cannot create a second bill (#70).
+ * @type {{id: string, billNumber: (string|null)}|null}
+ */
+let pendingBill = null;
+
+function ensurePendingBill() {
+    if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null };
+    return pendingBill;
+}
+
 export class WholesaleSalesManager {
     static async generateBillNumber() {
         return Helpers.generateBillNumber('W', 'wholesaleSales');
@@ -149,6 +161,7 @@ export class WholesaleSalesManager {
         
         const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         const total = Math.round(quantity * rate);
+        ensurePendingBill();
         
         wholesaleSaleItems.push({
             itemId: item.id,
@@ -299,6 +312,12 @@ export class WholesaleSalesManager {
 
     static setItems(items) {
         wholesaleSaleItems = items || [];
+        if (wholesaleSaleItems.length === 0) pendingBill = null;
+    }
+
+    /** @returns {{id: string, billNumber: (string|null)}|null} */
+    static getPendingBill() {
+        return pendingBill ? { ...pendingBill } : null;
     }
 
     static removeWholesaleItem(index) {
@@ -356,12 +375,12 @@ export class WholesaleSalesManager {
         }
         
         try {
-            // Generate bill number
-            const billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
+            const pending = ensurePendingBill();
+            if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('W', 'wholesaleSales');
             
             const saleData = {
-                id: Date.now(),
-                billNumber,
+                id: pending.id,
+                billNumber: pending.billNumber,
                 customerName,
                 items: wholesaleSaleItems.map(item => ({
                     itemId: item.itemId,
@@ -393,7 +412,7 @@ export class WholesaleSalesManager {
                 source: 'sales-tab'
             };
             
-            const writePromise = FirebaseService.saveWholesaleSale(saleData);
+            const writePromise = FirebaseService.saveWholesaleSale(saleData, { merge: true });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(saleData);
             }
@@ -413,6 +432,7 @@ export class WholesaleSalesManager {
             this.updateWholesaleCustomerOptions(customerName);
             
             // Clear bill
+            pendingBill = null;
             wholesaleSaleItems = [];
             document.getElementById('wholesaleCustomerName').value = '';
             document.getElementById('sellQuantity').value = '';
@@ -536,6 +556,10 @@ export class WholesaleSalesManager {
     }
 
     static async recordPayment(saleId) {
+        return Helpers.runExclusive('due-payment', '[data-record-payment]', () => this._recordPayment(saleId));
+    }
+
+    static async _recordPayment(saleId) {
         const salesHistory = AppState.salesHistory;
         const sale = salesHistory.find(s => s.id == saleId);
         if (!sale) {
@@ -564,6 +588,7 @@ export class WholesaleSalesManager {
         }
         
         const payment = {
+            id: OutstandingManager.paymentEntryId(paymentInput, paymentAmount),
             amount: paymentAmount,
             date: Helpers.getCurrentDateTime(),
             recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
@@ -575,6 +600,7 @@ export class WholesaleSalesManager {
             const written = await OutstandingManager.applyPaymentTransaction('wholesale', sale, paymentAmount, payment);
             Object.assign(sale, written);
             
+            OutstandingManager.clearPaymentEntryId(paymentInput);
             if (paymentInput) paymentInput.value = '';
             this.renderSalesOutstanding();
             this.renderSalesHistory();
@@ -669,7 +695,7 @@ export class WholesaleSalesManager {
                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                                 <label style="font-weight: 500;">Payment (₹):</label>
                                 <input type="number" inputmode="decimal" id="payment_${Helpers.escapeHtml(sale.id)}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
-                                <button onclick="window.app.wholesaleSales.recordPayment('${Helpers.escapeJsAttr(sale.id)}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
+                                <button data-record-payment onclick="window.app.wholesaleSales.recordPayment('${Helpers.escapeJsAttr(sale.id)}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
                             </div>
                             <div style="display: flex; align-items: center;">
                                 <input type="checkbox" id="clear_${Helpers.escapeHtml(sale.id)}" onchange="window.app.wholesaleSales.markSaleAsCleared('${Helpers.escapeJsAttr(sale.id)}')" style="margin-right: 8px; transform: scale(1.2);" />

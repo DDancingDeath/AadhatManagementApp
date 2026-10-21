@@ -464,6 +464,7 @@ const BillingManager = {
             }
             draft.items = [...billItems];
             draft.weights = [...weights];
+            draft.pendingBill = PurchaseManager.getPendingBill();
             draft.customerName = Helpers.getInputText('customerName');
             draft.laborCharges = Helpers.getInputNumber('manualLaborCharges');
             draft.comments = Helpers.getInputText('billComments');
@@ -489,6 +490,7 @@ const BillingManager = {
             }
             draft.items = [...saleItems];
             draft.weights = [...saleWeights];
+            draft.pendingBill = RetailSaleManager.getPendingBill();
             draft.customerName = Helpers.getInputText('saleCustomerName');
             draft.comments = Helpers.getInputText('saleComments');
             draft.printComments = readPrintComments('salePrintComments');
@@ -604,6 +606,7 @@ const BillingManager = {
             if (draft.mode === 'purchase') {
                 PurchaseManager.setBillItems(draft.items || []);
                 PurchaseManager.setWeights(draft.weights || []);
+                PurchaseManager.setPendingBill(draft.pendingBill);
                 PurchaseManager.renderBill();
                 PurchaseManager.renderWeights();
                 if (draft.customerName) document.getElementById('customerName').value = draft.customerName;
@@ -613,6 +616,7 @@ const BillingManager = {
             } else {
                 RetailSaleManager.setSaleItems(draft.items || []);
                 RetailSaleManager.setSaleWeights(draft.weights || []);
+                RetailSaleManager.setPendingBill(draft.pendingBill);
                 RetailSaleManager.renderSalesBill();
                 RetailSaleManager.renderSaleWeights();
                 if (draft.customerName) document.getElementById('saleCustomerName').value = draft.customerName;
@@ -723,6 +727,7 @@ const BillingManager = {
             autoSaveData.purchase = {
                 items: billItems,
                 weights: weights,
+                pendingBill: PurchaseManager.getPendingBill(),
                 typedWeight: document.getElementById('newWeight')?.value || '',
                 selectedItem: Helpers.getInputText('billItem'),
                 rate: Helpers.getInputText('billRate'),
@@ -736,6 +741,7 @@ const BillingManager = {
             autoSaveData.sale = {
                 items: saleItems,
                 weights: saleWeights,
+                pendingBill: RetailSaleManager.getPendingBill(),
                 typedWeight: Helpers.getInputText('saleWeight'),
                 selectedItem: Helpers.getInputText('saleItem'),
                 rate: Helpers.getInputText('saleRate'),
@@ -818,6 +824,7 @@ const BillingManager = {
             if (purchaseData.items || purchaseData.weights || purchaseData.selectedItem || purchaseData.rate) {
                 PurchaseManager.setBillItems(purchaseData.items || []);
                 PurchaseManager.setWeights(purchaseData.weights || []);
+                PurchaseManager.setPendingBill(purchaseData.pendingBill);
                 
                 if (purchaseData.selectedItem) {
                     const itemSelect = document.getElementById('billItem');
@@ -853,6 +860,7 @@ const BillingManager = {
             if (saleData.items || saleData.weights || saleData.selectedItem || saleData.rate) {
                 RetailSaleManager.setSaleItems(saleData.items || []);
                 RetailSaleManager.setSaleWeights(saleData.weights || []);
+                RetailSaleManager.setPendingBill(saleData.pendingBill);
                 
                 if (saleData.selectedItem) {
                     const saleItemSelect = document.getElementById('saleItem');

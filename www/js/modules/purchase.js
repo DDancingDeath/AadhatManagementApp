@@ -30,6 +30,15 @@ let billItems = [];
 let weights = [];
 
 /**
+ * Id (and bill number, once issued) of the bill being entered. Created with the
+ * bill and reused by every save attempt, so a retry after a timeout overwrites
+ * the same document instead of creating a second bill (#70). Cleared only after
+ * a confirmed save or when the bill is discarded.
+ * @type {{id: string, billNumber: (string|null)}|null}
+ */
+let pendingBill = null;
+
+/**
  * Purchase Manager - Handles all purchase operations
  * @namespace PurchaseManager
  */
@@ -177,6 +186,7 @@ const PurchaseManager = {
             UIManager.showToast('Item not found');
             return;
         }
+        this.ensurePendingBill();
         
         const qty = weights.reduce((sum, w) => sum + w, 0);
         const total = Math.round(qty * rate);
@@ -588,11 +598,12 @@ const PurchaseManager = {
         
         try {
             UIManager.showLoading();
-            const billNumber = await Helpers.generateBillNumber('P', 'purchases');
+            const pending = this.ensurePendingBill();
+            if (!pending.billNumber) pending.billNumber = await Helpers.generateBillNumber('P', 'purchases');
             
             const bill = {
-                id: Helpers.generateId(),
-                billNumber,
+                id: pending.id,
+                billNumber: pending.billNumber,
                 items: billItems,
                 billTotal,
                 laborCharges,
@@ -619,7 +630,7 @@ const PurchaseManager = {
                 }
             };
             
-            const writePromise = FirebaseService.savePurchase(bill);
+            const writePromise = FirebaseService.savePurchase(bill, { merge: true });
             if (typeof options.onWriteIssued === 'function') {
                 options.onWriteIssued(bill);
             }
@@ -639,6 +650,7 @@ const PurchaseManager = {
             ]);
             
             // Clear bill
+            pendingBill = null;
             billItems = [];
             weights = [];
             this.renderBill();
@@ -683,6 +695,7 @@ const PurchaseManager = {
      * Clear the current bill
      */
     clearBill() {
+        pendingBill = null;
         billItems = [];
         weights = [];
         this.renderBill();
@@ -729,6 +742,25 @@ const PurchaseManager = {
     },
 
     // -------------------- STATE ACCESS --------------------
+
+    /**
+     * Id/bill number of the bill being entered, created on first use (#70)
+     * @returns {{id: string, billNumber: (string|null)}}
+     */
+    ensurePendingBill() {
+        if (!pendingBill) pendingBill = { id: Helpers.generateId(), billNumber: null };
+        return pendingBill;
+    },
+
+    /** @returns {{id: string, billNumber: (string|null)}|null} for auto-save / drafts */
+    getPendingBill() {
+        return pendingBill ? { ...pendingBill } : null;
+    },
+
+    /** Restore the bill id from an auto-save / draft. */
+    setPendingBill(pending) {
+        pendingBill = pending && pending.id ? { id: String(pending.id), billNumber: pending.billNumber || null } : null;
+    },
 
     /**
      * Get current bill items

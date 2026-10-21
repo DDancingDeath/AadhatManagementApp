@@ -637,14 +637,19 @@ function prepareStockRecord(collKey, record, isNew) {
     if (HISTORY_SPEC[collKey].dues) record.openDue = hasDue(collKey, record);
 }
 
-/** Creates (or overwrites by id) a bill and keeps memory/checkpoint in step. @private */
-async function saveBill(collKey, record, label) {
+/**
+ * Creates (or overwrites by id) a bill and keeps memory/checkpoint in step.
+ * With `merge`, a retry of the same new bill (same id) updates that one doc and
+ * keeps fields written meanwhile by other devices (e.g. payments[]). @private
+ */
+async function saveBill(collKey, record, label, { merge = false } = {}) {
     if (!record.userId && AppState.currentUser) record.userId = AppState.currentUser.uid;
     if (!record.userName && AppState.userName) record.userName = AppState.userName;
     const previous = record.id ? findRecord(collKey, record.id) : null;
     prepareStockRecord(collKey, record, !previous);
     if (!record.id) record.id = getDb().collection(col(collKey)).doc().id;
-    const write = getDb().collection(col(collKey)).doc(String(record.id)).set(record);
+    const docRef = getDb().collection(col(collKey)).doc(String(record.id));
+    const write = merge ? docRef.set(record, { merge: true }) : docRef.set(record);
     noteStockWrite(collKey, previous, record);
     noteLocalRecordWrite(collKey, String(record.id), record);
     await settleWrite(write, label);
@@ -1669,8 +1674,8 @@ const FirebaseService = {
      * @param {number} purchase.total - Total purchase amount
      * @returns {Promise<Object>} The saved purchase with ID
      */
-    async savePurchase(purchase) {
-        return saveBill('purchases', purchase, 'savePurchase');
+    async savePurchase(purchase, options) {
+        return saveBill('purchases', purchase, 'savePurchase', options);
     },
 
     /**
@@ -1716,8 +1721,8 @@ const FirebaseService = {
      * @param {number} sale.total - Total sale amount
      * @returns {Promise<Object>} The saved sale with ID
      */
-    async saveWholesaleSale(sale) {
-        return saveBill('wholesaleSales', sale, 'saveWholesaleSale');
+    async saveWholesaleSale(sale, options) {
+        return saveBill('wholesaleSales', sale, 'saveWholesaleSale', options);
     },
 
     /**
@@ -1743,8 +1748,8 @@ const FirebaseService = {
      * @param {number} sale.total - Total sale amount
      * @returns {Promise<Object>} The saved sale with ID
      */
-    async saveRetailSale(sale) {
-        return saveBill('retailSales', sale, 'saveRetailSale');
+    async saveRetailSale(sale, options) {
+        return saveBill('retailSales', sale, 'saveRetailSale', options);
     },
 
     /**

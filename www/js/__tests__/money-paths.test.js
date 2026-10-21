@@ -63,6 +63,8 @@ afterEach(() => {
     jest.restoreAllMocks();
     PurchaseManager.setBillItems([]);
     PurchaseManager.setWeights([]);
+    PurchaseManager.setPendingBill(null);
+    RetailSaleManager.setPendingBill(null);
     RetailSaleManager.setSaleItems([]);
     RetailSaleManager.setSaleWeights([]);
 });
@@ -208,6 +210,34 @@ describe('new purchase save', () => {
         expect(await second).toBeUndefined();
     });
 
+    test('a retry after a timeout writes the same bill id and number again — one bill (#70)', async () => {
+        await buildBill();
+        setVal('cashPayment', 2568);
+        savePurchase.mockRejectedValueOnce(new Error('Timed out'));
+        await expect(PurchaseManager.saveBillToHistory()).rejects.toThrow('Timed out');
+        const saved = await PurchaseManager.saveBillToHistory();
+        expect(savePurchase).toHaveBeenCalledTimes(2);
+        const [first, second] = savePurchase.mock.calls;
+        expect(second[0].id).toBe(first[0].id);
+        expect(second[0].billNumber).toBe(first[0].billNumber);
+        expect(second[1]).toEqual({ merge: true });
+        expect(Helpers.generateBillNumber).toHaveBeenCalledTimes(1);
+        expect(saved.id).toBe(first[0].id);
+        // The next bill gets a new id
+        await buildBill();
+        setVal('cashPayment', 2568);
+        expect((await PurchaseManager.saveBillToHistory()).id).not.toBe(saved.id);
+    });
+
+    test('a bill restored from auto-save/draft keeps its id (#70)', async () => {
+        PurchaseManager.setPendingBill({ id: 'restored-1', billNumber: 'P20261021-007' });
+        await buildBill();
+        setVal('cashPayment', 2568);
+        expect(await PurchaseManager.saveBillToHistory()).toMatchObject({ id: 'restored-1', billNumber: 'P20261021-007' });
+        expect(Helpers.generateBillNumber).not.toHaveBeenCalled();
+        expect(PurchaseManager.getPendingBill()).toBeNull();
+    });
+
     test('a failed write keeps the bill in the editor', async () => {
         await buildBill();
         setVal('cashPayment', 2568);
@@ -326,6 +356,27 @@ describe('recording a due payment (Outstanding)', () => {
         expect(doc.openDue).toBe(true);
         expect(AppState.retailSalesHistory[0].dueAmount).toBe(295);
         expect(toast).toHaveBeenCalledWith('✓ Payment of ₹200 recorded');
+    });
+
+    test('a double tap on Record saves one payment; a retried payment id is not added twice (#70)', async () => {
+        fake.seed('retailSales', [RETAIL]);
+        AppState.retailSalesHistory = [{ ...RETAIL }];
+        setVal('payment_r1', 100);
+        await Promise.all([
+            OutstandingManager.recordPayment('r1', 'retail'),
+            OutstandingManager.recordPayment('r1', 'retail')
+        ]);
+        let doc = fake.raw('retailSales').get('r1');
+        expect(doc.payments).toHaveLength(1);
+        expect(doc.payment.due).toBe(395);
+
+        // The server already has this entry (the first attempt committed but the phone saw a timeout)
+        const entry = doc.payments[0];
+        await OutstandingManager.applyPaymentTransaction('retail', { id: 'r1' }, 100, { ...entry });
+        doc = fake.raw('retailSales').get('r1');
+        expect(doc.payments).toHaveLength(1);
+        expect(doc.payment.due).toBe(395);
+        expect(doc.dueAmount).toBe(395);
     });
 
     test('a full payment clears the due on both fields and closes openDue', async () => {

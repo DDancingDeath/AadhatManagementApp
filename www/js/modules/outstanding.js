@@ -20,6 +20,9 @@ const COLLECTION_BY_TYPE = { purchase: 'purchases', retail: 'retailSales', whole
 
 const colName = (name) => (window.getCollection ? window.getCollection(name) : name);
 
+/** Record buttons disabled while a due payment is being saved (#70) */
+const RECORD_PAYMENT_BUTTONS = '[data-record-payment]';
+
 /**
  * Outstanding Manager - Manages due payments
  * @class OutstandingManager
@@ -199,7 +202,7 @@ export class OutstandingManager {
                         <label style="flex-shrink: 0;">${isPurchase ? 'Pay' : 'Received'}:</label>
                         <input type="number" inputmode="decimal" min="0" id="payment_${Helpers.escapeHtml(transaction.id)}" placeholder="Cash ₹" aria-label="Cash amount" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
                         <input type="number" inputmode="decimal" min="0" id="paymentOnline_${Helpers.escapeHtml(transaction.id)}" placeholder="Online ₹" aria-label="Online amount" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
-                        <button onclick="window.app.outstanding.recordPayment('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">Record</button>
+                        <button data-record-payment onclick="window.app.outstanding.recordPayment('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">Record</button>
                     </div>
                     <div style="margin-top: 8px;">
                         <button type="button" onclick="window.app.outstanding.markAsCleared('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background: white; color: #333; border: 1px solid #999; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">Mark as Cleared…</button>
@@ -217,11 +220,36 @@ export class OutstandingManager {
         const onlineInput = document.getElementById(`paymentOnline_${transactionId}`);
         const cash = Number(paymentInput?.value) || 0;
         const online = Number(onlineInput?.value) || 0;
-        const ok = await this.recordDuePayment({ billType: transactionType, billId: transactionId, cash, online });
+        const entryId = this.paymentEntryId(paymentInput, `${round2(cash)}|${round2(online)}`);
+        const ok = await this.recordDuePayment({ billType: transactionType, billId: transactionId, cash, online, entryId });
         if (ok) {
+            this.clearPaymentEntryId(paymentInput);
             if (paymentInput) paymentInput.value = '';
             if (onlineInput) onlineInput.value = '';
         }
+    }
+
+    /**
+     * Id for the payment typed in `input`: kept while the same amount is retried,
+     * so a retry after a timeout cannot record the payment twice (#70).
+     * @param {HTMLInputElement|null} input
+     * @param {number|string} amountKey
+     * @returns {string}
+     */
+    static paymentEntryId(input, amountKey) {
+        if (!input) return Helpers.generateId();
+        if (!input.dataset.paymentId || input.dataset.paymentAmount !== String(amountKey)) {
+            input.dataset.paymentId = Helpers.generateId();
+            input.dataset.paymentAmount = String(amountKey);
+        }
+        return input.dataset.paymentId;
+    }
+
+    /** Forget the retry id once the payment is recorded. */
+    static clearPaymentEntryId(input) {
+        if (!input) return;
+        delete input.dataset.paymentId;
+        delete input.dataset.paymentAmount;
     }
 
     /** Bill of a type ('purchase' | 'retail' | 'wholesale') from AppState. */
@@ -243,9 +271,16 @@ export class OutstandingManager {
      * @param {number} args.cash Cash part
      * @param {number} [args.online=0] Online part
      * @param {string} [args.note]
+     * @param {string} [args.entryId] Payment id reused when the same payment is retried (#70)
      * @returns {Promise<boolean>} true when recorded
      */
-    static async recordDuePayment({ billType, billId, cash, online = 0, note = '', clear = false }) {
+    static async recordDuePayment(args) {
+        // One payment at a time: a double tap on Record saves one payment (#70)
+        const ok = await Helpers.runExclusive('due-payment', RECORD_PAYMENT_BUTTONS, () => this._recordDuePayment(args));
+        return ok === true;
+    }
+
+    static async _recordDuePayment({ billType, billId, cash, online = 0, note = '', clear = false, entryId = null }) {
         try {
             const transaction = this.findBill(billType, billId);
             if (!transaction) {
@@ -273,6 +308,7 @@ export class OutstandingManager {
                 recordedBy: AppState.userName || (AppState.currentUser ? AppState.currentUser.email : 'Unknown')
             };
             if (note) entry.note = note;
+            if (entryId) entry.id = entryId;
 
             // Server-side read-modify-write so concurrent payments from two devices can't overwrite each other
             if (clear) entry.settlesDue = true;
@@ -391,6 +427,14 @@ export class OutstandingManager {
             if (!snap.exists) return null;
             const fresh = snap.data() || {};
             const pay = readPayment(fresh);
+            const entries = Array.isArray(fresh.payments) ? fresh.payments : [];
+
+            // A retry of a payment that already reached the server: nothing to add (#70)
+            if (entry?.id && entries.some(p => p && p.id === entry.id)) {
+                const current = { payment: fresh.payment, payments: entries, openDue: fresh.openDue };
+                if (Object.prototype.hasOwnProperty.call(fresh, 'dueAmount')) current.dueAmount = fresh.dueAmount;
+                return current;
+            }
 
             if (total > pay.due + PAYMENT_TOLERANCE) {
                 const err = new Error('Payment amount exceeds outstanding amount');
