@@ -14,6 +14,8 @@ export const AppStartTest = {
     reasons: { slow_start: 1, load_failed: 2 },
     timeoutMs: 2 * 60 * 1000,
     target: 95,
+    // Closed while still loading offline: not an app failure.
+    onAbandon: (flags) => (flags.offline ? 'discard' : 'fail'),
     /**
      * @param {{loadFailed?: boolean}} props
      * @param {{blocked?: boolean, signedOut?: boolean}} flags

@@ -5,7 +5,7 @@
  */
 import {
     createTip, sanitizeProps, evaluatePolicy, normalizePolicies, validateDeclaration, durationBucket,
-    dayKeyOf, mergeDelta, SYSTEM_REASONS, MAX_FAILURES_PER_DAY, STORE_KEYS
+    dayKeyOf, mergeDelta, SYSTEM_REASONS, MAX_FAILURES_PER_DAY, STORE_KEYS, TAB_STALE_MS
 } from '../tip/tip.js';
 import { planFlush, buildHealthDoc, buildFailureDoc, makeDeviceId, FLUSH_INTERVAL_MS } from '../tip/report.js';
 
@@ -19,10 +19,10 @@ class MemoryStore {
 const T0 = new Date(2026, 9, 23, 10, 0, 0).getTime();
 const DAY = dayKeyOf(T0);
 
-function setup({ online = true, store = new MemoryStore() } = {}) {
-    let now = T0;
+function setup({ online = true, store = new MemoryStore(), tabId, start = T0 } = {}) {
+    let now = start;
     const clock = { advance: (ms) => { now += ms; }, now: () => now };
-    const tip = createTip({ now: () => now, store, appVersion: '1.6.0', buildId: 'b1', isOnline: () => online });
+    const tip = createTip({ now: () => now, store, appVersion: '1.6.0', buildId: 'b1', isOnline: () => online, tabId });
     tip.declareTest({
         id: 'Demo',
         reasons: { bad_total: 1, slow: 2 },
@@ -103,10 +103,72 @@ describe('TIP abandoned / expired / error watcher', () => {
         const first = setup({ store });
         first.tip.start('Demo');
         first.tip.takeDelta();
-        const second = setup({ store });
+        const second = setup({ store, start: T0 + TAB_STALE_MS + 1000 });
         expect(second.tip.recoverAbandoned()).toBe(1);
         expect(counts(second.tip)).toMatchObject({ n: { a: 1 }, r: { [`a${SYSTEM_REASONS.abandoned}`]: 1 } });
         expect(second.tip.recoverAbandoned()).toBe(0);
+    });
+
+    it('two open tabs: no double counting, and a live tab\'s runs are not "abandoned"', () => {
+        const store = new MemoryStore();
+        const a = setup({ store, tabId: 'tabA' });
+        const b = setup({ store, tabId: 'tabB' });
+        const runA = a.tip.start('Demo');
+        const runB = b.tip.start('Demo');
+        expect(b.tip.recoverAbandoned()).toBe(0);
+        expect(a.tip.recoverAbandoned()).toBe(0);
+        runA.complete();
+        expect(JSON.parse(store.getItem(STORE_KEYS.active))).toEqual({ [runB.id]: expect.objectContaining({ tab: 'tabB' }) });
+        runB.complete();
+        b.tip.start('Demo').complete();
+        // One flush (from either tab) takes everything once; the other finds nothing.
+        expect(a.tip.takeDelta()[DAY]['1_6_0'].Demo.n.s).toBe(3);
+        expect(b.tip.hasPending()).toBe(false);
+        expect(b.tip.takeDelta()).toEqual({});
+        expect(a.tip.history('Demo')).toHaveLength(3);
+    });
+
+    it('a tab whose heartbeat went stale (> 2 min) has its open runs recovered by another tab, once', () => {
+        const store = new MemoryStore();
+        const a = setup({ store, tabId: 'tabA' });
+        const b = setup({ store, tabId: 'tabB' });
+        a.tip.start('Demo');
+        b.tip.start('Demo');
+        b.clock.advance(TAB_STALE_MS - 1000);
+        b.tip.heartbeat();
+        expect(b.tip.recoverAbandoned()).toBe(0); // tabA still fresh enough
+        b.clock.advance(2000);
+        b.tip.heartbeat();
+        expect(b.tip.recoverAbandoned()).toBe(1); // tabA gone; tabB's own run untouched
+        expect(b.tip.activeCount()).toBe(1);
+        expect(b.tip.recoverAbandoned()).toBe(0);
+        // a tab that closes for good (endTab) is recovered right away
+        const c = setup({ store, tabId: 'tabC', start: b.clock.now() });
+        c.tip.start('Demo');
+        c.tip.endTab();
+        expect(b.tip.recoverAbandoned()).toBe(1);
+    });
+
+    it('onAbandon lets a scenario discard/ignore an abandoned run (e.g. queued offline save)', () => {
+        const store = new MemoryStore();
+        const a = setup({ store, tabId: 'tabA' });
+        a.tip.declareTest({ id: 'Queued', onAbandon: (flags) => (flags.offline ? 'discard' : 'fail'), evaluate: () => 'succeed' });
+        a.tip.start('Queued', { flags: { offline: true } });
+        a.tip.start('Queued', { flags: { offline: false } });
+        a.tip.endTab();
+        const b = setup({ store, tabId: 'tabB' });
+        b.tip.declareTest({ id: 'Queued', onAbandon: (flags) => (flags.offline ? 'discard' : 'fail'), evaluate: () => 'succeed' });
+        expect(b.tip.recoverAbandoned()).toBe(2);
+        expect(counts(b.tip, 'Queued').n).toEqual({ x: 1, a: 1 });
+        expect(b.tip.takeFailures().map(f => f.result)).toEqual(['abandoned']);
+        expect(() => validateDeclaration({ id: 'Q1', onAbandon: 'maybe', evaluate: () => 'succeed' })).toThrow();
+    });
+
+    it('AppStart completes before the auto-save restore prompt (main.js order)', () => {
+        const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'main.js'), 'utf8');
+        const done = src.indexOf('appStart.complete();');
+        expect(done).toBeGreaterThan(0);
+        expect(done).toBeLessThan(src.indexOf('await BillingManager.checkAutoSave()'));
     });
 
     it('a run past its timeout is reported as expired by sweep()', () => {

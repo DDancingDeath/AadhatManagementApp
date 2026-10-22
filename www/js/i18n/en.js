@@ -873,5 +873,6 @@ export default {
     'ui.health.policy_ok': "fine on this device ({runs} recent runs)",
     'ui.health.no_policies': "No rollback rules yet.",
     'ui.health.banner_line': "{check}: only {rate}% passed today (target {target}%, {runs} runs)",
-    'ui.health.open_health': "Open app health"
+    'ui.health.open_health': "Open app health",
+    'ui.health.policy_effect': "billChecksBlocking with \"telemetryOnly\": false — on a phone where it trips, the owner and managers are no longer asked for a reason: a block they could override becomes a warning and is saved as an \"auto-rollback\" override (and in the audit log). Other members are still blocked. Hard blocks (payment split, name for Due, bad rate/quantity) always stop the save."
 };

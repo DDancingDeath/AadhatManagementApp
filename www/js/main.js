@@ -354,6 +354,10 @@ async function initializeUserData() {
         BillingManager.updateDraftCount();
         ExpensesManager.updateExpensePersonOptions();
         ExpensesManager.renderexpensesHistory();
+
+        // TIP AppStart (#217): the first screen is usable now; the auto-save
+        // restore prompt below waits for the user and must not count as start time.
+        appStart.complete();
         
         // Check for auto-saved bill
         await BillingManager.checkAutoSave();
@@ -371,7 +375,6 @@ async function initializeUserData() {
         
         UIManager.hideLoading();
         markStartup('app-shown', { online: navigator.onLine });
-        appStart.complete();
         noteStartup('listeners', FirebaseService.getStartupListenerInfo?.() || {});
         logStartupTimings();
         FirebaseService.prepareStock({ defer: true })

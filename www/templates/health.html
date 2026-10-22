@@ -39,6 +39,7 @@
             <section class="modern-card health-card" id="healthPolicyCard" style="display: none;">
                 <h3 data-i18n="ui.health.auto_rollback">Automatic rollback</h3>
                 <p class="health-muted" data-i18n="ui.health.policy_help">If a check keeps failing on a phone, that phone can switch the feature to its safe behaviour. "Report only" just reports it.</p>
+                <p class="health-policy-effect" data-i18n="ui.health.policy_effect">billChecksBlocking with "telemetryOnly": false — on a phone where it trips, the owner and managers are no longer asked for a reason: a block they could override becomes a warning and is saved as an "auto-rollback" override (and in the audit log). Other members are still blocked. Hard blocks (payment split, name for Due, bad rate/quantity) always stop the save.</p>
                 <div id="healthPolicyState"></div>
                 <label for="healthPolicies" class="health-muted" data-i18n="ui.health.policies_json">Rules (JSON)</label>
                 <textarea id="healthPolicies" class="health-policies" rows="7" spellcheck="false"></textarea>

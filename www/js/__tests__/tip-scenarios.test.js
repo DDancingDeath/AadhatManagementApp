@@ -4,7 +4,7 @@
  */
 import { createTip, dayKeyOf } from '../tip/tip.js';
 import { AppStartTest, APP_START_FAIL_MS } from '../tip/scenarios/app-start.js';
-import { BillSaveTest, billSaveProps } from '../tip/scenarios/bill-save.js';
+import { BillSaveTest, billSaveProps, AUTO_ROLLBACK_REASON } from '../tip/scenarios/bill-save.js';
 import { PaymentRecordTest, paymentRecordProps, paymentErrorOutcome } from '../tip/scenarios/payment-record.js';
 import { CashCloseTest, cashCloseProps } from '../tip/scenarios/cash-close.js';
 
@@ -82,6 +82,25 @@ describe('BillSave', () => {
         expect(billSaveProps('wholesaleSales', bill({ overrides: [{ rule: 'oversell', at: T0 - 86400000 }] }), T0).overridden).toBe(false);
         h.tip.start('BillSave', { props }).complete();
         expect(h.outcome('BillSave')).toEqual({ result: 'w', reason: BillSaveTest.reasons.blocked_valid_bill });
+    });
+
+    it('app closed with the save queued offline → abandoned run is discarded, online → abandoned (fail)', () => {
+        const data = {};
+        const store = { getItem: (k) => (k in data ? data[k] : null), setItem: (k, v) => { data[k] = String(v); } };
+        const first = createTip({ now: () => T0, store, tabId: 'old' });
+        first.declareTest(BillSaveTest);
+        first.start('BillSave', { flags: { offline: true } });
+        first.start('BillSave', { flags: { offline: false } });
+        first.endTab();
+        const next = createTip({ now: () => T0 + 1000, store, tabId: 'new', appVersion: '1.6.0' });
+        next.declareTest(BillSaveTest);
+        expect(next.recoverAbandoned()).toBe(2);
+        const c = next.takeDelta()[dayKeyOf(T0)].unknown.BillSave;
+        expect(c.n).toEqual({ x: 1, a: 1 });
+    });
+
+    it('auto-rollback overrides do not count as "blocked valid bill"', () => {
+        expect(billSaveProps('wholesaleSales', bill({ overrides: [{ rule: 'oversell', reason: AUTO_ROLLBACK_REASON, at: T0 }] }), T0).overridden).toBe(false);
     });
 
     it('not acknowledged online → fail; offline save → discarded', () => {

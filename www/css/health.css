@@ -24,6 +24,7 @@
 .health-failures { display: flex; flex-direction: column; gap: 6px; }
 .health-failure { padding: 8px 10px; border: 1px solid #e5e7eb; border-left: 4px solid #dc2626; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
 .health-policies { width: 100%; box-sizing: border-box; font-family: monospace; font-size: 12px; margin: 6px 0; }
+.health-policy-effect { font-size: 13px; margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
 
 /* Today: red banner when a check is below its target */
 .tip-health-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;

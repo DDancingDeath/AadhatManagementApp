@@ -60,8 +60,12 @@ export const STORE_KEYS = {
     failures: 'aadhat.tip.failures',
     failCount: 'aadhat.tip.failCount',
     history: 'aadhat.tip.history',
-    rolledBack: 'aadhat.tip.rolledBack'
+    rolledBack: 'aadhat.tip.rolledBack',
+    tabs: 'aadhat.tip.tabs'
 };
+
+/** A tab whose heartbeat is older than this is gone; its open runs were abandoned. */
+export const TAB_STALE_MS = 2 * 60 * 1000;
 
 const ID_RE = /^[A-Za-z][A-Za-z0-9]{1,31}$/;
 const PROP_KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
@@ -130,6 +134,10 @@ export function validateDeclaration(decl) {
         if (!Number.isInteger(code) || code < 1 || code > MAX_REASON) throw new Error(`TIP: ${decl.id}.${name} code out of range`);
         if (seen.has(code)) throw new Error(`TIP: ${decl.id} duplicate reason code ${code}`);
         seen.add(code);
+    }
+    const ab = decl.onAbandon;
+    if (ab !== undefined && typeof ab !== 'function' && !['fail', 'ignore', 'discard'].includes(ab)) {
+        throw new Error(`TIP: ${decl.id} bad onAbandon ${ab}`);
     }
     return true;
 }
@@ -233,6 +241,7 @@ export function createTip(opts = {}) {
     const store = opts.store || null;
     const isOnline = opts.isOnline || (() => true);
     const log = opts.log || (() => {});
+    const tabId = String(opts.tabId || `t${Math.random().toString(36).slice(2, 10)}`);
     const tests = new Map();
     const active = new Map();
     let enabled = true;
@@ -241,27 +250,41 @@ export function createTip(opts = {}) {
     let buildId = opts.buildId || '';
     let seq = 0;
 
+    // Shared state lives in the store (localStorage is shared by every tab of
+    // the app), so every operation re-reads it before changing it: two open
+    // tabs never double-count or overwrite each other. `mem` keeps working
+    // when there is no store or it fails (private mode / full).
+    const mem = {};
     const read = (key, fallback) => {
         try {
-            const raw = store && store.getItem(key);
-            return raw ? JSON.parse(raw) : fallback;
-        } catch (_) { return fallback; }
+            const raw = store ? store.getItem(key) : null;
+            if (raw) return JSON.parse(raw);
+        } catch (_) { /* fall back to memory */ }
+        return mem[key] !== undefined ? JSON.parse(JSON.stringify(mem[key])) : fallback;
     };
     const write = (key, value) => {
+        mem[key] = value;
         try { if (store) store.setItem(key, JSON.stringify(value)); } catch (_) { /* full / private mode */ }
     };
     const guard = (label, fn, fallback) => {
         try { return fn(); } catch (e) { log(`TIP ${label} failed`, e); return fallback; }
     };
 
-    let pending = read(STORE_KEYS.pending, {});
-    let failures = read(STORE_KEYS.failures, []);
-    const history = read(STORE_KEYS.history, {});
+    /** This tab is alive (other tabs only recover runs of tabs silent for > TAB_STALE_MS). */
+    function heartbeat() {
+        const tabs = read(STORE_KEYS.tabs, {});
+        const t = now();
+        Object.keys(tabs).forEach(id => { if (t - tabs[id] > 86400000) delete tabs[id]; });
+        tabs[tabId] = t;
+        write(STORE_KEYS.tabs, tabs);
+    }
 
+    /** Replace this tab's entries in the shared active-run map, keep other tabs'. */
     const persistActive = () => {
-        const out = {};
-        active.forEach((run, id) => { out[id] = { t: run.test, s: run.startedAt, f: run.flags, v: run.version }; });
-        write(STORE_KEYS.active, out);
+        const all = read(STORE_KEYS.active, {});
+        Object.keys(all).forEach(id => { if (all[id]?.tab === tabId) delete all[id]; });
+        active.forEach((run, id) => { all[id] = { t: run.test, s: run.startedAt, f: run.flags, v: run.version, tab: tabId }; });
+        write(STORE_KEYS.active, all);
     };
 
     function nextFailureSeq(day) {
@@ -282,9 +305,9 @@ export function createTip(opts = {}) {
             c.d = { [durationBucket(durationMs)]: 1 };
             c.ms = Math.round(durationMs);
         }
-        pending = mergeDelta(pending, { [day]: { [versionKey(version)]: { [testId]: c } } });
-        write(STORE_KEYS.pending, pending);
+        write(STORE_KEYS.pending, mergeDelta(read(STORE_KEYS.pending, {}), { [day]: { [versionKey(version)]: { [testId]: c } } }));
 
+        const history = read(STORE_KEYS.history, {});
         const h = history[testId] = (history[testId] || []);
         h.push({ r: key, c: reasonCode || 0 });
         if (h.length > HISTORY_LEN) h.splice(0, h.length - HISTORY_LEN);
@@ -294,6 +317,7 @@ export function createTip(opts = {}) {
         if (failure) {
             const n = nextFailureSeq(day);
             if (n) {
+                const failures = read(STORE_KEYS.failures, []);
                 failures.push({
                     seq: n, day, test: testId, result, reason: reasonCode || 0,
                     reasonName: reasonName || '', flags: flags || {}, props: props || {},
@@ -388,7 +412,7 @@ export function createTip(opts = {}) {
         const policy = policies[key];
         if (!policy) return { tripped: false, active: false, runs: 0, passrate: null };
         const test = tests.get(policy.test);
-        const state = evaluatePolicy(policy, history[policy.test], test ? test.reasons : {});
+        const state = evaluatePolicy(policy, read(STORE_KEYS.history, {})[policy.test], test ? test.reasons : {});
         if (state.tripped) {
             const day = dayKeyOf(now());
             const seen = read(STORE_KEYS.rolledBack, {});
@@ -419,7 +443,7 @@ export function createTip(opts = {}) {
                 if (!enabled || !tests.has(testId)) return NOOP_RUN;
                 const t = now();
                 const run = {
-                    id: `${testId}-${t.toString(36)}-${(seq++).toString(36)}`,
+                    id: `${testId}-${tabId}-${t.toString(36)}-${(seq++).toString(36)}`,
                     test: testId,
                     startedAt: t,
                     flags: sanitizeProps(flags).clean,
@@ -428,6 +452,7 @@ export function createTip(opts = {}) {
                     version: appVersion
                 };
                 active.set(run.id, run);
+                heartbeat();
                 persistActive();
                 return makeRun(run);
             }, NOOP_RUN);
@@ -450,23 +475,39 @@ export function createTip(opts = {}) {
         },
 
         /**
-         * Runs left open by an earlier app session (closed / killed / crashed)
-         * are reported as abandoned. Call once at startup, before start().
-         * @returns {number} runs reported
+         * Runs left open by a tab that is gone (app closed / killed / crashed:
+         * its heartbeat is older than TAB_STALE_MS) are reported with the
+         * test's abandon policy: `onAbandon` ('fail' default → `abandoned`,
+         * 'ignore', 'discard', or a function of the saved flags). Runs of this
+         * tab and of live tabs are left alone. Safe to call repeatedly.
+         * @returns {number} runs recovered
          */
         recoverAbandoned() {
             return guard('recoverAbandoned', () => {
                 const saved = read(STORE_KEYS.active, {});
+                const tabs = read(STORE_KEYS.tabs, {});
+                const t = now();
                 let n = 0;
                 Object.entries(saved || {}).forEach(([id, r]) => {
-                    if (active.has(id) || !r || !tests.has(r.t)) return;
-                    if (now() - (Number(r.s) || 0) > ABANDON_MAX_AGE_MS) return;
-                    record(r.t, 'abandoned', SYSTEM_REASONS.abandoned, 'abandoned', null, {
-                        version: r.v || appVersion, at: Number(r.s) || now(), flags: r.f || {}
-                    });
+                    if (!r || r.tab === tabId || active.has(id)) return;
+                    if (r.tab && tabs[r.tab] && t - tabs[r.tab] <= TAB_STALE_MS) return;
+                    delete saved[id];
+                    const test = tests.get(r.t);
+                    if (!test || t - (Number(r.s) || 0) > ABANDON_MAX_AGE_MS) return;
+                    const flags = r.f || {};
+                    let policy = 'fail';
+                    try {
+                        policy = typeof test.onAbandon === 'function' ? test.onAbandon(flags) : (test.onAbandon || 'fail');
+                    } catch (e) { log(`TIP ${r.t}.onAbandon threw`, e); }
+                    const at = Number(r.s) || t;
+                    if (policy === 'discard' || policy === 'ignore') {
+                        record(r.t, policy, 0, null, null, { version: r.v || appVersion, at });
+                    } else {
+                        record(r.t, 'abandoned', SYSTEM_REASONS.abandoned, 'abandoned', null, { version: r.v || appVersion, at, flags });
+                    }
                     n++;
                 });
-                persistActive();
+                write(STORE_KEYS.active, saved);
                 return n;
             }, 0);
         },
@@ -489,36 +530,45 @@ export function createTip(opts = {}) {
             return guard('policyState', () => policyState(key), { tripped: false, active: false, runs: 0, passrate: null });
         },
 
-        /** Counter delta not yet written; clears it. */
+        /** Counter delta not yet written (all tabs); clears it in one read-modify-write. */
         takeDelta() {
-            const out = pending;
-            pending = {};
-            write(STORE_KEYS.pending, pending);
+            const out = read(STORE_KEYS.pending, {});
+            write(STORE_KEYS.pending, {});
             return out;
         },
         /** Put back a delta whose write failed. */
         restoreDelta(delta) {
-            guard('restoreDelta', () => { pending = mergeDelta(pending, delta); write(STORE_KEYS.pending, pending); });
+            guard('restoreDelta', () => write(STORE_KEYS.pending, mergeDelta(read(STORE_KEYS.pending, {}), delta)));
         },
-        hasPending() { return Object.keys(pending).length > 0; },
+        hasPending() { return Object.keys(read(STORE_KEYS.pending, {})).length > 0; },
 
         takeFailures() {
-            const out = failures;
-            failures = [];
-            write(STORE_KEYS.failures, failures);
+            const out = read(STORE_KEYS.failures, []);
+            write(STORE_KEYS.failures, []);
             return out;
         },
         restoreFailures(list) {
             guard('restoreFailures', () => {
-                failures = [...(list || []), ...failures].slice(0, MAX_FAILURES_PER_DAY * 2);
-                write(STORE_KEYS.failures, failures);
+                write(STORE_KEYS.failures, [...(list || []), ...read(STORE_KEYS.failures, [])].slice(0, MAX_FAILURES_PER_DAY * 2));
             });
         },
-        hasFailures() { return failures.length > 0; },
+        hasFailures() { return read(STORE_KEYS.failures, []).length > 0; },
+
+        /** Mark this tab alive (call every ~30 s). */
+        heartbeat() { guard('heartbeat', heartbeat); },
+        /** This tab is closing for good: other tabs may recover its open runs right away. */
+        endTab() {
+            guard('endTab', () => {
+                const tabs = read(STORE_KEYS.tabs, {});
+                delete tabs[tabId];
+                write(STORE_KEYS.tabs, tabs);
+            });
+        },
+        tabId() { return tabId; },
 
         /** For tests / diagnostics. */
         activeCount() { return active.size; },
-        history(testId) { return [...(history[testId] || [])]; },
+        history(testId) { return [...(read(STORE_KEYS.history, {})[testId] || [])]; },
         tests() { return [...tests.keys()]; },
         reasonsOf(testId) { return { ...(tests.get(testId)?.reasons || {}) }; }
     };

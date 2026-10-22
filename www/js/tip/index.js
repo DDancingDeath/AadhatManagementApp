@@ -8,7 +8,7 @@
  * @module tip/index
  */
 
-import { createTip, dayKeyOf } from './tip.js';
+import { createTip, dayKeyOf, STORE_KEYS } from './tip.js';
 import { planFlush, makeDeviceId } from './report.js';
 import { addDays } from './health-stats.js';
 import { AppStartTest } from './scenarios/app-start.js';
@@ -25,6 +25,7 @@ const KEYS = {
     device: 'aadhat.tip.device'
 };
 const SWEEP_MS = 60 * 1000;
+const HEARTBEAT_MS = 30 * 1000;
 const WRITE_WAIT_MS = 20 * 1000;
 /** Failure-sample retry pause after a failed write (rules not deployed yet, quota …). */
 const FAILURE_BACKOFF_MS = 30 * 60 * 1000;
@@ -46,8 +47,21 @@ export const tip = createTip({ store, appVersion: APP_VERSION, isOnline, log: wa
 SCENARIOS.forEach(decl => {
     try { tip.declareTest(decl); } catch (e) { warn('declare failed', e); }
 });
-// Runs still open from the previous session were abandoned (app closed / killed).
+// Runs left open by a tab that is gone (app closed / killed) were abandoned;
+// runs of other open tabs (fresh heartbeat) are left alone.
+tip.heartbeat();
 tip.recoverAbandoned();
+if (typeof window !== 'undefined') {
+    try {
+        setInterval(() => tip.heartbeat(), HEARTBEAT_MS);
+        // Another tab closed for good: recover its open runs now instead of after TAB_STALE_MS.
+        window.addEventListener('storage', (e) => {
+            if (e.key === STORE_KEYS.tabs) tip.recoverAbandoned();
+        });
+        window.addEventListener('pagehide', (e) => { if (!e.persisted) tip.endTab(); });
+        window.addEventListener('pageshow', () => tip.heartbeat());
+    } catch (e) { warn('tab wiring failed', e); }
+}
 
 const readNum = (key) => {
     try { return Number(store?.getItem(key)) || 0; } catch (_) { return 0; }
@@ -164,7 +178,7 @@ export function startTipReporting({ sink: writer, buildId } = {}) {
         tip.setVersion(APP_VERSION, buildId);
         if (started || typeof window === 'undefined') return;
         started = true;
-        setInterval(() => { tip.sweep(); flushTip(); }, SWEEP_MS);
+        setInterval(() => { tip.sweep(); tip.recoverAbandoned(); flushTip(); }, SWEEP_MS);
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') { tip.sweep(); flushTip(); }
         });

@@ -22,6 +22,7 @@ import {
 import { hidePartyDue, renderPartyDue } from './party-due-line.js';
 import { getLang, t } from '../i18n/index.js';
 import { tip } from '../tip/index.js';
+import { AUTO_ROLLBACK_REASON } from '../tip/scenarios/bill-save.js';
 
 export const CHECK_DEBOUNCE_MS = 250;
 
@@ -30,6 +31,7 @@ export const CHECK_DEBOUNCE_MS = 250;
  * and is not telemetry-only, overridable blocks become warnings (safe mode).
  */
 export const BILL_CHECKS_BLOCKING_POLICY = 'billChecksBlocking';
+export { AUTO_ROLLBACK_REASON };
 
 const ICON = { block: '⛔', warn: '⚠️' };
 const CLASS = { block: 'bill-check-block', warn: 'bill-check-warn' };
@@ -353,14 +355,7 @@ export const BillChecksUI = {
         }
         lastIssues[kind] = issues;
         if (sectionOf(kind)) renderIssues(kind, issues);
-        const gate = saveGate(issues);
-        const { hardBlocks } = gate;
-        let { blocks, warns } = gate;
-        // Auto rollback (#217): hard blocks always stop; overridable ones only warn.
-        if (blocks.length > hardBlocks.length && tip.isRolledBack(BILL_CHECKS_BLOCKING_POLICY)) {
-            warns = [...warns, ...blocks.filter(b => b.overridable)];
-            blocks = hardBlocks;
-        }
+        const { blocks, hardBlocks, warns } = saveGate(issues);
         const stop = { ok: false, flags: [], overrides: [] };
         const by = AppState.currentUser?.uid || 'unknown';
 
@@ -371,7 +366,12 @@ export const BillChecksUI = {
         }
 
         let overrides = [];
-        if (blocks.length) {
+        // Auto rollback (#217): only someone who may override anyway (owner/manager)
+        // skips the reason prompt; the block is still recorded as an override with
+        // reason "auto-rollback" + audit entry. Everyone else stays blocked.
+        const autoOverride = blocks.length && canOverride(AppState.userRole) && tip.isRolledBack(BILL_CHECKS_BLOCKING_POLICY)
+            ? blocks : [];
+        if (blocks.length && !autoOverride.length) {
             if (!canOverride(AppState.userRole)) {
                 UIManager.showToast(text(blocks[0]));
                 focusIssue(kind, blocks[0]);
@@ -385,14 +385,21 @@ export const BillChecksUI = {
             }).catch(e => console.warn('Audit log failed:', e));
         }
 
-        if (warns.length) {
-            const list = warns.map(w => `${ICON.warn} ${text(w)}`).join('\n');
+        const confirmList = [...autoOverride, ...warns];
+        if (confirmList.length) {
+            const list = confirmList.map(w => `${ICON.warn} ${text(w)}`).join('\n');
             const ok = await UIManager.showModal(
                 t('msg.checks.save_anyway_list', { list }),
                 t('msg.checks.check_before_saving'),
                 true
             );
             if (!ok) return stop;
+        }
+        if (autoOverride.length) {
+            overrides = toOverrides(autoOverride, AUTO_ROLLBACK_REASON, by, Date.now());
+            AuditService.log(AuditService.ACTIONS.OVERRIDE_CHECK, {
+                kind, rules: overrides.map(o => o.rule), reason: AUTO_ROLLBACK_REASON
+            }).catch(e => console.warn('Audit log failed:', e));
         }
         return { ok: true, flags: toFlags(warns, by, Date.now()), overrides };
     }

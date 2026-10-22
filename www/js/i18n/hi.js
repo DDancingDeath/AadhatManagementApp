@@ -873,5 +873,6 @@ export default {
     'ui.health.policy_ok': "इस डिवाइस पर ठीक ({runs} हाल की बार)",
     'ui.health.no_policies': "अभी कोई रोलबैक नियम नहीं।",
     'ui.health.banner_line': "{check}: आज सिर्फ़ {rate}% पास (लक्ष्य {target}%, {runs} बार)",
-    'ui.health.open_health': "ऐप की सेहत खोलें"
+    'ui.health.open_health': "ऐप की सेहत खोलें",
+    'ui.health.policy_effect': "billChecksBlocking में \"telemetryOnly\": false — जिस फ़ोन पर यह लागू होगा, वहाँ मालिक और मैनेजर से वजह नहीं पूछी जाएगी: जो रोक वे हटा सकते थे, वह चेतावनी बन जाएगी और \"auto-rollback\" ओवरराइड के रूप में (ऑडिट लॉग में भी) सेव होगी। बाकी सदस्यों के लिए रोक बनी रहेगी। पक्की रोक (भुगतान का बँटवारा, उधार के लिए नाम, गलत रेट/मात्रा) हमेशा सेव रोकेगी।"
 };

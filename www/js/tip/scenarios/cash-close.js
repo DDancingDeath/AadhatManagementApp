@@ -16,6 +16,8 @@ export const CashCloseTest = {
     reasons: { negative_expected: 1, expected_not_number: 2, write_failed: 3, no_session: 4, large_difference: 5, difference_mismatch: 6 },
     timeoutMs: 5 * 60 * 1000,
     target: 98,
+    // Closed while the drawer close was queued offline: it syncs later.
+    onAbandon: (flags) => (flags.offline ? 'discard' : 'fail'),
     evaluate(props, flags, ctx) {
         if (props.noSession) return { result: 'fail', reason: 'no_session' };
         if (props.expectedIsNumber === false) return { result: 'fail', reason: 'expected_not_number' };
