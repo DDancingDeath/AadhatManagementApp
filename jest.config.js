@@ -18,6 +18,10 @@ module.exports = {
         '**/tests/property/**/*.test.js'
     ],
     
+    // Stryker's sandbox copies of the repo (#216)
+    testPathIgnorePatterns: ['/node_modules/', '<rootDir>/\\.stryker-tmp/'],
+    modulePathIgnorePatterns: ['<rootDir>/\\.stryker-tmp/'],
+
     // Module file extensions
     moduleFileExtensions: ['js', 'json'],
     

@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing (#216): how many deliberate small bugs in the money/stock/date code the tests catch. Run: npm run test:mutation (report in reports/mutation/). Non-blocking for now.",
+  "packageManager": "npm",
+  "testRunner": "jest",
+  "jest": {
+    "projectType": "custom",
+    "configFile": "jest.stryker.config.js",
+    "enableFindRelatedTests": false
+  },
+  "coverageAnalysis": "perTest",
+  "mutator": { "excludedMutations": ["StringLiteral"] },
+  "mutate": [
+    "www/js/utils/money.js",
+    "www/js/utils/stock-replay.js",
+    "www/js/utils/bill-checks.js",
+    "www/js/utils/dates.js",
+    "www/js/utils/release-info.js"
+  ],
+  "ignorePatterns": ["rules-tests", "test-results", "playwright-report", "reports", "coverage"],
+  "reporters": ["clear-text", "progress", "html", "json"],
+  "htmlReporter": { "fileName": "reports/mutation/mutation.html" },
+  "jsonReporter": { "fileName": "reports/mutation/mutation.json" },
+  "thresholds": { "high": 80, "low": 60, "break": null },
+  "concurrency": 4,
+  "timeoutMS": 20000,
+  "tempDirName": ".stryker-tmp"
+}

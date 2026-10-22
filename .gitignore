@@ -114,3 +114,7 @@ rules-tests/node_modules/
 # Playwright E2E output
 test-results/
 playwright-report/
+
+# Mutation testing (#216)
+reports/mutation/
+.stryker-tmp/
