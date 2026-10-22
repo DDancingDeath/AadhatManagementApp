@@ -55,3 +55,26 @@
   transform: scale(0.98);
 }
 
+/* App language switch (#143) */
+.lang-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lang-switch-btn {
+  flex: 1;
+  padding: 10px 12px;
+  border: 2px solid var(--primary-color, #667eea);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--primary-color, #667eea);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lang-switch-btn[aria-pressed="true"] {
+  background: var(--primary-color, #667eea);
+  color: white;
+}

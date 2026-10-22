@@ -10,6 +10,7 @@ import { dueEvents, sumDueEvents, saleTimePayment } from '../utils/due-payments.
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { CashManagementManager } from './cash-management.js';
 import { AnomaliesManager } from './anomalies.js';
+import { t } from '../i18n/index.js';
 
 // Use helper functions
 const formatCurrency = (amount) => Helpers.formatCurrency(amount);
@@ -215,16 +216,16 @@ export const DayManager = {
 
         // Update UI - Main Stats
         this.updateElement('todayTotalPurchases', formatCurrency(totalPurchases));
-        this.updateElement('todayPurchaseCount', `${todayPurchases.length} bills`);
+        this.updateElement('todayPurchaseCount', t('ui.today.bills_count', { count: todayPurchases.length }));
         this.updateElement('todayTotalSales', formatCurrency(totalSales));
-        this.updateElement('todaySaleCount', `${todayWholesaleSales.length + todayRetailSales.length} bills`);
+        this.updateElement('todaySaleCount', t('ui.today.bills_count', { count: todayWholesaleSales.length + todayRetailSales.length }));
         this.updateElement('todayLaborCost', formatCurrency(totalLaborCost));
         
         // Expenses breakdown
         this.updateElement('todayBusinessExpenses', formatCurrency(totalBusinessExpenses));
-        this.updateElement('todayBusinessExpenseCount', `${businessExpenses.length} entries`);
+        this.updateElement('todayBusinessExpenseCount', t('ui.today.entries_count', { count: businessExpenses.length }));
         this.updateElement('todayPersonalExpenses', formatCurrency(totalPersonalExpenses));
-        this.updateElement('todayPersonalExpenseCount', `${personalExpenses.length} entries`);
+        this.updateElement('todayPersonalExpenseCount', t('ui.today.entries_count', { count: personalExpenses.length }));
         
         // Total In and Total Out for hero card
         this.updateElement('todayTotalIn', formatCurrency(totalCashIn));
@@ -233,7 +234,7 @@ export const DayManager = {
         // Net outflow with color coding
         const cashFlowLabel = document.getElementById('todayCashFlowLabel');
         if (cashFlowLabel) {
-            cashFlowLabel.textContent = netOutflow >= 0 ? 'Net Outflow:' : 'Net Inflow:';
+            cashFlowLabel.textContent = t(netOutflow >= 0 ? 'ui.today.net_outflow' : 'ui.today.net_inflow');
         }
         
         const netCashFlowEl = document.getElementById('todayNetCashFlow');
@@ -312,13 +313,14 @@ export const DayManager = {
         const itemsArray = Object.values(itemsMap).sort((a, b) => b.totalValue - a.totalValue);
 
         if (itemsArray.length === 0) {
-            container.innerHTML = `<p class="empty-state">No ${type === 'purchase' ? 'purchases' : 'sales'} today</p>`;
+            container.innerHTML = `<p class="empty-state">${Helpers.escapeHtml(t(type === 'purchase' ? 'ui.today.no_purchases_today' : 'ui.today.no_sales_today'))}</p>`;
             return;
         }
 
         const cardClass = type === 'purchase' ? 'stat-card-info-light' : 'stat-card-success-light';
         const labelClass = type === 'purchase' ? 'stat-value-info' : 'stat-value-success';
 
+        const label = (key) => Helpers.escapeHtml(t(key));
         container.innerHTML = itemsArray.map(item => {
             const avgRate = item.quantity > 0 
                 ? (item.totalValue / item.quantity).toFixed(2)
@@ -328,10 +330,10 @@ export const DayManager = {
                 <div class="stat-card ${cardClass}" style="text-align: left; padding: 14px;">
                     <div style="font-weight: 600; color: var(--text-primary); font-size: 15px; margin-bottom: 8px;">${Helpers.escapeHtml(item.name)}</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 13px;">
-                        <div><span style="color: var(--text-secondary);">${type === 'purchase' ? 'Purchases:' : 'Sales:'}</span> <strong>${item.count}x</strong></div>
-                        <div><span style="color: var(--text-secondary);">Qty:</span> <strong>${item.quantity.toFixed(2)} kg</strong></div>
-                        <div><span style="color: var(--text-secondary);">Total:</span> <strong class="${labelClass}">${formatCurrency(item.totalValue)}</strong></div>
-                        <div><span style="color: var(--text-secondary);">Avg Rate:</span> <strong>₹${avgRate}/kg</strong></div>
+                        <div><span style="color: var(--text-secondary);">${label(type === 'purchase' ? 'ui.today.purchases_label' : 'ui.today.sales_label')}</span> <strong>${item.count}x</strong></div>
+                        <div><span style="color: var(--text-secondary);">${label('ui.today.qty_label')}</span> <strong>${item.quantity.toFixed(2)} kg</strong></div>
+                        <div><span style="color: var(--text-secondary);">${label('ui.billing.total_colon')}</span> <strong class="${labelClass}">${formatCurrency(item.totalValue)}</strong></div>
+                        <div><span style="color: var(--text-secondary);">${label('ui.today.avg_rate_label')}</span> <strong>₹${avgRate}/kg</strong></div>
                     </div>
                 </div>
             `;

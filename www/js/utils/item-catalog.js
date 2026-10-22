@@ -5,6 +5,7 @@
  */
 
 import { createItemKeyResolver } from './stock-replay.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Normalises an item name for comparisons: Unicode NFC, trimmed, inner
@@ -60,7 +61,7 @@ export function findDuplicateItem(items, candidate, excludeId = null) {
  * @returns {string}
  */
 export function duplicateItemMessage(name) {
-    return `"${name}" already exists — use a different name. / "${name}" नाम का आइटम पहले से है — दूसरा नाम रखें।`;
+    return t('msg.items.duplicate_name', { name });
 }
 
 /**

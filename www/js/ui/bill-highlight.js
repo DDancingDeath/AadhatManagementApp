@@ -20,6 +20,7 @@ import {
     bannerText, buildCheckContext, canOverride, evaluateBill, saveGate, toFlags, toOverrides
 } from '../utils/bill-checks.js';
 import { hidePartyDue, renderPartyDue } from './party-due-line.js';
+import { getLang, t } from '../i18n/index.js';
 
 export const CHECK_DEBOUNCE_MS = 250;
 
@@ -46,7 +47,7 @@ export function readTypedNumber(id) {
     const n = parseFloat(raw);
     return Number.isFinite(n) ? n : null;
 }
-const text = (i) => `${i.en} / ${i.hi}`;
+const text = (i) => (getLang() === 'hi' ? i.hi : i.en);
 
 function sectionOf(kind) {
     const cfg = forms[kind];
@@ -175,7 +176,7 @@ function renderBanner(cfg, section, issues, unplaced, firstTarget) {
     const head = document.createElement('button');
     head.type = 'button';
     head.className = 'bill-check-banner-head';
-    head.textContent = `${ICON[severity]} ${en} / ${hi}`;
+    head.textContent = `${ICON[severity]} ${getLang() === 'hi' ? hi : en}`;
     head.onclick = () => {
         if (!firstTarget) return;
         firstTarget.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
@@ -207,10 +208,10 @@ function renderSaveButtons(cfg, state) {
         if (state === 'blocked') {
             btn.setAttribute('aria-disabled', 'true');
             btn.classList.add('bill-check-save-blocked');
-            btn.title = 'Fix the red problems first / पहले लाल समस्याएँ ठीक करें';
+            btn.title = t('ui.checks.fix_red_first');
         } else if (state === 'override') {
             btn.classList.add('bill-check-save-override');
-            btn.title = 'Save anyway — a reason is needed / फिर भी सेव — कारण ज़रूरी';
+            btn.title = t('ui.checks.save_anyway_reason_needed');
         }
     });
 }
@@ -373,8 +374,8 @@ export const BillChecksUI = {
         if (warns.length) {
             const list = warns.map(w => `${ICON.warn} ${text(w)}`).join('\n');
             const ok = await UIManager.showModal(
-                `${list}\n\nSave anyway? / फिर भी सेव करें?`,
-                'Check before saving / सेव से पहले जाँचें',
+                t('msg.checks.save_anyway_list', { list }),
+                t('msg.checks.check_before_saving'),
                 true
             );
             if (!ok) return stop;
@@ -398,13 +399,13 @@ function focusIssue(kind, issue) {
 async function askOverrideReason(blocks) {
     const list = blocks.map(b => `<li>${ICON.block} ${Helpers.escapeHtml(text(b))}</li>`).join('');
     const html = `<ul class="bill-check-modal-list">${list}</ul>
-        <label for="billCheckOverrideReason">Reason to save anyway / फिर भी सेव करने का कारण:</label>
+        <label for="billCheckOverrideReason">${Helpers.escapeHtml(t('ui.checks.reason_to_save_anyway'))}</label>
         <input type="text" id="billCheckOverrideReason" class="bill-check-reason" maxlength="200" autocomplete="off" />`;
-    const ok = await UIManager.showModalWithHtml(html, 'Save anyway? / फिर भी सेव करें?', true);
+    const ok = await UIManager.showModalWithHtml(html, t('msg.checks.save_anyway'), true);
     if (!ok) return null;
     const reason = (byId('billCheckOverrideReason')?.value || '').trim();
     if (!reason) {
-        UIManager.showToast('Write a reason to save anyway / फिर भी सेव करने का कारण लिखें');
+        UIManager.showToast(t('msg.checks.write_reason_save_anyway'));
         return null;
     }
     return reason;

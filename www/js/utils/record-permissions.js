@@ -7,11 +7,9 @@
 /** Members may change their own expense for this long after creating it. */
 export const MEMBER_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-export const EXPENSE_LOCKED_MESSAGE =
-    'Only the owner or a manager can change this expense now (members: own expenses, within 24 hours) · ' +
-    'यह खर्च अब सिर्फ़ मालिक या मैनेजर बदल सकते हैं (सदस्य: अपना खर्च, 24 घंटे के अंदर)';
-
-export const ITEM_DELETE_LOCKED_MESSAGE = 'Only the owner can delete items · आइटम सिर्फ़ मालिक हटा सकते हैं';
+/** Message keys (i18n catalogue) for actions the rules refuse. */
+export const EXPENSE_LOCKED_KEY = 'msg.expenses.locked';
+export const ITEM_DELETE_LOCKED_KEY = 'msg.items.delete_locked';
 
 const isOwnerOrManager = (role) => role === 'owner' || role === 'manager';
 

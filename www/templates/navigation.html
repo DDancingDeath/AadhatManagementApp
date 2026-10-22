@@ -6,100 +6,101 @@
     </button>
 
     <!-- Notifications bell + inbox (#12) -->
-    <button type="button" class="notif-bell" id="notifBell" style="display: none;" onclick="window.app.notifications.toggle()" aria-label="Notifications / सूचनाएं" title="Notifications / सूचनाएं">
+    <button type="button" class="notif-bell" id="notifBell" style="display: none;" onclick="window.app.notifications.toggle()" aria-label="Notifications" title="Notifications" data-i18n-title="ui.common.notifications">
         <span class="notif-bell-icon" aria-hidden="true">🔔</span>
         <span class="notif-badge" id="notifBadge" hidden></span>
     </button>
     <div class="notif-backdrop" id="notifBackdrop" hidden onclick="window.app.notifications.close()"></div>
-    <div class="notif-panel" id="notifPanel" role="dialog" aria-label="Notifications / सूचनाएं" hidden>
+    <div class="notif-panel" id="notifPanel" role="dialog" aria-label="Notifications" hidden data-i18n-aria-label="ui.common.notifications">
         <div class="notif-panel-header">
-            <h3>🔔 Notifications <span class="notif-panel-hi">/ सूचनाएं</span></h3>
-            <button type="button" class="notif-close" onclick="window.app.notifications.close()" aria-label="Close / बंद करें">×</button>
+            <h3>🔔 <span data-i18n="ui.common.notifications">Notifications</span></h3>
+            <button type="button" class="notif-close" onclick="window.app.notifications.close()" aria-label="Close" data-i18n-aria-label="ui.common.close">×</button>
         </div>
         <div class="notif-panel-actions">
-            <button type="button" class="notif-mark-all" onclick="window.app.notifications.markAllRead()">✓ Mark all read / सब पढ़ लिया</button>
+            <button type="button" class="notif-mark-all" onclick="window.app.notifications.markAllRead()" data-i18n="ui.nav.mark_all_read">✓ Mark all read</button>
         </div>
         <div class="notif-list" id="notifList"></div>
-        <button type="button" class="notif-more" id="notifMore" hidden onclick="window.app.notifications.loadMore()">Show more / और देखें</button>
+        <button type="button" class="notif-more" id="notifMore" hidden onclick="window.app.notifications.loadMore()" data-i18n="ui.nav.show_more">Show more</button>
     </div>
 
     <!-- Side Navigation -->
     <div class="side-nav" id="sideNav">
         <div class="nav-header">
             <div>
-                <h2>Aadhat Billing</h2>
+                <h2 data-i18n="ui.nav.aadhat_billing">Aadhat Billing</h2>
                 <div id="currentUserName" style="font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 6px;">Loading...</div>
+                <button type="button" class="nav-lang-toggle" id="navLangToggle" onclick="window.app.i18n.toggle()" lang="hi" aria-label="Language / भाषा">हिंदी</button>
             </div>
             <button class="close-btn" onclick="window.app.nav.toggleMenu()">×</button>
         </div>
         <nav class="nav-menu">
             <a href="#" onclick="window.app.nav.showTab('day', event)">
                 <span class="nav-icon">📅</span>
-                Today
+                <span data-i18n="ui.nav.today">Today</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('billing', event)">
                 <span class="nav-icon">📋</span>
-                Billing
+                <span data-i18n="ui.nav.billing">Billing</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('wholesale-sales', event)">
                 <span class="nav-icon">🧾</span>
-                Sales
+                <span data-i18n="ui.nav.sales">Sales</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('expenses', event)">
                 <span class="nav-icon">💳</span>
-                Expenses
+                <span data-i18n="ui.nav.expenses">Expenses</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('items', event)">
                 <span class="nav-icon">📦</span>
-                Items
+                <span data-i18n="ui.nav.items">Items</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('history', event)">
                 <span class="nav-icon">📜</span>
-                History
+                <span data-i18n="ui.nav.history">History</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('stock', event)">
                 <span class="nav-icon">📊</span>
-                Stocks
+                <span data-i18n="ui.nav.stocks">Stocks</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('due', event)">
                 <span class="nav-icon">💸</span>
-                Outstanding
+                <span data-i18n="ui.nav.outstanding">Outstanding</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('finance', event)">
                 <span class="nav-icon">💰</span>
-                Finance
+                <span data-i18n="ui.nav.finance">Finance</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('reports', event)">
                 <span class="nav-icon">📈</span>
-                Reports
+                <span data-i18n="ui.nav.reports">Reports</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('analytics', event)">
                 <span class="nav-icon">📉</span>
-                Analytics
+                <span data-i18n="ui.nav.analytics">Analytics</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('anomalies', event)" id="anomaliesNavLink" style="display: none;">
                 <span class="nav-icon">🚨</span>
-                Anomalies / गड़बड़ियाँ
+                <span data-i18n="ui.nav.anomalies">Anomalies</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('rate-trends', event)" id="rateTrendsNavLink" style="display: none;">
                 <span class="nav-icon">💹</span>
-                Rate trends / रेट का रुझान
+                <span data-i18n="ui.nav.rate_trends">Rate trends</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('admin', event)" id="adminNavLink" style="display: none;">
                 <span class="nav-icon">🛠️</span>
-                Admin
+                <span data-i18n="ui.nav.admin">Admin</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('diagnostics', event)" id="diagnosticsNavLink" style="display: none;">
                 <span class="nav-icon">🔬</span>
-                Diagnostics
+                <span data-i18n="ui.nav.diagnostics">Diagnostics</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('settings', event)">
                 <span class="nav-icon">⚙️</span>
-                Settings
+                <span data-i18n="ui.nav.settings">Settings</span>
             </a>
             <a href="#" onclick="window.app.nav.showTab('chat', event)">
                 <span class="nav-icon">🤖</span>
-                AI Assistant
+                <span data-i18n="ui.nav.ai_assistant">AI Assistant</span>
             </a>
         </nav>
     </div>

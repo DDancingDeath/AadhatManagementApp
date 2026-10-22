@@ -11,9 +11,10 @@ import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
 import {
-    checkPaymentSplit, KEPT_SERVER_PAYMENT_MESSAGE, paymentSplitMessage, round2, sumMoney
+    checkPaymentSplit, KEPT_SERVER_PAYMENT_KEY, paymentSplitMessage, round2, sumMoney
 } from '../utils/money.js';
 import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
+import { t } from '../i18n/index.js';
 
 /** Buttons disabled while a retail save/print is in flight */
 const RETAIL_BUTTONS = '#saveSaleBtn, #printSaleBtn';
@@ -68,7 +69,7 @@ const RetailSaleManager = {
         const weight = parseFloat(weightInput?.value);
         
         if (!weight || weight <= 0) {
-            UIManager.showToast('Please enter a valid weight');
+            UIManager.showToast(t('msg.common.enter_valid_weight'));
             return;
         }
         
@@ -158,12 +159,12 @@ const RetailSaleManager = {
         const rate = parseFloat(rateInput.value);
         
         if (itemIndex === undefined || itemIndex === '' || isNaN(itemIndex)) {
-            UIManager.showToast('Please select an item');
+            UIManager.showToast(t('msg.common.select_item'));
             return;
         }
         
         if (!rate || rate <= 0) {
-            UIManager.showToast('Please enter a valid rate');
+            UIManager.showToast(t('msg.common.enter_valid_rate'));
             return;
         }
         
@@ -183,13 +184,13 @@ const RetailSaleManager = {
             qty = allWeights.reduce((sum, w) => sum + w, 0);
             packets = allWeights.length;
         } else {
-            UIManager.showToast('Please add weights or enter a quantity');
+            UIManager.showToast(t('msg.retail.add_weights_or_enter_quantity'));
             return;
         }
         
         const item = AppState.items[itemIndex];
         if (!item) {
-            UIManager.showToast('Item not found');
+            UIManager.showToast(t('msg.common.item_not_found'));
             return;
         }
         this.ensurePendingBill();
@@ -223,7 +224,7 @@ const RetailSaleManager = {
         itemSelect.focus();
         
         UIManager.hapticFeedback();
-        UIManager.showToast(`Added ${itemName} to sale`);
+        UIManager.showToast(t('msg.retail.added_sale', { itemName }));
     },
 
     /**
@@ -238,7 +239,7 @@ const RetailSaleManager = {
         if (!tbody) return;
         
         if (saleItems.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;" data-i18n="msg.common.no_items_in_bill">${Helpers.escapeHtml(t('msg.common.no_items_in_bill'))}</td></tr>`;
             if (saleTotalSpan) saleTotalSpan.textContent = '0';
             if (totalSalePacketsSpan) totalSalePacketsSpan.textContent = '0';
             if (saleWeightBreakdownSection) saleWeightBreakdownSection.innerHTML = '';
@@ -352,7 +353,7 @@ const RetailSaleManager = {
         
         if (this.billingManager) this.billingManager.triggerAutoSave();
         UIManager.hapticFeedback();
-        UIManager.showToast('Item loaded for editing');
+        UIManager.showToast(t('msg.common.item_loaded_editing'));
     },
 
     // -------------------- TOTALS --------------------
@@ -502,7 +503,7 @@ const RetailSaleManager = {
         }
         
         if (saleItems.length === 0) {
-            UIManager.showToast('No items in sale');
+            UIManager.showToast(t('msg.retail.no_items_in_sale'));
             return;
         }
 
@@ -589,14 +590,14 @@ const RetailSaleManager = {
             this.resetForm();
             
             UIManager.hideLoading();
-            UIManager.showToast(FirebaseService.keptServerPayment(sale) ? KEPT_SERVER_PAYMENT_MESSAGE : 'Sale completed successfully!');
+            UIManager.showToast(FirebaseService.keptServerPayment(sale) ? t(KEPT_SERVER_PAYMENT_KEY) : t('msg.retail.sale_completed_successfully'));
             UIManager.hapticFeedback('success');
             
             return sale;
             
         } catch (error) {
             UIManager.hideLoading();
-            UIManager.showToast('Failed to complete sale: ' + error.message);
+            UIManager.showToast(t('msg.retail.failed_complete_sale', { message: error.message }));
             console.error('Complete sale error:', error);
             throw error;
         }
@@ -642,7 +643,7 @@ const RetailSaleManager = {
      */
     async shareSaleWhatsApp() {
         if (saleItems.length === 0) {
-            UIManager.showToast('No items in sale');
+            UIManager.showToast(t('msg.retail.no_items_in_sale'));
             return;
         }
         
@@ -672,7 +673,7 @@ const RetailSaleManager = {
     async printSale() {
         if (Helpers.isBusy('retail')) return;
         if (saleItems.length === 0) {
-            UIManager.showToast('No items in sale');
+            UIManager.showToast(t('msg.retail.no_items_in_sale'));
             return;
         }
         
@@ -689,11 +690,11 @@ const RetailSaleManager = {
             await printPromise;
             
             if (savedSale) {
-                UIManager.showToast('Sale saved and printed!');
+                UIManager.showToast(t('msg.common.sale_saved_printed'));
             }
         } catch (error) {
             console.error('Print sale error:', error);
-            UIManager.showToast('Error: ' + (error?.message || error));
+            UIManager.showToast(t('msg.common.error_2', { value: error?.message || error }));
         }
     },
 

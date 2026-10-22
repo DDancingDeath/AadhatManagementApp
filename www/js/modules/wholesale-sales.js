@@ -12,8 +12,11 @@ import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { OutstandingManager } from './outstanding.js';
 import { normalizePartyName } from '../utils/aging.js';
+import { getLang, t } from '../i18n/index.js';
+
+const L = (key, params) => Helpers.escapeHtml(t(key, params));
 import {
-    checkPaymentSplit, computeWholesaleTotals, KEPT_SERVER_PAYMENT_MESSAGE, paymentSplitMessage, readPayment, round2
+    checkPaymentSplit, computeWholesaleTotals, KEPT_SERVER_PAYMENT_KEY, paymentSplitMessage, readPayment, round2
 } from '../utils/money.js';
 
 const PAYMENT_TOLERANCE = 0.01;
@@ -48,13 +51,13 @@ export class WholesaleSalesManager {
         const select = document.getElementById('sellItem');
         if (!select) return;
         
-        select.innerHTML = '<option value="">Select item</option>';
+        select.innerHTML = `<option value="">${L('ui.wholesale.select_item')}</option>`;
 
         // While stock is still being calculated in the background, list every item
         // (the dropdown is refreshed with the stock filter once it is ready)
         const stockReady = AppState.stockReady !== false;
         if (!stockReady) {
-            select.options[0].textContent = 'Select item (stock updating…)';
+            select.options[0].textContent = t('ui.wholesale.select_item_updating');
         }
 
         // Load only items that have stock
@@ -84,7 +87,7 @@ export class WholesaleSalesManager {
         const approxEl = document.getElementById("availableStockApprox");
         if (approxEl) {
             const note = AppState.stockReady === false ? null : approxStockNote(AppState.stockApprox);
-            approxEl.textContent = note ? `${note.en} / ${note.hi}` : "";
+            approxEl.textContent = note ? (getLang() === 'hi' ? note.hi : note.en) : "";
             approxEl.style.display = note ? "block" : "none";
         }
         
@@ -108,7 +111,7 @@ export class WholesaleSalesManager {
         const stockData = AppState.stock[item.id] || AppState.stock[itemName];
 
         if (AppState.stockReady === false) {
-            availableStockEl.textContent = "updating…";
+            availableStockEl.textContent = t('ui.wholesale.updating');
             avgRateEl.textContent = "-";
         } else if (!stockData) {
             availableStockEl.textContent = "0.00";
@@ -136,30 +139,30 @@ export class WholesaleSalesManager {
         const quantity = Helpers.getInputNumber('sellQuantity');
         
         if (!itemName) {
-            UIManager.showToast('Please select an item');
+            UIManager.showToast(t('msg.common.select_item'));
             return;
         }
         
         if (!rate || rate <= 0) {
-            UIManager.showToast('Please enter a valid rate');
+            UIManager.showToast(t('msg.common.enter_valid_rate'));
             return;
         }
         
         if (!quantity || quantity <= 0) {
-            UIManager.showToast('Please enter a valid quantity');
+            UIManager.showToast(t('msg.wholesale.enter_valid_quantity'));
             return;
         }
         
         // Find item
         const item = AppState.items.find(i => i.name === itemName);
         if (!item) {
-            UIManager.showToast('Item not found');
+            UIManager.showToast(t('msg.common.item_not_found'));
             return;
         }
         
         // Check stock
         if (AppState.stockReady === false) {
-            UIManager.showToast('Stock is still updating — please try again in a moment');
+            UIManager.showToast(t('msg.wholesale.stock_still_updating_try_again'));
             return;
         }
         // Same limit as at save (#37, Q18/Q57): a small oversell only warns, beyond the limit it blocks
@@ -171,11 +174,11 @@ export class WholesaleSalesManager {
         if (short && short.shortfall > oversellBlockKg + 1e-6) {
             const approx = approxStockNote(AppState.stockApprox);
             if (!approx) {
-                UIManager.showToast(`Insufficient stock! Available: ${short.available.toFixed(1)}kg`);
+                UIManager.showToast(t('msg.wholesale.insufficient_stock_available_kg', { available: short.available.toFixed(1) }));
                 return;
             }
             // Approximate stock (#129) may be off by older edits: warn only.
-            UIManager.showToast(`⚠️ ${itemName}: only ~${short.available.toFixed(1)}kg in stock (${approx.en}) / ${approx.hi}`, 6000);
+            UIManager.showToast(t('msg.wholesale.approx_stock_warning', { itemName, available: short.available.toFixed(1), note: getLang() === 'hi' ? approx.hi : approx.en }), 6000);
         }
         
         const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
@@ -208,7 +211,7 @@ export class WholesaleSalesManager {
         if (!tbody || !totalEl) return;
         
         if (wholesaleSaleItems.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;" data-i18n="msg.common.no_items_in_bill">${L('msg.common.no_items_in_bill')}</td></tr>`;
             totalEl.textContent = '0';
             if (expensesInput) expensesInput.value = '0';
             if (profitEl) profitEl.textContent = '0';
@@ -375,7 +378,7 @@ export class WholesaleSalesManager {
     // options.onWriteIssued(saleData) is called as soon as the write is issued.
     static async _completeSale(options = {}) {
         if (wholesaleSaleItems.length === 0) {
-            UIManager.showToast('Please add items to the bill');
+            UIManager.showToast(t('msg.wholesale.add_items_bill'));
             return;
         }
 
@@ -479,19 +482,19 @@ export class WholesaleSalesManager {
             // this dropdown. The item detail fields were cleared above so no stale
             // per-item stock is shown in the meantime.
             
-            UIManager.showToast(FirebaseService.keptServerPayment(saleData) ? KEPT_SERVER_PAYMENT_MESSAGE : '✓ Sale completed successfully');
+            UIManager.showToast(FirebaseService.keptServerPayment(saleData) ? t(KEPT_SERVER_PAYMENT_KEY) : t('msg.wholesale.sale_completed_successfully'));
             UIManager.hapticFeedback();
             return saleData;
         } catch (error) {
             console.error('Error completing sale:', error);
-            UIManager.showToast('Error: ' + error.message);
+            UIManager.showToast(t('msg.common.error', { message: error.message }));
         }
     }
 
     static async printWholesaleSale() {
         if (Helpers.isBusy('wholesale')) return;
         if (wholesaleSaleItems.length === 0) {
-            UIManager.showToast('No items to print');
+            UIManager.showToast(t('msg.wholesale.no_items_print'));
             return;
         }
         
@@ -506,17 +509,17 @@ export class WholesaleSalesManager {
             await printPromise;
             
             if (savedSale) {
-                UIManager.showToast('Sale saved and printed!');
+                UIManager.showToast(t('msg.common.sale_saved_printed'));
             }
         } catch (error) {
             console.error('Print error:', error);
-            UIManager.showToast('Error: ' + (error?.message || error));
+            UIManager.showToast(t('msg.common.error_2', { value: error?.message || error }));
         }
     }
 
     static shareViaWhatsApp() {
         if (wholesaleSaleItems.length === 0) {
-            UIManager.showToast('No items to share');
+            UIManager.showToast(t('msg.wholesale.no_items_share'));
             return;
         }
         
@@ -590,7 +593,7 @@ export class WholesaleSalesManager {
         const salesHistory = AppState.salesHistory;
         const sale = salesHistory.find(s => s.id == saleId);
         if (!sale) {
-            UIManager.showToast('Error: Sale not found');
+            UIManager.showToast(t('msg.wholesale.error_sale_not_found'));
             return;
         }
         
@@ -598,19 +601,19 @@ export class WholesaleSalesManager {
         const paymentAmount = round2(Number(paymentInput?.value) || 0);
         
         if (paymentAmount <= 0) {
-            UIManager.showToast('Please enter a valid payment amount');
+            UIManager.showToast(t('msg.common.enter_valid_payment_amount'));
             return;
         }
         
         const outstanding = readPayment(sale).due;
         
         if (paymentAmount > outstanding + PAYMENT_TOLERANCE) {
-            UIManager.showToast('Payment amount exceeds outstanding amount');
+            UIManager.showToast(t('msg.common.payment_amount_exceeds_outstanding_amount'));
             return;
         }
         
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-            UIManager.showToast('Internet required to record payment');
+            UIManager.showToast(t('msg.common.internet_required_record_payment'));
             return;
         }
         
@@ -632,16 +635,16 @@ export class WholesaleSalesManager {
             this.renderSalesOutstanding();
             this.renderSalesHistory();
             window.app?.outstanding?.renderDue?.();
-            UIManager.showToast(`✓ Payment of ₹${paymentAmount} recorded`);
+            UIManager.showToast(t('msg.wholesale.payment_recorded', { paymentAmount }));
         } catch (error) {
             console.error('Error recording payment:', error);
             if (error && error.code === 'exceeds-due') {
-                UIManager.showToast(`Payment amount exceeds outstanding amount (₹${error.due})`);
+                UIManager.showToast(t('msg.common.payment_amount_exceeds_outstanding_amount_2', { due: error.due }));
                 this.renderSalesOutstanding();
             } else if (OutstandingManager.isOfflineError(error)) {
-                UIManager.showToast('Internet required to record payment');
+                UIManager.showToast(t('msg.common.internet_required_record_payment'));
             } else {
-                UIManager.showToast('Error: ' + error.message);
+                UIManager.showToast(t('msg.common.error', { message: error.message }));
             }
         }
     }
@@ -712,12 +715,12 @@ export class WholesaleSalesManager {
         
         const partyNote = party ? `
             <div class="party-filter-note">
-                <span>Showing only / केवल: <strong>${Helpers.escapeHtml(party.name)}</strong></span>
-                <button type="button" class="aging-btn" onclick="window.app.wholesaleSales.clearOutstandingParty()">Show all / सभी दिखाएँ</button>
+                <span>${L('ui.outstanding.showing_only')} <strong>${Helpers.escapeHtml(party.name)}</strong></span>
+                <button type="button" class="aging-btn" onclick="window.app.wholesaleSales.clearOutstandingParty()">${L('ui.outstanding.show_all')}</button>
             </div>` : '';
 
         if (outstandingSales.length === 0) {
-            container.innerHTML = `${partyNote}<p style="text-align: center; color: #888; margin-top: 40px;">${party ? 'Nothing outstanding for this party / इस पार्टी का कोई बकाया नहीं' : 'No outstanding payments'}</p>`;
+            container.innerHTML = `${partyNote}<p style="text-align: center; color: #888; margin-top: 40px;">${L(party ? 'ui.outstanding.nothing_for_party' : 'ui.wholesale.no_outstanding_payments')}</p>`;
             return;
         }
 
@@ -731,31 +734,31 @@ export class WholesaleSalesManager {
                 div.innerHTML = `
                     <div class="history-header">
                         <span><span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${Helpers.escapeHtml(billNumber)}</span>${sale.customerName ? `  <strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}</span>
-                        <span style="color: #dc3545; font-weight: 700;">Due: ₹${Math.round(sale.outstanding)}</span>
+                        <span style="color: #dc3545; font-weight: 700;">${L('ui.outstanding.due_amount', { amount: Math.round(sale.outstanding) })}</span>
                     </div>
-                    <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
+                    <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • ${L('ui.outstanding.by')} <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
                     <div style="background: #d1ecf1; border-left: 4px solid #22c55e; padding: 12px; margin: 12px 0; border-radius: 4px;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                            <span>Total Receivable:</span>
+                            <span>${L('ui.common.total_receivable')}</span>
                             <strong>₹${Math.round(sale.totalAmount)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                            <span>Received:</span>
+                            <span>${L('ui.outstanding.received_label')}</span>
                             <strong>₹${Math.round(sale.paidAmount)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between; border-top: 2px solid #17a2b8; padding-top: 6px; margin-top: 6px;">
-                            <span style="font-weight: 600;">Outstanding:</span>
+                            <span style="font-weight: 600;">${L('ui.outstanding.outstanding_label')}</span>
                             <strong style="color: #dc3545; font-size: 16px;">₹${Math.round(sale.outstanding)}</strong>
                         </div>
                         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #17a2b8;">
                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                                <label style="font-weight: 500;">Payment (₹):</label>
-                                <input type="number" inputmode="decimal" id="payment_${Helpers.escapeHtml(sale.id)}" placeholder="Enter amount" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
-                                <button data-record-payment onclick="window.app.wholesaleSales.recordPayment('${Helpers.escapeJsAttr(sale.id)}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Record</button>
+                                <label style="font-weight: 500;">${L('ui.wholesale.payment_rs')}</label>
+                                <input type="number" inputmode="decimal" id="payment_${Helpers.escapeHtml(sale.id)}" placeholder="${L('ui.cash.enter_amount')}" style="flex: 1; padding: 6px; border: 1px solid #17a2b8; border-radius: 4px;" />
+                                <button data-record-payment onclick="window.app.wholesaleSales.recordPayment('${Helpers.escapeJsAttr(sale.id)}')" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">${L('ui.outstanding.record')}</button>
                             </div>
                             <div style="display: flex; align-items: center;">
                                 <input type="checkbox" id="clear_${Helpers.escapeHtml(sale.id)}" onchange="window.app.wholesaleSales.markSaleAsCleared('${Helpers.escapeJsAttr(sale.id)}')" style="margin-right: 8px; transform: scale(1.2);" />
-                                <label for="clear_${Helpers.escapeHtml(sale.id)}" style="cursor: pointer; font-weight: 500;">Mark as Cleared</label>
+                                <label for="clear_${Helpers.escapeHtml(sale.id)}" style="cursor: pointer; font-weight: 500;">${L('ui.wholesale.mark_as_cleared')}</label>
                             </div>
                         </div>
                     </div>
@@ -777,7 +780,7 @@ export class WholesaleSalesManager {
         attachOlderHistoryScroll(container, { noun: 'sales', onLoaded: () => this.renderSalesHistory() });
 
         if (salesTabHistory.length === 0) {
-            const message = isFullHistoryLoaded() ? 'No sales yet' : `No sales since ${formatWindowDate(historyLoadedFrom())}`;
+            const message = isFullHistoryLoaded() ? t('ui.wholesale.no_sales_yet') : t('ui.wholesale.no_sales_since', { date: formatWindowDate(historyLoadedFrom()) });
             container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(message)}</p>`;
             return;
         }
@@ -807,7 +810,7 @@ export class WholesaleSalesManager {
                     <span style="cursor: pointer; color: #22c55e; text-decoration: underline;" onclick="window.app.wholesaleSales.reprintSaleById('${Helpers.escapeJsAttr(sale.id)}')">#${Helpers.escapeHtml(sale.billNumber || sale.id)}</span>${sale.customerName ? `<strong>${Helpers.escapeHtml(sale.customerName)}</strong>` : ''}
                     <span style="color: #28a745; font-weight: 700;">₹ ${Math.round(sale.total)}</span>
                 </div>
-                <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • By: <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
+                <div class="history-date">${Helpers.escapeHtml(sale.date)}${sale.createdByName ? ` • ${L('ui.outstanding.by')} <strong>${Helpers.escapeHtml(sale.createdByName)}</strong>` : ''}</div>
                 <div class="history-summary">
                     ${Helpers.escapeHtml(sale.items.map(item => item.name).join(', '))}
                 </div>
@@ -822,7 +825,7 @@ export class WholesaleSalesManager {
         const salesHistory = AppState.salesHistory;
         const sale = salesHistory[index];
         if (!sale) {
-            UIManager.showModal('Sale not found');
+            UIManager.showModal(t('msg.common.sale_not_found'));
             return;
         }
         
@@ -846,22 +849,22 @@ export class WholesaleSalesManager {
         const payment = sale.payment || {};
         const paymentHTML = (payment.online > 0 || payment.cash > 0 || payment.due > 0) ? `
             <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6; margin-top: 12px;">
-                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #212529;">Payment Details</h4>
+                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #212529;">${L('ui.history.payment_details')}</h4>
                 ${payment.online > 0 ? `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                        <span>Online:</span>
+                        <span>${L('ui.history.online')}</span>
                         <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #cfe2ff; color: #084298;">₹${Math.round(payment.online)}</span>
                     </div>
                 ` : ''}
                 ${payment.cash > 0 ? `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                        <span>Cash:</span>
+                        <span>${L('ui.history.cash')}</span>
                         <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #d1e7dd; color: #0f5132;">₹${Math.round(payment.cash)}</span>
                     </div>
                 ` : ''}
                 ${payment.due > 0 ? `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                        <span>Due:</span>
+                        <span>${L('ui.history.due')}</span>
                         <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-weight: 600; background: #fff3cd; color: #997404;">₹${Math.round(payment.due)}</span>
                     </div>
                 ` : ''}
@@ -870,10 +873,10 @@ export class WholesaleSalesManager {
         
         const paymentsHistoryHTML = sale.payments && sale.payments.length > 0 ? `
             <div style="background: #e7f5e9; padding: 14px; border-radius: 10px; border: 1px solid #c3e6c3; margin-top: 12px;">
-                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #155724;">Payment History</h4>
+                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: #155724;">${L('ui.wholesale.payment_history')}</h4>
                 ${sale.payments.map(p => `
                     <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px;">
-                        <span>• ${Helpers.escapeHtml(p.date)}${p.recordedBy ? ` by ${Helpers.escapeHtml(p.recordedBy)}` : ''}${p.kind === 'writeOff' ? ` — written off: ${Helpers.escapeHtml(p.reason || '')}` : ''}</span>
+                        <span>• ${Helpers.escapeHtml(p.date)}${p.recordedBy ? ` ${L('ui.wholesale.by_name', { name: p.recordedBy })}` : ''}${p.kind === 'writeOff' ? ` — ${L('ui.wholesale.written_off', { reason: p.reason || '' })}` : ''}</span>
                         <strong>₹${Math.round(p.amount)}</strong>
                     </div>
                 `).join('')}
@@ -886,22 +889,22 @@ export class WholesaleSalesManager {
             <div style="padding: 16px; max-width: 100%;">
                 <div class="bill-info-section">
                     <div class="bill-info-row">
-                        <div class="bill-info-label">Bill No:</div>
+                        <div class="bill-info-label">${L('ui.history.bill_no')}</div>
                         <div class="bill-info-value"><strong style="color: #28a745;">#${Helpers.escapeHtml(billNumber)}</strong></div>
                     </div>
                     <div class="bill-info-row">
-                        <div class="bill-info-label">Date:</div>
+                        <div class="bill-info-label">${L('ui.history.date_label')}</div>
                         <div class="bill-info-value">${Helpers.escapeHtml(sale.date)}</div>
                     </div>
                     ${sale.createdByName ? `
                         <div class="bill-info-row">
-                            <div class="bill-info-label">Created By:</div>
+                            <div class="bill-info-label">${L('ui.history.created_by')}</div>
                             <div class="bill-info-value">${Helpers.escapeHtml(sale.createdByName)}</div>
                         </div>
                     ` : ''}
                     ${sale.customerName ? `
                         <div class="bill-info-row">
-                            <div class="bill-info-label">Customer:</div>
+                            <div class="bill-info-label">${L('ui.common.customer')}</div>
                             <div class="bill-info-value"><strong>${Helpers.escapeHtml(sale.customerName)}</strong></div>
                         </div>
                     ` : ''}
@@ -909,19 +912,19 @@ export class WholesaleSalesManager {
                 
                 ${sale.comments ? `
                     <div style="margin-bottom: 12px; padding: 10px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-                        <span style="color: #6c757d; font-size: 14px;">Comments:</span>
+                        <span style="color: #6c757d; font-size: 14px;">${L('ui.wholesale.comments')}</span>
                         <div style="font-size: 14px; color: #212529; margin-top: 4px;">${Helpers.escapeHtml(sale.comments)}</div>
                     </div>
                 ` : ''}
                 
-                <h4 style="margin: 16px 0 12px 0; color: #212529; font-size: 15px;">Sale Items</h4>
+                <h4 style="margin: 16px 0 12px 0; color: #212529; font-size: 15px;">${L('ui.history.sale_items')}</h4>
                 <table style="width: 100%; border-collapse: collapse; background: white; margin-bottom: 16px;">
                     <thead>
                         <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
-                            <th style="padding: 10px 8px; text-align: left; font-size: 14px; font-weight: 600; color: #495057;">Item</th>
-                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Rate (₹)</th>
-                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">Qty (kg)</th>
-                            <th style="padding: 10px 8px; text-align: right; font-size: 14px; font-weight: 600; color: #495057;">Total (₹)</th>
+                            <th style="padding: 10px 8px; text-align: left; font-size: 14px; font-weight: 600; color: #495057;">${L('ui.common.item_2')}</th>
+                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">${L('ui.history.rate_rs')}</th>
+                            <th style="padding: 10px 8px; text-align: center; font-size: 14px; font-weight: 600; color: #495057;">${L('ui.history.qty_kg')}</th>
+                            <th style="padding: 10px 8px; text-align: right; font-size: 14px; font-weight: 600; color: #495057;">${L('ui.history.total_rs')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -931,7 +934,7 @@ export class WholesaleSalesManager {
                 
                 <div style="background: white; padding: 14px; border-radius: 10px; border: 1px solid #dee2e6;">
                     <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px;">
-                        <span style="font-weight: 600;">Sale Total:</span>
+                        <span style="font-weight: 600;">${L('ui.billing.sale_total')}</span>
                         <strong style="font-size: 17px; color: #28a745;">₹${Math.round(sale.total)}</strong>
                     </div>
                 </div>
@@ -949,7 +952,7 @@ export class WholesaleSalesManager {
         const salesHistory = AppState.salesHistory;
         const index = salesHistory.findIndex(s => String(s.id) === String(saleId));
         if (index === -1) {
-            UIManager.showModal('Sale not found');
+            UIManager.showModal(t('msg.common.sale_not_found'));
             return;
         }
         await this.reprintSale(index);

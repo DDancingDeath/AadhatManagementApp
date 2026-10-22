@@ -106,6 +106,15 @@ In order:
 - **Escaping**: any Firestore/user text inserted via `innerHTML` must go
   through `Helpers.escapeHtml()`; values inside `onclick="fn('…')"` need
   `Helpers.escapeJsAttr()`.
+- **App language (Hindi/English, #143)**: user-facing text comes from
+  `t('key', params)` (`www/js/i18n/index.js`) with plain catalogues
+  `i18n/en.js` + `i18n/hi.js` (`ui.*` = screen text, `msg.*` = toasts /
+  alerts / confirms). Templates mark text with `data-i18n="key"` (and
+  `data-i18n-placeholder|title|aria-label`); `setLang()` re-applies them and
+  fires `aadhat:langchange` so open screens redraw without a reload. English is
+  the default; the choice is per device (`aadhat.lang`). Add every new key to
+  both catalogues — `i18n-catalogue.test.js` fails on missing keys or on
+  "staff"/"स्टाफ". Escape `t()` output that goes into `innerHTML`.
 - **Service worker / cache bump**: every app JS/CSS/template file (and
   icon/manifest) must be listed in `STATIC_ASSETS` in `www/service-worker.js`
   (`npm run check:sw`; a test enforces it). Any PR that changes a shipped

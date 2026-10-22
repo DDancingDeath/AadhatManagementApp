@@ -34,13 +34,14 @@ import { markStartup, noteStartup, logStartupTimings } from './utils/startup-tim
 import { TemplateLoader } from './utils/template-loader.js';
 import { Helpers } from './utils/helpers.js';
 import { InstallManager } from './services/install-prompt.js';
+import { t, getLang, setLang, toggleLang, applyTranslations, LANG_CHANGE_EVENT } from './i18n/index.js';
 
 // Build stamp — bumped on every deploy that ships new JS so you can verify
 // in the browser console whether the latest code is actually running. If
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022x-rate-trends';
+const BUILD_ID = '20261022y-app-language';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -56,13 +57,53 @@ InstallManager.init();
 async function injectTemplates() {
     const templates = await TemplateLoader.loadAllTemplates();
     TemplateLoader.injectTemplates(templates);
+    document.documentElement.lang = getLang();
+    applyTranslations(document);
 }
+
+/**
+ * Language switched (#143): redraw what JS rendered on the open screen and the
+ * shared lists, using data already in memory (no Firestore reads).
+ */
+function refreshForLanguage(lang) {
+    SettingsManager.syncItemNamesWithLanguage(lang);
+    const run = (label, fn) => { try { fn(); } catch (e) { console.warn(`[i18n] ${label} redraw failed:`, e); } };
+    // Relabel item pickers in place: reloading them would reset the chosen item and rate.
+    run('items', () => {
+        const label = (item) => ((AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name);
+        document.querySelectorAll('#billItem option, #saleItem option').forEach(opt => {
+            const item = AppState.items[Number(opt.value)];
+            if (item) opt.textContent = label(item);
+        });
+        document.querySelectorAll('#sellItem option').forEach(opt => {
+            const item = opt.value && AppState.items.find(i => i.name === opt.value);
+            if (item) opt.textContent = label(item);
+        });
+    });
+    const tabId = document.querySelector('.tab.active')?.id;
+    const redraw = {
+        day: () => { DayManager.updateTodayHeader(); DayManager.loadTodayData(); },
+        due: () => OutstandingManager.renderDue(),
+        history: () => {
+            const toggle = document.getElementById('historyViewToggle');
+            if (toggle) toggle.textContent = t(HistoryManager.viewMode === 'card' ? 'ui.history.table_view' : 'ui.history.card_view');
+            HistoryManager.refreshHistory();
+        },
+        'cash-management': () => CashManagementManager.refreshForLanguage(),
+        'wholesale-sales': () => { WholesaleSalesManager.renderSalesHistory(); WholesaleSalesManager.renderSalesOutstanding(); },
+        settings: () => SettingsManager.loadSettings()
+    }[tabId];
+    if (redraw) run(tabId, redraw);
+    if (tabId === 'day' && DayManager.currentSubTab === 'cash') run('day-cash', () => CashManagementManager.refreshForLanguage());
+}
+window.addEventListener(LANG_CHANGE_EVENT, (e) => refreshForLanguage(e.detail.lang));
+SettingsManager.syncItemNamesWithLanguage(getLang());
 
 // Global error handlers
 window.addEventListener('error', function(event) {
     const errorMsg = event.error?.message || event.message || 'Unknown error';
     console.error('Global error:', event.error);
-    UIManager.showToast('An error occurred: ' + errorMsg);
+    UIManager.showToast(t('msg.app.error_occurred', { errorMsg }));
     
     // Log to telemetry
     TelemetryService.captureError({
@@ -154,7 +195,7 @@ function blockOutdatedApp() {
     NotificationsManager.stop();
     document.getElementById('appContent')?.classList.add('hidden');
     UIManager.hideLoading();
-    UIManager.showModal('This app version is outdated. Please update the app to continue.');
+    UIManager.showModal(t('msg.app.app_version_outdated_update_app'));
 }
 
 async function initializeUserData() {
@@ -182,7 +223,7 @@ async function initializeUserData() {
                 if (userData.status === 'pending') {
                     await firebase.auth().signOut();
                     UIManager.hideLoading();
-                    UIManager.showToast('Your account is pending approval. Please wait for admin approval.');
+                    UIManager.showToast(t('msg.common.account_pending_approval_wait_admin'));
                     document.getElementById('authScreen').style.display = 'flex';
                     return;
                 }
@@ -190,7 +231,7 @@ async function initializeUserData() {
                 if (userData.status === 'rejected') {
                     await firebase.auth().signOut();
                     UIManager.hideLoading();
-                    UIManager.showToast('Your account has been rejected. Please contact admin.');
+                    UIManager.showToast(t('msg.common.account_has_been_rejected_contact'));
                     document.getElementById('authScreen').style.display = 'flex';
                     return;
                 }
@@ -201,7 +242,7 @@ async function initializeUserData() {
                 // User document doesn't exist
                 await firebase.auth().signOut();
                 UIManager.hideLoading();
-                UIManager.showToast('User account not found. Please register.');
+                UIManager.showToast(t('msg.app.user_account_not_found_register'));
                 document.getElementById('authScreen').style.display = 'flex';
                 return;
             }
@@ -323,7 +364,7 @@ async function initializeUserData() {
     } catch (error) {
         console.error('Error initializing app:', error);
         UIManager.hideLoading();
-        UIManager.showToast('Failed to load data: ' + error.message);
+        UIManager.showToast(t('msg.app.failed_load_data', { message: error.message }));
     }
 }
 
@@ -672,6 +713,13 @@ window.app = {
         forgotPassword: () => AuthManager.handleForgotPassword()
     },
     
+    // App language (#143): Settings switch + side-menu toggle
+    i18n: {
+        setLang: (lang) => setLang(lang),
+        toggle: () => toggleLang(),
+        getLang: () => getLang()
+    },
+
     // Navigation
     nav: {
         toggleMenu: () => NavigationManager.toggleMenu(),
@@ -916,7 +964,7 @@ window.app = {
                 const billType = window.currentBillType || 'purchase';
                 BillingManager.editBill(billIndex, billType);
             } else {
-                UIManager.showToast('Bill index not provided');
+                UIManager.showToast(t('msg.app.bill_index_not_provided'));
             }
         }
     },

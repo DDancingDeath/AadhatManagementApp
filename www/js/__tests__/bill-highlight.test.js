@@ -82,12 +82,12 @@ describe('live marks', () => {
         }
         const msg = $('remaining').closest('.payment-row').nextElementSibling;
         expect(msg.classList.contains('bill-check-msg')).toBe(true);
-        expect(msg.textContent).toMatch(/^⛔ Cash \+ Online \+ Due is ₹300 less .* \/ .*₹300 कम/);
+        expect(msg.textContent).toMatch(/^⛔ Cash \+ Online \+ Due is ₹300 less [^\u0900-\u097F]*$/);
         expect($('cash').getAttribute('aria-describedby')).toBe(msg.id);
 
         expect(banner().hidden).toBe(false);
         expect(banner().getAttribute('aria-live')).toBe('polite');
-        expect(banner().textContent).toContain('⛔ 1 problem — check before saving / 1 समस्या — सेव करने से पहले देखें');
+        expect(banner().textContent).toContain('⛔ 1 problem — check before saving');
         expect($('testSection').classList.contains('bill-checks-block')).toBe(true);
         expect($('saveBtn').getAttribute('aria-disabled')).toBe('true');
         expect($('printBtn').classList.contains('bill-check-save-blocked')).toBe(true);
@@ -170,7 +170,7 @@ describe('save gate', () => {
         $('due').value = '400';
         const result = await BillChecksUI.confirmSave('test');
         expect(result.ok).toBe(false);
-        expect(toast).toHaveBeenCalledWith('Enter the name — a bill with Due needs a customer/supplier name. / नाम लिखें — उधार वाले बिल पर ग्राहक/व्यापारी का नाम ज़रूरी है।');
+        expect(toast).toHaveBeenCalledWith('Enter the name — a bill with Due needs a customer/supplier name.');
         expect(document.activeElement).toBe($('party'));
     });
 
@@ -191,7 +191,7 @@ describe('save gate', () => {
             return true;
         });
         expect((await BillChecksUI.confirmSave('test')).ok).toBe(false); // blank reason
-        expect(toast).toHaveBeenLastCalledWith('Write a reason to save anyway / फिर भी सेव करने का कारण लिखें');
+        expect(toast).toHaveBeenLastCalledWith('Write a reason to save anyway');
 
         html.mockImplementation(async (body) => {
             document.getElementById('m')?.remove();
@@ -211,7 +211,7 @@ describe('save gate', () => {
         $('cash').value = '900';
         const modal = jest.spyOn(UIManager, 'showModal').mockResolvedValue(false);
         expect((await BillChecksUI.confirmSave('test')).ok).toBe(false);
-        expect(modal).toHaveBeenCalledWith(expect.stringMatching(/Rate ₹90 is 2\.3× .*\n\nSave anyway\? \/ फिर भी सेव करें\?$/), 'Check before saving / सेव से पहले जाँचें', true);
+        expect(modal).toHaveBeenCalledWith(expect.stringMatching(/Rate ₹90 is 2\.3× .*\n\nSave anyway\?$/), 'Check before saving', true);
         modal.mockResolvedValue(true);
         const ok = await BillChecksUI.confirmSave('test');
         expect(ok.ok).toBe(true);

@@ -3,10 +3,10 @@
         
         <!-- Sub-navigation tabs -->
         <div class="sub-tabs">
-            <button id="dayTabToday" class="sub-tab active" onclick="window.app.day.showSubTab('today')">
+            <button id="dayTabToday" class="sub-tab active" onclick="window.app.day.showSubTab('today')" data-i18n="ui.today.today_s_summary">
                 📊 Today's Summary
             </button>
-            <button id="dayTabCash" class="sub-tab" onclick="window.app.day.showSubTab('cash')">
+            <button id="dayTabCash" class="sub-tab" onclick="window.app.day.showSubTab('cash')" data-i18n="ui.today.cash_management">
                 💵 Cash Management
             </button>
         </div>
@@ -19,7 +19,7 @@
 
             <!-- 1. MONEY FLOW - Most Important -->
             <div class="modern-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-bottom: 16px;">
-                <h3 class="section-title" style="color: white; margin-bottom: 12px;">💸 Today's Money Flow</h3>
+                <h3 class="section-title" style="color: white; margin-bottom: 12px;" data-i18n="ui.today.today_s_money_flow">💸 Today's Money Flow</h3>
                 <!-- Net Outflow on single line -->
                 <div style="display: flex; justify-content: center; align-items: center; gap: 10px; background: rgba(255,255,255,0.15); padding: 14px 20px; border-radius: 12px; margin-bottom: 12px;">
                     <span style="font-size: 15px; opacity: 0.95;" id="todayCashFlowLabel">Net Outflow:</span>
@@ -27,11 +27,11 @@
                 </div>
                 <div class="stats-grid stats-grid-2" style="margin-bottom: 0;">
                     <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 12px; opacity: 0.9;">Total Out</div>
+                        <div style="font-size: 12px; opacity: 0.9;" data-i18n="ui.today.total_out">Total Out</div>
                         <div style="font-size: 18px; font-weight: 600;" id="todayTotalOut">₹0</div>
                     </div>
                     <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 12px; opacity: 0.9;">Total In</div>
+                        <div style="font-size: 12px; opacity: 0.9;" data-i18n="ui.today.total_in">Total In</div>
                         <div style="font-size: 18px; font-weight: 600;" id="todayTotalIn">₹0</div>
                     </div>
                 </div>
@@ -39,28 +39,28 @@
 
             <!-- LABOR - Single line -->
             <div style="display: flex; justify-content: center; align-items: center; gap: 10px; background: #fef2f2; border: 1px solid #fecaca; padding: 12px 20px; border-radius: 12px; margin-bottom: 16px;">
-                <span style="font-size: 14px; color: #991b1b;">👷 Labor:</span>
+                <span style="font-size: 14px; color: #991b1b;" data-i18n="ui.today.labor">👷 Labor:</span>
                 <span style="font-size: 18px; font-weight: 600; color: #991b1b;" id="todayLaborCost">₹0</span>
             </div>
 
             <!-- 2. PAYMENT BREAKDOWN -->
             <div class="modern-card">
-                <h3 class="section-title">💳 Payment Breakdown</h3>
+                <h3 class="section-title" data-i18n="ui.today.payment_breakdown">💳 Payment Breakdown</h3>
                 <div class="summary-grid">
                     <div class="summary-item summary-item-danger">
-                        <span>Cash Out:</span>
+                        <span data-i18n="ui.today.cash_out">Cash Out:</span>
                         <strong id="todayCashPaid">₹0</strong>
                     </div>
                     <div class="summary-item summary-item-success">
-                        <span>Cash In:</span>
+                        <span data-i18n="ui.today.cash_in">Cash In:</span>
                         <strong id="todayCashReceived">₹0</strong>
                     </div>
                     <div class="summary-item summary-item-warning">
-                        <span>Online Out:</span>
+                        <span data-i18n="ui.today.online_out">Online Out:</span>
                         <strong id="todayOnlinePaid">₹0</strong>
                     </div>
                     <div class="summary-item summary-item-info">
-                        <span>Online In:</span>
+                        <span data-i18n="ui.today.online_in">Online In:</span>
                         <strong id="todayOnlineReceived">₹0</strong>
                     </div>
                 </div>
@@ -68,25 +68,25 @@
 
             <!-- 3. TRANSACTIONS -->
             <div class="modern-card">
-                <h3 class="section-title">📦 Transactions</h3>
+                <h3 class="section-title" data-i18n="ui.today.transactions">📦 Transactions</h3>
                 <div class="stats-grid stats-grid-2" style="margin-bottom: 0;">
                     <div class="stat-card stat-card-success">
-                        <div class="stat-label">Purchases</div>
+                        <div class="stat-label" data-i18n="ui.common.purchases">Purchases</div>
                         <div class="stat-value stat-value-success" id="todayTotalPurchases">₹0</div>
                         <div class="stat-subtitle" id="todayPurchaseCount">0 bills</div>
                     </div>
                     <div class="stat-card stat-card-info">
-                        <div class="stat-label">Sales</div>
+                        <div class="stat-label" data-i18n="ui.common.sales">Sales</div>
                         <div class="stat-value stat-value-info" id="todayTotalSales">₹0</div>
                         <div class="stat-subtitle" id="todaySaleCount">0 bills</div>
                     </div>
                     <div class="stat-card stat-card-warning">
-                        <div class="stat-label">Business Exp.</div>
+                        <div class="stat-label" data-i18n="ui.today.business_exp">Business Exp.</div>
                         <div class="stat-value stat-value-warning" id="todayBusinessExpenses">₹0</div>
                         <div class="stat-subtitle" id="todayBusinessExpenseCount">0 entries</div>
                     </div>
                     <div class="stat-card stat-card-purple">
-                        <div class="stat-label">Personal Exp.</div>
+                        <div class="stat-label" data-i18n="ui.today.personal_exp">Personal Exp.</div>
                         <div class="stat-value stat-value-purple" id="todayPersonalExpenses">₹0</div>
                         <div class="stat-subtitle" id="todayPersonalExpenseCount">0 entries</div>
                     </div>
@@ -95,22 +95,22 @@
 
             <!-- 4. DUE SUMMARY -->
             <div class="modern-card">
-                <h3 class="section-title">📋 Due Summary</h3>
+                <h3 class="section-title" data-i18n="ui.today.due_summary">📋 Due Summary</h3>
                 <div class="summary-grid">
                     <div class="summary-item summary-item-success">
-                        <span>Due Received:</span>
+                        <span data-i18n="ui.common.due_received">Due Received:</span>
                         <strong id="todayDueReceived">₹0</strong>
                     </div>
                     <div class="summary-item summary-item-danger">
-                        <span>Due Paid:</span>
+                        <span data-i18n="ui.common.due_paid">Due Paid:</span>
                         <strong id="todayDuePaid">₹0</strong>
                     </div>
                     <div class="summary-item summary-item-info">
-                        <span>Due to Receive:</span>
+                        <span data-i18n="ui.today.due_receive">Due to Receive:</span>
                         <strong id="todayDueToReceive">₹0</strong>
                     </div>
                     <div class="summary-item summary-item-warning">
-                        <span>Due to Pay:</span>
+                        <span data-i18n="ui.today.due_pay">Due to Pay:</span>
                         <strong id="todayDueToPay">₹0</strong>
                     </div>
                 </div>
@@ -118,16 +118,16 @@
 
             <!-- 6. ITEM DETAILS (Scrollable) -->
             <div class="modern-card">
-                <h3 class="section-title">🛒 Purchase Details</h3>
+                <h3 class="section-title" data-i18n="ui.today.purchase_details">🛒 Purchase Details</h3>
                 <div id="todayPurchaseItems" class="items-grid">
-                    <p class="empty-state">No purchases today</p>
+                    <p class="empty-state" data-i18n="ui.today.no_purchases_today">No purchases today</p>
                 </div>
             </div>
 
             <div class="modern-card">
-                <h3 class="section-title">💰 Sale Details</h3>
+                <h3 class="section-title" data-i18n="ui.today.sale_details">💰 Sale Details</h3>
                 <div id="todaySaleItems" class="items-grid">
-                    <p class="empty-state">No sales today</p>
+                    <p class="empty-state" data-i18n="ui.today.no_sales_today">No sales today</p>
                 </div>
             </div>
 

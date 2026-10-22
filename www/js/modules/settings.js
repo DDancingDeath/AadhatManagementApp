@@ -12,8 +12,11 @@ import { Helpers } from '../utils/helpers.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { normalizeLabourSettings } from '../utils/money.js';
 import { normalizeThresholds } from '../utils/bill-checks.js';
+import { t } from '../i18n/index.js';
 
-const LABOUR_OWNER_ONLY_NOTE = 'Only the owner can change these. They apply to everyone. / इन्हें केवल मालिक बदल सकते हैं। ये सभी पर लागू होते हैं।';
+const LABOUR_OWNER_ONLY_KEY = 'msg.settings.labour_owner_only';
+/** '1' = item names follow the app language, '0' = the user chose "Show item names in Hindi" (#143). */
+export const ITEM_NAMES_FOLLOW_LANG_KEY = 'aadhat.itemNamesFollowLang';
 
 /** Set an input's value / checked state when it is on the page. */
 function setField(id, prop, value) {
@@ -41,7 +44,7 @@ export class SettingsManager {
         setField('settingLaborRate', 'value', labour.laborRate);
         ['settingHeavyWeight', 'settingLaborRate'].forEach(id => setField(id, 'disabled', !isOwner));
         const note = document.getElementById('labourSettingsNote');
-        if (note) note.textContent = isOwner ? 'Saved for everyone. / सभी के लिए सहेजा जाता है।' : LABOUR_OWNER_ONLY_NOTE;
+        if (note) note.textContent = t(isOwner ? 'msg.settings.labour_saved_for_everyone' : LABOUR_OWNER_ONLY_KEY);
         setField('settingAutoLabor', 'checked', settings.autoLaborEnabled !== false);
         setField('settingShowHindi', 'checked', settings.showHindi || false);
         
@@ -74,6 +77,21 @@ export class SettingsManager {
     }
 
     /**
+     * Item names show in Hindi with the Hindi app language until the user sets
+     * "Show item names in Hindi" themselves. An existing "on" choice is kept.
+     * @param {'en'|'hi'} lang
+     */
+    static syncItemNamesWithLanguage(lang) {
+        let follow = localStorage.getItem(ITEM_NAMES_FOLLOW_LANG_KEY);
+        if (follow === null) {
+            follow = AppState.settings.showHindi === true ? '0' : '1';
+            localStorage.setItem(ITEM_NAMES_FOLLOW_LANG_KEY, follow);
+        }
+        if (follow === '1') AppState.settings.showHindi = lang === 'hi';
+        setField('settingShowHindi', 'checked', !!AppState.settings.showHindi);
+    }
+
+    /**
      * Toggle dark mode on/off
      * Persists preference to localStorage
      */
@@ -88,7 +106,7 @@ export class SettingsManager {
         }
         
         UIManager.hapticFeedback('light');
-        UIManager.showToast(enabled ? 'Dark mode enabled' : 'Dark mode disabled');
+        UIManager.showToast(enabled ? t('msg.settings.dark_mode_enabled') : t('msg.settings.dark_mode_disabled'));
     }
 
     /**
@@ -99,7 +117,10 @@ export class SettingsManager {
         const autoLabor = document.getElementById('settingAutoLabor');
         if (autoLabor) AppState.settings.autoLaborEnabled = autoLabor.checked;
         const showHindi = document.getElementById('settingShowHindi');
-        if (showHindi) AppState.settings.showHindi = showHindi.checked;
+        if (showHindi && showHindi.checked !== !!AppState.settings.showHindi) {
+            AppState.settings.showHindi = showHindi.checked;
+            localStorage.setItem(ITEM_NAMES_FOLLOW_LANG_KEY, '0');
+        }
         
         localStorage.setItem('settings', JSON.stringify(AppState.settings));
         
@@ -115,7 +136,7 @@ export class SettingsManager {
         const labourWrite = labourChanged ? this.saveLabourSettings(typed) : Promise.resolve(false);
         
         UIManager.hapticFeedback('light');
-        UIManager.showToast('Settings saved successfully');
+        UIManager.showToast(t('msg.settings.settings_saved_successfully'));
         
         window.app?.items?.render?.();
         window.app?.billing?.loadItemsDropdown?.();
@@ -135,7 +156,7 @@ export class SettingsManager {
         if (AppState.userRole !== 'owner') {
             setField('settingLaborRate', 'value', current.laborRate);
             setField('settingHeavyWeight', 'value', current.heavyWeightThreshold);
-            UIManager.showToast(LABOUR_OWNER_ONLY_NOTE);
+            UIManager.showToast(t(LABOUR_OWNER_ONLY_KEY));
             return false;
         }
         const next = normalizeLabourSettings({
@@ -148,7 +169,7 @@ export class SettingsManager {
             return true;
         } catch (error) {
             console.error('Saving shared labour settings failed:', error);
-            UIManager.showToast('Labour rate not saved for everyone — check the internet and try again / सभी के लिए सहेजा नहीं गया — इंटरनेट देखकर फिर कोशिश करें');
+            UIManager.showToast(t('msg.settings.labour_rate_not_saved_everyone'));
             return false;
         }
     }
@@ -209,7 +230,7 @@ export class SettingsManager {
             UIManager.hapticFeedback('light');
             
             if (!window.bluetoothSerial) {
-                const msg = 'Bluetooth is only available in the mobile app.\n\nWeb printing will be used instead.';
+                const msg = t('msg.settings.bluetooth_app_only');
                 await UIManager.showModal(msg);
                 return;
             }
@@ -217,7 +238,7 @@ export class SettingsManager {
             const devices = await window.app.printer.scan();
             this.displayBluetoothDevices(devices);
         } catch (error) {
-            const errorMsg = 'Failed to scan devices: ' + (error.message || error);
+            const errorMsg = t('msg.printer.failed_scan_devices', { message: error.message || error });
             console.error('[SETTINGS] Scan error:', error);
             await UIManager.showModal(errorMsg);
         }
@@ -228,11 +249,11 @@ export class SettingsManager {
         if (!container) return;
         
         if (!devices || devices.length === 0) {
-            container.innerHTML = '<p style="color: #666; padding: 12px;">No devices found. Make sure your printer is powered on and in pairing mode.</p>';
+            container.innerHTML = `<p style="color: #666; padding: 12px;">${Helpers.escapeHtml(t('ui.settings.no_devices_found'))}</p>`;
             return;
         }
         
-        container.innerHTML = '<div style="margin-top: 12px;"><strong>Available Devices:</strong></div>';
+        container.innerHTML = `<div style="margin-top: 12px;"><strong>${Helpers.escapeHtml(t('ui.settings.available_devices'))}</strong></div>`;
         
         devices.forEach((device, index) => {
             const deviceCard = document.createElement('div');
@@ -249,7 +270,7 @@ export class SettingsManager {
                     <strong>${Helpers.escapeHtml(name)}</strong><br>
                     <small style="color: #666;">${Helpers.escapeHtml(address)}</small>
                 </div>
-                <button class="add-item-btn" data-device-index="${index}">Connect</button>
+                <button class="add-item-btn" data-device-index="${index}">${Helpers.escapeHtml(t('ui.settings.connect'))}</button>
             `;
             
             // Add click handler to the button
@@ -273,13 +294,13 @@ export class SettingsManager {
             localStorage.setItem('printerSettings', JSON.stringify(AppState.printerSettings));
             
             this.updatePrinterStatus();
-            UIManager.showToast('✓ Connected to ' + deviceName);
+            UIManager.showToast(t('msg.settings.connected', { deviceName }));
             
             const container = document.getElementById('bluetoothDevicesList');
             if (container) container.innerHTML = '';
             
         } catch (error) {
-            const errorMsg = 'Failed to connect: ' + (error.message || error);
+            const errorMsg = t('msg.printer.failed_connect', { message: error.message || error });
             console.error('[SETTINGS] Connect error:', error);
             await UIManager.showModal(errorMsg);
         }
@@ -295,9 +316,9 @@ export class SettingsManager {
             localStorage.setItem('printerSettings', JSON.stringify(AppState.printerSettings));
             
             this.updatePrinterStatus();
-            UIManager.showToast('Printer disconnected');
+            UIManager.showToast(t('msg.common.printer_disconnected'));
         } catch (error) {
-            await UIManager.showModal('Failed to disconnect: ' + error.message);
+            await UIManager.showModal(t('msg.common.failed_disconnect', { message: error.message }));
         }
     }
 
@@ -311,13 +332,13 @@ export class SettingsManager {
         
         if (isConnected) {
             if (statusText) {
-                statusText.innerHTML = `<span style="color: #4CAF50;">● Connected to ${Helpers.escapeHtml(printerSettings.deviceName)}</span>`;
+                statusText.innerHTML = `<span style="color: #4CAF50;">● ${Helpers.escapeHtml(t('ui.settings.printer_connected_to', { deviceName: printerSettings.deviceName }))}</span>`;
             }
             if (disconnectBtn) disconnectBtn.style.display = 'block';
             if (testPrintBtn) testPrintBtn.style.display = 'block';
         } else {
             if (statusText) {
-                statusText.innerHTML = '<span style="color: #999;">○ Not connected</span>';
+                statusText.innerHTML = `<span style="color: #999;">○ ${Helpers.escapeHtml(t('ui.settings.printer_not_connected'))}</span>`;
             }
             if (disconnectBtn) disconnectBtn.style.display = 'none';
             if (testPrintBtn) testPrintBtn.style.display = 'none';
@@ -326,7 +347,7 @@ export class SettingsManager {
 
     static async testPrint() {
         if (!window.app.printer || !window.app.printer.device) {
-            await UIManager.showModal('Printer not connected');
+            await UIManager.showModal(t('msg.settings.printer_not_connected'));
             return;
         }
         
@@ -363,11 +384,11 @@ export class SettingsManager {
             
             await window.app.printer.write(testBillData);
             UIManager.hideLoading();
-            UIManager.showToast('✓ Test print sent');
+            UIManager.showToast(t('msg.settings.test_print_sent'));
             UIManager.hapticFeedback('heavy');
         } catch (error) {
             UIManager.hideLoading();
-            await UIManager.showModal('Test print failed: ' + error.message);
+            await UIManager.showModal(t('msg.common.test_print_failed', { message: error.message }));
         }
     }
 
@@ -376,7 +397,7 @@ export class SettingsManager {
     
     static async loadAuditLogs() {
         if (AppState.userRole !== 'owner') {
-            UIManager.showToast('Only owners can view audit logs');
+            UIManager.showToast(t('msg.common.only_owners_can_view_audit'));
             return;
         }
         
@@ -388,7 +409,7 @@ export class SettingsManager {
         } catch (error) {
             console.error('Error loading audit logs:', error);
             UIManager.hideLoading();
-            UIManager.showToast('Failed to load audit logs');
+            UIManager.showToast(t('msg.common.failed_load_audit_logs'));
         }
     }
     

@@ -8,6 +8,7 @@
 // -------------------- UI UTILITIES --------------------
 
 import { AppState } from '../utils/state.js';
+import { t } from '../i18n/index.js';
 
 // #toast and #loadingOverlay are declared inside #appContent, which is hidden until login.
 // Move them to <body> so they are also visible on the login/register screen.
@@ -140,7 +141,7 @@ const UIManager = {
      * @param {boolean} [showCancel=false] - Whether to show cancel button
      * @returns {Promise<boolean>} Resolves with user's choice (true for OK, false for Cancel)
      */
-    showModal(message, title = 'Alert', showCancel = false) {
+    showModal(message, title = t('ui.modals.alert'), showCancel = false) {
         return new Promise((resolve) => {
             const overlay = document.getElementById('modalOverlay');
             const modalTitle = document.getElementById('modalTitle');
@@ -227,7 +228,7 @@ const UIManager = {
      * @param {boolean} [showCancel=false] - Whether to show cancel button
      * @returns {Promise<boolean>} Resolves with user's choice
      */
-    showModalWithHtml(htmlMessage, title = 'Alert', showCancel = false) {
+    showModalWithHtml(htmlMessage, title = t('ui.modals.alert'), showCancel = false) {
         return new Promise((resolve) => {
             const overlay = document.getElementById('modalOverlay');
             const modalTitle = document.getElementById('modalTitle');

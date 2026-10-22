@@ -77,11 +77,13 @@ describe('#166 partyDue lookup', () => {
         expect(billsForKind({}, 'retail')).toEqual([]);
     });
 
-    test('bilingual text: customers owe us, we owe suppliers', () => {
+    test('text in the app language: customers owe us, we owe suppliers', () => {
         expect(partyDueText({ total: 1500, count: 3, oldestDays: 42 }, 'retail'))
-            .toBe('Already owes ₹1,500 on 3 bills (oldest 42 days) / पहले से ₹1,500 बकाया (3 बिल)');
+            .toBe('Already owes ₹1,500 on 3 bills (oldest 42 days)');
         expect(partyDueText({ total: 800, count: 1, oldestDays: 1 }, 'purchase'))
-            .toBe('We owe ₹800 on 1 bill (oldest 1 day) / हमें ₹800 देना है (1 बिल)');
+            .toBe('We owe ₹800 on 1 bill (oldest 1 day)');
+        expect(partyDueText({ total: 1500, count: 3, oldestDays: 42 }, 'retail', 'hi'))
+            .toBe('पहले से ₹1,500 बकाया — 3 बिल (सबसे पुराना 42 दिन)');
         expect(partyDueText({ total: 10, count: 1, oldestDays: 0 }, 'wholesale')).toContain('(oldest today)');
         expect(partyDueText({ total: 10, count: 1, oldestDays: null }, 'retail')).toContain('(date unknown)');
     });
@@ -136,7 +138,7 @@ describe('#166 due line under the name', () => {
         expect(line()).toBeNull();
         jest.advanceTimersByTime(1);
         expect(line().hidden).toBe(false);
-        expect(line().textContent).toBe('📥 Already owes ₹500 on 2 bills (oldest 51 days) / पहले से ₹500 बकाया (2 बिल) ›');
+        expect(line().textContent).toBe('📥 Already owes ₹500 on 2 bills (oldest 51 days) ›');
         expect(line().classList.contains('party-due-old')).toBe(true);
         expect(document.querySelector('#saleSection .form-row').nextElementSibling).toBe(line());
 

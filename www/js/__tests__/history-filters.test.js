@@ -141,10 +141,10 @@ describe('validateCustomRange / olderMonthsToLoad (quota guard)', () => {
         expect(validateCustomRange('2026-08-03', '', now)).toEqual({ ok: true, from: '2026-08-03', to: '' });
     });
 
-    test('before 2020, after tomorrow, invalid and empty are rejected with a bilingual hint', () => {
-        expect(validateCustomRange('2019-12-31', '', now).error).toMatch(/2020.*\/ 2020/);
+    test('before 2020, after tomorrow, invalid and empty are rejected with a hint', () => {
+        expect(validateCustomRange('2019-12-31', '', now).error).toBe('Dates before 2020 are not allowed');
         expect(validateCustomRange('2020-01-01', '2026-10-23', now).ok).toBe(true);
-        expect(validateCustomRange('', '2026-10-24', now).error).toContain('future /');
+        expect(validateCustomRange('', '2026-10-24', now).error).toBe('Date is in the future');
         expect(validateCustomRange('2026-02-31', '', now).ok).toBe(false);
         expect(validateCustomRange('', '', now).ok).toBe(false);
     });

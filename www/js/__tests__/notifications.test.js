@@ -290,7 +290,7 @@ describe('Firestore paths (fake Firestore)', () => {
             expect(UIManager.showToast).toHaveBeenCalledTimes(1);
             const [msg, ms] = UIManager.showToast.mock.calls[0];
             expect(msg).toContain('Gehu: Retail rate ₹40 → ₹45');
-            expect(msg).toContain('गेहूं: फुटकर रेट ₹40 → ₹45');
+            expect(msg).not.toMatch(/[\u0900-\u097F]/); // one language: English by default (#143)
             expect(msg).toContain('Manager');
             expect(ms).toBe(5000);
             expect(document.getElementById('notifBadge').textContent).toBe('2');
@@ -327,7 +327,7 @@ describe('Firestore paths (fake Firestore)', () => {
             NotificationsManager.start('owner1');
             await fake.settle();
             expect(UIManager.showToast).toHaveBeenCalledTimes(1);
-            expect(UIManager.showToast.mock.calls[0][0]).toMatch(/index.*सूचनाएं/);
+            expect(UIManager.showToast.mock.calls[0][0]).toMatch(/database index/);
             expect(TelemetryService.logWarning).toHaveBeenCalledWith('Notifications listener failed', expect.objectContaining({ code: 'failed-precondition' }));
             expect(document.getElementById('notifBell').classList.contains('notif-error')).toBe(true);
         });

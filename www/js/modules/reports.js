@@ -9,6 +9,7 @@ import {
     onDemandHistoryInfo, renderStaleHistoryHint
 } from '../utils/history-window.js';
 import { createRenderMemo } from '../utils/render-memo.js';
+import { t } from '../i18n/index.js';
 
 const reportsMemo = createRenderMemo();
 
@@ -160,7 +161,7 @@ export class ReportsManager {
         } catch (error) {
             console.error('Loading older history failed:', error);
         }
-        if (!covered) UIManager.showToast("Couldn't load older data for this period");
+        if (!covered) UIManager.showToast(t('msg.reports.couldn_t_load_older_data'));
         return covered;
     }
 
@@ -901,7 +902,7 @@ export class ReportsManager {
         let filteredSales = this.filterByDate(allSalesHistory);
 
         if (filteredPurchases.length === 0 && filteredSales.length === 0) {
-            UIManager.showToast('No data to export for the selected period');
+            UIManager.showToast(t('msg.reports.no_data_export_selected_period'));
             return;
         }
 
@@ -946,7 +947,7 @@ export class ReportsManager {
         document.body.removeChild(link);
 
         UIManager.hapticFeedback('medium');
-        UIManager.showToast(`Exported ${filteredPurchases.length + filteredSales.length} transactions to CSV`);
+        UIManager.showToast(t('msg.reports.exported_transactions_csv', { value: filteredPurchases.length + filteredSales.length }));
     }
 
     static async exportPDF() {
@@ -960,7 +961,7 @@ export class ReportsManager {
         let filteredSales = this.filterByDate(allSalesHistory);
 
         if (filteredPurchases.length === 0 && filteredSales.length === 0) {
-            UIManager.showToast('No data to export for the selected period');
+            UIManager.showToast(t('msg.reports.no_data_export_selected_period'));
             return;
         }
 
@@ -1100,7 +1101,7 @@ export class ReportsManager {
         printWindow.onload = () => printWindow.print();
 
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('PDF report opened - use Print > Save as PDF');
+        UIManager.showToast(t('msg.reports.pdf_report_opened_use_print'));
     }
 
     // ==================== UTILITIES ====================

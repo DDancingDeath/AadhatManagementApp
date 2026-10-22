@@ -12,6 +12,7 @@ import { Helpers } from '../utils/helpers.js';
 import { formatDateTimeIN } from '../utils/dates.js';
 import { getStartupTimings, startupRows } from '../utils/startup-timings.js';
 import { getQuotaStatus } from '../firebase/firestore-meter.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Diagnostics Manager - View and manage application telemetry and audit logs
@@ -53,7 +54,7 @@ const DiagnosticsManager = {
      */
     async init() {
         if (AppState.userRole !== 'owner') {
-            UIManager.showToast('Access denied', 'error');
+            UIManager.showToast(t('msg.common.access_denied'), 5000);
             return;
         }
         this.renderTabs();
@@ -158,7 +159,7 @@ const DiagnosticsManager = {
             this.data = await TelemetryService.getTelemetryData();
             this.renderErrors();
         } catch (error) {
-            UIManager.showToast('Failed to load diagnostics data', 'error');
+            UIManager.showToast(t('msg.diagnostics.failed_load_diagnostics_data'), 5000);
         } finally {
             UIManager.hideLoading();
         }
@@ -295,7 +296,7 @@ const DiagnosticsManager = {
      */
     async loadAuditLogs() {
         if (AppState.userRole !== 'owner') {
-            UIManager.showToast('Only owners can view audit logs');
+            UIManager.showToast(t('msg.common.only_owners_can_view_audit'));
             return;
         }
         
@@ -305,7 +306,7 @@ const DiagnosticsManager = {
             this.renderAuditLogs();
         } catch (error) {
             console.error('Error loading audit logs:', error);
-            UIManager.showToast('Failed to load audit logs');
+            UIManager.showToast(t('msg.common.failed_load_audit_logs'));
         } finally {
             UIManager.hideLoading();
         }
@@ -475,7 +476,7 @@ const DiagnosticsManager = {
      * @param {string} errorId - Error ID
      */
     async deleteError(errorId) {
-        const confirmed = await UIManager.showModal('Delete this error?', 'Confirm Delete', true);
+        const confirmed = await UIManager.showModal(t('msg.diagnostics.delete_error'), t('msg.common.confirm_delete'), true);
         if (!confirmed) return;
 
         try {
@@ -483,9 +484,9 @@ const DiagnosticsManager = {
             await TelemetryService.deleteError(errorId, entry?.docIds);
             this.data = this.data.filter(d => d.id !== errorId);
             this.renderErrors();
-            UIManager.showToast('Error deleted');
+            UIManager.showToast(t('msg.diagnostics.error_deleted'));
         } catch (error) {
-            UIManager.showToast('Failed to delete error', 'error');
+            UIManager.showToast(t('msg.diagnostics.failed_delete_error'), 5000);
         }
     },
 
@@ -494,8 +495,8 @@ const DiagnosticsManager = {
      */
     async clearAll() {
         const confirmed = await UIManager.showModal(
-            'This will delete ALL telemetry data. This cannot be undone. Continue?',
-            'Clear All Diagnostics',
+            t('msg.diagnostics.will_delete_all_telemetry_data'),
+            t('msg.diagnostics.clear_all_diagnostics'),
             true
         );
         if (!confirmed) return;
@@ -505,9 +506,9 @@ const DiagnosticsManager = {
             await TelemetryService.clearTelemetryData();
             this.data = [];
             this.renderErrors();
-            UIManager.showToast('All diagnostics cleared');
+            UIManager.showToast(t('msg.diagnostics.all_diagnostics_cleared'));
         } catch (error) {
-            UIManager.showToast('Failed to clear diagnostics', 'error');
+            UIManager.showToast(t('msg.diagnostics.failed_clear_diagnostics'), 5000);
         } finally {
             UIManager.hideLoading();
         }

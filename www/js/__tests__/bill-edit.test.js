@@ -4,11 +4,12 @@
  * after the server committed; offline and conflicts keep the editor. Also the
  * client-side edit permission (canEditBill).
  */
-import { BillingManager, PurchaseManager, canEditBill, EDIT_NOT_ALLOWED_MESSAGE } from '../modules/billing.js';
+import { BillingManager, PurchaseManager, canEditBill, EDIT_NOT_ALLOWED_KEY } from '../modules/billing.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AppState } from '../utils/state.js';
-import { NAME_REQUIRED_FOR_DUE_MESSAGE } from '../utils/money.js';
+import { NAME_REQUIRED_FOR_DUE_KEY } from '../utils/money.js';
+import { t } from '../i18n/index.js';
 
 const BILL = { id: 'b1', userId: 'creator', items: [{ itemId: 'x', qty: 1, rate: 1 }], payment: { due: 0 } };
 
@@ -67,7 +68,7 @@ describe('saveEditedBill', () => {
         const update = jest.spyOn(FirebaseService, 'updatePurchase');
         expect(await BillingManager.saveEditedBill()).toBeUndefined();
         expect(update).not.toHaveBeenCalled();
-        expect(toast).toHaveBeenCalledWith(NAME_REQUIRED_FOR_DUE_MESSAGE);
+        expect(toast).toHaveBeenCalledWith(t(NAME_REQUIRED_FOR_DUE_KEY));
         expect(BillingManager.editingBillIndex).toBe(0);
         document.body.innerHTML = '';
     });
@@ -125,7 +126,7 @@ describe('canEditBill', () => {
         const toast = jest.spyOn(UIManager, 'showToast').mockImplementation(() => {});
         BillingManager.editingBillIndex = undefined;
         await BillingManager.editBill(0, 'purchase');
-        expect(toast).toHaveBeenCalledWith(EDIT_NOT_ALLOWED_MESSAGE);
+        expect(toast).toHaveBeenCalledWith(t(EDIT_NOT_ALLOWED_KEY));
         expect(BillingManager.editingBillIndex).toBeUndefined();
         toast.mockRestore();
     });

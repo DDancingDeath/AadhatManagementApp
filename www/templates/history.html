@@ -1,28 +1,28 @@
 <div id="history" class="tab">
         
-        <div class="filter-buttons history-type-filter" role="group" aria-label="Bill type" style="margin-bottom: 10px;">
-            <button type="button" class="filter-btn active" data-type="all" onclick="window.app.history.filterHistory('all')">All</button>
-            <button type="button" class="filter-btn filter-purchase" data-type="purchase" onclick="window.app.history.filterHistory('purchase')">Purchase</button>
-            <button type="button" class="filter-btn filter-sale" data-type="retail" onclick="window.app.history.filterHistory('retail')">Retail</button>
-            <button type="button" class="filter-btn filter-sale" data-type="wholesale" onclick="window.app.history.filterHistory('wholesale')">Wholesale</button>
+        <div class="filter-buttons history-type-filter" role="group" aria-label="Bill type" style="margin-bottom: 10px;" data-i18n-aria-label="ui.history.bill_type">
+            <button type="button" class="filter-btn active" data-type="all" onclick="window.app.history.filterHistory('all')" data-i18n="ui.history.all">All</button>
+            <button type="button" class="filter-btn filter-purchase" data-type="purchase" onclick="window.app.history.filterHistory('purchase')" data-i18n="ui.common.purchase">Purchase</button>
+            <button type="button" class="filter-btn filter-sale" data-type="retail" onclick="window.app.history.filterHistory('retail')" data-i18n="ui.history.retail">Retail</button>
+            <button type="button" class="filter-btn filter-sale" data-type="wholesale" onclick="window.app.history.filterHistory('wholesale')" data-i18n="ui.history.wholesale">Wholesale</button>
         </div>
 
         <div class="history-date-filter">
-            <label for="historyDatePreset" class="history-date-label">Date / तारीख</label>
+            <label for="historyDatePreset" class="history-date-label" data-i18n="ui.history.date">Date</label>
             <select id="historyDatePreset" onchange="window.app.history.setDatePreset(this.value)">
-                <option value="all">All dates / सभी तारीख</option>
-                <option value="today">Today / आज</option>
-                <option value="yesterday">Yesterday / कल</option>
-                <option value="week">This week / इस हफ्ते</option>
-                <option value="month">This month / इस महीने</option>
-                <option value="lastMonth">Last month / पिछला महीना</option>
-                <option value="custom">Custom / चुनें</option>
+                <option value="all" data-i18n="ui.history.all_dates">All dates</option>
+                <option value="today" data-i18n="ui.history.today">Today</option>
+                <option value="yesterday" data-i18n="ui.history.yesterday">Yesterday</option>
+                <option value="week" data-i18n="ui.history.week">This week</option>
+                <option value="month" data-i18n="ui.history.month">This month</option>
+                <option value="lastMonth" data-i18n="ui.history.last_month">Last month</option>
+                <option value="custom" data-i18n="ui.history.custom">Custom</option>
             </select>
             <div id="historyCustomRange" class="history-custom-range" hidden>
-                <input type="date" id="historyFromDate" aria-label="From date" min="2020-01-01">
+                <input type="date" id="historyFromDate" aria-label="From date" min="2020-01-01" data-i18n-aria-label="ui.history.from_date">
                 <span aria-hidden="true">–</span>
-                <input type="date" id="historyToDate" aria-label="To date" min="2020-01-01">
-                <button type="button" class="history-apply-range" onclick="window.app.history.applyCustomRange()">Apply / लागू करें</button>
+                <input type="date" id="historyToDate" aria-label="To date" min="2020-01-01" data-i18n-aria-label="ui.history.to_date">
+                <button type="button" class="history-apply-range" onclick="window.app.history.applyCustomRange()" data-i18n="ui.history.apply">Apply</button>
             </div>
             <div id="historyRangeHint" class="history-range-hint" role="alert" hidden></div>
             <div id="historyRangeLabel" class="history-range-label" hidden></div>
@@ -31,7 +31,7 @@
         <div style="display: flex; gap: 8px; margin-bottom: 16px; align-items: center;">
             <input type="text" id="historySearch" placeholder="Search by bill number, customer, or item..." 
                    oninput="window.app.history.searchHistory(this.value)"
-                   style="flex: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;" />
+                   style="flex: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;"  data-i18n-placeholder="ui.history.search_bill_number_customer"/>
             <button onclick="window.app.history.toggleView()" id="historyViewToggle" 
                     style="padding: 12px 16px; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; white-space: nowrap; min-width: 100px;">
                 Table View
@@ -39,7 +39,7 @@
         </div>
 
         <div id="historyList">
-            <p style="text-align: center; color: #888; margin-top: 40px;">No billing history yet</p>
+            <p style="text-align: center; color: #888; margin-top: 40px;" data-i18n="ui.history.no_billing_history_yet">No billing history yet</p>
         </div>
         <div id="historySearchFooter" class="history-search-footer" style="display: none;"></div>
     </div>

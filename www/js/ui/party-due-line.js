@@ -9,6 +9,7 @@
 
 import { AppState } from '../utils/state.js';
 import { billsForKind, partyDue, partyDueText } from '../utils/party-due.js';
+import { t } from '../i18n/index.js';
 
 const lineId = (kind) => `partyDue-${kind}`;
 
@@ -51,7 +52,7 @@ export function renderPartyDue(kind, inputId, draft) {
     // Amber once the oldest bill is past 30 days (same buckets as Outstanding)
     el.classList.toggle('party-due-old', due.bucket > 0);
     el.textContent = `${kind === 'purchase' ? '📤' : '📥'} ${partyDueText(due, kind)} ›`;
-    el.title = 'Open in Outstanding / बकाया में देखें';
+    el.title = t('ui.billing.open_in_outstanding');
     return due;
 }
 

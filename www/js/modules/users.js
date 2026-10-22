@@ -9,6 +9,7 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Users Manager - Manages user operations
@@ -43,7 +44,7 @@ export class UsersManager {
             this.renderActiveUsers(activeUsers);
         } catch (error) {
             console.error('Error loading users:', error);
-            UIManager.showToast('Failed to load users');
+            UIManager.showToast(t('msg.common.failed_load_users'));
         }
     }
 
@@ -151,27 +152,27 @@ export class UsersManager {
             });
             
             UIManager.hapticFeedback('medium');
-            UIManager.showToast(`User approved as ${Helpers.roleLabel(role)}`);
+            UIManager.showToast(t('msg.common.user_approved_as', { roleLabel: Helpers.roleLabel(role) }));
             this.loadUsers();
         } catch (error) {
             console.error('Error approving user:', error);
-            UIManager.showModal('Failed to approve user');
+            UIManager.showModal(t('msg.common.failed_approve_user'));
         }
     }
 
     static async rejectUser(userId) {
-        const confirmed = await UIManager.showModal('Are you sure you want to reject this registration?', 'Confirm', true);
+        const confirmed = await UIManager.showModal(t('msg.users.are_sure_want_reject_registration'), t('msg.users.confirm'), true);
         if (!confirmed) return;
         
         try {
             await FirebaseService.deleteUserProfile(userId);
             
             UIManager.hapticFeedback('light');
-            UIManager.showToast('Registration rejected');
+            UIManager.showToast(t('msg.users.registration_rejected'));
             this.loadUsers();
         } catch (error) {
             console.error('Error rejecting user:', error);
-            UIManager.showModal('Failed to reject user');
+            UIManager.showModal(t('msg.common.failed_reject_user'));
         }
     }
 
@@ -211,11 +212,11 @@ export class UsersManager {
             });
             
             UIManager.hapticFeedback('medium');
-            UIManager.showToast(`Role updated to ${Helpers.roleLabel(newRole)}`);
+            UIManager.showToast(t('msg.users.role_updated', { roleLabel: Helpers.roleLabel(newRole) }));
             this.loadUsers();
         } catch (error) {
             console.error('Error changing role:', error);
-            UIManager.showModal('Failed to change role');
+            UIManager.showModal(t('msg.common.failed_change_role'));
         }
     }
 
@@ -226,8 +227,8 @@ export class UsersManager {
      */
     static async resetUserPassword(userId, email) {
         const confirmed = await UIManager.showModal(
-            `Send password reset email to:\n${email}`,
-            'Reset Password',
+            t('msg.common.send_password_reset_email', { email }),
+            t('msg.common.reset_password'),
             true
         );
         
@@ -236,10 +237,10 @@ export class UsersManager {
         try {
             await firebase.auth().sendPasswordResetEmail(email);
             UIManager.hapticFeedback('success');
-            UIManager.showToast(`Password reset email sent to ${email}`);
+            UIManager.showToast(t('msg.common.password_reset_email_sent', { email }));
         } catch (error) {
             console.error('Error sending reset email:', error);
-            UIManager.showModal('Failed to send reset email: ' + error.message);
+            UIManager.showModal(t('msg.common.failed_send_reset_email', { message: error.message }));
         }
     }
 
@@ -250,8 +251,8 @@ export class UsersManager {
      */
     static async deleteUser(userId, userName) {
         const confirmed = await UIManager.showModal(
-            `Are you sure you want to delete user "${userName}"?\n\nThis will remove their account from the system. This action cannot be undone.`,
-            'Delete User',
+            t('msg.common.are_sure_want_delete_user', { userName }),
+            t('msg.common.delete_user'),
             true
         );
         
@@ -259,8 +260,8 @@ export class UsersManager {
         
         // Double confirm for safety
         const doubleConfirm = await UIManager.showModal(
-            `Type "DELETE" to confirm deletion of ${userName}`,
-            'Confirm Deletion',
+            t('msg.users.type_delete_confirm_deletion', { userName }),
+            t('msg.users.confirm_deletion'),
             true
         );
         
@@ -271,11 +272,11 @@ export class UsersManager {
             await FirebaseService.deleteUserProfile(userId);
             
             UIManager.hapticFeedback('medium');
-            UIManager.showToast(`User "${userName}" has been deleted`);
+            UIManager.showToast(t('msg.common.user_has_been_deleted', { userName }));
             this.loadUsers();
         } catch (error) {
             console.error('Error deleting user:', error);
-            UIManager.showModal('Failed to delete user: ' + error.message);
+            UIManager.showModal(t('msg.common.failed_delete_user', { message: error.message }));
         }
     }
 

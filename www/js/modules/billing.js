@@ -16,8 +16,9 @@ import { findBillIndex } from '../utils/history-window.js';
 import { TIME_MS, AUTO_SAVE_DELAY } from '../utils/constants.js';
 import { PurchaseManager } from './purchase.js';
 import { RetailSaleManager } from './retail-sale.js';
+import { t } from '../i18n/index.js';
 
-const EDIT_OFFLINE_MESSAGE = 'Internet required to edit a bill';
+const EDIT_OFFLINE_KEY = 'msg.billing.edit_offline';
 const EDIT_TIMEOUT_MS = 20000;
 
 /** Who may edit a bill (rules: owner, manager or the bill's creator; legacy bills without userId: owner/manager). */
@@ -27,7 +28,7 @@ export function canEditBill(bill) {
     const uid = AppState.currentUser?.uid;
     return !!(uid && bill && bill.userId && bill.userId === uid);
 }
-export const EDIT_NOT_ALLOWED_MESSAGE = 'Only the person who created this bill, a manager or an owner can edit it';
+export const EDIT_NOT_ALLOWED_KEY = 'msg.billing.edit_not_allowed';
 
 /** Draft fields that make the bill checks treat the form as an edit of `bill` (#37). */
 const editCheckContext = (bill) => ({
@@ -435,7 +436,7 @@ const BillingManager = {
         
         const currentUser = firebase.auth().currentUser;
         if (!currentUser) {
-            UIManager.showToast('Please login to save drafts');
+            UIManager.showToast(t('msg.billing.login_save_drafts'));
             return;
         }
 
@@ -463,7 +464,7 @@ const BillingManager = {
             const weights = PurchaseManager.getWeights();
             
             if (billItems.length === 0 && weights.length === 0) {
-                UIManager.showToast('No items or weights to save as draft');
+                UIManager.showToast(t('msg.billing.no_items_or_weights_save'));
                 return;
             }
             draft.items = [...billItems];
@@ -489,7 +490,7 @@ const BillingManager = {
             const saleWeights = RetailSaleManager.getSaleWeights();
             
             if (saleItems.length === 0 && saleWeights.length === 0) {
-                UIManager.showToast('No items or weights to save as draft');
+                UIManager.showToast(t('msg.billing.no_items_or_weights_save'));
                 return;
             }
             draft.items = [...saleItems];
@@ -504,14 +505,14 @@ const BillingManager = {
         try {
             await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts').doc(draft.id).set(draft);
             
-            UIManager.showToast('✓ Draft saved to cloud!');
+            UIManager.showToast(t('msg.billing.draft_saved_cloud'));
             UIManager.hapticFeedback('light');
             await this.updateDraftCount();
 
             this.clearBill();
         } catch (error) {
             console.error('Failed to save draft:', error);
-            UIManager.showToast('Failed to save draft');
+            UIManager.showToast(t('msg.billing.failed_save_draft'));
         }
     },
 
@@ -538,7 +539,7 @@ const BillingManager = {
         try {
             const currentUser = firebase.auth().currentUser;
             if (!currentUser) {
-                content.innerHTML = '<p style="text-align: center; color: #888; padding: 40px;">Please login to view drafts</p>';
+                content.innerHTML = `<p style="text-align: center; color: #888; padding: 40px;">${Helpers.escapeHtml(t('ui.billing.login_to_view_drafts'))}</p>`;
                 overlay.classList.add('active');
                 return;
             }
@@ -552,22 +553,22 @@ const BillingManager = {
                 .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
             if (drafts.length === 0) {
-                content.innerHTML = '<p style="text-align: center; color: #888; padding: 40px;">No saved drafts</p>';
+                content.innerHTML = `<p style="text-align: center; color: #888; padding: 40px;">${Helpers.escapeHtml(t('ui.billing.no_saved_drafts'))}</p>`;
             } else {
                 content.innerHTML = drafts.map((draft) => `
                     <div class="history-item" style="margin-bottom: 12px;">
                         <div class="history-header">
-                            <span style="font-weight: 600;">${draft.mode === 'purchase' ? '🔵 Purchase' : '🟢 Sale'} Draft</span>
-                            <span style="color: #666; font-size: 14px;">${draft.items?.length || 0} items${draft.weights?.length > 0 ? ` + ${draft.weights.length} weights` : ''}</span>
+                            <span style="font-weight: 600;">${Helpers.escapeHtml(t(draft.mode === 'purchase' ? 'ui.billing.purchase_draft' : 'ui.billing.sale_draft'))}</span>
+                            <span style="color: #666; font-size: 14px;">${Helpers.escapeHtml(t(draft.weights?.length > 0 ? 'ui.billing.draft_items_weights' : 'ui.billing.draft_items', { items: draft.items?.length || 0, weights: draft.weights?.length || 0 }))}</span>
                         </div>
                         <div class="history-date">${Helpers.escapeHtml(draft.date)}</div>
-                        ${draft.customerName ? `<div style="color: #666; font-size: 13px; margin-top: 4px;">Customer: ${Helpers.escapeHtml(draft.customerName)}</div>` : ''}
+                        ${draft.customerName ? `<div style="color: #666; font-size: 13px; margin-top: 4px;">${Helpers.escapeHtml(t('ui.common.customer'))} ${Helpers.escapeHtml(draft.customerName)}</div>` : ''}
                         <div style="display: flex; gap: 8px; margin-top: 8px;">
                             <button onclick="window.app.billing.loadDraft('${Helpers.escapeJsAttr(draft.id)}')" style="flex: 1; padding: 8px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-                                Load
+                                ${Helpers.escapeHtml(t('ui.billing.load'))}
                             </button>
                             <button onclick="window.app.billing.deleteDraft('${Helpers.escapeJsAttr(draft.id)}')" style="flex: 1; padding: 8px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
-                                Delete
+                                ${Helpers.escapeHtml(t('ui.modals.delete'))}
                             </button>
                         </div>
                     </div>
@@ -577,7 +578,7 @@ const BillingManager = {
             overlay.classList.add('active');
         } catch (error) {
             console.error('Failed to load drafts:', error);
-            content.innerHTML = '<p style="text-align: center; color: #ef4444; padding: 40px;">Failed to load drafts</p>';
+            content.innerHTML = `<p style="text-align: center; color: #ef4444; padding: 40px;">${Helpers.escapeHtml(t('ui.billing.failed_load_drafts'))}</p>`;
             overlay.classList.add('active');
         }
     },
@@ -599,7 +600,7 @@ const BillingManager = {
             const draftDoc = await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts').doc(draftId).get();
             
             if (!draftDoc.exists) {
-                UIManager.showToast('Draft not found');
+                UIManager.showToast(t('msg.billing.draft_not_found'));
                 return;
             }
 
@@ -634,11 +635,11 @@ const BillingManager = {
             await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts').doc(draftId).delete();
             await this.updateDraftCount();
 
-            UIManager.showToast('✓ Draft loaded!');
+            UIManager.showToast(t('msg.billing.draft_loaded'));
             UIManager.hapticFeedback('light');
         } catch (error) {
             console.error('Failed to load draft:', error);
-            UIManager.showToast('Failed to load draft');
+            UIManager.showToast(t('msg.billing.failed_load_draft'));
         }
     },
 
@@ -652,10 +653,10 @@ const BillingManager = {
             await db.collection(window.getCollection ? window.getCollection('drafts') : 'drafts').doc(draftId).delete();
             await this.updateDraftCount();
             await this.showDrafts();
-            UIManager.showToast('Draft deleted');
+            UIManager.showToast(t('msg.billing.draft_deleted'));
         } catch (error) {
             console.error('Failed to delete draft:', error);
-            UIManager.showToast('Failed to delete draft');
+            UIManager.showToast(t('msg.billing.failed_delete_draft'));
         }
     },
 
@@ -792,7 +793,9 @@ const BillingManager = {
             const autoSaveData = autoSaveDoc.data();
             
             const shouldRecover = confirm(
-                `Found an unsaved ${autoSaveData.mode === 'purchase' ? 'purchase' : 'sale'} bill from ${autoSaveData.lastSaved ? new Date(autoSaveData.lastSaved.toDate()).toLocaleString('en-IN') : 'earlier'}.\n\nDo you want to recover it?`
+                t(autoSaveData.mode === 'purchase' ? 'msg.billing.recover_purchase' : 'msg.billing.recover_sale', {
+                    when: autoSaveData.lastSaved ? new Date(autoSaveData.lastSaved.toDate()).toLocaleString('en-IN') : t('msg.billing.recover_earlier')
+                })
             );
             
             if (shouldRecover) {
@@ -894,12 +897,12 @@ const BillingManager = {
                 RetailSaleManager.renderSaleWeights();
             }
 
-            UIManager.showToast('✓ Bill recovered successfully!');
+            UIManager.showToast(t('msg.billing.bill_recovered_successfully'));
             UIManager.hapticFeedback('success');
             
         } catch (error) {
             console.error('Failed to recover auto-save:', error);
-            UIManager.showToast('Failed to recover bill');
+            UIManager.showToast(t('msg.billing.failed_recover_bill'));
         }
     },
 
@@ -922,18 +925,18 @@ const BillingManager = {
             } else if (billType === 'wholesale') {
                 history = AppState.salesHistory;
             } else {
-                UIManager.showToast(`Unknown bill type: ${billType}`);
+                UIManager.showToast(t('msg.billing.unknown_bill_type', { billType }));
                 return;
             }
             // Prefer the id stored by viewBill: indices shift when records are added
             const resolvedIndex = findBillIndex(history, window.currentBillId, billIndex);
             const bill = history[resolvedIndex];
             if (!bill) {
-                UIManager.showToast('Bill not found');
+                UIManager.showToast(t('msg.common.bill_not_found'));
                 return;
             }
             if (!canEditBill(bill)) {
-                UIManager.showToast(EDIT_NOT_ALLOWED_MESSAGE);
+                UIManager.showToast(t(EDIT_NOT_ALLOWED_KEY));
                 return;
             }
 
@@ -982,7 +985,7 @@ const BillingManager = {
                 PurchaseManager.updateTotals();
                 
                 window.app.nav.showTab('billing');
-                UIManager.showToast('✏️ Editing bill - modify and save');
+                UIManager.showToast(t('msg.billing.editing_bill_modify_save'));
             } else {
                 RetailSaleManager.setSaleItems(bill.items.map(item => ({ ...item })));
                 RetailSaleManager.setSaleWeights([]);
@@ -1022,12 +1025,12 @@ const BillingManager = {
                         window.app.billing.switchMode('sale', { currentTarget: saleBtn });
                     }
                 }, 100);
-                UIManager.showToast('✏️ Editing sale - modify and save');
+                UIManager.showToast(t('msg.billing.editing_sale_modify_save'));
             }
             
         } catch (error) {
             console.error('Failed to load bill for editing:', error);
-            UIManager.showToast('Failed to load bill');
+            UIManager.showToast(t('msg.billing.failed_load_bill'));
         }
     },
 
@@ -1059,7 +1062,7 @@ const BillingManager = {
             }
             // Edits are checked against the server copy (transaction), so they need a connection.
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-                UIManager.showToast(EDIT_OFFLINE_MESSAGE);
+                UIManager.showToast(t(EDIT_OFFLINE_KEY));
                 return undefined;
             }
 
@@ -1075,14 +1078,14 @@ const BillingManager = {
             } else if (billType === 'wholesale') {
                 history = AppState.salesHistory;
             } else {
-                UIManager.showToast(`Unknown bill type: ${billType}`);
+                UIManager.showToast(t('msg.billing.unknown_bill_type', { billType }));
                 return;
             }
             const currentIndex = findBillIndex(history, this.editingBillId, billIndex);
             const bill = history[currentIndex];
             
             if (!bill) {
-                UIManager.showToast('Original bill not found');
+                UIManager.showToast(t('msg.billing.original_bill_not_found'));
                 return;
             }
 
@@ -1144,7 +1147,7 @@ const BillingManager = {
                 
                 this._refreshAfterEdit();
                 
-                UIManager.showToast('✓ Bill updated successfully!');
+                UIManager.showToast(t('msg.billing.bill_updated_successfully'));
                 
                 this.editingBillIndex = undefined;
                 this.editingBillId = undefined;
@@ -1206,7 +1209,7 @@ const BillingManager = {
                 
                 this._refreshAfterEdit();
                 
-                UIManager.showToast('✓ Sale updated successfully!');
+                UIManager.showToast(t('msg.billing.sale_updated_successfully'));
                 
                 this.editingBillIndex = undefined;
                 this.editingBillId = undefined;
@@ -1221,14 +1224,14 @@ const BillingManager = {
             console.error('Failed to update bill:', error);
             // Known outcomes keep the editor open so nothing typed is lost.
             if (error?.code === 'conflict' || error?.code === 'edit-timeout') {
-                UIManager.showToast(error.message);
+                UIManager.showToast(t(error.code === 'conflict' ? 'msg.billing.edit_conflict' : 'msg.billing.edit_timeout'));
                 return undefined;
             }
             if (error?.code === 'unavailable' || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
-                UIManager.showToast(EDIT_OFFLINE_MESSAGE);
+                UIManager.showToast(t(EDIT_OFFLINE_KEY));
                 return undefined;
             }
-            UIManager.showToast('Failed to update bill: ' + error.message);
+            UIManager.showToast(t('msg.billing.failed_update_bill', { message: error.message }));
             throw error;
         }
     },

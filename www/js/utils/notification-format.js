@@ -6,6 +6,7 @@
  */
 
 import { toJsDate } from './dates.js';
+import { getLang } from '../i18n/index.js';
 
 /** Unread notifications the live listener keeps (also the badge cap). */
 export const UNREAD_LIMIT = 20;
@@ -137,11 +138,11 @@ export function describeNotification(n = {}) {
     return { icon: '🔔', en, hi, who, target: n.tab ? { tab: n.tab } : null };
 }
 
-/** One-line bilingual text (toast / system notification). */
-export function notificationText(n) {
+/** One-line text in the app language (toast). */
+export function notificationText(n, lang = getLang()) {
     const d = describeNotification(n);
     const by = d.who ? ` — ${d.who}` : '';
-    return `${d.icon} ${d.en} · ${d.hi}${by}`;
+    return `${d.icon} ${lang === 'hi' ? d.hi : d.en}${by}`;
 }
 
 /**

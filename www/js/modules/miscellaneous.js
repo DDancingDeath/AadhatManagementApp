@@ -12,7 +12,8 @@ import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
-import { canChangeExpense, EXPENSE_LOCKED_MESSAGE, isPermissionDenied } from '../utils/record-permissions.js';
+import { canChangeExpense, EXPENSE_LOCKED_KEY, isPermissionDenied } from '../utils/record-permissions.js';
+import { t } from '../i18n/index.js';
 
 /** The signed-in user, as canChangeExpense expects it. */
 const currentUserInfo = () => ({ uid: AppState.currentUser?.uid, role: AppState.userRole });
@@ -42,7 +43,7 @@ export class ExpensesManager {
             const { committed } = FirebaseService.startSaveExpense(expense);
             committed.catch(err => {
                 console.error('Expense save failed:', err);
-                UIManager.showToast('Expense not saved: ' + (err?.message || err));
+                UIManager.showToast(t('msg.expenses.expense_not_saved', { value: err?.message || err }));
                 this.refreshExpenseViews();
             });
             this.refreshExpenseViews();
@@ -64,7 +65,7 @@ export class ExpensesManager {
         } catch (err) {
             if (!isPermissionDenied(err)) throw err;
             this.cancelExpenseEdit();
-            UIManager.showToast(EXPENSE_LOCKED_MESSAGE, 4000);
+            UIManager.showToast(t(EXPENSE_LOCKED_KEY), 4000);
             return null;
         }
         this.cancelExpenseEdit();
@@ -152,12 +153,12 @@ export class ExpensesManager {
         const remarks = document.getElementById('businessExpenseRemarks').value.trim();
 
         if (!type) {
-            UIManager.showModal('Please enter expense type');
+            UIManager.showModal(t('msg.expenses.enter_expense_type'));
             return;
         }
 
         if (!amount || amount <= 0) {
-            UIManager.showModal('Please enter a valid amount');
+            UIManager.showModal(t('msg.common.enter_valid_amount'));
             return;
         }
 
@@ -181,7 +182,7 @@ export class ExpensesManager {
         
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast(updated ? '✓ Business expense updated' : '✓ Business expense saved');
+        UIManager.showToast(updated ? t('msg.expenses.business_expense_updated') : t('msg.expenses.business_expense_saved'));
         
         document.getElementById('businessExpenseType').value = '';
         document.getElementById('businessExpensePerson').value = '';
@@ -213,12 +214,12 @@ export class ExpensesManager {
         const remarks = document.getElementById('personalExpenseRemarks').value.trim();
 
         if (!type) {
-            UIManager.showModal('Please enter expense type');
+            UIManager.showModal(t('msg.expenses.enter_expense_type'));
             return;
         }
 
         if (!amount || amount <= 0) {
-            UIManager.showModal('Please enter a valid amount');
+            UIManager.showModal(t('msg.common.enter_valid_amount'));
             return;
         }
 
@@ -241,7 +242,7 @@ export class ExpensesManager {
         if (updated === null) return;
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');
+        UIManager.showToast(updated ? t('msg.expenses.personal_expense_updated') : t('msg.expenses.personal_expense_saved'));
         
         
         document.getElementById('personalExpenseType').value = '';
@@ -383,7 +384,7 @@ export class ExpensesManager {
         if (window.app && window.app.printer) {
             await window.app.printer.printExpense(expense);
         } else {
-            UIManager.showToast('Printer service not available');
+            UIManager.showToast(t('msg.expenses.printer_service_not_available'));
         }
     }
 
@@ -394,12 +395,12 @@ export class ExpensesManager {
         const remarks = document.getElementById('businessExpenseRemarks').value.trim();
 
         if (!type) {
-            UIManager.showModal('Please enter expense type');
+            UIManager.showModal(t('msg.expenses.enter_expense_type'));
             return;
         }
 
         if (!amount || amount <= 0) {
-            UIManager.showModal('Please enter a valid amount');
+            UIManager.showModal(t('msg.common.enter_valid_amount'));
             return;
         }
 
@@ -418,7 +419,7 @@ export class ExpensesManager {
         if (updated === null) return;
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast(updated ? '✓ Business expense updated' : '✓ Business expense saved');
+        UIManager.showToast(updated ? t('msg.expenses.business_expense_updated') : t('msg.expenses.business_expense_saved'));
         
         document.getElementById('businessExpenseType').value = '';
         document.getElementById('businessExpensePerson').value = '';
@@ -432,7 +433,7 @@ export class ExpensesManager {
         // Print the expense
         this.printExpenseReceipt(expense).catch(e => {
             console.error('Expense print failed:', e);
-            UIManager.showToast('Expense saved, but printing failed · खर्च सेव हुआ, प्रिंट नहीं हुआ', 3500);
+            UIManager.showToast(t('msg.expenses.expense_saved_but_printing_failed'), 3500);
         });
     }
 
@@ -440,7 +441,7 @@ export class ExpensesManager {
         const expense = AppState.expensesHistory.find(p => p.id == expenseId && p.category === category);
         
         if (!expense) {
-            UIManager.showToast('Expense not found');
+            UIManager.showToast(t('msg.expenses.expense_not_found'));
             return;
         }
 
@@ -529,7 +530,7 @@ export class ExpensesManager {
         const category = window.currentExpenseCategory;
         
         if (!expenseId || !category) {
-            UIManager.showToast('Expense not found');
+            UIManager.showToast(t('msg.expenses.expense_not_found'));
             return;
         }
 
@@ -542,7 +543,7 @@ export class ExpensesManager {
         const category = window.currentExpenseCategory;
         
         if (!expenseId || !category) {
-            UIManager.showToast('Expense not found');
+            UIManager.showToast(t('msg.expenses.expense_not_found'));
             return;
         }
 
@@ -593,11 +594,11 @@ export class ExpensesManager {
         this.cancelExpenseEdit();
         const expense = AppState.expensesHistory.find(p => p.id == expenseId);
         if (!expense) {
-            UIManager.showToast('Expense not found');
+            UIManager.showToast(t('msg.expenses.expense_not_found'));
             return;
         }
         if (!canChangeExpense(expense, currentUserInfo())) {
-            UIManager.showToast(EXPENSE_LOCKED_MESSAGE, 4000);
+            UIManager.showToast(t(EXPENSE_LOCKED_KEY), 4000);
             return;
         }
 
@@ -629,7 +630,7 @@ export class ExpensesManager {
         amountInput?.addEventListener('input', onAmountInput);
         editing.cleanup = () => amountInput?.removeEventListener('input', onAmountInput);
         
-        UIManager.showToast('Edit expense and save to update');
+        UIManager.showToast(t('msg.expenses.edit_expense_save_update'));
     }
 
     /** Stops editing: the next save creates a new expense. */
@@ -641,7 +642,7 @@ export class ExpensesManager {
     static async deleteExpense(expenseId, category, showConfirm = true) {
         if (!expenseId || expenseId === 'undefined') {
             console.error('Invalid expense ID:', expenseId);
-            UIManager.showToast('Invalid expense ID');
+            UIManager.showToast(t('msg.expenses.invalid_expense_id'));
             return;
         }
         
@@ -649,11 +650,11 @@ export class ExpensesManager {
         const index = list.findIndex(e => String(e.id) === String(expenseId));
         const existing = index !== -1 ? list[index] : null;
         if (existing && !canChangeExpense(existing, currentUserInfo())) {
-            UIManager.showToast(EXPENSE_LOCKED_MESSAGE, 4000);
+            UIManager.showToast(t(EXPENSE_LOCKED_KEY), 4000);
             return;
         }
 
-        if (showConfirm && !confirm('Are you sure you want to delete this expense?')) {
+        if (showConfirm && !confirm(t('msg.expenses.are_sure_want_delete_expense'))) {
             return;
         }
 
@@ -672,7 +673,7 @@ export class ExpensesManager {
                 type: existing?.type
             });
             UIManager.hapticFeedback('medium');
-            UIManager.showToast('✓ Expense deleted');
+            UIManager.showToast(t('msg.expenses.expense_deleted'));
             
             if (window.app.finance && document.getElementById('financeOverviewSection') && document.getElementById('financeOverviewSection').style.display !== 'none') {
                 window.app.finance.calculateOverview();
@@ -683,7 +684,7 @@ export class ExpensesManager {
                 AppState.expensesHistory = [...(AppState.expensesHistory || []), existing];
             }
             this.refreshExpenseViews();
-            UIManager.showToast(isPermissionDenied(error) ? EXPENSE_LOCKED_MESSAGE : 'Failed to delete expense', isPermissionDenied(error) ? 4000 : undefined);
+            UIManager.showToast(isPermissionDenied(error) ? t(EXPENSE_LOCKED_KEY) : t('msg.expenses.failed_delete_expense'), isPermissionDenied(error) ? 4000 : undefined);
         }
     }
 
@@ -694,12 +695,12 @@ export class ExpensesManager {
         const remarks = document.getElementById('personalExpenseRemarks').value.trim();
 
         if (!type) {
-            UIManager.showModal('Please enter expense type');
+            UIManager.showModal(t('msg.expenses.enter_expense_type'));
             return;
         }
 
         if (!amount || amount <= 0) {
-            UIManager.showModal('Please enter a valid amount');
+            UIManager.showModal(t('msg.common.enter_valid_amount'));
             return;
         }
 
@@ -718,7 +719,7 @@ export class ExpensesManager {
         if (updated === null) return;
         
         UIManager.hapticFeedback('medium');
-        UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');
+        UIManager.showToast(updated ? t('msg.expenses.personal_expense_updated') : t('msg.expenses.personal_expense_saved'));
         
         document.getElementById('personalExpenseType').value = '';
         document.getElementById('personalExpenseAmount').value = '';
@@ -732,7 +733,7 @@ export class ExpensesManager {
         // Print the expense
         this.printExpenseReceipt(expense).catch(e => {
             console.error('Expense print failed:', e);
-            UIManager.showToast('Expense saved, but printing failed · खर्च सेव हुआ, प्रिंट नहीं हुआ', 3500);
+            UIManager.showToast(t('msg.expenses.expense_saved_but_printing_failed'), 3500);
         });
     }
 }
