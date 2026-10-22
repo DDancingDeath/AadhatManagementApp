@@ -1180,9 +1180,10 @@ window.app = {
         showChangeRoleDialog: (userId, userName, currentRole) => UsersManager.showChangeRoleDialog(userId, userName, currentRole)
     },
     
-    // Diagnostics (owner only)
+    // Diagnostics (owner; managers see Number checks only)
     diagnostics: {
         init: () => DiagnosticsManager.init(),
+        runNumberChecks: () => DiagnosticsManager.runNumberChecks(),
         showTab: (tab) => DiagnosticsManager.showTab(tab),
         loadData: () => DiagnosticsManager.loadData(),
         loadAuditLogs: () => DiagnosticsManager.loadAuditLogs(),

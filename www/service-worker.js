@@ -112,6 +112,7 @@ const STATIC_ASSETS = [
     '/js/utils/keyboard-shortcuts.js',
     '/js/utils/lazy-scripts.js',
     '/js/utils/money.js',
+    '/js/utils/number-checks.js',
     '/js/utils/notification-format.js',
     '/js/utils/record-permissions.js',
     '/js/utils/release-info.js',

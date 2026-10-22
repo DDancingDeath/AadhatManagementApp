@@ -13,6 +13,13 @@ import { formatDateTimeIN } from '../utils/dates.js';
 import { getStartupTimings, startupRows } from '../utils/startup-timings.js';
 import { getQuotaStatus } from '../firebase/firestore-meter.js';
 import { t } from '../i18n/index.js';
+import { runNumberChecks } from '../utils/number-checks.js';
+import { isFullHistoryLoaded } from '../utils/history-window.js';
+import { CashManagementManager } from './cash-management.js';
+
+const isOwner = () => AppState.userRole === 'owner';
+/** Number checks (#216) are for owners and managers; errors and audit logs stay owner-only. */
+const canRunNumberChecks = () => AppState.userRole === 'owner' || AppState.userRole === 'manager';
 
 /**
  * Diagnostics Manager - View and manage application telemetry and audit logs
@@ -53,16 +60,12 @@ const DiagnosticsManager = {
      * Initialize diagnostics
      */
     async init() {
-        if (AppState.userRole !== 'owner') {
+        if (!canRunNumberChecks()) {
             UIManager.showToast(t('msg.common.access_denied'), 'error');
             return;
         }
-        this.renderTabs();
-        if (this.activeTab === 'errors') {
-            await this.loadData();
-        } else {
-            await this.loadAuditLogs();
-        }
+        if (!isOwner()) this.activeTab = 'numbers';
+        await this.showTab(this.activeTab);
     },
 
     /**
@@ -72,6 +75,15 @@ const DiagnosticsManager = {
         const container = document.getElementById('diagnosticsTabsContainer');
         if (!container) return;
 
+        const numbersBtn = `
+                <button class="filter-btn ${this.activeTab === 'numbers' ? 'active' : ''}"
+                        onclick="window.app.diagnostics.showTab('numbers')">
+                    ${Helpers.escapeHtml(t('ui.numchecks.tab'))}
+                </button>`;
+        if (!isOwner()) {
+            container.innerHTML = `<div class="filter-buttons" style="margin-bottom: 16px;">${numbersBtn}</div>`;
+            return;
+        }
         container.innerHTML = `
             <div class="filter-buttons" style="margin-bottom: 16px;">
                 <button class="filter-btn ${this.activeTab === 'errors' ? 'active' : ''}" 
@@ -82,10 +94,86 @@ const DiagnosticsManager = {
                         onclick="window.app.diagnostics.showTab('audit')">
                     📋 Audit Logs
                 </button>
+                ${numbersBtn}
             </div>
             ${this.startupTimingsHtml()}
             ${this.readStatsHtml()}
         `;
+    },
+
+    /** Last Number checks run (#216): { results, at } or null. */
+    numberChecks: null,
+
+    /**
+     * Runs the accounting checks (docs/calculations.md AC1–AC8) on the data
+     * already loaded on this device. Reads nothing from the server.
+     */
+    runNumberChecks() {
+        if (!canRunNumberChecks()) return;
+        const results = runNumberChecks({
+            items: AppState.items || [],
+            purchases: AppState.purchaseHistory || [],
+            wholesaleSales: AppState.salesHistory || [],
+            retailSales: AppState.retailSalesHistory || [],
+            stockAdjustments: AppState.stockAdjustments || []
+        }, {
+            fullHistory: isFullHistoryLoaded(),
+            session: CashManagementManager.todaySession || null,
+            transactionsFor: (date, session) => CashManagementManager.calculateTransactionsForDate(date, session)
+        });
+        this.numberChecks = { results, at: Date.now() };
+        this.renderNumberChecks();
+    },
+
+    /** One difference row: what it is about, expected, found, difference. */
+    numberCheckRowHtml(row) {
+        const e = (v) => Helpers.escapeHtml(String(v ?? ''));
+        const r = row.ref || {};
+        const kinds = { purchase: t('ui.numchecks.kind_purchase'), retail: t('ui.numchecks.kind_retail'), wholesale: t('ui.numchecks.kind_wholesale') };
+        const label = r.item ? r.item
+            : r.kind ? [kinds[r.kind] || r.kind, r.number, r.party, r.day].filter(Boolean).join(' · ')
+                : r.day || '';
+        const fmt = (v) => (row.unit === 'qty' ? Number(v).toLocaleString('en-IN') : `₹${Number(v).toLocaleString('en-IN')}`);
+        return `<tr><td>${e(label)}</td><td style="text-align:right">${e(fmt(row.expected))}</td>` +
+            `<td style="text-align:right">${e(fmt(row.actual))}</td><td style="text-align:right;color:#b91c1c">${e(fmt(row.diff))}</td></tr>`;
+    },
+
+    /** Number checks tab: pass/fail per check with the differences. */
+    renderNumberChecks() {
+        const container = document.getElementById('diagnosticsContainer');
+        if (!container) return;
+        const e = (v) => Helpers.escapeHtml(String(v ?? ''));
+        const head = `
+            <div class="diag-numchecks-intro" style="margin-bottom:12px;">
+                <p style="margin:0 0 8px 0;color:var(--text-muted,#666);font-size:0.9rem;">${e(t('ui.numchecks.intro'))}</p>
+                <button class="diag-btn refresh" onclick="window.app.diagnostics.runNumberChecks()">${e(t('ui.numchecks.run'))}</button>
+            </div>`;
+        if (!this.numberChecks) {
+            container.innerHTML = `${head}<div class="diag-empty">${e(t('ui.numchecks.not_run'))}</div>`;
+            return;
+        }
+        const cards = this.numberChecks.results.map(r => {
+            const badge = r.status === 'pass' ? `<span style="color:#15803d;font-weight:600">${e(t('ui.numchecks.passed'))}</span>`
+                : r.status === 'skip' ? `<span style="color:#6b7280;font-weight:600">${e(t('ui.numchecks.skipped'))}</span>`
+                    : `<span style="color:#b91c1c;font-weight:600">${e(t('ui.numchecks.failed', { count: r.problems }))}</span>`;
+            const note = r.note ? `<div style="font-size:0.8rem;color:#6b7280;margin-top:4px;">${e(t(r.note))}</div>` : '';
+            const table = r.rows.length ? `
+                <table style="width:100%;font-size:13px;margin-top:8px;border-collapse:collapse;">
+                    <thead><tr><th style="text-align:left">${e(t('ui.numchecks.col_what'))}</th><th style="text-align:right">${e(t('ui.numchecks.col_expected'))}</th>
+                    <th style="text-align:right">${e(t('ui.numchecks.col_found'))}</th><th style="text-align:right">${e(t('ui.numchecks.col_difference'))}</th></tr></thead>
+                    <tbody>${r.rows.map(row => this.numberCheckRowHtml(row)).join('')}</tbody>
+                </table>
+                ${r.problems > r.rows.length ? `<div style="font-size:0.8rem;color:#6b7280;margin-top:4px;">${e(t('ui.numchecks.more', { count: r.problems - r.rows.length }))}</div>` : ''}` : '';
+            return `
+                <div class="diag-error-card diag-numcheck" data-check="${e(r.id)}" data-status="${e(r.status)}">
+                    <div class="diag-error-header"><span class="diag-error-type">${e(r.id)}</span>
+                        <span class="diag-error-message" style="margin:0">${e(t(r.key))}</span></div>
+                    <div>${badge} <span style="font-size:0.8rem;color:#6b7280">${e(t('ui.numchecks.checked', { count: r.checked }))}</span></div>
+                    ${note}${table}
+                </div>`;
+        }).join('');
+        container.innerHTML = `${head}<div class="diagnostics-list">${cards}</div>
+            <p style="font-size:0.8rem;color:#6b7280;margin-top:12px;">${e(t('ui.numchecks.footer'))}</p>`;
     },
 
     /**
@@ -140,10 +228,12 @@ const DiagnosticsManager = {
      * @param {string} tab - Tab name ('errors' or 'audit')
      */
     async showTab(tab) {
-        this.activeTab = tab;
+        this.activeTab = !isOwner() ? 'numbers' : tab;
         this.renderTabs();
-        
-        if (tab === 'errors') {
+
+        if (this.activeTab === 'numbers') {
+            this.renderNumberChecks();
+        } else if (tab === 'errors') {
             await this.loadData();
         } else {
             await this.loadAuditLogs();

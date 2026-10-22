@@ -537,11 +537,22 @@ describe('Diagnostics', () => {
     });
 
     test('non-owners are refused before any telemetry read', async () => {
-        AppState.userRole = 'manager';
+        AppState.userRole = 'member';
         const read = jest.spyOn(TelemetryService, 'getTelemetryData').mockResolvedValue([]);
         await DiagnosticsManager.init();
         expect(read).not.toHaveBeenCalled();
         expect(document.getElementById('diagnosticsContainer').innerHTML).toBe('');
+    });
+
+    // #216: managers get Number checks only — still no telemetry read.
+    test('managers see only Number checks and never read telemetry', async () => {
+        AppState.userRole = 'manager';
+        DiagnosticsManager.activeTab = 'errors';
+        const read = jest.spyOn(TelemetryService, 'getTelemetryData').mockResolvedValue([]);
+        await DiagnosticsManager.init();
+        await DiagnosticsManager.showTab('errors');
+        expect(read).not.toHaveBeenCalled();
+        expect(DiagnosticsManager.activeTab).toBe('numbers');
     });
 
     // #114: Firestore Timestamps render as a real date.
