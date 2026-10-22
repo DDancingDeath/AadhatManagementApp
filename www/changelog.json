@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "1.5.1",
+      "date": "2026-10-22",
+      "androidVersionCode": 7,
+      "notes": {
+        "en": [
+          "Outstanding now shows how old each due is, with one-tap WhatsApp due reminder and statement.",
+          "While billing, wrong or unusual entries turn red/amber before you save: more than in stock, unusual rate, below cost, duplicate bill.",
+          "While billing, you can see the customer's existing due.",
+          "New Day report on Today, and a new Anomalies page for owner/manager that points out unusual patterns.",
+          "Sharing on WhatsApp from the web no longer takes you out of the app."
+        ],
+        "hi": [
+          "बकाया पेज पर अब दिखता है कि हर बाकी कितना पुराना है, साथ में एक टैप में WhatsApp पर बाकी की याद और हिसाब भेजें।",
+          "बिल बनाते समय गलत या अजीब एंट्री सेव से पहले लाल/पीली दिखेगी: स्टॉक से ज़्यादा, अजीब रेट, लागत से कम, दोहराया हुआ बिल।",
+          "बिल बनाते समय ग्राहक का पुराना बाकी भी दिखता है।",
+          "आज पेज पर नई दिन की रिपोर्ट, और मालिक/मैनेजर के लिए नया \"गड़बड़ियाँ\" पेज जो अजीब पैटर्न बताता है।",
+          "वेब पर WhatsApp से शेयर करने पर अब ऐप से बाहर नहीं जाते।"
+        ]
+      }
+    },
+    {
       "version": "1.5.0",
       "date": "2026-10-22",
       "androidVersionCode": 6,
