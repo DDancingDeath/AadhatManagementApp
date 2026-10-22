@@ -39,7 +39,7 @@
     "jest-environment-jsdom": "^29.7.0"
   },
   "name": "aadhatmanagementapp",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "Aadhat Billing Management App",
   "main": "www/js/main.js",
   "repository": {
