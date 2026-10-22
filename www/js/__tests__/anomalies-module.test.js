@@ -19,6 +19,16 @@ import { AnomaliesManager } from '../modules/anomalies.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { AppState } from '../utils/state.js';
 
+// Fixed midday IST clock (Date only): the night-entry rule would otherwise also
+// fire when CI happens to run late at night.
+jest.useFakeTimers({
+    now: new Date('2026-10-21T12:00:00+05:30'),
+    doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+        'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval',
+        'setTimeout', 'clearTimeout']
+});
+afterAll(() => jest.useRealTimers());
+
 const now = Date.now();
 const badBill = {
     id: 'b1', billNumber: 'R1', customerName: '<img src=x onerror=alert(1)>', userId: 'u1', userName: 'Amit',
