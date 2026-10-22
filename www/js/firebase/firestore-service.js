@@ -2994,6 +2994,83 @@ const FirebaseService = {
         return session;
     },
 
+    /**
+     * Cash sessions for local days fromDate..toDate (YYYY-MM-DD, inclusive):
+     * a few docs, unlike loadCashSessions() which reads every session.
+     * @param {string} fromDate
+     * @param {string} toDate
+     * @returns {Promise<Array<Object>>}
+     */
+    async loadCashSessionsBetween(fromDate, toDate) {
+        const snapshot = await this.db.collection(col('cashManagement'))
+            .where('date', '>=', fromDate).where('date', '<=', toDate).get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    /**
+     * Audit log entries since `sinceMs`, newest first, bounded (owner only by rules).
+     * @param {number} sinceMs
+     * @param {number} [max=300]
+     * @returns {Promise<Array<Object>>}
+     */
+    async loadAuditLogsSince(sinceMs, max = 300) {
+        const snapshot = await this.db.collection(col('auditLogs'))
+            .where('timestamp', '>=', sinceMs).orderBy('timestamp', 'desc').limit(max).get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    // ---- Anomalies (#187): owner/manager only (rules) ---------------------
+
+    /**
+     * One page of anomaly records for IST days fromKey..toKey, newest day first.
+     * @param {string} fromKey - YYYY-MM-DD
+     * @param {string} toKey - YYYY-MM-DD
+     * @param {{limit?: number, after?: Object|null, server?: boolean, cacheOnly?: boolean}} [opts] - `after` = `last`
+     *   of the previous page; `server` fails instead of answering from the offline cache;
+     *   `cacheOnly` answers from the offline cache only (no billed reads);
+     *   otherwise: server first, offline cache when the server can't be reached
+     * @returns {Promise<{docs: Array<Object>, last: Object|null, more: boolean}>}
+     */
+    async loadAnomalies(fromKey, toKey, { limit = 200, after = null, server = false, cacheOnly = false } = {}) {
+        let query = this.db.collection(col('anomalies'))
+            .where('dayKey', '>=', fromKey).where('dayKey', '<=', toKey)
+            .orderBy('dayKey', 'desc').limit(limit);
+        if (after) query = query.startAfter(after);
+        let snapshot;
+        if (cacheOnly) {
+            snapshot = await query.get({ source: 'cache' });
+            return { docs: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })), last: null, more: false };
+        }
+        try {
+            snapshot = await query.get({ source: 'server' });
+        } catch (e) {
+            if (server) throw e;
+            snapshot = await query.get({ source: 'cache' });
+        }
+        return {
+            docs: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+            last: snapshot.docs[snapshot.docs.length - 1] || null,
+            more: snapshot.size === limit
+        };
+    },
+
+    /**
+     * Write anomaly records with set-merge (deterministic ids: re-writing the
+     * same anomaly updates it, never duplicates it).
+     * @param {Array<{id: string, data: Object}>} writes
+     * @returns {Promise<void>}
+     */
+    async saveAnomalies(writes) {
+        if (!writes || writes.length === 0) return;
+        const db = this.db;
+        const ref = db.collection(col('anomalies'));
+        for (let i = 0; i < writes.length; i += 400) {
+            const batch = db.batch();
+            writes.slice(i, i + 400).forEach(w => batch.set(ref.doc(w.id), w.data, { merge: true }));
+            await batch.commit();
+        }
+    },
+
     // ---- Users (admin.js / users.js) -------------------------------------
 
     /** Server timestamp sentinel for user-profile writes. */

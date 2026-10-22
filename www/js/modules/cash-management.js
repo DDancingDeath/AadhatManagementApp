@@ -696,6 +696,9 @@ export class CashManagementManager {
                 .filter(i => i.id !== 'cash-mismatch');
             alertDiv.style.whiteSpace = 'pre-line';
             if (band.length) alertDiv.textContent += band.map(i => `\n⚠ ${i.en} / ${i.hi}`).join('');
+            // Owner/manager: today's anomaly summary before closing the day (#187)
+            const anomalyLine = window.app?.anomalies?.cashCloseLine?.();
+            if (anomalyLine) alertDiv.textContent += `\n🚨 ${anomalyLine}`;
         } else if (alertDiv) {
             alertDiv.style.display = 'none';
         }

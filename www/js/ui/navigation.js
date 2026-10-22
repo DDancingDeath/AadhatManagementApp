@@ -175,6 +175,11 @@ const NavigationManager = {
             setTimeout(() => window.app.analytics.init(), 100);
         }
         
+        // Initialize Anomalies page (owner/manager, #187)
+        if (tabId === 'anomalies' && window.app?.anomalies) {
+            setTimeout(() => window.app.anomalies.init(), 100);
+        }
+        
         // Initialize Day page when Day tab is shown
         if (tabId === 'day' && window.app?.day) {
             this.resetFilterButtons('day');

@@ -15,6 +15,7 @@ A comprehensive business management application for wholesale/retail operations 
 - **Bluetooth Printing**: ESC/POS thermal printer support
 - **Audit Logging**: 90-day retention for critical actions
 - **Outstanding Tracking**: Customer/supplier payment management, dues aging (0–30 / 31–60 / 61–90 / 90+ days, who to chase first), one-tap WhatsApp due reminder and a read-only statement image per party
+- **Anomalies (owner/manager)**: Day report card on Today (today's anomalies by type/severity, top items/parties, yesterday's unreviewed, review queue; WhatsApp + image share) and an Anomalies page with filters, mark OK/fixed and pattern views (per-day trend, item × type, by user, by hour, repeat offenders). A daily scan on owner/manager devices checks already-loaded data — no Cloud Functions, no extra full-history reads
 - **Notifications**: In-app bell + inbox for rate and item changes while the app is open (no push to closed apps on the free plan) — see [docs/notifications.md](docs/notifications.md)
 - **Offline Support**: Service worker for offline functionality
 
@@ -66,6 +67,7 @@ A comprehensive business management application for wholesale/retail operations 
 | `stockCheckpoints` | Stock checkpoint + legacy-scan bookkeeping (see below) | — |
 | `settings` | App-wide settings (`settings/app`: client-version gates) | — |
 | `rateHistory` | Append-only item rate/name changes (owner/manager create + read; never updated/deleted) | (loaded on demand in the item dialog) |
+| `anomalies` | Anomaly records found by the daily scan; deterministic id `{type}~{refKind}~{refId}`, status open/ok/fixed (owner/manager read + write, owner delete) | (bounded query by IST `dayKey` range) |
 | `auditLogs` | Audit trail of critical actions (90-day retention) | (loaded on demand) |
 | `itemFrequency`, `drafts`, `autoSaves`, `notifications`, `telemetry` | Item ordering, bill drafts/autosave, in-app notices, diagnostics | — |
 

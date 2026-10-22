@@ -471,6 +471,11 @@ const AuthManager = {
                     item.style.display = 'block';
                 }
                 
+                // Anomalies (#187): owner/manager only until #84 decides otherwise
+                if (tabId === 'anomalies') {
+                    item.style.display = isOwnerOrManager ? 'block' : 'none';
+                }
+                
                 if (tabId === 'diagnostics' && !isOwner) {
                     item.style.display = 'none';
                 } else if (tabId === 'diagnostics' && isOwner) {
