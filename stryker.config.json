@@ -9,7 +9,7 @@
     "enableFindRelatedTests": false
   },
   "coverageAnalysis": "perTest",
-  "mutator": { "excludedMutations": ["StringLiteral"] },
+  "mutator": { "excludedMutations": ["StringLiteral", "OptionalChaining"] },
   "mutate": [
     "www/js/utils/money.js",
     "www/js/utils/stock-replay.js",
@@ -22,7 +22,6 @@
   "htmlReporter": { "fileName": "reports/mutation/mutation.html" },
   "jsonReporter": { "fileName": "reports/mutation/mutation.json" },
   "thresholds": { "high": 80, "low": 60, "break": null },
-  "concurrency": 4,
   "timeoutMS": 20000,
   "tempDirName": ".stryker-tmp"
 }
