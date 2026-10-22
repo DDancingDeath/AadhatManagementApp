@@ -63,7 +63,7 @@ All for DAY = today.
 | T15 | Due to receive | Σ BILL-DUE of today's sales. |
 | T16 | Due to pay | Σ BILL-DUE of today's purchases. |
 
-## Finance (`templates/finance.html`, `modules/finance.js`) — new definitions from #215
+## Finance (`templates/finance.html`, `modules/finance.js`, `utils/finance-calc.js`) — #215
 
 For the selected PERIOD (or All). Bills belong to the period by their stock
 time (numeric `timestamp`, else date), so a sale and its cost are always in the
@@ -72,16 +72,16 @@ same period.
 | ID | On screen | Definition |
 |---|---|---|
 | F1 | Sales | Σ BILL-TOTAL of wholesale + retail sales in the period; count. Optionally "of which still due": Σ BILL-DUE of those bills. |
-| F2 | Cost of goods sold | Σ COGS of the period's sale lines. ❌ not shown yet (#215). |
-| F3 | Business expenses | Σ business expenses (EXP-KIND) in the period. ❌ app differs: untagged count as personal (#215 / #36). |
-| F4 | Profit on goods sold | F1 − F2 − F3. ❌ app shows sales − all purchases − all expenses (#215). |
-| F5 | Personal expenses | Σ personal expenses in the period, shown separately and **not** taken off F4 (❓ open: #36, recommendation used; an "after personal expenses" line may be added). ❌ app differs (#215). |
+| F2 | Cost of goods sold | Σ COGS of the period's sale lines. |
+| F3 | Business expenses | Σ business expenses (EXP-KIND) in the period. |
+| F4 | Profit on goods sold | F1 − F2 − F3 − bad debts. Bad debts = dues to receive written off in the period (counted on the write-off date; a legacy "mark as cleared" without a write-off entry is not counted). |
+| F5 | Personal expenses | Σ personal expenses in the period, shown separately and **not** taken off F4 (❓ open: #36, recommendation used); a separate "after personal expenses" line shows F4 − F5. |
 | F6 | Stock value now | Σ over items with quantity > 0 of quantity × AVG-COST, after every record. Same number as Finance → Assets "Stock value" and the Stock page total. |
-| F7 | Cash flow | Money in − money out in the period. In: BILL-AT-SAVE of the period's sales + DUE-PAYs received in the period. Out: BILL-AT-SAVE of the period's purchases + DUE-PAYs paid in the period + all expenses (business and personal). Withdrawals are not included. ❌ not shown yet (#215). |
-| F8 | Check line | Opening stock value + purchases (at line rate) − F2 + adjustments = closing stock value, for the period. A gap means goods were sold before their purchase was recorded; show "numbers don't match" with the gap per item. ❌ not shown yet (#215). |
+| F7 | Cash flow | Money in − money out in the period. In: BILL-AT-SAVE of the period's sales + DUE-PAYs received in the period. Out: BILL-AT-SAVE of the period's purchases + DUE-PAYs paid in the period + all expenses (business and personal). Withdrawals are not included. |
+| F8 | Check line | Opening stock value + purchases (at line rate) − F2 + adjustments = closing stock value, for the period. A gap means goods were sold before their purchase was recorded; show "numbers don't match" with the gap per item. |
 | F9 | Due to receive (Assets) | Σ BILL-DUE of all loaded wholesale + retail sales. |
 | F10 | Due to pay (Assets) | Σ BILL-DUE of all loaded purchases. |
-| F11 | Withdrawals | Σ withdrawals in the period (the app today always shows all time). |
+| F11 | Withdrawals | Σ withdrawals in the period. |
 | F12 | Net worth | ❓ open: #39 (what to include; today's formula counts dues twice). Not tested yet. |
 
 ## Reports → Overview (`templates/reports.html`, `modules/reports.js`)
@@ -162,7 +162,7 @@ in Diagnostics → Number checks.
 | AC4 | Σ over months = all time (sales, purchases) on Reports and Finance. |
 | AC5 | Outstanding total = Σ BILL-DUE of open bills (Outstanding, Finance, Reports agree). |
 | AC6 | Drawer expected cash = opening + cash in − cash out for the day. |
-| AC7 | Same period, same number: Today, Reports, Analytics and the drawer agree on sales and cash; Finance after #215. ❌ partly: #219 (untagged expenses), #49 (DD/MM dates on Analytics), #47 / #215 (purchases and profit). |
+| AC7 | Same period, same number: Today, Reports, Analytics, Finance and the drawer agree on sales and cash; Finance profit, cost of goods sold and cash flow match the oracle every month. ❌ partly: #219 (untagged expenses), #49 (DD/MM dates on Analytics), #47 (Reports/Analytics purchases and profit). |
 | AC8 | No item's stock goes below zero unless a sale was saved past the oversell warning. |
 
 ---
@@ -191,8 +191,8 @@ Check line (all time): 0 + 5,580 − 2,710.96 − 52 = **2,817.04** = 1,959.04 +
 **2,710.96**; business expenses 120 + 500 + 50 (untagged) = **670**; profit on
 goods sold 3,290 − 2,710.96 − 670 = **−90.96**; personal 80 + 1,000 = **1,080**.
 Cash flow: in 1,160 + 300 + 300 (+ 50 due received) = 1,810; out 2,988 + 300 +
-1,274 (+ 400 due paid) + 670 + 1,080 = 6,712; **−4,902**. (The app today shows
-3,290 − 5,562 − 620 − 1,130 = −4,022, #215.)
+1,274 (+ 400 due paid) + 670 + 1,080 = 6,712; **−4,902**. (Before #215 the app showed
+3,290 − 5,562 − 620 − 1,130 = −4,022; fixed by #215.)
 
 **Today (21 Oct):** purchases 1,274; sales 550; labour 6; business expenses
 120 + 50 = 170; personal 80; cash in 200 + 50 (due) = 250; online in 100;

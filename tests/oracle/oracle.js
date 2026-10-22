@@ -115,7 +115,7 @@ export function openDue(bill) {
 /** Due payments (cash/online) made in `range` on the given bills plus session legs, each id once. */
 export function duePaymentsIn(bills, sessions, range) {
     const seen = new Set();
-    const out = { receivedCash: 0, receivedOnline: 0, paidCash: 0, paidOnline: 0 };
+    const out = { receivedCash: 0, receivedOnline: 0, paidCash: 0, paidOnline: 0, writtenOffReceivable: 0 };
     const add = (dir, cash, online) => {
         if (dir === 'paid') { out.paidCash += cash; out.paidOnline += online; } else { out.receivedCash += cash; out.receivedOnline += online; }
     };
@@ -127,6 +127,7 @@ export function duePaymentsIn(bills, sessions, range) {
             if (seen.has(id)) return;
             seen.add(id);
             add(type === 'purchase' ? 'paid' : 'received', x.cash, x.online);
+            if (type !== 'purchase') out.writtenOffReceivable += x.writeOff;
         });
     }));
     (sessions || []).forEach(s => (s.duePayments || []).forEach((leg, i) => {
@@ -254,7 +255,10 @@ export function stockReplay(data, range = [-Infinity, Infinity]) {
 
 // ---------------------------------------------------------------- Finance (F*), new definitions from #215
 
-/** F1–F11 for [from, to). Personal expenses are not part of business profit (#36 recommendation). */
+/**
+ * F1–F11 for [from, to). Personal expenses are not part of business profit (#36 recommendation).
+ * Bad debts = receivable dues written off in the period (by write-off date, #215).
+ */
 export function finance(data, range = [-Infinity, Infinity]) {
     const inR = (b) => inRange(eventTimeOf(b), range);
     const allSales = [...(data.wholesaleSales || []), ...(data.retailSales || [])];
@@ -273,7 +277,8 @@ export function finance(data, range = [-Infinity, Infinity]) {
         F1_sales: r2(salesTotal), F1_saleCount: sales.length,
         F2_cogs: stock.cogs,
         F3_businessExpenses: r2(business),
-        F4_profit: r2(salesTotal - stock.cogs - business),
+        F4_badDebts: r2(dues.writtenOffReceivable),
+        F4_profit: r2(salesTotal - stock.cogs - business - dues.writtenOffReceivable),
         F5_personalExpenses: r2(personal),
         F6_stockValue: stock.closing,
         F7_cashFlow: r2(moneyIn - moneyOut), F7_moneyIn: r2(moneyIn), F7_moneyOut: r2(moneyOut),

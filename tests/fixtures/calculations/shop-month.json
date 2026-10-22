@@ -79,7 +79,7 @@
       "opening": 0, "purchases": 5580, "cogs": 2710.96, "adjustments": -52, "closing": 2817.04
     },
     "financeAll": {
-      "F1_sales": 3290, "F1_saleCount": 5, "F2_cogs": 2710.96, "F3_businessExpenses": 670, "F4_profit": -90.96,
+      "F1_sales": 3290, "F1_saleCount": 5, "F2_cogs": 2710.96, "F3_businessExpenses": 670, "F4_badDebts": 0, "F4_profit": -90.96,
       "F5_personalExpenses": 1080, "F6_stockValue": 2817.04, "F7_cashFlow": -4902, "F7_moneyIn": 1810, "F7_moneyOut": 6712,
       "F9_dueToReceive": 1400, "F10_dueToPay": 600, "F11_withdrawals": 2000
     },

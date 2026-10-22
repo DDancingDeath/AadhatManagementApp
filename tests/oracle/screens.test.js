@@ -35,8 +35,6 @@ const E = FIX.expected;
 const BUGS = {
     // BUG: see #219 — Today leaves out expenses that are neither 'business' nor 'personal'
     T4_businessExpenses: 219, T8_cashOut: 219, T11_totalOut: 219, T12_net: 219,
-    // BUG: see #215 — Finance "Net Profit" is a cash-flow number (all purchases, personal expenses)
-    F3_businessExpenses: 215, F5_personalExpenses: 215,
     // BUG: see #47 — Reports purchases use the pre-labour total; profit is sales − purchases
     R1_purchases: 47, R3_profit: 47,
     // BUG: see #49 — Analytics parses DD/MM/YYYY dates with new Date()
@@ -172,66 +170,40 @@ describe('Stock == oracle', () => {
 
 // ------------------------------------------------------------------ Finance
 
-/** finance-calc.js arrives with #215; until then the new-definition tests are skipped. */
-function loadFinanceCalc() {
-    try {
-        return require('../../www/js/utils/finance-calc.js');
-    } catch {
-        return null;
-    }
-}
-
 describe('Finance == oracle (all time)', () => {
     const want = O.finance(data);
-    const text = (id) => shown(id);
+    const SCREEN = {
+        F1_sales: 'financeRevenue', F2_cogs: 'financeCogs', F3_businessExpenses: 'financeBusinessExp', F4_profit: 'financeNetProfit',
+        F5_personalExpenses: 'financePersonalExp', F6_stockValue: 'financeStockNow', F11_withdrawals: 'financeTotalWithdrawn'
+    };
     beforeEach(() => {
         FinanceManager.currentDateFilter = 'all';
-        document.body.innerHTML = `<div id="financeDashboardSection">
-            <span id="financeNetProfit"></span><span id="financeProfitPeriod"></span>
-            <span id="financeRevenue"></span><span id="financeRevenueCount"></span>
-            <span id="financeInvestment"></span><span id="financeInvestmentCount"></span>
-            <span id="financeBusinessExp"></span><span id="financeBusinessExpCount"></span>
-            <span id="financePersonalExp"></span><span id="financePersonalExpCount"></span>
-            <span id="financeTotalWithdrawn"></span><span id="financeAvailableBalance"></span></div>`;
-        jest.spyOn(FinanceManager, 'renderMonthlyChart').mockImplementation(() => {});
-        jest.spyOn(FinanceManager, 'renderProfitBreakdown').mockImplementation(() => {});
-        jest.spyOn(FinanceManager, 'renderFullHistoryPrompt').mockImplementation(() => {});
+        document.body.innerHTML = `<div id="financeDashboardSection">${[...Object.values(SCREEN), 'financeProfitPeriod', 'financeAfterPersonalLine',
+            'financeRevenueCount', 'financeBusinessExpCount', 'financePersonalExpCount', 'financeAvailableBalance', 'financeProfitWarning']
+            .map(id => `<span id="${id}"></span>`).join('')}</div>`;
+        ['renderMonthlyChart', 'renderProfitBreakdown', 'renderStockBreakdown', 'renderCashFlow', 'renderFullHistoryPrompt']
+            .forEach(fn => jest.spyOn(FinanceManager, fn).mockImplementation(() => {}));
         FinanceManager.renderDashboard();
     });
 
-    test('F1 sales and count', () => {
-        expect(text('financeRevenue')).toBe(rupee(want.F1_sales));
-        expect(text('financeRevenueCount')).toBe(want.F1_saleCount);
+    Object.entries(SCREEN).forEach(([id, el]) => {
+        specTest(id)(`${id} (#${el})`, () => expect(shown(el)).toBe(rupee(want[id])));
     });
-    specTest('F3_businessExpenses')('F3 business expenses (untagged count as business)', () => {
-        expect(text('financeBusinessExp')).toBe(rupee(want.F3_businessExpenses));
+    test('F1 sale count', () => expect(shown('financeRevenueCount')).toBe(want.F1_saleCount));
+    test('F7 cash flow (money in − money out)', () => {
+        const s = FinanceManager.computeSummary({ from: -Infinity, to: Infinity, cashSessions: { sessions: [], complete: true } });
+        expect(s.cash.moneyIn).toBeCloseTo(want.F7_moneyIn, 2);
+        expect(s.cash.moneyOut).toBeCloseTo(want.F7_moneyOut, 2);
+        expect(s.cash.net).toBeCloseTo(want.F7_cashFlow, 2);
     });
-    specTest('F5_personalExpenses')('F5 personal expenses', () => {
-        expect(text('financePersonalExp')).toBe(rupee(want.F5_personalExpenses));
+    test('F8 check line: opening + purchases − cost of goods sold + adjustments = closing', () => {
+        const s = FinanceManager.computeSummary({ from: -Infinity, to: Infinity, cashSessions: { sessions: [], complete: true } }).stock;
+        const c = want.F8_check;
+        expect([s.opening, s.purchases, s.cogs, s.adjustments, s.closing].map(O.r2)).toEqual([c.opening, c.purchases, c.cogs, c.adjustments, c.closing]);
+        expect(s.gap).toBeCloseTo(0, 2);
     });
     test('F9/F10 due to receive / due to pay', () => {
         expect(FinanceManager.calculateOutstanding()).toEqual({ dueToReceive: want.F9_dueToReceive, dueToPay: want.F10_dueToPay });
-    });
-    test('F11 withdrawals (all time)', () => {
-        expect(text('financeTotalWithdrawn')).toBe(rupee(want.F11_withdrawals));
-    });
-
-    // The cards below are new in #215; they turn on when utils/finance-calc.js lands.
-    const calc = loadFinanceCalc();
-    // BUG: see #215 — no cost of goods sold / profit on goods sold / cash flow / check line yet
-    const test215 = calc ? test : test.skip;
-    const summary = () => calc.computeFinanceSummary({
-        sources: { purchases: data.purchases, wholesaleSales: data.wholesaleSales, retailSales: data.retailSales, stockAdjustments: data.stockAdjustments },
-        items: data.items, base: { state: {}, from: -Infinity }, expenses: data.expenses, withdrawals: data.withdrawals
-    });
-    test215('F2 cost of goods sold', () => expect(summary().cogs).toBeCloseTo(want.F2_cogs, 2));
-    test215('F4 profit on goods sold', () => expect(summary().profit).toBeCloseTo(want.F4_profit, 2));
-    test215('F5 personal expenses kept out of profit', () => expect(summary().expenses.personal).toBe(want.F5_personalExpenses));
-    test215('F6 stock value now', () => expect(summary().stock.closing).toBeCloseTo(want.F6_stockValue, 2));
-    test215('F7 cash flow', () => expect(summary().cash.net).toBeCloseTo(want.F7_cashFlow, 2));
-    test215('F8 check line holds', () => {
-        const s = summary().stock;
-        expect(s.opening + s.purchases - s.cogs + s.adjustments).toBeCloseTo(s.closing, 2);
     });
 });
 
