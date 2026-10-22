@@ -67,6 +67,8 @@
       "title": "3. Trust & tests (CI rules tests, oracle tests, void, save-time checks)",
       "why": "Tests that guard money paths go in before refactors; then one shared period/profit module, void instead of delete, and save-time checks.",
       "items": [
+        { "n": 216, "note": "Every displayed number gets a spec + oracle test" },
+        { "n": 215, "note": "Finance profit = sales − cost of goods sold" },
         { "n": 61, "note": "Tests for save/split/profit before any refactor" },
         { "n": 51, "note": "Cheap: errors stay visible" },
         { "n": 49, "note": "Date parsing + || money fallbacks; do with #73" },
