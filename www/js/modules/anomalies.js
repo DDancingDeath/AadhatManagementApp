@@ -23,6 +23,12 @@ const esc = (v) => Helpers.escapeHtml(v == null ? '' : String(v));
 const jsAttr = (v) => Helpers.escapeJsAttr(String(v ?? ''));
 const DAY_MS = 86400000;
 const STORED_TTL_MS = 2 * 60 * 1000;
+/** Today card: server read at most every 30 min per user/device (persisted across reopens). */
+const REPORT_TTL_MS = 30 * 60 * 1000;
+const REPORT_KEY = 'aadhatAnomalyReportRead';
+const REPORT_LIMIT = 200;
+const SCAN_LIMIT = 500;
+const AUDIT_LIMIT = 300;
 const SCAN_KEY = 'aadhatAnomalyScanDay';
 const PAGE_SIZE = 200;
 const SEV_COLORS = { high: '#dc2626', medium: '#d97706', low: '#6b7280' };
@@ -73,18 +79,22 @@ export const AnomaliesManager = {
      * changed ones (deterministic ids, set-merge). Never writes when the
      * stored records can't be read from the server: a record unknown to this
      * device would otherwise be re-created as 'open' over someone's review.
+     * @param {string} fromKey
+     * @param {string} toKey
+     * @param {{audit?: boolean, storedLimit?: number}} [opts] - `audit`: also read the
+     *   audit log for deletes (owner only; daily scan only — it is the costly read)
      * @returns {Promise<{detected: Array, stored: Array|null}>}
      */
-    async scan(fromKey, toKey) {
+    async scan(fromKey, toKey, opts = {}) {
         // One scan at a time (daily scan + Today refresh): the later one reads
         // what the earlier one wrote instead of writing the same records again.
-        const run = () => this.runScan(fromKey, toKey);
+        const run = () => this.runScan(fromKey, toKey, opts);
         const next = (this.scanQueue || Promise.resolve()).then(run, run);
         this.scanQueue = next.catch(() => {});
         return next;
     },
 
-    async runScan(fromKey, toKey) {
+    async runScan(fromKey, toKey, { audit = false, storedLimit = REPORT_LIMIT } = {}) {
         const loadedFrom = Number(AppState.historyLoadedFrom) || 0;
         const from = Math.max(istDayStartMs(fromKey), loadedFrom);
         const to = istDayStartMs(toKey) + DAY_MS;
@@ -93,8 +103,8 @@ export const AnomaliesManager = {
                 console.warn('Anomaly scan: cash sessions not read:', e?.code || e);
                 return [];
             }),
-            AppState.userRole === 'owner'
-                ? FirebaseService.loadAuditLogsSince(from).catch(e => {
+            audit && AppState.userRole === 'owner'
+                ? FirebaseService.loadAuditLogsSince(from, AUDIT_LIMIT).catch(e => {
                     console.warn('Anomaly scan: audit log not read:', e?.code || e);
                     return [];
                 })
@@ -112,7 +122,7 @@ export const AnomaliesManager = {
         });
         let stored = null;
         try {
-            const res = await FirebaseService.loadAnomalies(fromKey, toKey, { limit: 1000, server: true });
+            const res = await FirebaseService.loadAnomalies(fromKey, toKey, { limit: storedLimit, server: true });
             stored = res.more ? null : res.docs;
             if (res.more) console.warn('Anomaly scan: too many stored records to compare; not writing');
         } catch (e) {
@@ -135,8 +145,10 @@ export const AnomaliesManager = {
     },
 
     /**
-     * Once per IST day per device (owner/manager): scan from the last scanned
-     * day (or `scanDays` back) to today over the loaded history window.
+     * Once per IST day per user and device (owner/manager, guarded in
+     * localStorage across app reopens): scan from the last scanned day (or
+     * `scanDays` back) to today over the loaded history window. The only
+     * place the audit log is read (owner devices, capped at AUDIT_LIMIT).
      */
     async dailyScan() {
         if (!canSee() || !AppState.currentUser) return;
@@ -147,8 +159,18 @@ export const AnomaliesManager = {
         if (last && last.uid === uid && last.day === today) return;
         const earliest = addDaysToKey(today, -(ANOMALY_DEFAULTS.scanDays - 1));
         const fromKey = last && last.uid === uid && last.day > earliest ? last.day : earliest;
-        const { stored } = await this.scan(fromKey, today);
-        if (stored) localStorage.setItem(SCAN_KEY, JSON.stringify({ uid, day: today, at: Date.now() }));
+        const { stored } = await this.scan(fromKey, today, { audit: true, storedLimit: SCAN_LIMIT });
+        if (!stored) return;
+        localStorage.setItem(SCAN_KEY, JSON.stringify({ uid, day: today, at: Date.now() }));
+        // The scan covered yesterday + today: the Today card needs no read of its own for a while
+        const { yesterday } = this.reportKeys();
+        const key = `${yesterday}|${today}`;
+        this.stored = { key, docs: stored.filter(d => d.dayKey === yesterday || d.dayKey === today), at: Date.now() };
+        this.markReportFresh(key);
+        if (document.getElementById('dayReportCard')?.style.display === 'block') {
+            this.reportList = mergeAnomalies(this.detectLive(), this.stored.docs);
+            this.drawDayReport();
+        }
     },
 
     /** Start the daily scan a little after startup so it never slows the first screen. */
@@ -164,6 +186,20 @@ export const AnomaliesManager = {
     reportKeys() {
         const t = todayKey();
         return { today: t, yesterday: addDaysToKey(t, -1) };
+    },
+
+    /** True when this user's Today card read the server for these days less than REPORT_TTL_MS ago (survives reopens). */
+    reportFresh(key) {
+        try {
+            const r = JSON.parse(localStorage.getItem(REPORT_KEY) || 'null');
+            return !!r && r.uid === AppState.currentUser?.uid && r.key === key && Date.now() - Number(r.at) < REPORT_TTL_MS;
+        } catch (e) {
+            return false;
+        }
+    },
+
+    markReportFresh(key) {
+        localStorage.setItem(REPORT_KEY, JSON.stringify({ uid: AppState.currentUser?.uid || null, key, at: Date.now() }));
     },
 
     /** Live detections for yesterday + today from loaded data (no reads). */
@@ -183,8 +219,9 @@ export const AnomaliesManager = {
 
     /**
      * Render the Day report card (called from Today with its day totals).
-     * Draws at once from loaded data, then refreshes stored review status and
-     * records new anomalies in the background (at most every 2 minutes).
+     * Draws at once from loaded data, then refreshes stored review status in
+     * the background: from the offline cache while the persisted TTL holds,
+     * from the server (and records new anomalies) at most every REPORT_TTL_MS.
      * @param {Object} [totals]
      * @param {Object|null} [session] - today's cash session
      */
@@ -209,18 +246,44 @@ export const AnomaliesManager = {
         }
     },
 
-    async refreshDayReport() {
+    /**
+     * Stored records for the Today card. Within the persisted TTL: offline
+     * cache only (no billed reads, no writes). Otherwise, or with `force`
+     * (the card's refresh button): a server scan of yesterday + today —
+     * never the audit log (that is the daily scan's job).
+     * @param {{force?: boolean}} [opts]
+     */
+    async refreshDayReport({ force = false } = {}) {
         if (this.refreshing) return this.refreshing;
         const { yesterday, today } = this.reportKeys();
+        const key = `${yesterday}|${today}`;
         this.refreshing = (async () => {
-            const { detected, stored } = await this.scan(yesterday, today);
-            this.stored = { key: `${yesterday}|${today}`, docs: stored || (this.stored?.docs || []), at: Date.now() };
-            this.reportList = mergeAnomalies(detected, this.stored.docs);
+            const prev = this.stored && this.stored.key === key ? this.stored.docs : [];
+            if (!force && this.reportFresh(key)) {
+                let cached = [];
+                try {
+                    cached = (await FirebaseService.loadAnomalies(yesterday, today, { limit: REPORT_LIMIT, cacheOnly: true })).docs;
+                } catch (e) {
+                    cached = [];
+                }
+                const byId = new Map(prev.map(d => [d.id, d]));
+                cached.forEach(d => byId.set(d.id, { ...(byId.get(d.id) || {}), ...d }));
+                this.stored = { key, docs: [...byId.values()], at: Date.now() };
+            } else {
+                const { stored } = await this.scan(yesterday, today, { storedLimit: REPORT_LIMIT });
+                this.stored = { key, docs: stored || prev, at: Date.now() };
+                if (stored) this.markReportFresh(key);
+            }
+            this.reportList = mergeAnomalies(this.detectLive(), this.stored.docs);
             this.drawDayReport();
         })().finally(() => { this.refreshing = null; });
         return this.refreshing;
     },
 
+    /** Card refresh button: read the server now. */
+    refreshNow() {
+        return this.refreshDayReport({ force: true }).catch(e => console.warn('Day report refresh failed:', e));
+    },
     drawDayReport() {
         const card = document.getElementById('dayReportCard');
         if (!card || !canSee()) return;
@@ -249,7 +312,8 @@ export const AnomaliesManager = {
         card.innerHTML = `
             <div class="anomaly-card-head">
                 <h3 class="section-title" style="margin:0;">🚨 Day report / आज की रिपोर्ट</h3>
-                <span class="anomaly-count-badge ${s.total ? 'has' : ''}">${s.total}</span>
+                <span><button type="button" class="anomaly-btn" title="Refresh / ताज़ा करें" onclick="window.app.anomalies.refreshNow()">🔄</button>
+                <span class="anomaly-count-badge ${s.total ? 'has' : ''}">${s.total}</span></span>
             </div>
             <div class="anomaly-muted" style="margin:4px 0 8px;">${esc(formatDayKey(today))} · ${esc(this.cashStatusLine())}</div>
             <div class="anomaly-chips">${chips}</div>

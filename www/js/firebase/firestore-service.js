@@ -3025,17 +3025,22 @@ const FirebaseService = {
      * One page of anomaly records for IST days fromKey..toKey, newest day first.
      * @param {string} fromKey - YYYY-MM-DD
      * @param {string} toKey - YYYY-MM-DD
-     * @param {{limit?: number, after?: Object|null, server?: boolean}} [opts] - `after` = `last`
-     *   of the previous page; `server` fails instead of answering from the offline cache
-     *   (otherwise: server first, offline cache when the server can't be reached)
+     * @param {{limit?: number, after?: Object|null, server?: boolean, cacheOnly?: boolean}} [opts] - `after` = `last`
+     *   of the previous page; `server` fails instead of answering from the offline cache;
+     *   `cacheOnly` answers from the offline cache only (no billed reads);
+     *   otherwise: server first, offline cache when the server can't be reached
      * @returns {Promise<{docs: Array<Object>, last: Object|null, more: boolean}>}
      */
-    async loadAnomalies(fromKey, toKey, { limit = 200, after = null, server = false } = {}) {
+    async loadAnomalies(fromKey, toKey, { limit = 200, after = null, server = false, cacheOnly = false } = {}) {
         let query = this.db.collection(col('anomalies'))
             .where('dayKey', '>=', fromKey).where('dayKey', '<=', toKey)
             .orderBy('dayKey', 'desc').limit(limit);
         if (after) query = query.startAfter(after);
         let snapshot;
+        if (cacheOnly) {
+            snapshot = await query.get({ source: 'cache' });
+            return { docs: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })), last: null, more: false };
+        }
         try {
             snapshot = await query.get({ source: 'server' });
         } catch (e) {

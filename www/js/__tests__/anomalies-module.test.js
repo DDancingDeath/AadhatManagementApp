@@ -40,6 +40,8 @@ beforeEach(() => {
     AppState.items = [];
     AnomaliesManager.stored = null;
     AnomaliesManager.reportList = [];
+    AnomaliesManager.refreshing = null;
+    AnomaliesManager.scanQueue = null;
     document.body.innerHTML = '<div id="dayReportCard" style="display:none"></div>';
 });
 
@@ -104,5 +106,42 @@ describe('Day report card', () => {
         AnomaliesManager.renderDayReport({}, null);
         expect(document.getElementById('dayReportCard').style.display).toBe('none');
         expect(FirebaseService.loadAnomalies).not.toHaveBeenCalled();
+    });
+});
+
+describe('read budget (free plan)', () => {
+    const serverCalls = () => FirebaseService.loadAnomalies.mock.calls.filter(c => !c[2]?.cacheOnly);
+
+    test('Today refresh never reads the audit log; the daily scan does, capped', async () => {
+        await AnomaliesManager.refreshDayReport();
+        expect(FirebaseService.loadAuditLogsSince).not.toHaveBeenCalled();
+        expect(serverCalls()[0][2]).toEqual(expect.objectContaining({ limit: 200, server: true }));
+        await AnomaliesManager.dailyScan();
+        expect(FirebaseService.loadAuditLogsSince).toHaveBeenCalledTimes(1);
+        expect(FirebaseService.loadAuditLogsSince.mock.calls[0][1]).toBe(300);
+    });
+
+    test('repeated Today refreshes within the TTL (even after reopening the app) use the cache only', async () => {
+        await AnomaliesManager.refreshDayReport();
+        expect(serverCalls()).toHaveLength(1);
+        for (let i = 0; i < 3; i++) {
+            AnomaliesManager.stored = null; // app reopened: in-memory copy gone, TTL kept in localStorage
+            await AnomaliesManager.refreshDayReport();
+        }
+        expect(serverCalls()).toHaveLength(1);
+        expect(FirebaseService.loadCashSessionsBetween).toHaveBeenCalledTimes(1);
+        expect(FirebaseService.loadAnomalies.mock.calls.filter(c => c[2]?.cacheOnly)).toHaveLength(3);
+        expect(FirebaseService.saveAnomalies).toHaveBeenCalledTimes(1);
+
+        await AnomaliesManager.refreshNow(); // the card's refresh button reads the server
+        expect(serverCalls()).toHaveLength(2);
+    });
+
+    test('after the daily scan the Today card needs no server read of its own', async () => {
+        await AnomaliesManager.dailyScan();
+        FirebaseService.loadAnomalies.mockClear();
+        AnomaliesManager.stored = null;
+        await AnomaliesManager.refreshDayReport();
+        expect(serverCalls()).toHaveLength(0);
     });
 });

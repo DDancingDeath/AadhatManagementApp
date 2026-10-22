@@ -1011,6 +1011,7 @@ window.app = {
         review: (id, status) => AnomaliesManager.review(id, status),
         shareDayReport: () => AnomaliesManager.shareDayReport(),
         printDayReport: () => AnomaliesManager.printDayReport(),
+        refreshNow: () => AnomaliesManager.refreshNow(),
         cashCloseLine: () => AnomaliesManager.cashCloseLine()
     },
 
