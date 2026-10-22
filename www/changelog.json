@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "1.6.1",
+      "date": "2026-10-23",
+      "androidVersionCode": 10,
+      "notes": {
+        "en": [
+          "Finance now shows real profit (sales minus the cost of goods sold), stock value and cash flow; personal expenses are kept separate.",
+          "Tap any number on Finance to see what makes it up.",
+          "New Health page for owner/manager with automatic checks from real use of the app.",
+          "Diagnostics has a new \"Number checks\" section.",
+          "Many small fixes."
+        ],
+        "hi": [
+          "फ़ाइनेंस में अब असली मुनाफ़ा (बिक्री में से बेचे गए माल की लागत घटाकर), स्टॉक की कीमत और पैसे का आना-जाना दिखता है; निजी खर्च अलग रखे जाते हैं।",
+          "फ़ाइनेंस के किसी भी आंकड़े पर टैप करें और देखें कि वह किन चीज़ों से बना है।",
+          "मालिक/मैनेजर के लिए नया \"सेहत\" पेज — ऐप के असली इस्तेमाल से अपने-आप होने वाली जाँचें।",
+          "डायग्नोस्टिक्स में नया \"आंकड़ों की जाँच\" हिस्सा।",
+          "कई छोटे सुधार।"
+        ]
+      }
+    },
+    {
       "version": "1.6.0",
       "date": "2026-10-22",
       "androidVersionCode": 9,
