@@ -3,6 +3,8 @@
  * @module utils/stock-adjust
  */
 
+import { t } from '../i18n/index.js';
+
 /** Reason picker options; `other` needs a note. */
 export const ADJUST_REASONS = {
     count: 'Physical count / गिनती',
@@ -27,17 +29,17 @@ export function planStockAdjustment({ adjustType, quantity, currentStock, reason
     const qty = Number(quantity);
     const stock = Number(currentStock) || 0;
     if (!['add', 'remove', 'set'].includes(adjustType)) {
-        return { ok: false, error: 'Choose an adjustment type / प्रकार चुनें' };
+        return { ok: false, error: t('msg.stock.choose_adjust_type') };
     }
     if (!Number.isFinite(qty) || qty < 0 || (qty === 0 && adjustType !== 'set')) {
-        return { ok: false, error: 'Please enter a valid quantity / सही मात्रा डालें' };
+        return { ok: false, error: t('msg.stock.enter_valid_quantity') };
     }
     const note = (reasonNote || '').trim();
     if (!ADJUST_REASONS[reasonCode]) {
-        return { ok: false, error: 'Please choose a reason / कारण चुनें' };
+        return { ok: false, error: t('msg.stock.choose_reason') };
     }
     if (reasonCode === 'other' && !note) {
-        return { ok: false, error: 'Please write the reason / कारण लिखें' };
+        return { ok: false, error: t('msg.stock.write_reason') };
     }
     const reason = note ? `${ADJUST_REASONS[reasonCode]}: ${note}` : ADJUST_REASONS[reasonCode];
 
@@ -49,7 +51,7 @@ export function planStockAdjustment({ adjustType, quantity, currentStock, reason
     } else if (adjustType === 'remove') {
         const onHand = Math.max(0, stock);
         if (qty > onHand) {
-            if (onHand === 0) return { ok: false, error: 'There is no stock to remove / हटाने के लिए स्टॉक नहीं है' };
+            if (onHand === 0) return { ok: false, error: t('msg.stock.no_stock_to_remove') };
             effective = onHand;
             capped = true;
         }

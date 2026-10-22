@@ -7,6 +7,7 @@
  */
 
 import { toJsDate, parseLocalDate, toLocalISODate } from './dates.js';
+import { t } from '../i18n/index.js';
 
 export const HISTORY_TYPES = ['all', 'purchase', 'retail', 'wholesale'];
 export const HISTORY_PRESETS = ['all', 'today', 'yesterday', 'week', 'month', 'lastMonth', 'custom'];
@@ -50,15 +51,15 @@ export const WIDE_LOAD_MONTHS = 3;
  */
 export function validateCustomRange(from, to, now = new Date()) {
     const values = [String(from || '').trim(), String(to || '').trim()];
-    if (!values[0] && !values[1]) return { ok: false, error: 'Pick a From or To date / शुरू या आख़िरी तारीख चुनें' };
+    if (!values[0] && !values[1]) return { ok: false, error: t('msg.history.pick_from_or_to') };
     const min = parseLocalDate(MIN_HISTORY_DATE);
     const max = dayStart(now, 1);
     for (const v of values) {
         if (!v) continue;
         const d = parseLocalDate(v);
-        if (!d) return { ok: false, error: 'Enter a valid date / सही तारीख डालें' };
-        if (d < min) return { ok: false, error: 'Dates before 2020 are not allowed / 2020 से पहले की तारीख नहीं चलेगी' };
-        if (d > max) return { ok: false, error: 'Date is in the future / तारीख आगे की है' };
+        if (!d) return { ok: false, error: t('msg.history.enter_valid_date') };
+        if (d < min) return { ok: false, error: t('msg.history.before_2020') };
+        if (d > max) return { ok: false, error: t('msg.history.future_date') };
     }
     return { ok: true, from: values[0], to: values[1] };
 }

@@ -10,6 +10,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { TelemetryService } from '../services/telemetry.js';
 import { Helpers } from '../utils/helpers.js';
+import { t } from '../i18n/index.js';
 import {
     UNREAD_LIMIT, PAGE_SIZE, describeNotification, notificationText, formatWhen,
     badgeText, idsToMarkRead, prepareList, newArrivals, notificationTime, retentionCutoff
@@ -20,16 +21,12 @@ const CLEANUP_KEY = 'aadhat.notifications.cleanupAt';
 const CLEANUP_EVERY_MS = 24 * 60 * 60 * 1000;
 const TOAST_MS = 5000;
 
-/** Bilingual message for a listener / query failure. */
+/** Message for a listener / query failure. */
 export function notificationErrorMessage(error) {
     const code = error?.code || '';
-    if (code === 'failed-precondition') {
-        return '🔔 Notifications need a database index — tell the owner · सूचनाएं अभी नहीं दिख सकतीं (index चाहिए)';
-    }
-    if (code === 'permission-denied') {
-        return '🔔 No permission to read notifications · सूचनाएं देखने की अनुमति नहीं है';
-    }
-    return '🔔 Notifications could not load — check internet · सूचनाएं लोड नहीं हुईं, इंटरनेट देखें';
+    if (code === 'failed-precondition') return t('msg.notifications.needs_index');
+    if (code === 'permission-denied') return t('msg.notifications.no_permission');
+    return t('msg.notifications.could_not_load');
 }
 
 const NotificationsManager = {
@@ -102,7 +99,7 @@ const NotificationsManager = {
         if (initial) {
             const count = this.unread.length;
             if (count > 0 && !meta.fromCache) {
-                UIManager.showToast(`🔔 ${badgeText(count)} new notification(s) — tap the bell · ${badgeText(count)} नई सूचनाएं — घंटी दबाएँ`, TOAST_MS);
+                UIManager.showToast(t('msg.notifications.new_notification_s_tap_bell', { badgeText: badgeText(count) }), TOAST_MS);
             }
             return;
         }
@@ -157,7 +154,7 @@ const NotificationsManager = {
             badge.hidden = !text;
         }
         if (bell) {
-            bell.setAttribute('aria-label', text ? `Notifications: ${text} unread / ${text} नई सूचनाएं` : 'Notifications / सूचनाएं');
+            bell.setAttribute('aria-label', text ? t('ui.nav.notifications_unread', { count: text }) : t('ui.common.notifications'));
         }
     },
 
@@ -347,12 +344,12 @@ const NotificationsManager = {
             let permission = window.Notification.permission;
             if (permission === 'default') permission = await window.Notification.requestPermission();
             if (permission !== 'granted') {
-                UIManager.showToast('Browser blocked notifications — allow them in site settings · ब्राउज़र ने सूचनाएं रोक दी हैं', TOAST_MS);
+                UIManager.showToast(t('msg.notifications.browser_blocked_notifications_allow_them'), TOAST_MS);
                 this.refreshSettings();
                 return;
             }
             localStorage.setItem(SYSTEM_PREF_KEY, '1');
-            UIManager.showToast('Desktop notifications on (while the app is open) · डेस्कटॉप सूचनाएं चालू');
+            UIManager.showToast(t('msg.notifications.desktop_notifications_on_while_app'));
         } else {
             localStorage.removeItem(SYSTEM_PREF_KEY);
         }

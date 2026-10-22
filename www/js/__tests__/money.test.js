@@ -122,9 +122,11 @@ describe('checkPaymentSplit (#23)', () => {
         expect(checkPaymentSplit(100, { cash: 0.1, online: 0.2, due: 98.7 })).toMatchObject({ ok: true, entered: 99 });
         expect(checkPaymentSplit(100, { cash: 98.9 }).ok).toBe(false);
     });
-    test('message says how much is missing or extra, in English and Hindi', () => {
-        expect(paymentSplitMessage({ difference: 4500 })).toMatch(/₹4,500 less .*₹4,500 कम/);
-        expect(paymentSplitMessage({ difference: -45000 })).toMatch(/₹45,000 more .*₹45,000 ज़्यादा/);
+    test('message says how much is missing or extra, in the app language (#143)', () => {
+        expect(paymentSplitMessage({ difference: 4500 })).toMatch(/₹4,500 less .*Add ₹4,500/);
+        expect(paymentSplitMessage({ difference: -45000 })).toMatch(/₹45,000 more .*by ₹45,000/);
+        expect(paymentSplitMessage({ difference: 4500 }, 'hi')).toMatch(/₹4,500 कम/);
+        expect(paymentSplitMessage({ difference: -45000 }, 'hi')).toMatch(/₹45,000 ज़्यादा/);
     });
 });
 

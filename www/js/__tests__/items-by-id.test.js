@@ -139,7 +139,7 @@ describe('duplicate item names are blocked', () => {
         document.getElementById('itemModalName').value = '  chANa ';
         await ItemsManager.saveItemFromModal();
         expect(FirebaseService.saveItem).not.toHaveBeenCalled();
-        expect(UIManager.showToast.mock.calls[0][0]).toMatch(/already exists.*पहले से/);
+        expect(UIManager.showToast.mock.calls[0][0]).toMatch(/"chANa" already exists|already exists/);
     });
 
     test('a Hindi name clash is refused on edit', async () => {

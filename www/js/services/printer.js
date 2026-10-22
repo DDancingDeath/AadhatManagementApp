@@ -5,6 +5,7 @@ import { UIManager } from '../ui/ui-manager.js';
 import { DEFAULT_SETTINGS } from '../utils/constants.js';
 import { getAndroidMajorVersion } from '../utils/helpers.js';
 import { COPY_MARK, receiptDateTime } from '../utils/bill-share.js';
+import { t } from '../i18n/index.js';
 
 /** Dots darker than this (average of R,G,B) print black */
 const RASTER_THRESHOLD = 128;
@@ -827,7 +828,7 @@ const PrinterService = {
             return devices;
         } catch (error) {
             console.error('Printer scan error:', error);
-            UIManager.showToast('Failed to scan devices: ' + error.message);
+            UIManager.showToast(t('msg.printer.failed_scan_devices', { message: error.message }));
             throw error;
         }
     },
@@ -839,7 +840,7 @@ const PrinterService = {
             return true;
         } catch (error) {
             console.error('Printer connect error:', error);
-            UIManager.showToast('Failed to connect: ' + error.message);
+            UIManager.showToast(t('msg.printer.failed_connect', { message: error.message }));
             throw error;
         }
     },
@@ -848,10 +849,10 @@ const PrinterService = {
         try {
             await this.manager.disconnect();
             this.updateStatus();
-            UIManager.showToast('Printer disconnected');
+            UIManager.showToast(t('msg.common.printer_disconnected'));
         } catch (error) {
             console.error('Disconnect error:', error);
-            UIManager.showToast('Failed to disconnect: ' + error.message);
+            UIManager.showToast(t('msg.common.failed_disconnect', { message: error.message }));
         }
     },
 
@@ -906,10 +907,10 @@ const PrinterService = {
             };
             
             await this.manager.write(testBill);
-            UIManager.showToast('Test print successful!');
+            UIManager.showToast(t('msg.printer.test_print_successful'));
         } catch (error) {
             console.error('Test print error:', error);
-            UIManager.showToast('Test print failed: ' + error.message);
+            UIManager.showToast(t('msg.common.test_print_failed', { message: error.message }));
         }
     },
 
@@ -918,11 +919,11 @@ const PrinterService = {
         if (this.manager.device && window.bluetoothSerial) {
             try {
                 await this.manager.write(billData);
-                UIManager.showToast('✓ Printed successfully');
+                UIManager.showToast(t('msg.printer.printed_successfully'));
                 return true;
             } catch (error) {
                 console.error('Bluetooth print failed:', error);
-                UIManager.showToast('Print failed: ' + (error.message || error));
+                UIManager.showToast(t('msg.printer.print_failed', { message: error.message || error }));
                 // Automatically show preview on Bluetooth failure
                 return await this.showBillPreview(billData);
             }
@@ -941,7 +942,7 @@ const PrinterService = {
             return this.showImagePreview(canvas, filename, 'Bill');
         } catch (error) {
             console.error('Preview generation failed:', error);
-            UIManager.showToast('Failed to generate bill preview');
+            UIManager.showToast(t('msg.printer.failed_generate_bill_preview'));
             return false;
         }
     },
@@ -956,11 +957,11 @@ const PrinterService = {
         if (this.manager.device && window.bluetoothSerial) {
             try {
                 await this.manager.writeStatement(statement);
-                UIManager.showToast('✓ Printed successfully');
+                UIManager.showToast(t('msg.printer.printed_successfully'));
                 return true;
             } catch (error) {
                 console.error('Bluetooth statement print failed:', error);
-                UIManager.showToast('Print failed: ' + (error.message || error));
+                UIManager.showToast(t('msg.printer.print_failed', { message: error.message || error }));
             }
         }
         try {
@@ -968,7 +969,7 @@ const PrinterService = {
             return this.showImagePreview(canvas, statement.filename || 'statement.png', 'Statement');
         } catch (error) {
             console.error('Statement preview failed:', error);
-            UIManager.showToast('Failed to generate statement');
+            UIManager.showToast(t('msg.printer.failed_generate_statement'));
             return false;
         }
     },
@@ -1048,7 +1049,7 @@ const PrinterService = {
                 // Convert canvas to blob for better mobile support
                 paddedCanvas.toBlob(async (blob) => {
                     if (!blob) {
-                        UIManager.showToast('Failed to generate image', 'error');
+                        UIManager.showToast(t('msg.printer.failed_generate_image'), 'error');
                         return;
                     }
                     
@@ -1105,7 +1106,7 @@ const PrinterService = {
             return true;
         } catch (error) {
             console.error('Preview failed:', error);
-            UIManager.showToast('Failed to generate preview');
+            UIManager.showToast(t('msg.printer.failed_generate_preview'));
             return false;
         }
     },
@@ -1115,11 +1116,11 @@ const PrinterService = {
         if (this.manager.device && window.bluetoothSerial) {
             try {
                 await this.manager.writeExpense(expense);
-                UIManager.showToast('✓ Expense printed successfully');
+                UIManager.showToast(t('msg.printer.expense_printed_successfully'));
                 return true;
             } catch (error) {
                 console.error('Bluetooth expense print failed:', error);
-                UIManager.showToast('Print failed: ' + (error.message || error));
+                UIManager.showToast(t('msg.printer.print_failed', { message: error.message || error }));
                 // Automatically show preview on Bluetooth failure
                 return await this.showExpensePreview(expense);
             }
@@ -1202,7 +1203,7 @@ const PrinterService = {
                 // Convert canvas to blob for better mobile support
                 paddedCanvas.toBlob(async (blob) => {
                     if (!blob) {
-                        UIManager.showToast('Failed to generate image', 'error');
+                        UIManager.showToast(t('msg.printer.failed_generate_image'), 'error');
                         return;
                     }
                     
@@ -1267,7 +1268,7 @@ const PrinterService = {
             return true;
         } catch (error) {
             console.error('Failed to show expense preview:', error);
-            UIManager.showToast('Failed to generate preview: ' + error.message);
+            UIManager.showToast(t('msg.printer.failed_generate_preview_2', { message: error.message }));
             return false;
         }
     },

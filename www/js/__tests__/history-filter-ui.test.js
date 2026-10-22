@@ -166,7 +166,7 @@ describe('Custom range quota guard (#199 review)', () => {
         expect(window.FirebaseService.ensureHistoryFrom).not.toHaveBeenCalled();
         expect(modal).not.toHaveBeenCalled();
         expect(sessionStorage.getItem(HISTORY_FILTER_KEY)).toBeNull();
-        expect(document.getElementById('historyRangeHint').textContent).toMatch(/2020 .*\/ 2020/);
+        expect(document.getElementById('historyRangeHint').textContent).toBe('Dates before 2020 are not allowed');
     });
 
     test('a wide From range needs a confirm; declined = no load, nothing saved', async () => {

@@ -693,7 +693,7 @@ describe('#98 review: the Cash-tab bill picker never guesses the bill', () => {
         const writes = ctx.fake.stats.writes;
         await CashManagementManager.recordTransaction();
         expect(ctx.fake.stats.writes).toBe(writes);
-        expect(toast).toHaveBeenCalledWith('Choose a bill, or "No bill" / बिल चुनें या "No bill"');
+        expect(toast).toHaveBeenCalledWith('Choose a bill, or "No bill"');
     });
 
     test('a typed name lists bills but none is pre-selected', async () => {
@@ -702,7 +702,7 @@ describe('#98 review: the Cash-tab bill picker never guesses the bill', () => {
         setVal('transactionAmount', 100);
         await CashManagementManager.recordTransaction();
         expect(ctx.fake.raw('retailSales').get('r0').payment.due).toBe(600);
-        expect(toast).toHaveBeenCalledWith('Choose a bill, or "No bill" / बिल चुनें या "No bill"');
+        expect(toast).toHaveBeenCalledWith('Choose a bill, or "No bill"');
     });
 
     test('names match exactly: "Ram" does not list Ramesh; exact, case/space-insensitive and Hindi names do', () => {
@@ -737,7 +737,7 @@ describe('#98 review: the Cash-tab bill picker never guesses the bill', () => {
         const writes = ctx.fake.stats.writes;
         await CashManagementManager.recordTransaction();
         expect(ctx.fake.stats.writes).toBe(writes);
-        expect(toast).toHaveBeenCalledWith('This bill is for Sita, not Ramesh / यह बिल Sita का है, Ramesh का नहीं');
+        expect(toast).toHaveBeenCalledWith('This bill is for Sita, not Ramesh');
         expect(ctx.fake.raw('retailSales').get('r0').payment.due).toBe(600);
     });
 

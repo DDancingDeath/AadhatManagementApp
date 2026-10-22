@@ -7,6 +7,8 @@
 /**
  * Static utility helper class
  */
+import { t } from '../i18n/index.js';
+
 export class Helpers {
     // -------------------- FORMATTING --------------------
 
@@ -273,7 +275,7 @@ export class Helpers {
                 }
             } else {
                 const { UIManager } = await import('../ui/ui-manager.js');
-                UIManager.showToast('Contact picker not supported');
+                UIManager.showToast(t('msg.common.contact_picker_not_supported'));
             }
         } catch (error) {
             console.error('Pick contact error:', error);
@@ -454,10 +456,10 @@ export class Helpers {
             el.textContent = '✓ ₹0';
             el.style.color = '#16a34a';
         } else if (check.difference > 0) {
-            el.textContent = `₹${amount} left / बाकी`;
+            el.textContent = t('ui.billing.split_left', { amount });
             el.style.color = '#dc2626';
         } else {
-            el.textContent = `₹${amount} extra / ज़्यादा`;
+            el.textContent = t('ui.billing.split_extra', { amount });
             el.style.color = '#dc2626';
         }
     }

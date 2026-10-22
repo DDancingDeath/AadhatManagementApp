@@ -17,7 +17,8 @@ import { AuditService } from '../services/audit.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
 import { AppState } from '../utils/state.js';
-import { readPayment, NAME_REQUIRED_FOR_DUE_MESSAGE, KEPT_SERVER_PAYMENT_MESSAGE } from '../utils/money.js';
+import { readPayment, NAME_REQUIRED_FOR_DUE_KEY, KEPT_SERVER_PAYMENT_KEY } from '../utils/money.js';
+import { t } from '../i18n/index.js';
 import { createFakeFirestore } from './__mocks__/fake-firestore.js';
 import { sampleItems } from '../../../tests/fixtures/sample-items.js';
 
@@ -88,6 +89,13 @@ describe('new purchase save', () => {
         await addLine(0, 25.5, [40, 20]);
         await addLine(1, 30, [35]);
     }
+
+    test('Hindi item names: the bill line keeps the catalogue name + itemId, Hindi only on screen (#143)', async () => {
+        AppState.settings.showHindi = true;
+        await addLine(0, 25.5, [40]);
+        expect(PurchaseManager.getBillItems()[0]).toMatchObject({ itemId: 'item-rice', name: 'Rice' });
+        expect(document.querySelector('#billTable tbody td').textContent).toBe('चावल');
+    });
 
     test('items × rate, auto labour and grand total are computed from the lines', async () => {
         await buildBill();
@@ -160,7 +168,7 @@ describe('new purchase save', () => {
         setVal('dueAmount', 2568);
         expect(await PurchaseManager.saveBillToHistory()).toBeUndefined();
         expect(savePurchase).not.toHaveBeenCalled();
-        expect(toast).toHaveBeenCalledWith(NAME_REQUIRED_FOR_DUE_MESSAGE);
+        expect(toast).toHaveBeenCalledWith(t(NAME_REQUIRED_FOR_DUE_KEY));
 
         setVal('dueAmount', 0);
         setVal('cashPayment', 2568);
@@ -181,7 +189,7 @@ describe('new purchase save', () => {
         expect(await PurchaseManager.saveBillToHistory()).toBeUndefined();
         expect(savePurchase).not.toHaveBeenCalled();
         expect(toast).toHaveBeenCalledWith(expect.stringContaining('₹2,468 less than the bill total'));
-        expect(document.getElementById('purchaseSplitRemaining').textContent).toBe('₹2,468 left / बाकी');
+        expect(document.getElementById('purchaseSplitRemaining').textContent).toBe('₹2,468 left');
 
         setVal('cashPayment', 3000);
         expect(await PurchaseManager.saveBillToHistory()).toBeUndefined();
@@ -254,7 +262,7 @@ describe('new purchase save', () => {
         await expect(PurchaseManager.saveBillToHistory()).rejects.toThrow('Timed out');
         jest.spyOn(FirebaseService, 'keptServerPayment').mockReturnValue(true);
         await PurchaseManager.saveBillToHistory();
-        expect(toast).toHaveBeenCalledWith(KEPT_SERVER_PAYMENT_MESSAGE);
+        expect(toast).toHaveBeenCalledWith(t(KEPT_SERVER_PAYMENT_KEY));
     });
 
     test('a bill restored from auto-save/draft keeps its id (#70)', async () => {
@@ -292,6 +300,13 @@ describe('new retail sale save', () => {
         await RetailSaleManager.addToSalesBill();
     }
 
+    test('Hindi item names: the sale line keeps the catalogue name + itemId (#143)', async () => {
+        AppState.settings.showHindi = true;
+        await addLine(1, 30, [10]);
+        expect(RetailSaleManager.getSaleItems()[0]).toMatchObject({ itemId: 'item-wheat', name: 'Wheat' });
+        expect(document.querySelector('#saleTable tbody td').textContent).toBe('गेहूं');
+    });
+
     test('saves item totals and a cash + due split; payment.due equals dueAmount', async () => {
         await addLine(0, 36, [12.5]);     // 450
         await addLine(1, 28.75, [9, 3]);  // 345
@@ -319,7 +334,7 @@ describe('new retail sale save', () => {
         await addLine(0, 36, [10]);
         setVal('saleCashPayment', 360);
         expect(await RetailSaleManager.completeSale()).toBeUndefined();
-        expect(modal).toHaveBeenCalledWith(expect.stringContaining('Rice: selling 10.0 kg, only 5.0 kg'), 'Check before saving / सेव से पहले जाँचें', true);
+        expect(modal).toHaveBeenCalledWith(expect.stringContaining('Rice: selling 10.0 kg, only 5.0 kg'), 'Check before saving', true);
         expect(saveRetailSale).not.toHaveBeenCalled();
     });
 
@@ -361,7 +376,7 @@ describe('new retail sale save', () => {
         setVal('saleCustomerName', '   ');
         expect(await RetailSaleManager.completeSale()).toBeUndefined();
         expect(saveRetailSale).not.toHaveBeenCalled();
-        expect(toast).toHaveBeenCalledWith(NAME_REQUIRED_FOR_DUE_MESSAGE);
+        expect(toast).toHaveBeenCalledWith(t(NAME_REQUIRED_FOR_DUE_KEY));
     });
 
     test('a fully paid walk-in sale still saves without a name (#68)', async () => {

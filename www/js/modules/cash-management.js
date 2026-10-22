@@ -16,6 +16,9 @@ import { round2, outstandingDue } from '../utils/money.js';
 import { evaluateCashCount, toFlags } from '../utils/bill-checks.js';
 import { OutstandingManager } from './outstanding.js';
 import { dueEvents, sumDueEvents, saleTimePayment, normalizeParty, sameParty, billParty } from '../utils/due-payments.js';
+import { t } from '../i18n/index.js';
+
+const L = (key, params) => Helpers.escapeHtml(t(key, params));
 
 /** Cash-tab bill picker values that are not bills. */
 const DUE_BILL_NONE = '__none__';
@@ -123,18 +126,18 @@ export class CashManagementManager {
         if (type === 'deposit') {
             // Cash deposit - hide customer name
             if (customerNameRow) customerNameRow.style.display = 'none';
-            if (amountLabel) amountLabel.textContent = 'Amount Added (₹):';
-            if (notesLabel) notesLabel.textContent = 'Reason (Optional):';
+            if (amountLabel) amountLabel.textContent = t('ui.cash.amount_added');
+            if (notesLabel) notesLabel.textContent = t('ui.cash.reason_optional');
         } else if (type === 'paid') {
             // Payment to supplier - show customer name
             if (customerNameRow) customerNameRow.style.display = 'block';
-            if (amountLabel) amountLabel.textContent = 'Amount Paid (₹):';
-            if (notesLabel) notesLabel.textContent = 'Notes (Optional):';
+            if (amountLabel) amountLabel.textContent = t('ui.cash.amount_paid');
+            if (notesLabel) notesLabel.textContent = t('ui.cash.notes_optional');
         } else {
             // Payment from customer - show customer name
             if (customerNameRow) customerNameRow.style.display = 'block';
-            if (amountLabel) amountLabel.textContent = 'Amount Received (₹):';
-            if (notesLabel) notesLabel.textContent = 'Notes (Optional):';
+            if (amountLabel) amountLabel.textContent = t('ui.cash.amount_received');
+            if (notesLabel) notesLabel.textContent = t('ui.cash.notes_optional');
         }
     }
 
@@ -164,20 +167,20 @@ export class CashManagementManager {
             });
         }
         bills.sort((a, b) => a.time - b.time); // oldest due first
-        const options = [`<option value="${DUE_BILL_NONE}" selected>— choose bill / बिल चुनें —</option>`];
+        const options = [`<option value="${DUE_BILL_NONE}" selected>${L('ui.cash.choose_bill_option')}</option>`];
         bills.slice(0, 50).forEach(({ billType, bill, due }) => {
-            options.push(`<option value="${Helpers.escapeHtml(`${billType}|${bill.id}`)}">#${Helpers.escapeHtml(bill.billNumber || String(bill.id).slice(0, 8))} · ${Helpers.escapeHtml(Helpers.formatDate(bill.date))} · Due ₹${Helpers.escapeHtml(round2(due))}</option>`);
+            options.push(`<option value="${Helpers.escapeHtml(`${billType}|${bill.id}`)}">#${Helpers.escapeHtml(bill.billNumber || String(bill.id).slice(0, 8))} · ${Helpers.escapeHtml(Helpers.formatDate(bill.date))} · ${L('ui.cash.bill_due', { amount: round2(due) })}</option>`);
         });
-        options.push(`<option value="${DUE_BILL_UNLINKED}">No bill — old udhaar not in the app / ऐप में बिल नहीं</option>`);
+        options.push(`<option value="${DUE_BILL_UNLINKED}">${L('ui.cash.no_bill_option')}</option>`);
         select.innerHTML = options.join('');
         select.value = DUE_BILL_NONE;
         this.showDueBillDetails();
         if (!party) {
             const hint = document.getElementById('dueBillHint');
-            if (hint) hint.textContent = 'Type the full customer/supplier name to see their open bills / पूरा नाम लिखें';
+            if (hint) hint.textContent = t('ui.cash.type_full_name');
         } else if (bills.length === 0) {
             const hint = document.getElementById('dueBillHint');
-            if (hint) hint.textContent = 'No open bill for this exact name / इस नाम का कोई बकाया बिल नहीं';
+            if (hint) hint.textContent = t('ui.cash.no_open_bill_for_name');
         }
     }
 
@@ -195,14 +198,14 @@ export class CashManagementManager {
         if (!hint) return;
         const value = document.getElementById('dueBillSelect')?.value;
         if (value === DUE_BILL_UNLINKED) {
-            hint.textContent = 'Recorded in today\'s cash only; no bill\'s due changes.';
+            hint.textContent = t('ui.cash.unlinked_hint');
             return;
         }
         const choice = this.parseDueBillChoice(value);
         const bill = choice ? OutstandingManager.findBill(choice.billType, choice.billId) : null;
         hint.textContent = bill
-            ? `${billParty(bill) || 'N/A'} · ${Helpers.formatDate(bill.date)} · Due now ₹${round2(outstandingDue(bill))} — this bill's due goes down`
-            : 'Choose a bill, or "No bill" / बिल चुनें';
+            ? t('ui.cash.bill_hint', { party: billParty(bill) || 'N/A', date: Helpers.formatDate(bill.date), amount: round2(outstandingDue(bill)) })
+            : t('msg.cash.choose_bill_or_no_bill');
     }
 
     /**
@@ -277,7 +280,7 @@ export class CashManagementManager {
             const closedCount = results.filter(Boolean).length;
             
             if (closedCount > 0) {
-                UIManager.showToast(`Auto-closed ${closedCount} previous session(s)`);
+                UIManager.showToast(t('msg.cash.auto_closed_previous_session_s', { closedCount }));
             }
         } catch (error) {
             console.error('Error auto signing out previous sessions:', error);
@@ -617,7 +620,7 @@ export class CashManagementManager {
         const amount = Number(last.closingBalance);
         if (input.value === '') input.value = String(amount);
         if (hint) {
-            hint.textContent = `Suggested from the last count (${last.date}): ₹${amount}. Change it if the drawer has a different amount.`;
+            hint.textContent = t('ui.cash.suggested_from_last_count', { date: last.date, amount });
             hint.style.display = 'block';
         }
     }
@@ -630,7 +633,7 @@ export class CashManagementManager {
     static async recordLateCount(sessionId) {
         const amount = parseCashAmount(document.getElementById('lateCountAmount')?.value);
         if (amount === null) {
-            UIManager.showToast('Please enter the cash amount counted');
+            UIManager.showToast(t('msg.cash.enter_cash_amount_counted'));
             return;
         }
         try {
@@ -654,17 +657,17 @@ export class CashManagementManager {
                 return { ...fresh, ...fields };
             });
             if (!updated) {
-                UIManager.showToast('This day already has a count');
+                UIManager.showToast(t('msg.cash.day_already_has_count'));
                 return;
             }
             const idx = (this.cachedSessions || []).findIndex(s => s.id === sessionId);
             if (idx !== -1) this.cachedSessions[idx] = updated;
             UIManager.closeModal(true);
             this.renderHistoryFromCache();
-            UIManager.showToast(`✓ Count of ₹${amount} saved`);
+            UIManager.showToast(t('msg.cash.count_saved', { amount }));
         } catch (error) {
             console.error('Late count error:', error);
-            UIManager.showToast('Failed to save count: ' + error.message);
+            UIManager.showToast(t('msg.cash.failed_save_count', { message: error.message }));
         }
     }
 
@@ -679,17 +682,17 @@ export class CashManagementManager {
                 alertDiv.style.display = 'block';
                 alertDiv.style.background = '#d1f4e0';
                 alertDiv.style.color = '#0f5132';
-                alertDiv.textContent = '✓ Cash matches expected amount!';
+                alertDiv.textContent = t('ui.cash.cash_matches');
             } else if (difference > 0) {
                 alertDiv.style.display = 'block';
                 alertDiv.style.background = '#fff3cd';
                 alertDiv.style.color = '#997404';
-                alertDiv.textContent = `⚠ Extra ₹${Math.abs(difference).toFixed(2)} - Please verify`;
+                alertDiv.textContent = t('ui.cash.extra_verify', { amount: Math.abs(difference).toFixed(2) });
             } else {
                 alertDiv.style.display = 'block';
                 alertDiv.style.background = '#f8d7da';
                 alertDiv.style.color = '#842029';
-                alertDiv.textContent = `⚠ Short ₹${Math.abs(difference).toFixed(2)} - Please verify`;
+                alertDiv.textContent = t('ui.cash.short_verify', { amount: Math.abs(difference).toFixed(2) });
             }
             // Q19 bands (#37): name a big difference or an impossible (negative) expected drawer
             const band = evaluateCashCount({ expected, counted: actualAmount }, AppState.settings?.checkThresholds)
@@ -710,7 +713,7 @@ export class CashManagementManager {
         const openingNotes = Helpers.getInputText('cashSignInNotes');
 
         if (amount === null) {
-            UIManager.showToast('Please enter a valid opening amount');
+            UIManager.showToast(t('msg.cash.enter_valid_opening_amount'));
             return;
         }
 
@@ -724,8 +727,8 @@ export class CashManagementManager {
                 const diff = Math.abs(lastClosing - amount);
                 if (diff > 1) {
                     const confirmed = await UIManager.showModal(
-                        `Last counted closing (${lastCounted.date}) was ₹${lastClosing}, but you're signing in with ₹${amount}.\nDifference: ₹${diff.toFixed(2)}\n\nDo you want to continue?`,
-                        'Cash Mismatch Warning',
+                        t('msg.cash.last_counted_closing_was_but', { date: lastCounted.date, lastClosing, amount, diff: diff.toFixed(2) }),
+                        t('msg.cash.cash_mismatch_warning'),
                         true
                     );
                     if (!confirmed) return;
@@ -750,7 +753,7 @@ export class CashManagementManager {
             this.updateUI();
             this.renderHistory();
             
-            UIManager.showToast('✓ Cash signed in successfully!');
+            UIManager.showToast(t('msg.cash.cash_signed_in_successfully'));
             
             // Clear inputs
             document.getElementById('cashSignInAmount').value = '';
@@ -758,7 +761,7 @@ export class CashManagementManager {
             if (openingNotesInput) openingNotesInput.value = '';
         } catch (error) {
             console.error('Sign in error:', error);
-            UIManager.showToast('Failed to sign in: ' + error.message);
+            UIManager.showToast(t('msg.cash.failed_sign_in', { message: error.message }));
         }
     }
 
@@ -767,7 +770,7 @@ export class CashManagementManager {
         const closingNotes = Helpers.getInputText('cashSignOutNotes');
 
         if (actualAmount === null) {
-            UIManager.showToast('Please enter the actual cash amount');
+            UIManager.showToast(t('msg.cash.enter_actual_cash_amount'));
             return;
         }
 
@@ -777,10 +780,10 @@ export class CashManagementManager {
         // Confirm if there's a difference
         if (Math.abs(difference) > 1) {
             const message = difference > 0 
-                ? `You have ₹${Math.abs(difference).toFixed(2)} EXTRA cash.\n\nExpected: ₹${expected}\nActual: ₹${actualAmount}\n\nProceed with sign out?`
-                : `You are SHORT by ₹${Math.abs(difference).toFixed(2)}.\n\nExpected: ₹${expected}\nActual: ₹${actualAmount}\n\nProceed with sign out?`;
+                ? t('msg.cash.signout_extra', { diff: Math.abs(difference).toFixed(2), expected, actual: actualAmount })
+                : t('msg.cash.signout_short', { diff: Math.abs(difference).toFixed(2), expected, actual: actualAmount });
             
-            const confirmed = await UIManager.showModal(message, 'Confirm Sign Out', true);
+            const confirmed = await UIManager.showModal(message, t('msg.cash.confirm_sign_out'), true);
             if (!confirmed) return;
         }
 
@@ -814,7 +817,7 @@ export class CashManagementManager {
             this.updateUI();
             this.renderHistory();
             
-            UIManager.showToast('✓ Cash signed out successfully!');
+            UIManager.showToast(t('msg.cash.cash_signed_out_successfully'));
             
             // Clear inputs
             document.getElementById('cashSignOutAmount').value = '';
@@ -822,7 +825,7 @@ export class CashManagementManager {
             if (closingNotesInput) closingNotesInput.value = '';
         } catch (error) {
             console.error('Sign out error:', error);
-            UIManager.showToast('Failed to sign out: ' + error.message);
+            UIManager.showToast(t('msg.cash.failed_sign_out', { message: error.message }));
         }
     }
 
@@ -832,12 +835,12 @@ export class CashManagementManager {
         const notes = Helpers.getInputText('transactionNotes');
 
         if (!amount || amount <= 0) {
-            UIManager.showToast('Please enter a valid amount');
+            UIManager.showToast(t('msg.common.enter_valid_amount'));
             return;
         }
 
         if (!this.todaySession || this.todaySession.signedOut) {
-            UIManager.showToast('Please sign in first');
+            UIManager.showToast(t('msg.cash.sign_in_first'));
             return;
         }
 
@@ -865,14 +868,14 @@ export class CashManagementManager {
                 this.updateUI();
                 this.renderHistory();
                 
-                UIManager.showToast(`✓ Added ₹${amount} to cash drawer`);
+                UIManager.showToast(t('msg.cash.added_cash_drawer', { amount }));
                 
                 // Clear inputs
                 document.getElementById('transactionAmount').value = '';
                 document.getElementById('transactionNotes').value = '';
             } catch (error) {
                 console.error('Add deposit error:', error);
-                UIManager.showToast('Failed to add deposit: ' + error.message);
+                UIManager.showToast(t('msg.cash.failed_add_deposit', { message: error.message }));
             }
         } else {
             // Due payment (received or paid)
@@ -882,7 +885,7 @@ export class CashManagementManager {
             // The user must choose explicitly: a bill of this party, or "No bill"
             const billChoice = document.getElementById('dueBillSelect')?.value || DUE_BILL_NONE;
             if (billChoice === DUE_BILL_NONE || (billChoice !== DUE_BILL_UNLINKED && !this.parseDueBillChoice(billChoice))) {
-                UIManager.showToast('Choose a bill, or "No bill" / बिल चुनें या "No bill"');
+                UIManager.showToast(t('msg.cash.choose_bill_or_no_bill'));
                 return;
             }
 
@@ -893,12 +896,12 @@ export class CashManagementManager {
                 const bill = OutstandingManager.findBill(billType, billId);
                 const expectedType = type === 'paid' ? 'purchase' : null;
                 if (!bill || (expectedType ? billType !== expectedType : billType === 'purchase')) {
-                    UIManager.showToast('Bill not found — choose again / बिल नहीं मिला, फिर से चुनें');
+                    UIManager.showToast(t('msg.cash.bill_not_found_choose_again'));
                     this.populateDueBills();
                     return;
                 }
                 if (!sameParty(billParty(bill), typedParty)) {
-                    UIManager.showToast(`This bill is for ${billParty(bill) || 'N/A'}, not ${partyName} / यह बिल ${billParty(bill) || 'N/A'} का है, ${partyName} का नहीं`);
+                    UIManager.showToast(t('msg.cash.bill_not', { billParty: billParty(bill) || 'N/A', partyName }));
                     this.populateDueBills();
                     return;
                 }
@@ -940,14 +943,13 @@ export class CashManagementManager {
                     this.calculateTodayTransactions()
                         .then(() => this.updateUI())
                         .catch(e => console.error('Cash refresh failed:', e));
-                    UIManager.showToast('Failed to record payment: ' + error.message);
+                    UIManager.showToast(t('msg.cash.failed_record_payment', { message: error.message }));
                 });
                 await this.calculateTodayTransactions();
                 this.updateUI();
                 this.renderHistory();
                 
-                const action = type === 'paid' ? 'paid to' : 'received from';
-                UIManager.showToast(`✓ Recorded ₹${amount} ${action} ${partyName}`);
+                UIManager.showToast(t(type === 'paid' ? 'msg.cash.recorded_paid_to' : 'msg.cash.recorded_received_from', { amount, partyName }));
                 
                 // Clear inputs
                 document.getElementById('partyName').value = '';
@@ -956,7 +958,7 @@ export class CashManagementManager {
                 this.populateDueBills();
             } catch (error) {
                 console.error('Record payment error:', error);
-                UIManager.showToast('Failed to record payment: ' + error.message);
+                UIManager.showToast(t('msg.cash.failed_record_payment', { message: error.message }));
             }
         }
     }
@@ -992,6 +994,14 @@ export class CashManagementManager {
         this.renderSessionList(container, this.cachedSessions || []);
     }
 
+    /** Language switched (#143): redraw labels from cached data, no Firestore read. */
+    static refreshForLanguage() {
+        if (document.getElementById('cashTransactionType')) this.updateTransactionForm();
+        this.updateUI();
+        const container = document.getElementById('cashHistoryList');
+        if (container && this.cachedSessions) this.renderSessionList(container, [...this.cachedSessions]);
+    }
+
     static async renderHistory() {
         const container = document.getElementById('cashHistoryList');
         if (!container) return;
@@ -1002,7 +1012,7 @@ export class CashManagementManager {
             this.renderSessionList(container, sessions);
         } catch (error) {
             console.error('Error rendering history:', error);
-            container.innerHTML = '<p style="text-align: center; color: #ef4444; padding: 20px;">Failed to load history</p>';
+            container.innerHTML = `<p style="text-align: center; color: #ef4444; padding: 20px;">${L('ui.cash.failed_load_history')}</p>`;
         }
     }
 
@@ -1016,7 +1026,7 @@ export class CashManagementManager {
         sessions.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
         if (sessions.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">No cash management history</p>';
+            container.innerHTML = `<p style="text-align: center; color: #6c757d; padding: 20px;">${L('ui.cash.no_history')}</p>`;
             return;
         }
 
@@ -1028,8 +1038,8 @@ export class CashManagementManager {
         });
         const review = notCounted.length > 0 ? `
             <div style="background: #fff7ed; border: 1px solid #fdba74; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 13px; color: #9a3412;">
-                <strong>⚠ ${notCounted.length} day(s) closed without a cash count</strong>
-                <div style="margin-top: 4px;">Tap a day to record the real count: ${notCounted.map(s => `<a href="#" onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(s.date)}'); return false;" style="color: #9a3412; font-weight: 600;">${Helpers.escapeHtml(dayLabel(s))}</a>`).join(', ')}</div>
+                <strong>${L('ui.cash.days_not_counted', { count: notCounted.length })}</strong>
+                <div style="margin-top: 4px;">${L('ui.cash.tap_day_to_count')} ${notCounted.map(s => `<a href="#" onclick="window.app.cashManagement.showDetails('${Helpers.escapeJsAttr(s.date)}'); return false;" style="color: #9a3412; font-weight: 600;">${Helpers.escapeHtml(dayLabel(s))}</a>`).join(', ')}</div>
             </div>` : '';
 
         container.innerHTML = review + sessions.map(session => {
@@ -1037,8 +1047,8 @@ export class CashManagementManager {
             const uncounted = isNotCounted(session);
 
             const status = !session.signedOut
-                ? '<span style="color: #22c55e; font-weight: 600;">● Active</span>'
-                : (uncounted ? '<span style="color: #c2410c; font-weight: 600;">⚠ Not counted</span>' : '<span style="color: #6c757d;">✓ Closed</span>');
+                ? `<span style="color: #22c55e; font-weight: 600;">● ${L('ui.cash.active')}</span>`
+                : (uncounted ? `<span style="color: #c2410c; font-weight: 600;">⚠ ${L('ui.cash.not_counted')}</span>` : `<span style="color: #6c757d;">✓ ${L('ui.cash.closed')}</span>`);
 
             const diff = Number(session.difference) || 0;
             const absDiff = Math.abs(diff);
@@ -1050,16 +1060,16 @@ export class CashManagementManager {
             } else {
                 diffColor = '#ef4444'; // Red for large differences
             }
-            const diffText = absDiff < 1 ? 'Matched' : (diff > 0 ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`);
+            const diffText = absDiff < 1 ? L('ui.cash.matched') : (diff > 0 ? `+₹${diff.toFixed(2)}` : `-₹${Math.abs(diff).toFixed(2)}`);
             const cashAdded = session.transactions?.cashDeposits || 0;
             const closedRows = uncounted ? `
-                            <div>Closing: <strong style="color: #c2410c;">Not counted</strong></div>
-                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
+                            <div>${L('ui.cash.closing')} <strong style="color: #c2410c;">${L('ui.cash.not_counted')}</strong></div>
+                            <div>${L('ui.cash.expected')} <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
                             ` : `
-                            <div>Closing: <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
-                            ${cashAdded > 0 ? `<div>Added: <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
-                            <div>Expected: <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
-                            <div>Diff: <strong style="color: ${diffColor};">${diffText}</strong></div>
+                            <div>${L('ui.cash.closing')} <strong>₹${Helpers.escapeHtml(session.closingBalance)}</strong></div>
+                            ${cashAdded > 0 ? `<div>${L('ui.cash.added')} <strong style="color: #10b981;">+₹${Helpers.escapeHtml(cashAdded)}</strong></div>` : ''}
+                            <div>${L('ui.cash.expected')} <strong>₹${Helpers.escapeHtml(session.expectedBalance || 0)}</strong></div>
+                            <div>${L('ui.cash.diff')} <strong style="color: ${diffColor};">${diffText}</strong></div>
                             `;
 
             return `
@@ -1069,12 +1079,12 @@ export class CashManagementManager {
                         ${status}
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 14px; color: #6c757d;">
-                        <div>Opening: <strong>₹${Helpers.escapeHtml(session.openingBalance)}</strong></div>
-                        ${session.signedOut ? closedRows : '<div>In Progress...</div>'}
+                        <div>${L('ui.cash.opening')} <strong>₹${Helpers.escapeHtml(session.openingBalance)}</strong></div>
+                        ${session.signedOut ? closedRows : `<div>${L('ui.cash.in_progress')}</div>`}
                     </div>
                     ${session.duePayments && session.duePayments.length > 0 ? `
                         <div style="margin-top: 8px; font-size: 13px; color: #6c757d;">
-                            ${session.duePayments.length} due payment(s) recorded
+                            ${L('ui.cash.due_payments_recorded', { count: session.duePayments.length })}
                         </div>
                     ` : ''}
                 </div>
@@ -1088,7 +1098,7 @@ export class CashManagementManager {
             const session = sessions.find(s => s.date === sessionDate);
             
             if (!session) {
-                UIManager.showToast('Session not found');
+                UIManager.showToast(t('msg.cash.session_not_found'));
                 return;
             }
 
@@ -1105,7 +1115,7 @@ export class CashManagementManager {
         if (absDiff >= 500) diffColor = '#ef4444'; // red
         else if (absDiff >= 50) diffColor = '#f59e0b'; // yellow
         const uncounted = isNotCounted(session);
-        const diffText = uncounted ? 'Not counted' : (absDiff < 1 ? 'Matched' : (diff >= 0 ? `+₹${diff.toFixed(2)}` : `₹${diff.toFixed(2)}`));
+        const diffText = uncounted ? L('ui.cash.not_counted') : (absDiff < 1 ? L('ui.cash.matched') : (diff >= 0 ? `+₹${diff.toFixed(2)}` : `₹${diff.toFixed(2)}`));
 
         // An open session has no saved snapshot yet: use today's live totals.
         const isLiveToday = !session.signedOut && this.todaySession && this.todaySession.date === session.date;
@@ -1128,11 +1138,11 @@ export class CashManagementManager {
             <div style="padding: 0;">
                 ${uncounted ? `
                 <div style="background: #fff7ed; border: 1px solid #fdba74; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 13px; color: #9a3412;">
-                    <strong>This day was closed by the app without a cash count.</strong>
-                    <div style="margin: 6px 0;">If you know how much cash was in the drawer, record it:</div>
+                    <strong>${L('ui.cash.closed_without_count')}</strong>
+                    <div style="margin: 6px 0;">${L('ui.cash.record_if_known')}</div>
                     <div style="display: flex; gap: 6px;">
-                        <input type="number" inputmode="decimal" min="0" id="lateCountAmount" placeholder="Cash counted (₹)" style="flex: 1; padding: 8px; border: 1px solid #fdba74; border-radius: 6px;" />
-                        <button type="button" onclick="window.app.cashManagement.recordLateCount('${Helpers.escapeJsAttr(session.id)}')" style="background: #ea580c; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: 600;">Save count</button>
+                        <input type="number" inputmode="decimal" min="0" id="lateCountAmount" placeholder="${L('ui.cash.cash_counted')}" style="flex: 1; padding: 8px; border: 1px solid #fdba74; border-radius: 6px;" />
+                        <button type="button" onclick="window.app.cashManagement.recordLateCount('${Helpers.escapeJsAttr(session.id)}')" style="background: #ea580c; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: 600;">${L('ui.cash.save_count')}</button>
                     </div>
                 </div>` : ''}
                 <!-- Summary Card -->
@@ -1140,25 +1150,25 @@ export class CashManagementManager {
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
                     <!-- Expenses & Others -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expenses & Others</div>
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">${L('ui.cash.expenses_others')}</div>
                         <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashOut)}</div>
                     </div>
                     
                     <!-- Expected Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Balance</div>
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">${L('ui.cash.expected_balance')}</div>
                         <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.expectedBalance || 0)}</div>
                     </div>
                     
                     <!-- Actual Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Actual Balance</div>
-                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">${uncounted ? 'Not counted' : `₹${Helpers.escapeHtml(session.closingBalance)}`}</div>
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">${L('ui.cash.actual_balance')}</div>
+                        <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">${uncounted ? L('ui.cash.not_counted') : `₹${Helpers.escapeHtml(session.closingBalance)}`}</div>
                     </div>
                     
                     <!-- Difference -->
                     <div style="background: ${diffBgColor}; padding: 10px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: ${diffTextColor}; margin-bottom: 4px; font-weight: 600;">Difference</div>
+                        <div style="font-size: 12px; color: ${diffTextColor}; margin-bottom: 4px; font-weight: 600;">${L('ui.cash.difference')}</div>
                         <div style="font-size: 20px; font-weight: 700; color: ${diffTextColor};">${diffText}</div>
                     </div>
                 </div>
@@ -1166,25 +1176,25 @@ export class CashManagementManager {
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
                     <!-- Opening Balance -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Opening Balance</div>
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">${L('ui.cash.opening_balance')}</div>
                         <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(session.openingBalance || 0)}</div>
                     </div>
                     
                     <!-- Cash In -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Cash In</div>
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">${L('ui.cash.cash_in')}</div>
                         <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashIn - (session.openingBalance || 0))}</div>
                     </div>
                     
                     <!-- Cash Out -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Cash Out</div>
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">${L('ui.cash.cash_out')}</div>
                         <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(totalCashOut)}</div>
                     </div>
                     
                     <!-- Expected Cash -->
                     <div style="background: rgba(139, 92, 246, 0.1); padding: 10px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">Expected Cash</div>
+                        <div style="font-size: 12px; color: #7c3aed; margin-bottom: 4px; font-weight: 600;">${L('ui.cash.expected_cash_title')}</div>
                         <div style="font-size: 20px; font-weight: 700; color: #6d28d9;">₹${Helpers.escapeHtml(isLiveToday ? totals.expected : (session.expectedBalance || 0))}</div>
                     </div>
                 </div>
@@ -1192,26 +1202,26 @@ export class CashManagementManager {
                 
                 <!-- Cash In Group -->
                 <div style="background: #d1fae5; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
-                    <h3 style="margin: 0 0 6px 0; font-size: 13px; color: #166534;">Cash In</h3>
+                    <h3 style="margin: 0 0 6px 0; font-size: 13px; color: #166534;">${L('ui.cash.cash_in')}</h3>
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Opening Balance:</span>
+                            <span>${L('ui.cash.opening_balance_2')}</span>
                             <strong style="color: #6366f1;">₹${Helpers.escapeHtml(session.openingBalance)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Cash Added:</span>
+                            <span>${L('ui.cash.cash_added_2')}</span>
                             <strong style="color: #10b981;">₹${Helpers.escapeHtml(txns.cashDeposits || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Cash Sales:</span>
+                            <span>${L('ui.cash.cash_sales')}</span>
                             <strong style="color: #22c55e;">₹${Helpers.escapeHtml(txns.cashSales || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Due Received:</span>
+                            <span>${L('ui.common.due_received')}</span>
                             <strong style="color: #3b82f6;">₹${Helpers.escapeHtml(txns.dueReceived || 0)}</strong>
                         </div>
                         <div style="border-top: 2px solid #059669; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; font-weight: 600;">
-                            <span>Total Cash In:</span>
+                            <span>${L('ui.cash.total_cash_in')}</span>
                             <strong style="color: #059669;">₹${Helpers.escapeHtml(totalCashIn)}</strong>
                         </div>
                     </div>
@@ -1219,26 +1229,26 @@ export class CashManagementManager {
                 
                 <!-- Cash Out Group -->
                 <div style="background: #fee2e2; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
-                    <h3 style="margin: 0 0 6px 0; font-size: 13px; color: #991b1b;">Cash Out</h3>
+                    <h3 style="margin: 0 0 6px 0; font-size: 13px; color: #991b1b;">${L('ui.cash.cash_out')}</h3>
                     <div style="display: grid; gap: 6px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Cash Purchases:</span>
+                            <span>${L('ui.cash.cash_purchases')}</span>
                             <strong style="color: #ef4444;">₹${Helpers.escapeHtml(txns.cashPurchases || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Due Paid:</span>
+                            <span>${L('ui.common.due_paid')}</span>
                             <strong style="color: #dc2626;">₹${Helpers.escapeHtml(txns.duePaid || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Business Expenses:</span>
+                            <span>${L('ui.cash.business_expenses')}</span>
                             <strong style="color: #f97316;">₹${Helpers.escapeHtml(txns.businessExpenses || 0)}</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between;">
-                            <span>Personal Expenses:</span>
+                            <span>${L('ui.cash.personal_expenses')}</span>
                             <strong style="color: #f59e0b;">₹${Helpers.escapeHtml(txns.personalExpenses || 0)}</strong>
                         </div>
                         <div style="border-top: 2px solid #dc2626; margin-top: 6px; padding-top: 6px; display: flex; justify-content: space-between; font-weight: 600;">
-                            <span>Total Cash Out:</span>
+                            <span>${L('ui.cash.total_cash_out')}</span>
                             <strong style="color: #dc2626;">₹${Helpers.escapeHtml(totalCashOut)}</strong>
                         </div>
                     </div>
@@ -1246,16 +1256,16 @@ export class CashManagementManager {
 
                 ${session.cashDeposits && session.cashDeposits.length > 0 ? `
                     <div style="background: #f0fdf4; padding: 10px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #86efac;">
-                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #166534;">💵 Cash Deposits (${session.cashDeposits.length})</h3>
+                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #166534;">💵 ${L('ui.cash.cash_deposits', { count: session.cashDeposits.length })}</h3>
                         <div style="display: grid; gap: 6px;">
                             ${session.cashDeposits.map(d => `
                                 <div style="background: white; padding: 8px; border-radius: 6px; border-left: 3px solid #10b981;">
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                                        <strong style="color: #333; font-size: 12px;">${Helpers.escapeHtml(d.reason || 'Cash added')}</strong>
+                                        <strong style="color: #333; font-size: 12px;">${Helpers.escapeHtml(d.reason || t('ui.cash.cash_added'))}</strong>
                                         <strong style="color: #10b981; font-size: 13px;">₹${Helpers.escapeHtml(d.amount)}</strong>
                                     </div>
                                     <div style="color: #6c757d; font-size: 10px;">
-                                        Added by ${Helpers.escapeHtml(d.addedBy)}
+                                        ${L('ui.cash.added_by', { name: d.addedBy })}
                                     </div>
                                 </div>
                             `).join('')}
@@ -1265,13 +1275,13 @@ export class CashManagementManager {
 
                 ${session.duePayments && session.duePayments.length > 0 ? `
                     <div style="background: #f8f9fa; padding: 10px; border-radius: 8px; margin-bottom: 12px;">
-                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #495057;">💰 Due Payments (${session.duePayments.length})</h3>
+                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #495057;">💰 ${L('ui.cash.due_payments', { count: session.duePayments.length })}</h3>
                         <div style="display: grid; gap: 6px;">
                             ${session.duePayments.map(p => {
                                 const isReceived = p.type !== 'paid';
                                 const borderColor = isReceived ? '#3b82f6' : '#ef4444';
                                 const amountColor = isReceived ? '#3b82f6' : '#ef4444';
-                                const typeLabel = isReceived ? 'Received from' : 'Paid to';
+                                const typeLabel = L(isReceived ? 'ui.cash.received_from' : 'ui.cash.paid_to');
                                 return `
                                     <div style="background: white; padding: 8px; border-radius: 6px; border-left: 3px solid ${borderColor};">
                                         <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
@@ -1279,7 +1289,7 @@ export class CashManagementManager {
                                             <strong style="color: ${amountColor}; font-size: 13px;">${isReceived ? '+' : '-'}₹${Helpers.escapeHtml(p.amount)}</strong>
                                         </div>
                                         <div style="color: #6c757d; font-size: 10px;">
-                                            ${Helpers.escapeHtml(p.method)} • ${Helpers.escapeHtml(p.notes || 'No notes')}
+                                            ${Helpers.escapeHtml(p.method)} • ${Helpers.escapeHtml(p.notes || t('ui.cash.no_notes'))}
                                         </div>
                                     </div>
                                 `;
@@ -1291,18 +1301,18 @@ export class CashManagementManager {
                 ${session.openingNotes || session.closingNotes ? `
                 <!-- Notes -->
                 <div style="background: #fffbeb; padding: 12px; border-radius: 8px; border-left: 3px solid #f59e0b;">
-                    <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #92400e;">📝 Notes</h4>
-                    ${session.openingNotes ? `<div style="font-size: 12px; color: #78350f; margin-bottom: 6px;"><strong>Sign In:</strong> ${Helpers.escapeHtml(session.openingNotes)}</div>` : ''}
-                    ${session.closingNotes ? `<div style="font-size: 12px; color: #78350f;"><strong>Sign Out:</strong> ${Helpers.escapeHtml(session.closingNotes)}</div>` : ''}
+                    <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #92400e;">📝 ${L('ui.cash.notes_title')}</h4>
+                    ${session.openingNotes ? `<div style="font-size: 12px; color: #78350f; margin-bottom: 6px;"><strong>${L('ui.cash.sign_in_label')}</strong> ${Helpers.escapeHtml(session.openingNotes)}</div>` : ''}
+                    ${session.closingNotes ? `<div style="font-size: 12px; color: #78350f;"><strong>${L('ui.cash.sign_out_label')}</strong> ${Helpers.escapeHtml(session.closingNotes)}</div>` : ''}
                 </div>
                 ` : ''}
             </div>
         `;
 
-            UIManager.showModalWithHtml(modalContent, 'Cash Session Details', false);
+            UIManager.showModalWithHtml(modalContent, t('msg.cash.cash_session_details'), false);
         } catch (error) {
             console.error('Error loading session details:', error);
-            UIManager.showToast('Failed to load session details');
+            UIManager.showToast(t('msg.cash.failed_load_session_details'));
         }
     }
 }

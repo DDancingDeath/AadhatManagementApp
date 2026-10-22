@@ -8,6 +8,8 @@
  * @module utils/money
  */
 
+import { t } from '../i18n/index.js';
+
 /**
  * Round to 2 decimals (paise), avoiding 1.005 -> 1.00 style float errors.
  * @param {*} x
@@ -189,24 +191,21 @@ export function checkPaymentSplit(total, { cash = 0, online = 0, due = 0 } = {})
 }
 
 /**
- * Bilingual message for a payment split that does not match the bill total.
+ * Message for a payment split that does not match the bill total.
  * @param {{difference: number}} check - result of checkPaymentSplit
+ * @param {'en'|'hi'} [lang] - defaults to the app language
  * @returns {string}
  */
-export function paymentSplitMessage({ difference }) {
+export function paymentSplitMessage({ difference }, lang) {
     const amount = Math.abs(round2(difference)).toLocaleString('en-IN');
-    return difference > 0
-        ? `Cash + Online + Due is ₹${amount} less than the bill total. Add ₹${amount} to Cash, Online or Due. / नकद + ऑनलाइन + उधार बिल से ₹${amount} कम है। ₹${amount} नकद, ऑनलाइन या उधार में जोड़ें।`
-        : `Cash + Online + Due is ₹${amount} more than the bill total. Reduce it by ₹${amount}. / नकद + ऑनलाइन + उधार बिल से ₹${amount} ज़्यादा है। ₹${amount} कम करें।`;
+    return t(difference > 0 ? 'msg.money.split_less' : 'msg.money.split_more', { amount }, lang);
 }
 
 /** Shown when a retried save found a payment recorded on the bill since the first attempt (#70). */
-export const KEPT_SERVER_PAYMENT_MESSAGE =
-    'Bill was already saved; a payment recorded since was kept. / बिल पहले ही सेव हो चुका था; बाद में दर्ज भुगतान रखा गया।';
+export const KEPT_SERVER_PAYMENT_KEY = 'msg.money.kept_server_payment';
 
-/** Message shown when a bill with an unpaid part has no party name. */
-export const NAME_REQUIRED_FOR_DUE_MESSAGE =
-    'Enter the name — a bill with Due needs a customer/supplier name. / नाम लिखें — उधार वाले बिल पर ग्राहक/व्यापारी का नाम ज़रूरी है।';
+/** Message key for a bill with an unpaid part and no party name. */
+export const NAME_REQUIRED_FOR_DUE_KEY = 'msg.money.name_required_for_due';
 
 /**
  * Whether a bill must carry a party name: anything left due must be

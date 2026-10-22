@@ -15,9 +15,10 @@
  */
 
 import {
-    checkPaymentSplit, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, readLineItem, round2, toMoney
+    checkPaymentSplit, dueNeedsName, NAME_REQUIRED_FOR_DUE_KEY, paymentSplitMessage, readLineItem, round2, toMoney
 } from './money.js';
 import { parseAnyBillDate, startOfLocalDay } from './dates.js';
+import { t } from '../i18n/index.js';
 import { computeShortfallsFrom, stockKeyFor, approxStockNote } from './stock-check.js';
 
 /**
@@ -52,12 +53,6 @@ const HARD_RULES = new Set(['payment-none', 'party-required', 'payment-split', '
 const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
 const fmtRs = (n) => `₹${round2(n).toLocaleString('en-IN')}`;
 const fmtKg = (n) => (Math.round(n * 10) / 10).toFixed(1);
-
-/** Split an existing "English / हिंदी" message into its two halves. */
-function splitBilingual(message) {
-    const at = message.lastIndexOf(' / ');
-    return at === -1 ? { en: message, hi: message } : { en: message.slice(0, at), hi: message.slice(at + 3) };
-}
 
 /**
  * Thresholds with blank / invalid / non-positive values replaced by the defaults.
@@ -262,13 +257,15 @@ function paymentIssues(draft) {
             'कम से कम एक भुगतान (नकद, ऑनलाइन या उधार) लिखें'));
     }
     if (dueNeedsName(due, draft.partyName)) {
-        const { en, hi } = splitBilingual(NAME_REQUIRED_FOR_DUE_MESSAGE);
+        const en = t(NAME_REQUIRED_FOR_DUE_KEY, null, 'en');
+        const hi = t(NAME_REQUIRED_FOR_DUE_KEY, null, 'hi');
         out.push(issue('party-required', 'party', 'block', en, hi));
     }
     if (!out.some(i => i.id === 'payment-none')) {
         const split = checkPaymentSplit(draft.total, { cash, online, due });
         if (!split.ok) {
-            const { en, hi } = splitBilingual(paymentSplitMessage(split));
+            const en = paymentSplitMessage(split, 'en');
+            const hi = paymentSplitMessage(split, 'hi');
             out.push(issue('payment-split', 'payment', 'block', en, hi));
         }
     }

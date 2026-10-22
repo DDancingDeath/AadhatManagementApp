@@ -9,26 +9,56 @@ import {
     onDemandHistoryInfo, renderStaleHistoryHint
 } from '../utils/history-window.js';
 import { createRenderMemo } from '../utils/render-memo.js';
+import { t } from '../i18n/index.js';
+import { lineItemIdentity } from '../utils/item-catalog.js';
 
 const reportsMemo = createRenderMemo();
 
+/** Catalogue identity of a bill line (itemId first, then English/Hindi name). */
+const lineIdentity = (line, items = AppState.items, showHindi = AppState.settings?.showHindi) =>
+    lineItemIdentity({ itemId: line?.itemId, name: readLineItem(line).name }, items, !!showHindi);
+
 /**
  * Per-item totals for the given bills, reading legacy line-item fields too.
+ * Lines are grouped by catalogue item (itemId, else English/Hindi name), so an
+ * item saved once in English and once in Hindi is one row, labelled in the
+ * chosen item-name language (#143).
  * @param {Array<Object>} bills
- * @returns {Object<string, {count: number, qty: number, value: number}>}
+ * @param {Array<Object>} [items] catalogue (defaults to AppState.items)
+ * @param {boolean} [showHindi] label language (defaults to the setting)
+ * @returns {Object<string, {count: number, qty: number, value: number}>} keyed by label
  */
-export function aggregateLineItems(bills) {
-    const itemData = {};
+export function aggregateLineItems(bills, items = AppState.items, showHindi = AppState.settings?.showHindi) {
+    const byKey = new Map();
     (bills || []).forEach(bill => {
         (bill?.items || []).forEach(raw => {
             const item = readLineItem(raw);
-            if (!itemData[item.name]) itemData[item.name] = { count: 0, qty: 0, value: 0 };
-            itemData[item.name].count++;
-            itemData[item.name].qty += item.qty;
-            itemData[item.name].value += item.total;
+            const { key, label } = lineIdentity(raw, items, showHindi);
+            if (!byKey.has(key)) byKey.set(key, { label, count: 0, qty: 0, value: 0 });
+            const row = byKey.get(key);
+            row.count++;
+            row.qty += item.qty;
+            row.value += item.total;
         });
     });
+    const itemData = {};
+    for (const { label, count, qty, value } of byKey.values()) {
+        const row = itemData[label] || (itemData[label] = { count: 0, qty: 0, value: 0 });
+        row.count += count;
+        row.qty += qty;
+        row.value += value;
+    }
     return itemData;
+}
+
+/** Item filter options for these bills: value = item key, text = label. */
+export function itemFilterOptions(bills, items = AppState.items, showHindi = AppState.settings?.showHindi) {
+    const options = new Map();
+    (bills || []).forEach(bill => (bill?.items || []).forEach(line => {
+        const { key, label } = lineIdentity(line, items, showHindi);
+        if (label && !options.has(key)) options.set(key, label);
+    }));
+    return [...options].map(([value, label]) => ({ value, label }));
 }
 
 /** Chart scale: the largest value, but never 0 (all-zero periods would divide by 0). */
@@ -160,7 +190,7 @@ export class ReportsManager {
         } catch (error) {
             console.error('Loading older history failed:', error);
         }
-        if (!covered) UIManager.showToast("Couldn't load older data for this period");
+        if (!covered) UIManager.showToast(t('msg.reports.couldn_t_load_older_data'));
         return covered;
     }
 
@@ -205,11 +235,10 @@ export class ReportsManager {
         if (purchaseItemFilter) {
             const currentValue = purchaseItemFilter.value;
             purchaseItemFilter.innerHTML = '<option value="all">All Items</option>';
-            const uniqueItems = [...new Set(purchaseHistory.flatMap(p => p.items?.map(i => i.name) || []))];
-            uniqueItems.forEach(item => {
+            itemFilterOptions(purchaseHistory).forEach(({ value, label }) => {
                 const opt = document.createElement('option');
-                opt.value = item;
-                opt.textContent = item;
+                opt.value = value;
+                opt.textContent = label;
                 purchaseItemFilter.appendChild(opt);
             });
             purchaseItemFilter.value = currentValue || 'all';
@@ -235,11 +264,10 @@ export class ReportsManager {
         if (salesItemFilter) {
             const currentValue = salesItemFilter.value;
             salesItemFilter.innerHTML = '<option value="all">All Items</option>';
-            const uniqueItems = [...new Set(allSalesHistory.flatMap(s => s.items?.map(i => i.name) || []))];
-            uniqueItems.forEach(item => {
+            itemFilterOptions(allSalesHistory).forEach(({ value, label }) => {
                 const opt = document.createElement('option');
-                opt.value = item;
-                opt.textContent = item;
+                opt.value = value;
+                opt.textContent = label;
                 salesItemFilter.appendChild(opt);
             });
             salesItemFilter.value = currentValue || 'all';
@@ -274,7 +302,7 @@ export class ReportsManager {
     static filterPurchases(purchases) {
         return purchases.filter(p => {
             if (this.reportFilters.purchaseItem !== 'all') {
-                const hasItem = p.items?.some(i => i.name === this.reportFilters.purchaseItem);
+                const hasItem = p.items?.some(i => lineIdentity(i).key === this.reportFilters.purchaseItem);
                 if (!hasItem) return false;
             }
             if (this.reportFilters.purchaseCustomer !== 'all') {
@@ -287,7 +315,7 @@ export class ReportsManager {
     static filterSales(sales) {
         return sales.filter(s => {
             if (this.reportFilters.salesItem !== 'all') {
-                const hasItem = s.items?.some(i => i.name === this.reportFilters.salesItem);
+                const hasItem = s.items?.some(i => lineIdentity(i).key === this.reportFilters.salesItem);
                 if (!hasItem) return false;
             }
             if (this.reportFilters.salesCustomer !== 'all') {
@@ -901,7 +929,7 @@ export class ReportsManager {
         let filteredSales = this.filterByDate(allSalesHistory);
 
         if (filteredPurchases.length === 0 && filteredSales.length === 0) {
-            UIManager.showToast('No data to export for the selected period');
+            UIManager.showToast(t('msg.reports.no_data_export_selected_period'));
             return;
         }
 
@@ -946,7 +974,7 @@ export class ReportsManager {
         document.body.removeChild(link);
 
         UIManager.hapticFeedback('medium');
-        UIManager.showToast(`Exported ${filteredPurchases.length + filteredSales.length} transactions to CSV`);
+        UIManager.showToast(t('msg.reports.exported_transactions_csv', { value: filteredPurchases.length + filteredSales.length }));
     }
 
     static async exportPDF() {
@@ -960,7 +988,7 @@ export class ReportsManager {
         let filteredSales = this.filterByDate(allSalesHistory);
 
         if (filteredPurchases.length === 0 && filteredSales.length === 0) {
-            UIManager.showToast('No data to export for the selected period');
+            UIManager.showToast(t('msg.reports.no_data_export_selected_period'));
             return;
         }
 
@@ -1100,7 +1128,7 @@ export class ReportsManager {
         printWindow.onload = () => printWindow.print();
 
         UIManager.hapticFeedback('medium');
-        UIManager.showToast('PDF report opened - use Print > Save as PDF');
+        UIManager.showToast(t('msg.reports.pdf_report_opened_use_print'));
     }
 
     // ==================== UTILITIES ====================

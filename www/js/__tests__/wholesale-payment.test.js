@@ -22,7 +22,8 @@ import { AppState } from '../utils/state.js';
 import { WholesaleSalesManager } from '../modules/wholesale-sales.js';
 import { Helpers } from '../utils/helpers.js';
 import { UIManager } from '../ui/ui-manager.js';
-import { readPayment, NAME_REQUIRED_FOR_DUE_MESSAGE } from '../utils/money.js';
+import { readPayment, NAME_REQUIRED_FOR_DUE_KEY } from '../utils/money.js';
+import { t } from '../i18n/index.js';
 
 beforeEach(() => {
     document.body.innerHTML = '<div id="salesOutstandingList"></div><div id="salesHistoryList"></div><div id="toast"></div>';
@@ -180,7 +181,7 @@ describe('wholesale sale save: payment split (#113, #23, #68, #26)', () => {
         setVal('wholesaleCashPayment', 0);
         setVal('wholesaleDueAmount', 4025);
         expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
-        expect(toast()).toBe(NAME_REQUIRED_FOR_DUE_MESSAGE);
+        expect(toast()).toBe(t(NAME_REQUIRED_FOR_DUE_KEY));
 
         setVal('wholesaleDueAmount', 0);
         expect(await WholesaleSalesManager.completeSale()).toBeUndefined();
@@ -297,7 +298,7 @@ describe('#129 approximate stock: adding a wholesale line warns instead of block
         const note = document.getElementById('availableStockApprox');
         expect(note.style.display).toBe('block');
         expect(note.textContent).toContain('≈ approximate stock (updated');
-        expect(note.textContent).toContain('अनुमानित स्टॉक');
+        expect(note.textContent).not.toMatch(/[\u0900-\u097F]/); // app language only (#143)
         AppState.stockApprox = null;
         WholesaleSalesManager.loadItemDetails();
         expect(note.style.display).toBe('none');

@@ -32,6 +32,7 @@ import { whenIdle, afterFirstPaint, shouldScheduleLegacyScan, LEGACY_SCAN_DELAY_
 import { markStartup } from '../utils/startup-timings.js';
 import { isQuotaExhaustedError } from '../utils/quota-guard.js';
 import { installFirestoreMeter, getQuotaStatus } from './firestore-meter.js';
+import { t } from '../i18n/index.js';
 
 // Count reads and catch quota errors for every Firestore call in the app (#194).
 if (typeof firebase !== 'undefined' && firebase.firestore) {
@@ -473,7 +474,7 @@ function warnDuplicateBillNumbers(c, changes) {
     console.warn(`[${c.spec.label}] duplicate bill number(s) after sync:`, dups);
     import('../ui/ui-manager.js')
         .then(({ UIManager }) => UIManager.showToast(
-            `⚠️ Same bill number used twice: ${dups.join(', ')} — check History / एक ही बिल नंबर दो बार`, 6000))
+            t('msg.sync.same_bill_number_used_twice', { dups: dups.join(', ') }), 6000))
         .catch(() => {});
 }
 
@@ -1531,7 +1532,7 @@ function settleWrite(writePromise, label = 'write') {
                 // The quota banner already explains this one (#194).
                 if (isQuotaExhaustedError(error)) return;
                 import('../ui/ui-manager.js')
-                    .then(({ UIManager }) => UIManager.showToast(`⚠️ Save failed on server: ${error?.message || error}`))
+                    .then(({ UIManager }) => UIManager.showToast(t('msg.sync.save_failed_on_server', { value: error?.message || error })))
                     .catch(() => {});
             }
         );

@@ -43,7 +43,8 @@ describe('review-rules.yml', () => {
     const cases = [
         ['firestore-collection-literal', 'www/js/modules/items.js', "db.collection('items').get()", 'db.collection(window.getCollection(\'items\')).get()'],
         ['firebase-firestore-in-module', 'www/js/modules/users.js', 'const db = firebase.firestore();', 'const ts = firebase.firestore.FieldValue.serverTimestamp();'],
-        ['showToast-wrong-arg-type', 'www/js/modules/admin.js', "UIManager.showToast('Failed', 'error');", "UIManager.showToast('Failed', 3000);"],
+        ['showToast-wrong-arg-type', 'www/js/modules/admin.js', "UIManager.showToast('Failed', 'danger');", "UIManager.showToast(t('msg.admin.x'), 'error');"],
+        ['showToast-wrong-arg-type', 'www/js/modules/finance.js', "UIManager.showToast('Saved', '5s');", "UIManager.showToast('Saved', 3000);"],
         ['top-level-app-shadowing', 'www/firebaseConfig.js', 'let app = firebase.initializeApp(cfg);', 'let firebaseApp = firebase.initializeApp(cfg);'],
         ['raw-date-construction', 'www/js/modules/day.js', "new Date('2026-10-21')", 'parseLocalDate(value)'],
         ['iso-string-date-key', 'www/js/modules/day.js', "new Date().toISOString().split('T')[0]", 'todayLocalISO()'],

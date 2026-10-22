@@ -14,6 +14,7 @@ import { buildBackup, isDeleteConfirmed, DELETE_CONFIRM_WORD } from '../utils/da
 import { normalizeLabourSettings } from '../utils/money.js';
 import { DEFAULT_THRESHOLDS, normalizeThresholds } from '../utils/bill-checks.js';
 import { SettingsManager } from './settings.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Admin Manager - Unified admin panel
@@ -49,7 +50,7 @@ const AdminManager = {
      */
     async init() {
         if (AppState.userRole !== 'owner') {
-            UIManager.showToast('Access denied', 'error');
+            UIManager.showToast(t('msg.common.access_denied'), 'error');
             return;
         }
         this.renderTabs();
@@ -182,11 +183,11 @@ const AdminManager = {
         });
         try {
             await FirebaseService.saveSharedCheckThresholds(next);
-            UIManager.showToast('Settings saved for everyone / सभी के लिए सहेजा गया');
+            UIManager.showToast(t('msg.admin.settings_saved_everyone'));
             return true;
         } catch (error) {
             console.error('Saving bill-check limits failed:', error);
-            UIManager.showToast('Not saved for everyone — check the internet and try again / सभी के लिए सहेजा नहीं गया — इंटरनेट देखकर फिर कोशिश करें');
+            UIManager.showToast(t('msg.admin.not_saved_everyone_check_internet'));
             return false;
         }
     },
@@ -214,7 +215,7 @@ const AdminManager = {
         if (heavyInput) heavyInput.value = heavyWeightThreshold;
         if (rateInput) rateInput.value = laborRate;
 
-        if (saved) UIManager.showToast('Settings saved for everyone / सभी के लिए सहेजा गया');
+        if (saved) UIManager.showToast(t('msg.admin.settings_saved_everyone'));
         return saved;
     },
 
@@ -269,7 +270,7 @@ const AdminManager = {
             this.renderActiveUsers(activeUsers);
         } catch (error) {
             console.error('Error loading users:', error);
-            UIManager.showToast('Failed to load users', 'error');
+            UIManager.showToast(t('msg.common.failed_load_users'), 'error');
         }
     },
 
@@ -384,11 +385,11 @@ const AdminManager = {
                 approvedBy: AppState.currentUser?.uid
             });
 
-            UIManager.showToast(`User approved as ${Helpers.roleLabel(role)}`);
+            UIManager.showToast(t('msg.common.user_approved_as', { roleLabel: Helpers.roleLabel(role) }));
             await this.loadUsers();
         } catch (error) {
             console.error('Error approving user:', error);
-            UIManager.showToast('Failed to approve user', 'error');
+            UIManager.showToast(t('msg.common.failed_approve_user'), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -400,8 +401,8 @@ const AdminManager = {
      */
     async rejectUser(userId) {
         const confirmed = await UIManager.showModal(
-            'Are you sure you want to reject this user?',
-            'Reject User',
+            t('msg.admin.are_sure_want_reject_user'),
+            t('msg.admin.reject_user'),
             true
         );
         if (!confirmed) return;
@@ -410,11 +411,11 @@ const AdminManager = {
             UIManager.showLoading();
             await FirebaseService.deleteUserProfile(userId);
 
-            UIManager.showToast('User rejected');
+            UIManager.showToast(t('msg.admin.user_rejected'));
             await this.loadUsers();
         } catch (error) {
             console.error('Error rejecting user:', error);
-            UIManager.showToast('Failed to reject user', 'error');
+            UIManager.showToast(t('msg.common.failed_reject_user'), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -431,8 +432,8 @@ const AdminManager = {
         const newRole = currentRole === 'staff' ? 'manager' : 'staff';
         
         const confirmed = await UIManager.showModal(
-            `Change ${userName}'s role from ${Helpers.roleLabel(currentRole)} to ${Helpers.roleLabel(newRole)}?`,
-            'Change Role',
+            t('msg.admin.change_s_role_from', { userName, roleLabel: Helpers.roleLabel(currentRole), roleLabel2: Helpers.roleLabel(newRole) }),
+            t('msg.admin.change_role'),
             true
         );
         if (!confirmed) return;
@@ -443,11 +444,11 @@ const AdminManager = {
                 role: newRole
             });
 
-            UIManager.showToast(`Role changed to ${Helpers.roleLabel(newRole)}`);
+            UIManager.showToast(t('msg.admin.role_changed', { roleLabel: Helpers.roleLabel(newRole) }));
             await this.loadUsers();
         } catch (error) {
             console.error('Error changing role:', error);
-            UIManager.showToast('Failed to change role', 'error');
+            UIManager.showToast(t('msg.common.failed_change_role'), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -460,8 +461,8 @@ const AdminManager = {
      */
     async resetUserPassword(userId, email) {
         const confirmed = await UIManager.showModal(
-            `Send password reset email to:\n${email}`,
-            'Reset Password',
+            t('msg.common.send_password_reset_email', { email }),
+            t('msg.common.reset_password'),
             true
         );
         
@@ -470,10 +471,10 @@ const AdminManager = {
         try {
             UIManager.showLoading();
             await firebase.auth().sendPasswordResetEmail(email);
-            UIManager.showToast(`Password reset email sent to ${email}`);
+            UIManager.showToast(t('msg.common.password_reset_email_sent', { email }));
         } catch (error) {
             console.error('Error sending reset email:', error);
-            UIManager.showToast('Failed to send reset email: ' + error.message, 'error');
+            UIManager.showToast(t('msg.common.failed_send_reset_email', { message: error.message }), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -486,8 +487,8 @@ const AdminManager = {
      */
     async deleteUser(userId, userName) {
         const confirmed = await UIManager.showModal(
-            `Are you sure you want to delete user "${userName}"?\n\nThis will remove their account from the system. This action cannot be undone.`,
-            'Delete User',
+            t('msg.common.are_sure_want_delete_user', { userName }),
+            t('msg.common.delete_user'),
             true
         );
         
@@ -498,11 +499,11 @@ const AdminManager = {
             // Delete user document from Firestore
             await FirebaseService.deleteUserProfile(userId);
             
-            UIManager.showToast(`User "${userName}" has been deleted`);
+            UIManager.showToast(t('msg.common.user_has_been_deleted', { userName }));
             await this.loadUsers();
         } catch (error) {
             console.error('Error deleting user:', error);
-            UIManager.showToast('Failed to delete user: ' + error.message, 'error');
+            UIManager.showToast(t('msg.common.failed_delete_user', { message: error.message }), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -595,7 +596,7 @@ const AdminManager = {
             this.displayStorageStats(this.storageStats);
         } catch (error) {
             console.error('Error loading storage stats:', error);
-            UIManager.showToast('Failed to load storage stats', 'error');
+            UIManager.showToast(t('msg.admin.failed_load_storage_stats'), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -674,7 +675,7 @@ const AdminManager = {
      */
     async clearAllData() {
         if (AppState.userRole !== 'owner') {
-            UIManager.showToast('Only the owner can clear data / सिर्फ मालिक डेटा हटा सकते हैं');
+            UIManager.showToast(t('msg.admin.only_owner_can_clear_data'));
             return;
         }
         // Show collection selection modal
@@ -728,7 +729,7 @@ const AdminManager = {
         let selectedCollections = [];
         
         const confirmed = await new Promise((resolve) => {
-            UIManager.showModalWithHtml(modalHTML, 'Clear Data', true).then((result) => {
+            UIManager.showModalWithHtml(modalHTML, t('msg.admin.clear_data'), true).then((result) => {
                 if (result) {
                     // Capture checkbox values while modal content still exists
                     const checkboxes = document.querySelectorAll('.collection-checkbox:checked');
@@ -741,7 +742,7 @@ const AdminManager = {
         if (!confirmed) return;
         
         if (selectedCollections.length === 0) {
-            UIManager.showToast('No collections selected');
+            UIManager.showToast(t('msg.admin.no_collections_selected'));
             return;
         }
         
@@ -755,7 +756,7 @@ const AdminManager = {
         } catch (error) {
             console.error('Error reading data for backup:', error);
             UIManager.hideLoading();
-            UIManager.showToast('Could not read data for the backup — nothing was deleted');
+            UIManager.showToast(t('msg.admin.could_not_read_data_backup'));
             return;
         }
         UIManager.hideLoading();
@@ -773,7 +774,7 @@ const AdminManager = {
                     <p style="margin: 0 0 6px; font-size: 13px;">Total: <strong>${Helpers.escapeHtml(total)}</strong>. A backup file (JSON) is saved on this device first.</p>
                     <label for="clearDataConfirmInput" style="font-size: 13px;">Type <strong>${DELETE_CONFIRM_WORD}</strong> to confirm / पुष्टि के लिए <strong>${DELETE_CONFIRM_WORD}</strong> लिखें:</label>
                     <input id="clearDataConfirmInput" type="text" autocomplete="off" autocapitalize="characters" style="width: 100%; padding: 8px; margin-top: 4px; border: 2px solid #e74c3c; border-radius: 6px;">
-                </div>`, 'Final Confirmation', true).then((result) => {
+                </div>`, t('msg.admin.final_confirmation'), true).then((result) => {
                 typed = document.getElementById('clearDataConfirmInput')?.value || '';
                 resolve(result);
             });
@@ -781,7 +782,7 @@ const AdminManager = {
         
         if (!finalConfirm) return;
         if (!isDeleteConfirmed(typed)) {
-            UIManager.showToast(`You must type ${DELETE_CONFIRM_WORD} — nothing was deleted`);
+            UIManager.showToast(t('msg.admin.must_type_nothing_was_deleted', { DELETE_CONFIRM_WORD }));
             return;
         }
         
@@ -790,8 +791,8 @@ const AdminManager = {
         const saved = await this.saveJsonBackup(backup, `aadhat_backup_${env}_${todayLocalISO()}_${Date.now()}.json`);
         if (!saved) {
             const goAhead = await UIManager.showModal(
-                'The backup was not saved. Delete anyway?\nबैकअप सेव नहीं हुआ। फिर भी हटाएँ?',
-                'No backup',
+                t('msg.admin.backup_was_not_saved_delete'),
+                t('msg.admin.no_backup'),
                 true
             );
             if (!goAhead) return;
@@ -813,7 +814,7 @@ const AdminManager = {
             }
             
             UIManager.hideLoading();
-            UIManager.showToast(`Cleared ${deletedCount} records from ${selectedCollections.length} collections`);
+            UIManager.showToast(t('msg.admin.cleared_records_from_collections', { deletedCount, count: selectedCollections.length }));
             
             // Reload the page
             setTimeout(() => location.reload(), 1000);
@@ -821,7 +822,7 @@ const AdminManager = {
         } catch (error) {
             console.error('Error clearing data:', error);
             UIManager.hideLoading();
-            UIManager.showToast('Error clearing data: ' + error.message);
+            UIManager.showToast(t('msg.admin.error_clearing_data', { message: error.message }));
         }
     }
 };

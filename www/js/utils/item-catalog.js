@@ -5,6 +5,7 @@
  */
 
 import { createItemKeyResolver } from './stock-replay.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Normalises an item name for comparisons: Unicode NFC, trimmed, inner
@@ -28,6 +29,27 @@ export function normalizeItemName(s) {
 export function findItemById(items, id) {
     if (!id) return null;
     return (items || []).find(i => i && i.id === id) || null;
+}
+
+/**
+ * Which catalogue item a bill line is: by itemId, else by its English or Hindi
+ * name (lines saved while item names were shown in Hindi carry the Hindi name).
+ * `key` groups lines of one item; `label` is the name to show in the chosen
+ * language. Lines that match no item keep their own name.
+ * @param {{itemId?: string, name?: string, item?: string}} line
+ * @param {Array<{id: string, name?: string, hindiName?: string}>} items
+ * @param {boolean} [showHindi=false]
+ * @returns {{key: string, label: string, item: ?Object}}
+ */
+export function lineItemIdentity(line, items, showHindi = false) {
+    const raw = String(line?.name || line?.item || '').trim();
+    let item = findItemById(items, line?.itemId);
+    if (!item && raw) {
+        const n = normalizeItemName(raw);
+        item = (items || []).find(i => i && (normalizeItemName(i.name) === n || (i.hindiName && normalizeItemName(i.hindiName) === n))) || null;
+    }
+    if (!item) return { key: `name:${raw}`, label: raw, item: null };
+    return { key: `id:${item.id}`, label: (showHindi && item.hindiName) ? item.hindiName : (item.name || raw), item };
 }
 
 /**
@@ -60,7 +82,7 @@ export function findDuplicateItem(items, candidate, excludeId = null) {
  * @returns {string}
  */
 export function duplicateItemMessage(name) {
-    return `"${name}" already exists — use a different name. / "${name}" नाम का आइटम पहले से है — दूसरा नाम रखें।`;
+    return t('msg.items.duplicate_name', { name });
 }
 
 /**

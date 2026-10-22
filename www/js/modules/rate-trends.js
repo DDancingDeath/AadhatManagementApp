@@ -9,6 +9,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
+import { t } from '../i18n/index.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { isQuotaExhaustedError } from '../utils/quota-guard.js';
 import { chartScaleMax } from './reports.js';
@@ -195,13 +196,11 @@ export const RateTrendsManager = {
         try { est = await this.loadEstimate(); } catch (e) { console.warn('Rate trends: estimate failed:', e?.code || e); }
         const budget = readBudget();
         const days = est ? backfillDays(est.reads, budget) : null;
-        const msg = est
-            ? `This reads every bill once: about ${est.reads.toLocaleString('en-IN')} reads` +
-              (days > 1 ? `, spread over about ${days} days (${budget.toLocaleString('en-IN')} a day)` : '') +
-              `. The app keeps working while it runs.\n\nयह हर बिल को एक बार पढ़ेगा: लगभग ${est.reads.toLocaleString('en-IN')} रीड` +
-              (days > 1 ? `, लगभग ${days} दिनों में (रोज़ ${budget.toLocaleString('en-IN')})` : '') + '। इस दौरान ऐप चलता रहेगा।'
-            : 'This reads every bill once (one read per bill). The app keeps working while it runs.\n\nयह हर बिल को एक बार पढ़ेगा (हर बिल का एक रीड)। इस दौरान ऐप चलता रहेगा।';
-        const ok = await UIManager.showModal(msg, 'Build rate history? / रेट का इतिहास बनाएँ?', true);
+        const reads = est ? est.reads.toLocaleString('en-IN') : '';
+        const msg = !est ? t('msg.trends.backfill_confirm')
+            : days > 1 ? t('msg.trends.backfill_confirm_days', { reads, days, perDay: budget.toLocaleString('en-IN') })
+            : t('msg.trends.backfill_confirm_reads', { reads });
+        const ok = await UIManager.showModal(msg, t('msg.trends.build_rate_history'), true);
         if (!ok) return;
         const now = Date.now();
         const cursor = newCursor(now);
@@ -284,7 +283,7 @@ export const RateTrendsManager = {
             this.metaError = null;
             localStorage.removeItem(CURSOR_KEY);
             this.statsByItem.clear();
-            UIManager.showToast('Rate history built / रेट का इतिहास बन गया');
+            UIManager.showToast(t('msg.trends.rate_history_built'));
             // Months still being edited come from the loaded bills, not the backfill snapshot.
             await this.rollForward({ force: true });
             await this.loadItem();

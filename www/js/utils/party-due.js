@@ -10,6 +10,7 @@
 
 import { buildAging, normalizePartyName } from './aging.js';
 import { formatINR } from './due-reminder.js';
+import { getLang, t } from '../i18n/index.js';
 
 /**
  * Open bills that make up the Outstanding list for a billing form.
@@ -45,19 +46,19 @@ export function partyDue(bills, name, { excludeId = null, today = new Date() } =
 }
 
 /**
- * Bilingual one-liner for the due under the name field.
+ * One-liner for the due under the name field, in the app language.
  * @param {{total: number, count: number, oldestDays: ?number}} due
  * @param {'purchase'|'retail'|'wholesale'} kind purchase = we owe the supplier
+ * @param {'en'|'hi'} [lang]
  * @returns {string}
  */
-export function partyDueText(due, kind) {
+export function partyDueText(due, kind, lang = getLang()) {
     const amount = formatINR(due.total);
     const n = due.count;
-    const bills = `${n} ${n === 1 ? 'bill' : 'bills'}`;
+    const bills = t(n === 1 ? 'ui.outstanding.bills_one' : 'ui.outstanding.bills_many', { count: n }, lang);
     const d = due.oldestDays;
-    const oldest = d === null || d === undefined ? 'date unknown'
-        : d === 0 ? 'oldest today' : `oldest ${d} ${d === 1 ? 'day' : 'days'}`;
-    const en = `${kind === 'purchase' ? 'We owe' : 'Already owes'} ${amount} on ${bills} (${oldest})`;
-    const hi = kind === 'purchase' ? `हमें ${amount} देना है (${n} बिल)` : `पहले से ${amount} बकाया (${n} बिल)`;
-    return `${en} / ${hi}`;
+    const oldest = d === null || d === undefined ? t('ui.outstanding.date_unknown', null, lang)
+        : d === 0 ? t('ui.billing.oldest_today', null, lang)
+        : t('ui.outstanding.oldest', { age: t(d === 1 ? 'ui.outstanding.day_one' : 'ui.outstanding.days_many', { count: d }, lang) }, lang);
+    return t(kind === 'purchase' ? 'ui.billing.party_we_owe' : 'ui.billing.party_owes', { amount, bills, oldest }, lang);
 }

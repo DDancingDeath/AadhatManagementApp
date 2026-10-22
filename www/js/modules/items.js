@@ -18,7 +18,8 @@ import {
     formatHistoryValue, FIELD_LABELS, RATE_SANITY_FACTOR, RATE_FIELDS
 } from '../utils/rate-history.js';
 import { createRateEditTracker, diffItemRates, diffItemFields } from '../utils/notification-format.js';
-import { canDeleteItem, ITEM_DELETE_LOCKED_MESSAGE, isPermissionDenied } from '../utils/record-permissions.js';
+import { canDeleteItem, ITEM_DELETE_LOCKED_KEY, isPermissionDenied } from '../utils/record-permissions.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -94,7 +95,7 @@ const ItemsManager = {
      */
     requireItem(id) {
         const item = this.getItem(id);
-        if (!item) UIManager.showToast('Item no longer exists / आइटम अब मौजूद नहीं है');
+        if (!item) UIManager.showToast(t('msg.items.item_no_longer_exists'));
         return item;
     },
 
@@ -209,7 +210,7 @@ const ItemsManager = {
             AppState.items.push(savedItem);
             this.renderItems();
         });
-        UIManager.showToast('Item added');
+        UIManager.showToast(t('msg.items.item_added'));
     },
 
     /**
@@ -335,7 +336,7 @@ const ItemsManager = {
             ok = false;
             undo();
             console.error('Error saving item rates:', error);
-            UIManager.showToast('Rate not saved - check internet and try again · रेट सेव नहीं हुआ', 3500);
+            UIManager.showToast(t('msg.items.rate_not_saved_check_internet'), 3500);
         }
         this.renderItems();
         return ok;
@@ -421,14 +422,14 @@ const ItemsManager = {
         const item = this.requireItem(id);
         if (!item) return false;
         if (!canDeleteItem(AppState.userRole)) {
-            UIManager.showToast(ITEM_DELETE_LOCKED_MESSAGE, 4000);
+            UIManager.showToast(t(ITEM_DELETE_LOCKED_KEY), 4000);
             return false;
         }
         const itemName = item.name || 'Unnamed';
         
         const confirmed = await UIManager.showModal(
-            `Delete "${itemName}"?`,
-            'Confirm Delete',
+            t('msg.items.delete', { itemName }),
+            t('msg.common.confirm_delete'),
             true
         );
         
@@ -450,12 +451,12 @@ const ItemsManager = {
             });
             
             UIManager.hideLoading();
-            UIManager.showToast('Item deleted');
+            UIManager.showToast(t('msg.items.item_deleted'));
             return true;
         } catch (error) {
             console.error('Error deleting item:', error);
             UIManager.hideLoading();
-            UIManager.showToast(isPermissionDenied(error) ? ITEM_DELETE_LOCKED_MESSAGE : 'Failed to delete item');
+            UIManager.showToast(isPermissionDenied(error) ? t(ITEM_DELETE_LOCKED_KEY) : t('msg.items.failed_delete_item'));
             return false;
         }
     },
@@ -487,10 +488,10 @@ const ItemsManager = {
     async exportToExcel() {
         try {
             await this.downloadItemsWorkbook();
-            UIManager.showToast('Items exported successfully!');
+            UIManager.showToast(t('msg.items.items_exported_successfully'));
         } catch (error) {
             console.error('Export error:', error);
-            UIManager.showToast('Failed to export items');
+            UIManager.showToast(t('msg.items.failed_export_items'));
         }
     },
 
@@ -535,11 +536,11 @@ const ItemsManager = {
             const plan = planItemImport(rows, AppState.items);
             
             if (plan.updates.length === 0 && plan.adds.length === 0) {
-                await UIManager.showModalWithHtml(this.importPreviewHtml(plan), 'Nothing to import', false);
+                await UIManager.showModalWithHtml(this.importPreviewHtml(plan), t('msg.items.nothing_import'), false);
                 return;
             }
             
-            const confirmed = await UIManager.showModalWithHtml(this.importPreviewHtml(plan), 'Confirm Import', true);
+            const confirmed = await UIManager.showModalWithHtml(this.importPreviewHtml(plan), t('msg.items.confirm_import'), true);
             if (!confirmed) return;
             
             UIManager.showLoading();
@@ -568,11 +569,11 @@ const ItemsManager = {
             this.renderItems();
             this.refreshTable();
             UIManager.hideLoading();
-            UIManager.showToast(`Import complete: ${plan.updates.length} updated, ${plan.adds.length} new${plan.errors.length ? `, ${plan.errors.length} rows skipped` : ''}`);
+            UIManager.showToast(t(plan.errors.length ? 'msg.items.import_complete_skipped' : 'msg.items.import_complete', { updated: plan.updates.length, added: plan.adds.length, skipped: plan.errors.length }));
         } catch (error) {
             console.error('Import error:', error);
             UIManager.hideLoading();
-            UIManager.showToast('Failed to import items: ' + error.message);
+            UIManager.showToast(t('msg.items.failed_import_items', { message: error.message }));
         } finally {
             input.value = '';
         }
@@ -829,7 +830,7 @@ const ItemsManager = {
                 `<li>${e(FIELD_LABELS[c.field])}: ₹${e(c.old)} → ₹${e(c.new)}</li>`).join('')}</ul>
                 <p style="font-size:13px; color:#555">Please check the rate is correct. / कृपया रेट जाँच लें।</p>`);
         }
-        return UIManager.showModalWithHtml(`<div style="text-align:left">${parts.join('')}</div>`, 'Confirm changes / बदलाव की पुष्टि करें', true);
+        return UIManager.showModalWithHtml(`<div style="text-align:left">${parts.join('')}</div>`, t('msg.items.confirm_changes'), true);
     },
     
     // Render rates in modal
@@ -894,7 +895,7 @@ const ItemsManager = {
         const hindiName = document.getElementById('itemModalHindiName').value.trim();
         
         if (!name) {
-            UIManager.showToast('Please enter item name');
+            UIManager.showToast(t('msg.items.enter_item_name'));
             return;
         }
         
@@ -947,14 +948,14 @@ const ItemsManager = {
                 const idx = AppState.items.findIndex(i => i.id === editingId);
                 if (idx !== -1) AppState.items[idx] = updated;
                 this.recordHistory(updated, changes, 'modal');
-                UIManager.showToast('Item updated');
+                UIManager.showToast(t('msg.items.item_updated'));
                 this.notifyModalEdit(existing, updated);
             } else {
                 // Add new item
                 const savedItem = await FirebaseService.saveItem(itemData);
                 AppState.items.push(savedItem);
                 this.recordHistory(savedItem, changes, 'modal');
-                UIManager.showToast('Item added');
+                UIManager.showToast(t('msg.items.item_added'));
                 this.notifyItemAdded(savedItem);
             }
             
@@ -964,7 +965,7 @@ const ItemsManager = {
         } catch (error) {
             console.error('Error saving item:', error);
             UIManager.hideLoading();
-            UIManager.showToast('Failed to save item');
+            UIManager.showToast(t('msg.items.failed_save_item'));
         }
     },
     

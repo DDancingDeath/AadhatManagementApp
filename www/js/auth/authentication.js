@@ -3,6 +3,7 @@
 import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { Helpers } from '../utils/helpers.js';
+import { t } from '../i18n/index.js';
 
 const usersCollection = () => (window.getCollection ? window.getCollection('users') : 'users');
 
@@ -39,11 +40,11 @@ const AuthManager = {
         try {
             credential = await firebase.auth().signInWithEmailAndPassword(email, password);
         } catch (e) {
-            return 'This email is already registered. Please login, or use Forgot Password.';
+            return t('msg.auth.already_registered_forgot');
         }
         try {
             const created = await this.createPendingProfile(credential.user, name, email);
-            return created ? null : 'This email is already registered. Please login.';
+            return created ? null : t('msg.auth.already_registered_login');
         } finally {
             await firebase.auth().signOut();
         }
@@ -105,7 +106,7 @@ const AuthManager = {
     async handleLogin() {
         // Check Firebase initialization
         if (typeof firebase === 'undefined') {
-            UIManager.showToast('Firebase not loaded. Please refresh the page.');
+            UIManager.showToast(t('msg.auth.firebase_not_loaded_refresh_page'));
             console.error('Firebase is undefined!');
             return;
         }
@@ -114,7 +115,7 @@ const AuthManager = {
         const passwordInput = document.getElementById('loginPassword');
         
         if (!emailInput || !passwordInput) {
-            UIManager.showToast('Form elements not found');
+            UIManager.showToast(t('msg.auth.form_elements_not_found'));
             console.error('Form inputs not found!');
             return;
         }
@@ -123,7 +124,7 @@ const AuthManager = {
         const password = passwordInput.value;
         
         if (!email || !password) {
-            UIManager.showToast('Please enter email and password');
+            UIManager.showToast(t('msg.auth.enter_email_password'));
             return;
         }
         
@@ -143,7 +144,7 @@ const AuthManager = {
                 if (created) {
                     await firebase.auth().signOut();
                     UIManager.hideLoading();
-                    UIManager.showToast('Your account is pending approval. Please wait for admin approval.');
+                    UIManager.showToast(t('msg.common.account_pending_approval_wait_admin'));
                     return;
                 }
                 // The profile exists on the server; the first read came from a stale cache.
@@ -160,14 +161,14 @@ const AuthManager = {
             if (userData.status === 'pending') {
                 await firebase.auth().signOut();
                 UIManager.hideLoading();
-                UIManager.showToast('Your account is pending approval. Please wait for admin approval.');
+                UIManager.showToast(t('msg.common.account_pending_approval_wait_admin'));
                 return;
             }
             
             if (userData.status === 'rejected') {
                 await firebase.auth().signOut();
                 UIManager.hideLoading();
-                UIManager.showToast('Your account has been rejected. Please contact admin.');
+                UIManager.showToast(t('msg.common.account_has_been_rejected_contact'));
                 return;
             }
             
@@ -175,7 +176,7 @@ const AuthManager = {
             AppState.userRole = userData.role || 'staff';
             AppState.userName = userData.name || 'User';
             
-            UIManager.showToast('Login successful!');
+            UIManager.showToast(t('msg.auth.login_successful'));
             
             // Hide auth screen and initialize app
             document.getElementById('authScreen').style.display = 'none';
@@ -195,34 +196,17 @@ const AuthManager = {
             
             UIManager.hideLoading();
             
-            let errorMessage = 'Login failed. ';
-            switch (error.code) {
-                case 'auth/invalid-email':
-                    errorMessage += 'Invalid email address.';
-                    break;
-                case 'auth/user-disabled':
-                    errorMessage += 'This account has been disabled.';
-                    break;
-                case 'auth/user-not-found':
-                    errorMessage += 'No account found with this email.';
-                    break;
-                case 'auth/wrong-password':
-                    errorMessage += 'Incorrect password.';
-                    break;
-                case 'auth/invalid-credential':
-                    errorMessage += 'Invalid email or password.';
-                    break;
-                case 'auth/network-request-failed':
-                    errorMessage += 'Network error. Check your internet connection.';
-                    break;
-                case 'auth/too-many-requests':
-                    errorMessage += 'Too many attempts. Please try again later.';
-                    break;
-                default:
-                    errorMessage += error.message;
-            }
-            
-            UIManager.showToast(errorMessage, 4000);
+            const reasons = {
+                'auth/invalid-email': 'msg.auth.err_invalid_email',
+                'auth/user-disabled': 'msg.auth.err_user_disabled',
+                'auth/user-not-found': 'msg.auth.err_user_not_found',
+                'auth/wrong-password': 'msg.auth.err_wrong_password',
+                'auth/invalid-credential': 'msg.auth.err_invalid_credential',
+                'auth/network-request-failed': 'msg.auth.err_network',
+                'auth/too-many-requests': 'msg.auth.err_too_many_requests'
+            };
+            const reason = reasons[error.code] ? t(reasons[error.code]) : error.message;
+            UIManager.showToast(t('msg.auth.login_failed', { reason }), 4000);
         }
     },
 
@@ -234,17 +218,17 @@ const AuthManager = {
         const confirmPassword = document.getElementById('registerConfirmPassword')?.value;
         
         if (!name || !email || !password) {
-            UIManager.showToast('Please fill all fields');
+            UIManager.showToast(t('msg.auth.fill_all_fields'));
             return;
         }
         
         if (confirmPassword && password !== confirmPassword) {
-            UIManager.showToast('Passwords do not match');
+            UIManager.showToast(t('msg.auth.passwords_do_not_match'));
             return;
         }
         
         if (password.length < 6) {
-            UIManager.showToast('Password must be at least 6 characters');
+            UIManager.showToast(t('msg.auth.password_must_at_least_6'));
             return;
         }
         
@@ -266,7 +250,7 @@ const AuthManager = {
             await firebase.auth().signOut();
             
             UIManager.hideLoading();
-            UIManager.showToast('Registration successful! Please wait for admin approval.');
+            UIManager.showToast(t('msg.auth.registration_successful_wait_admin_approval'));
             
             this.showAuthTab('login');
             
@@ -280,7 +264,7 @@ const AuthManager = {
                     if (message) {
                         UIManager.showToast(message, 4000);
                     } else {
-                        UIManager.showToast('Registration successful! Please wait for admin approval.');
+                        UIManager.showToast(t('msg.auth.registration_successful_wait_admin_approval'));
                     }
                     this.showAuthTab('login');
                     return;
@@ -292,22 +276,13 @@ const AuthManager = {
             
             UIManager.hideLoading();
             
-            let errorMessage = 'Registration failed. ';
-            switch (error.code) {
-                case 'auth/email-already-in-use':
-                    errorMessage += 'This email is already registered.';
-                    break;
-                case 'auth/invalid-email':
-                    errorMessage += 'Invalid email address.';
-                    break;
-                case 'auth/weak-password':
-                    errorMessage += 'Password is too weak.';
-                    break;
-                default:
-                    errorMessage += error.message;
-            }
-            
-            UIManager.showToast(errorMessage, 4000);
+            const reasons = {
+                'auth/email-already-in-use': 'msg.auth.err_email_in_use',
+                'auth/invalid-email': 'msg.auth.err_invalid_email',
+                'auth/weak-password': 'msg.auth.err_weak_password'
+            };
+            const reason = reasons[error.code] ? t(reasons[error.code]) : error.message;
+            UIManager.showToast(t('msg.auth.registration_failed', { reason }), 4000);
         } finally {
             this.authFlowInProgress = false;
         }
@@ -319,7 +294,7 @@ const AuthManager = {
         let email = emailInput?.value?.trim();
         
         if (!email) {
-            email = prompt('Enter your email address to reset password:');
+            email = prompt(t('msg.auth.enter_email_address_reset_password'));
             if (!email) {
                 return;
             }
@@ -327,14 +302,14 @@ const AuthManager = {
         }
         
         if (!email) {
-            UIManager.showToast('Please enter an email address');
+            UIManager.showToast(t('msg.auth.enter_email_address'));
             return;
         }
         
         // Validate email format
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
-            UIManager.showToast('Please enter a valid email address');
+            UIManager.showToast(t('msg.auth.enter_valid_email_address'));
             return;
         }
         
@@ -350,7 +325,7 @@ const AuthManager = {
             await firebase.auth().sendPasswordResetEmail(email, actionCodeSettings);
             
             UIManager.hideLoading();
-            UIManager.showToast('✅ Password reset email sent to ' + email + '! Check your inbox and spam folder.', 5000);
+            UIManager.showToast(t('msg.auth.password_reset_email_sent_check', { email }), 5000);
         } catch (error) {
             console.error('Password reset error:', error);
             console.error('Error code:', error.code);
@@ -358,38 +333,26 @@ const AuthManager = {
             
             UIManager.hideLoading();
             
-            let errorMessage = 'Failed to send reset email. ';
-            switch (error.code) {
-                case 'auth/invalid-email':
-                    errorMessage += 'Invalid email address format.';
-                    break;
-                case 'auth/user-not-found':
-                    errorMessage += 'No account found with this email. Please check the email or register.';
-                    break;
-                case 'auth/network-request-failed':
-                    errorMessage += 'Network error. Check your internet connection.';
-                    break;
-                case 'auth/too-many-requests':
-                    errorMessage += 'Too many reset attempts. Please try again later.';
-                    break;
-                case 'auth/missing-android-pkg-name':
-                case 'auth/missing-continue-uri':
-                case 'auth/missing-ios-bundle-id':
-                case 'auth/invalid-continue-uri':
-                case 'auth/unauthorized-continue-uri':
-                    errorMessage += 'Configuration error. Contact support.';
-                    break;
-                default:
-                    errorMessage += error.message;
-            }
-            
-            UIManager.showToast(errorMessage, 5000);
+            const configError = 'msg.auth.err_configuration';
+            const reasons = {
+                'auth/invalid-email': 'msg.auth.err_invalid_email_format',
+                'auth/user-not-found': 'msg.auth.err_reset_user_not_found',
+                'auth/network-request-failed': 'msg.auth.err_network',
+                'auth/too-many-requests': 'msg.auth.err_too_many_resets',
+                'auth/missing-android-pkg-name': configError,
+                'auth/missing-continue-uri': configError,
+                'auth/missing-ios-bundle-id': configError,
+                'auth/invalid-continue-uri': configError,
+                'auth/unauthorized-continue-uri': configError
+            };
+            const reason = reasons[error.code] ? t(reasons[error.code]) : error.message;
+            UIManager.showToast(t('msg.auth.reset_email_failed', { reason }), 5000);
         }
     },
 
     // Handle logout
     async handleLogout() {
-        const confirmed = await UIManager.showModal('Are you sure you want to logout?', 'Confirm Logout', true);
+        const confirmed = await UIManager.showModal(t('msg.auth.are_sure_want_logout'), t('msg.auth.confirm_logout'), true);
         
         if (!confirmed) return;
         
@@ -403,11 +366,11 @@ const AuthManager = {
             
             document.getElementById('authScreen').style.display = 'flex';
             UIManager.hideLoading();
-            UIManager.showToast('Logged out successfully');
+            UIManager.showToast(t('msg.auth.logged_out_successfully'));
         } catch (error) {
             console.error('Logout error:', error);
             UIManager.hideLoading();
-            UIManager.showToast('Logout failed: ' + error.message);
+            UIManager.showToast(t('msg.auth.logout_failed', { message: error.message }));
         }
     },
 

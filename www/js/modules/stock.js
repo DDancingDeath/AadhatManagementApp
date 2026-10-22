@@ -15,6 +15,7 @@ import { planStockAdjustment } from '../utils/stock-adjust.js';
 import { approxStockNote } from '../utils/stock-check.js';
 import { evaluateStockAdjustment, toFlags } from '../utils/bill-checks.js';
 import { findDeadStock, daysSinceLabel, localDaysBetween, DEAD_STOCK_DAY_OPTIONS, DEFAULT_DEAD_STOCK_DAYS } from '../utils/dead-stock.js';
+import { t } from '../i18n/index.js';
 
 const DEAD_STOCK_DAYS_KEY = 'aadhat.deadStockDays';
 
@@ -329,11 +330,11 @@ export class StockManager {
     static filterStockTab(section, event) {
         // Staff cannot access adjustment section
         if (section === 'adjustment' && AppState.userRole === 'staff') {
-            UIManager.showToast('You do not have permission to access stock adjustments');
+            UIManager.showToast(t('msg.stock.do_not_have_permission_access'));
             return;
         }
         if (section === 'dead' && !this.canSeeDeadStock()) {
-            UIManager.showToast('Only owner or manager can see this / यह केवल मालिक या मैनेजर देख सकते हैं');
+            UIManager.showToast(t('msg.stock.only_owner_or_manager_can'));
             return;
         }
         
@@ -574,7 +575,7 @@ export class StockManager {
 
         const item = itemId ? AppState.items.find(i => i.id === itemId) : null;
         if (!item) {
-            UIManager.showToast("Please select an item");
+            UIManager.showToast(t('msg.common.select_item'));
             return;
         }
         const itemName = item.name;
@@ -587,8 +588,8 @@ export class StockManager {
         }
         if (plan.capped) {
             const ok = await UIManager.showModal(
-                `Only ${plan.quantity} kg in stock. Remove ${plan.quantity} kg (stock becomes 0)?\nस्टॉक में सिर्फ ${plan.quantity} kg है। ${plan.quantity} kg हटाएँ (स्टॉक 0 होगा)?`,
-                'Remove more than stock?',
+                t('msg.stock.only_kg_in_stock_remove', { quantity: plan.quantity }),
+                t('msg.stock.remove_more_than_stock'),
                 true
             );
             if (!ok) return;
@@ -635,7 +636,7 @@ export class StockManager {
             const freshStock = await FirebaseService.calculateStock();
             AppState.stock = freshStock;
             
-            UIManager.showToast("Stock adjustment applied successfully");
+            UIManager.showToast(t('msg.stock.stock_adjustment_applied_successfully'));
             this.renderAdjustmentHistory();
             this.loadAdjustItemStock();
             
@@ -645,7 +646,7 @@ export class StockManager {
             }
         } catch (error) {
             console.error("Stock adjustment error:", error);
-            UIManager.showToast("Failed to apply adjustment");
+            UIManager.showToast(t('msg.stock.failed_apply_adjustment'));
         }
     }
 

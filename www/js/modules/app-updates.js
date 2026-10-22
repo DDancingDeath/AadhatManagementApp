@@ -7,6 +7,7 @@
 import { APP_VERSION } from '../version.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { openExternal } from '../utils/open-external.js';
+import { getLang, setLang, t } from '../i18n/index.js';
 import {
     APK_DOWNLOAD_URL, DOWNLOAD_PAGE_URL, LATEST_RELEASE_API,
     buildShareMessage, findRelease, shouldCheckForUpdate, updateToOffer,
@@ -17,8 +18,7 @@ const KEYS = {
     lastSeen: 'aadhat.lastSeenVersion',
     lastCheck: 'aadhat.updateLastCheck',
     latestTag: 'aadhat.updateLatestTag',
-    dismissed: 'aadhat.updateDismissedVersion',
-    lang: 'aadhat.whatsNewLang'
+    dismissed: 'aadhat.updateDismissedVersion'
 };
 
 const store = {
@@ -77,7 +77,7 @@ export class AppUpdatesManager {
         const changelog = await this.loadChangelog();
         const release = findRelease(changelog, APP_VERSION) || changelog?.releases?.[0];
         if (!release) {
-            UIManager.showToast('Could not load release notes / जानकारी लोड नहीं हुई');
+            UIManager.showToast(t('msg.updates.could_not_load_release_notes'));
             return;
         }
         this.renderWhatsNew(release);
@@ -102,7 +102,8 @@ export class AppUpdatesManager {
             btn.type = 'button';
             btn.lang = lang;
             btn.addEventListener('click', () => {
-                store.set(KEYS.lang, lang);
+                // One setting for the whole app (#143): this also switches every screen.
+                setLang(lang);
                 render(lang);
                 btn.focus();
             });
@@ -136,7 +137,7 @@ export class AppUpdatesManager {
             list.replaceChildren(...notes.map((note) => el('li', '', note)));
             close.textContent = labels.close;
         };
-        render(store.get(KEYS.lang));
+        render(getLang());
 
         const dismiss = () => {
             store.set(KEYS.lastSeen, APP_VERSION);
@@ -230,7 +231,7 @@ export class AppUpdatesManager {
         try {
             await navigator.share({ title: 'Aadhat Management', text: await this.getShareMessage() });
         } catch (e) {
-            if (e?.name !== 'AbortError') UIManager.showToast('Share failed / शेयर नहीं हो पाया');
+            if (e?.name !== 'AbortError') UIManager.showToast(t('msg.updates.share_failed'));
         }
     }
 

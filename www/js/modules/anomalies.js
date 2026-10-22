@@ -13,6 +13,7 @@ import { PrinterService } from '../services/printer.js';
 import { openExternal } from '../utils/open-external.js';
 import { whatsAppReminderUrl } from '../utils/due-reminder.js';
 import { chartScaleMax } from './reports.js';
+import { t } from '../i18n/index.js';
 import {
     ANOMALY_DEFAULTS, ANOMALY_TYPES, DETECTION_FIELDS, SEVERITIES, SEVERITY_LABELS, STATUS_LABELS,
     addDaysToKey, anomalyPatterns, buildDayReportText, detectAnomalies, filterAnomalies, formatDayKey,
@@ -375,7 +376,7 @@ export const AnomaliesManager = {
             return true;
         } catch (error) {
             console.error('Could not share day report:', error);
-            UIManager.showToast('Could not open WhatsApp / व्हाट्सऐप नहीं खुला');
+            UIManager.showToast(t('msg.common.could_not_open_whatsapp'));
             return false;
         }
     },
@@ -417,7 +418,7 @@ export const AnomaliesManager = {
             return PrinterService.showImagePreview(canvas, `day_report_${todayKey().replace(/-/g, '')}.png`, 'Day report');
         } catch (error) {
             console.error('Day report image failed:', error);
-            UIManager.showToast('Could not make the report image / रिपोर्ट इमेज नहीं बनी');
+            UIManager.showToast(t('msg.anomalies.could_not_make_report_image'));
             return false;
         }
     },
@@ -472,7 +473,7 @@ export const AnomaliesManager = {
             const list = a.billType === 'purchase' ? AppState.purchaseHistory
                 : a.billType === 'retail' ? AppState.retailSalesHistory : AppState.salesHistory;
             if (!(list || []).some(b => String(b.id) === String(a.refId))) {
-                UIManager.showToast('This bill is not loaded (older or deleted) / यह बिल लोड नहीं है');
+                UIManager.showToast(t('msg.anomalies.bill_not_loaded_older_or'));
                 return;
             }
             window.app?.history?.viewBill(`id:${a.refId}`, a.billType);
@@ -498,7 +499,7 @@ export const AnomaliesManager = {
                     <label for="anomalyReviewNote">Note (optional) / नोट (वैकल्पिक):</label>
                     <textarea id="anomalyReviewNote" rows="2" maxlength="300" style="width:100%; box-sizing:border-box; padding:6px;">${esc(note)}</textarea>
                 </div>`;
-            const title = status === 'ok' ? 'Mark OK / ठीक है' : 'Mark fixed / सुधारा गया';
+            const title = t(status === 'ok' ? 'msg.anomalies.mark_ok' : 'msg.anomalies.mark_fixed');
             const ok = await UIManager.showModalWithHtml(html, title, true);
             if (!ok) return false;
             note = (document.getElementById('anomalyReviewNote')?.value || '').trim().slice(0, 300);
@@ -520,7 +521,7 @@ export const AnomaliesManager = {
             await FirebaseService.saveAnomalies([{ id: a.id, data }]);
         } catch (e) {
             console.error('Saving review failed:', e);
-            UIManager.showToast('Could not save / सेव नहीं हुआ: ' + (e?.message || e));
+            UIManager.showToast(t('msg.anomalies.could_not_save', { value: e?.message || e }));
             return false;
         }
         const apply = (x) => (x.id === a.id ? { ...x, ...data } : x);
@@ -532,7 +533,7 @@ export const AnomaliesManager = {
         this.page.docs = this.page.docs.map(apply);
         this.drawDayReport();
         if (document.getElementById('anomalyList')) this.renderPage();
-        UIManager.showToast(status === 'open' ? 'Reopened / फिर खोला' : '✓ Saved / सेव हुआ');
+        UIManager.showToast(status === 'open' ? t('msg.anomalies.reopened') : t('msg.anomalies.saved'));
         return true;
     },
 
@@ -639,7 +640,7 @@ export const AnomaliesManager = {
         } catch (e) {
             if (seq !== this.page.seq) return;
             console.error('Loading anomalies failed:', e);
-            UIManager.showToast('Could not load anomalies / गड़बड़ियाँ लोड नहीं हुईं');
+            UIManager.showToast(t('msg.anomalies.could_not_load_anomalies'));
             if (reset) this.page.docs = this.reportList.filter(a => a.dayKey >= range.from && a.dayKey <= range.to);
         } finally {
             if (seq === this.page.seq) {

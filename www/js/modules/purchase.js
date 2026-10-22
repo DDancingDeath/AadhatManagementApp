@@ -11,9 +11,14 @@ import { AuditService } from '../services/audit.js';
 import { PrinterService } from '../services/printer.js';
 import { Helpers } from '../utils/helpers.js';
 import {
-    checkPaymentSplit, computePurchaseTotals, KEPT_SERVER_PAYMENT_MESSAGE, normalizeLabourSettings, paymentSplitMessage, round2
+    checkPaymentSplit, computePurchaseTotals, KEPT_SERVER_PAYMENT_KEY, normalizeLabourSettings, paymentSplitMessage, round2
 } from '../utils/money.js';
 import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
+import { t } from '../i18n/index.js';
+import { lineItemIdentity } from '../utils/item-catalog.js';
+
+/** Name to show for a catalogue item or bill line in the chosen item-name language. */
+const lineLabel = (line) => lineItemIdentity(line && 'itemId' in line ? line : { itemId: line?.id, name: line?.name }, AppState.items, AppState.settings.showHindi).label;
 
 /** Buttons disabled while a purchase save/print is in flight */
 const PURCHASE_BUTTONS = '#saveBillBtn, #printBillBtn';
@@ -70,7 +75,7 @@ const PurchaseManager = {
         const weight = parseFloat(weightInput?.value);
         
         if (!weight || weight <= 0) {
-            UIManager.showToast('Please enter a valid weight');
+            UIManager.showToast(t('msg.common.enter_valid_weight'));
             return;
         }
         
@@ -160,12 +165,12 @@ const PurchaseManager = {
         const rate = parseFloat(rateInput.value);
         
         if (itemIndex === undefined || itemIndex === '' || isNaN(itemIndex)) {
-            UIManager.showToast('Please select an item');
+            UIManager.showToast(t('msg.common.select_item'));
             return;
         }
         
         if (!rate || rate <= 0) {
-            UIManager.showToast('Please enter a valid rate');
+            UIManager.showToast(t('msg.common.enter_valid_rate'));
             return;
         }
         
@@ -178,13 +183,13 @@ const PurchaseManager = {
         }
         
         if (weights.length === 0) {
-            UIManager.showToast('Please add at least one weight');
+            UIManager.showToast(t('msg.purchase.add_at_least_one_weight'));
             return;
         }
         
         const item = AppState.items[itemIndex];
         if (!item) {
-            UIManager.showToast('Item not found');
+            UIManager.showToast(t('msg.common.item_not_found'));
             return;
         }
         this.ensurePendingBill();
@@ -192,11 +197,12 @@ const PurchaseManager = {
         const qty = weights.reduce((sum, w) => sum + w, 0);
         const total = Math.round(qty * rate);
         
-        const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        // Bill lines keep the catalogue name; Hindi is only for display (#143, Reports group by item).
+        const displayName = lineLabel(item);
         
         billItems.push({
             itemId: item.id,
-            name: displayName,
+            name: item.name,
             rate,
             qty,
             total,
@@ -218,7 +224,7 @@ const PurchaseManager = {
         }
         
         UIManager.hapticFeedback();
-        UIManager.showToast(`Added ${displayName} to bill`);
+        UIManager.showToast(t('msg.purchase.added_bill', { displayName }));
     },
 
     /**
@@ -233,7 +239,7 @@ const PurchaseManager = {
         const billTotalSpan = document.getElementById('billTotal');
         
         if (billItems.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;">No items in bill</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #999; padding: 24px;" data-i18n="msg.common.no_items_in_bill">${Helpers.escapeHtml(t('msg.common.no_items_in_bill'))}</td></tr>`;
             if (billTotalSpan) billTotalSpan.textContent = '0';
             if (totalPacketsInBillSpan) totalPacketsInBillSpan.textContent = '0';
             if (weightBreakdownSection) weightBreakdownSection.innerHTML = '';
@@ -257,7 +263,7 @@ const PurchaseManager = {
                     return `
                         <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #007bff;">
                             <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
-                                ${Helpers.escapeHtml(item.name)} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
+                                ${Helpers.escapeHtml(lineLabel(item))} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
                             </div>
                             <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
                                 ${weightLines.join('<br>')}
@@ -274,7 +280,7 @@ const PurchaseManager = {
         tbody.innerHTML = billItems.map((item, index) => {
             return `
                 <tr style="cursor: pointer;" onclick="window.app.purchase.editBillItem(${index})">
-                    <td>${Helpers.escapeHtml(item.name)}</td>
+                    <td>${Helpers.escapeHtml(lineLabel(item))}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
                     <td>₹${Math.round(item.total)}</td>
@@ -342,7 +348,7 @@ const PurchaseManager = {
         
         if (this.billingManager) this.billingManager.triggerAutoSave();
         UIManager.hapticFeedback();
-        UIManager.showToast('Item loaded for editing');
+        UIManager.showToast(t('msg.common.item_loaded_editing'));
     },
 
     // -------------------- TOTALS --------------------
@@ -525,7 +531,7 @@ const PurchaseManager = {
     async printBill() {
         if (Helpers.isBusy('purchase')) return;
         if (billItems.length === 0) {
-            UIManager.showToast('No items in bill');
+            UIManager.showToast(t('msg.common.no_items_in_bill'));
             return;
         }
         
@@ -538,11 +544,11 @@ const PurchaseManager = {
             if (!printPromise) return;
             await printPromise;
             if (savedBill) {
-                UIManager.showToast('Bill saved and printed!');
+                UIManager.showToast(t('msg.purchase.bill_saved_printed'));
             }
         } catch (error) {
             console.error('Print error:', error);
-            UIManager.showToast('Error: ' + (error?.message || error));
+            UIManager.showToast(t('msg.common.error_2', { value: error?.message || error }));
         }
     },
 
@@ -561,7 +567,7 @@ const PurchaseManager = {
         }
         
         if (billItems.length === 0) {
-            UIManager.showToast('No items in bill');
+            UIManager.showToast(t('msg.common.no_items_in_bill'));
             return;
         }
         
@@ -658,14 +664,14 @@ const PurchaseManager = {
             this.resetForm();
             
             UIManager.hideLoading();
-            UIManager.showToast(FirebaseService.keptServerPayment(bill) ? KEPT_SERVER_PAYMENT_MESSAGE : 'Bill saved successfully!');
+            UIManager.showToast(FirebaseService.keptServerPayment(bill) ? t(KEPT_SERVER_PAYMENT_KEY) : t('msg.purchase.bill_saved_successfully'));
             UIManager.hapticFeedback('success');
             
             return bill;
             
         } catch (error) {
             UIManager.hideLoading();
-            UIManager.showToast('Failed to save bill: ' + error.message);
+            UIManager.showToast(t('msg.purchase.failed_save_bill', { message: error.message }));
             console.error('Save bill error:', error);
             throw error;
         }
@@ -710,7 +716,7 @@ const PurchaseManager = {
      */
     async shareWhatsApp() {
         if (billItems.length === 0) {
-            UIManager.showToast('No items in bill');
+            UIManager.showToast(t('msg.common.no_items_in_bill'));
             return;
         }
         

@@ -16,6 +16,7 @@ import {
 } from '../utils/history-window.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { createRenderMemo } from '../utils/render-memo.js';
+import { t } from '../i18n/index.js';
 
 /** Placeholder for all-time figures until the full history is loaded. */
 const NOT_LOADED = '—';
@@ -191,12 +192,12 @@ export class FinanceManager {
         const endDate = document.getElementById('financeEndDate').value;
         
         if (!startDate || !endDate) {
-            UIManager.showToast('Please select both start and end dates');
+            UIManager.showToast(t('msg.finance.select_both_start_end_dates'));
             return;
         }
         
         if (parseLocalDate(startDate) > parseLocalDate(endDate)) {
-            UIManager.showToast('Start date must be before end date');
+            UIManager.showToast(t('msg.finance.start_date_must_before_end'));
             return;
         }
         
@@ -466,10 +467,10 @@ export class FinanceManager {
         this.renderFullHistoryPrompt(false);
         try {
             const covered = await ensureHistoryFrom(null);
-            if (!covered) UIManager.showToast("Couldn't load full history");
+            if (!covered) UIManager.showToast(t('msg.finance.couldn_t_load_full_history'));
         } catch (error) {
             console.error('Loading full history failed:', error);
-            UIManager.showToast("Couldn't load full history");
+            UIManager.showToast(t('msg.finance.couldn_t_load_full_history'));
         } finally {
             this.loadingFullHistory = false;
             this.renderDashboard();
@@ -786,7 +787,7 @@ export class FinanceManager {
         const icon = activeIcon ? activeIcon.dataset.icon : '💳';
         
         if (!name) {
-            UIManager.showToast('Please enter account name', 'error');
+            UIManager.showToast(t('msg.finance.enter_account_name'), 'error');
             return;
         }
         
@@ -794,7 +795,7 @@ export class FinanceManager {
         this.saveCustomAccounts();
         this.closeAccountModal();
         this.renderAssets();
-        UIManager.showToast('Account added successfully', 'success');
+        UIManager.showToast(t('msg.finance.account_added_successfully'), 'success');
     }
 
     /**
@@ -803,14 +804,14 @@ export class FinanceManager {
     static quickAddAccount(name, icon) {
         // Check if already exists
         if (this.customAccounts.some(a => a.name === name)) {
-            UIManager.showToast('Account already exists', 'error');
+            UIManager.showToast(t('msg.finance.account_already_exists'), 'error');
             return;
         }
         
         this.customAccounts.push({ name, balance: 0, type: 'asset', icon });
         this.saveCustomAccounts();
         this.renderAssets();
-        UIManager.showToast(`${name} added`, 'success');
+        UIManager.showToast(t('msg.finance.added', { name }), 'success');
     }
 
     /**
@@ -842,7 +843,7 @@ export class FinanceManager {
         const balance = parseFloat(document.getElementById('editAccountBalance').value) || 0;
         
         if (!name) {
-            UIManager.showToast('Please enter account name', 'error');
+            UIManager.showToast(t('msg.finance.enter_account_name'), 'error');
             return;
         }
         
@@ -852,7 +853,7 @@ export class FinanceManager {
             this.saveCustomAccounts();
             this.closeEditAccountModal();
             this.renderAssets();
-            UIManager.showToast('Account updated', 'success');
+            UIManager.showToast(t('msg.finance.account_updated'), 'success');
         }
     }
 
@@ -862,12 +863,12 @@ export class FinanceManager {
     static deleteAccount() {
         const index = parseInt(document.getElementById('editAccountId').value);
         
-        if (confirm('Are you sure you want to delete this account?')) {
+        if (confirm(t('msg.finance.are_sure_want_delete_account'))) {
             this.customAccounts.splice(index, 1);
             this.saveCustomAccounts();
             this.closeEditAccountModal();
             this.renderAssets();
-            UIManager.showToast('Account deleted', 'success');
+            UIManager.showToast(t('msg.finance.account_deleted'), 'success');
         }
     }
 
@@ -973,17 +974,17 @@ export class FinanceManager {
         }
         
         if (!amount || amount <= 0) {
-            UIManager.showToast('Please enter a valid amount', 'error');
+            UIManager.showToast(t('msg.common.enter_valid_amount'), 'error');
             return;
         }
         
         if (!person) {
-            UIManager.showToast('Please enter who withdrew the money', 'error');
+            UIManager.showToast(t('msg.finance.enter_who_withdrew_money'), 'error');
             return;
         }
         
         if (!date) {
-            UIManager.showToast('Please select a date', 'error');
+            UIManager.showToast(t('msg.finance.select_date'), 'error');
             return;
         }
         
@@ -1006,11 +1007,11 @@ export class FinanceManager {
             document.getElementById('withdrawalOtherPurposeRow').style.display = 'none';
             this.setDefaultDate();
             
-            UIManager.showToast('Withdrawal recorded successfully', 'success');
+            UIManager.showToast(t('msg.finance.withdrawal_recorded_successfully'), 'success');
             this.renderWithdrawals();
         } catch (error) {
             console.error('Error recording withdrawal:', error);
-            UIManager.showToast('Error recording withdrawal', 'error');
+            UIManager.showToast(t('msg.finance.error_recording_withdrawal'), 'error');
         }
     }
 

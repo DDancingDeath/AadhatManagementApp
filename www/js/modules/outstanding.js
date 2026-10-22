@@ -17,6 +17,13 @@ import { CashManagementManager } from './cash-management.js';
 import { PrinterService } from '../services/printer.js';
 import { openExternal } from '../utils/open-external.js';
 import { billDateOf } from '../utils/history-filters.js';
+import { t } from '../i18n/index.js';
+
+/** i18n key + params for a bill age in days (null = unknown). */
+function ageKey(days) {
+    if (days === null) return ['ui.outstanding.date_unknown'];
+    return [days === 1 ? 'ui.outstanding.day_one' : 'ui.outstanding.days_many', { count: days }];
+}
 import {
     AGING_BUCKETS, ageInDays, bucketIndex, buildAging, chaseFirst, filterBillsByBucket, normalizePartyName, sortParties
 } from '../utils/aging.js';
@@ -78,7 +85,7 @@ export class OutstandingManager {
                 noResultsMsg = document.createElement('p');
                 noResultsMsg.className = 'no-results-message';
                 noResultsMsg.style.cssText = 'text-align: center; color: #888; margin-top: 40px;';
-                noResultsMsg.textContent = 'No matching transactions found';
+                noResultsMsg.textContent = t('ui.outstanding.no_matching');
                 container.appendChild(noResultsMsg);
             }
         } else if (noResultsMsg) {
@@ -180,10 +187,10 @@ export class OutstandingManager {
         });
         
         if (shownTransactions.length === 0) {
-            const message = partyBills.length > 0 ? 'No bills in this age group'
-                : party ? 'Nothing outstanding for this party / इस पार्टी का कोई बकाया नहीं'
-                : currentDueFilter === 'purchase' ? 'No outstanding purchase amounts' : 'No outstanding sale amounts';
-            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${message}</p>`;
+            const message = t(partyBills.length > 0 ? 'ui.outstanding.no_bills_in_age_group'
+                : party ? 'ui.outstanding.nothing_for_party'
+                : currentDueFilter === 'purchase' ? 'ui.outstanding.no_purchase_due' : 'ui.outstanding.no_sale_due');
+            container.innerHTML = `<p style="text-align: center; color: #888; margin-top: 40px;">${Helpers.escapeHtml(message)}</p>`;
             return;
         }
 
@@ -193,8 +200,9 @@ export class OutstandingManager {
         const headerColor = '#dc3545';
         const bgColor = '#d1ecf1';
         const borderColor = '#17a2b8';
-        const totalLabel = isPurchase ? 'Total Payable' : 'Total Receivable';
-        const paidLabel = isPurchase ? 'Paid' : 'Received';
+        const tt = (key, params) => Helpers.escapeHtml(t(key, params));
+        const totalLabel = tt(isPurchase ? 'ui.outstanding.total_payable' : 'ui.outstanding.total_receivable');
+        const paidLabel = tt(isPurchase ? 'ui.outstanding.paid' : 'ui.outstanding.received');
 
         const today = new Date();
         shownTransactions.forEach(transaction => {
@@ -203,7 +211,7 @@ export class OutstandingManager {
             div.setAttribute('data-type', transaction.transactionType);
             const billDate = billDateOf(transaction);
             const ageDays = billDate ? ageInDays(billDate, today) : null;
-            const ageBadge = `<span class="aging-age aging-b${bucketIndex(ageDays)}">${ageDays === null ? 'date unknown' : `${ageDays} ${ageDays === 1 ? 'day' : 'days'}`}</span>`;
+            const ageBadge = `<span class="aging-age aging-b${bucketIndex(ageDays)}">${tt(...ageKey(ageDays))}</span>`;
             
             const itemColor = transaction.transactionType === 'purchase' ? '#007bff' : '#28a745';
             const billNumber = transaction.billNumber || transaction.id?.toString().substring(0, 8) || 'N/A';
@@ -211,9 +219,9 @@ export class OutstandingManager {
             div.innerHTML = `
                 <div class="history-header">
                     <span style="cursor: pointer; color: ${itemColor}; text-decoration: underline;" onclick="window.app.outstanding.showDetails('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')">#${Helpers.escapeHtml(billNumber)}</span>${transaction.customerName ? `  <strong>${Helpers.escapeHtml(transaction.customerName)}</strong>` : ''}
-                    <span style="color: ${headerColor}; font-weight: 700;">Due: ₹${Math.round(transaction.outstanding)}</span>
+                    <span style="color: ${headerColor}; font-weight: 700;">${tt('ui.outstanding.due_amount', { amount: Math.round(transaction.outstanding) })}</span>
                 </div>
-                <div class="history-date">${Helpers.formatDate(transaction.date)}${transaction.createdByName ? ` • By: <strong>${Helpers.escapeHtml(transaction.createdByName)}</strong>` : ''} ${ageBadge}</div>
+                <div class="history-date">${Helpers.formatDate(transaction.date)}${transaction.createdByName ? ` • ${tt('ui.outstanding.by')} <strong>${Helpers.escapeHtml(transaction.createdByName)}</strong>` : ''} ${ageBadge}</div>
                 <div style="background: ${bgColor}; border-left: 4px solid ${borderColor}; padding: 12px; margin: 12px 0; border-radius: 4px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                         <span>${totalLabel}:</span>
@@ -224,17 +232,17 @@ export class OutstandingManager {
                         <strong>₹${Math.round(transaction.paidAmount)}</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; border-top: 2px solid ${borderColor}; padding-top: 6px; margin-top: 6px;">
-                        <span style="font-weight: 600;">Outstanding:</span>
+                        <span style="font-weight: 600;">${tt('ui.outstanding.outstanding_label')}</span>
                         <strong style="color: ${headerColor}; font-size: 16px;">₹${Math.round(transaction.outstanding)}</strong>
                     </div>
                     <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <label style="flex-shrink: 0;">${isPurchase ? 'Pay' : 'Received'}:</label>
-                        <input type="number" inputmode="decimal" min="0" id="payment_${Helpers.escapeHtml(transaction.id)}" placeholder="Cash ₹" aria-label="Cash amount" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
-                        <input type="number" inputmode="decimal" min="0" id="paymentOnline_${Helpers.escapeHtml(transaction.id)}" placeholder="Online ₹" aria-label="Online amount" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
-                        <button data-record-payment onclick="window.app.outstanding.recordPayment('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">Record</button>
+                        <label style="flex-shrink: 0;">${tt(isPurchase ? 'ui.outstanding.pay_label' : 'ui.outstanding.received_label')}</label>
+                        <input type="number" inputmode="decimal" min="0" id="payment_${Helpers.escapeHtml(transaction.id)}" placeholder="${tt('ui.outstanding.cash_placeholder')}" aria-label="${tt('ui.outstanding.cash_amount')}" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
+                        <input type="number" inputmode="decimal" min="0" id="paymentOnline_${Helpers.escapeHtml(transaction.id)}" placeholder="${tt('ui.outstanding.online_placeholder')}" aria-label="${tt('ui.outstanding.online_amount')}" style="flex: 1; min-width: 80px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
+                        <button data-record-payment onclick="window.app.outstanding.recordPayment('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">${tt('ui.outstanding.record')}</button>
                     </div>
                     <div style="margin-top: 8px;">
-                        <button type="button" onclick="window.app.outstanding.markAsCleared('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background: white; color: #333; border: 1px solid #999; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">Mark as Cleared…</button>
+                        <button type="button" onclick="window.app.outstanding.markAsCleared('${Helpers.escapeJsAttr(transaction.id)}', '${Helpers.escapeJsAttr(transaction.transactionType)}')" style="background: white; color: #333; border: 1px solid #999; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">${tt('ui.outstanding.mark_as_cleared')}</button>
                     </div>
                 </div>
             `;
@@ -266,15 +274,16 @@ export class OutstandingManager {
         const isPayable = kind === 'payable';
         const esc = (v) => Helpers.escapeHtml(v);
         const attr = (v) => Helpers.escapeJsAttr(v);
-        const daysText = (d) => (d === null ? 'date unknown' : `${d} ${d === 1 ? 'day' : 'days'}`);
-        const billsText = (n) => `${n} ${n === 1 ? 'bill' : 'bills'}`;
-        const partyName = (p) => (p.name ? esc(p.name) : '<em>No name / बिना नाम</em>');
+        const tt = (key, params) => esc(t(key, params));
+        const daysText = (d) => t(...ageKey(d));
+        const billsText = (n) => t(n === 1 ? 'ui.outstanding.bills_one' : 'ui.outstanding.bills_many', { count: n });
+        const partyName = (p) => (p.name ? esc(p.name) : `<em>${tt('ui.outstanding.no_name')}</em>`);
 
         const buckets = aging.buckets.map((b, i) => `
             <button type="button" class="aging-bucket aging-b${i}${this.agingBucket === b.key ? ' active' : ''}"
                 aria-pressed="${this.agingBucket === b.key}"
                 onclick="window.app.outstanding.setAgingBucket('${attr(b.key)}')">
-                <span class="aging-bucket-label">${esc(b.label)} days</span>
+                <span class="aging-bucket-label">${tt('ui.outstanding.bucket_days', { label: b.label })}</span>
                 <strong class="aging-bucket-amount">${esc(formatINR(b.total))}</strong>
                 <span class="aging-bucket-count">${esc(billsText(b.count))}</span>
             </button>`).join('');
@@ -282,11 +291,11 @@ export class OutstandingManager {
         const chase = isPayable ? [] : chaseFirst(aging.parties);
         const chaseHtml = isPayable ? '' : `
             <div class="aging-chase">
-                <div class="aging-subtitle">Who to chase first / पहले किससे वसूली करें</div>
+                <div class="aging-subtitle">${tt('ui.outstanding.who_to_chase')}</div>
                 ${chase.length ? `<ol>${chase.map(p => `
                     <li class="aging-b${p.bucket}"><strong>${partyName(p)}</strong> — ${esc(formatINR(p.total))}
-                        <span class="aging-age aging-b${p.bucket}">oldest ${esc(daysText(p.oldestDays))}</span></li>`).join('')}</ol>`
-                    : '<div class="aging-empty">No one owes for more than 30 days 👍</div>'}
+                        <span class="aging-age aging-b${p.bucket}">${tt('ui.outstanding.oldest', { age: daysText(p.oldestDays) })}</span></li>`).join('')}</ol>`
+                    : `<div class="aging-empty">${tt('ui.outstanding.no_one_owes')}</div>`}
             </div>`;
 
         const parties = sortParties(aging.parties, this.agingSort)
@@ -294,13 +303,13 @@ export class OutstandingManager {
         const rows = parties.map(p => `
             <div class="aging-party aging-b${p.bucket}">
                 <div class="aging-party-main">
-                    <div class="aging-party-name">${partyName(p)}${p.longOverdue ? ' <span class="aging-badge">Long overdue / बहुत पुराना</span>' : ''}</div>
-                    <div class="aging-party-meta">${esc(billsText(p.bills.length))} · oldest <span class="aging-age aging-b${p.bucket}">${esc(daysText(p.oldestDays))}</span></div>
+                    <div class="aging-party-name">${partyName(p)}${p.longOverdue ? ` <span class="aging-badge">${tt('ui.outstanding.long_overdue')}</span>` : ''}</div>
+                    <div class="aging-party-meta">${esc(billsText(p.bills.length))} · ${tt('ui.outstanding.oldest', { age: daysText(p.oldestDays) })}</div>
                 </div>
                 <strong class="aging-party-total">${esc(formatINR(p.total))}</strong>
                 <div class="aging-party-actions">
-                    ${isPayable ? '' : `<button type="button" class="aging-btn aging-remind" onclick="window.app.outstanding.sendReminder('${attr(p.key)}')">💬 Remind</button>`}
-                    <button type="button" class="aging-btn" onclick="window.app.outstanding.printStatement('${attr(p.key)}')">🧾 Statement</button>
+                    ${isPayable ? '' : `<button type="button" class="aging-btn aging-remind" onclick="window.app.outstanding.sendReminder('${attr(p.key)}')">${tt('ui.outstanding.remind')}</button>`}
+                    <button type="button" class="aging-btn" onclick="window.app.outstanding.printStatement('${attr(p.key)}')">${tt('ui.outstanding.statement')}</button>
                 </div>
             </div>`).join('');
 
@@ -309,18 +318,18 @@ export class OutstandingManager {
         el.innerHTML = `
             <div class="aging-panel">
                 <div class="aging-head">
-                    <span class="aging-title">${isPayable ? 'Payables by age / देनदारी की उम्र' : 'Receivables by age / बकाया की उम्र'}</span>
+                    <span class="aging-title">${tt(isPayable ? 'ui.outstanding.payables_by_age' : 'ui.outstanding.receivables_by_age')}</span>
                     <strong class="aging-total">${esc(formatINR(aging.total))}</strong>
                 </div>
                 <div class="aging-buckets">${buckets}</div>
-                ${this.agingBucket ? '<div class="aging-filter-note">Showing one age group — tap it again to show all.</div>' : ''}
+                ${this.agingBucket ? `<div class="aging-filter-note">${tt('ui.outstanding.one_age_group')}</div>` : ''}
                 ${chaseHtml}
                 <details class="aging-parties"${this.partiesOpen ? ' open' : ''} ontoggle="window.app?.outstanding?.setPartiesOpen(this.open)">
-                    <summary>By party / पार्टी अनुसार (${parties.length})</summary>
-                    <div class="aging-sort">Sort: ${sortBtn('amount', 'Amount / रकम')} ${sortBtn('age', 'Oldest / सबसे पुराना')}</div>
+                    <summary>${tt('ui.outstanding.by_party', { count: parties.length })}</summary>
+                    <div class="aging-sort">${tt('ui.outstanding.sort')} ${sortBtn('amount', tt('ui.outstanding.sort_amount'))} ${sortBtn('age', tt('ui.outstanding.sort_oldest'))}</div>
                     <div id="dueAgingParties">${rows}</div>
                 </details>
-                <div class="aging-subtitle aging-bills-title">Bills / बिल</div>
+                <div class="aging-subtitle aging-bills-title">${tt('ui.outstanding.bills_title')}</div>
             </div>`;
     }
 
@@ -359,8 +368,8 @@ export class OutstandingManager {
         if (!el || !this.partyFilter) return;
         el.insertAdjacentHTML('afterbegin', `
             <div class="party-filter-note">
-                <span>Showing only / केवल: <strong>${Helpers.escapeHtml(this.partyFilter.name)}</strong></span>
-                <button type="button" class="aging-btn" onclick="window.app.outstanding.clearPartyFilter()">Show all / सभी दिखाएँ</button>
+                <span>${Helpers.escapeHtml(t('ui.outstanding.showing_only'))} <strong>${Helpers.escapeHtml(this.partyFilter.name)}</strong></span>
+                <button type="button" class="aging-btn" onclick="window.app.outstanding.clearPartyFilter()">${Helpers.escapeHtml(t('ui.outstanding.show_all'))}</button>
             </div>`);
     }
 
@@ -399,7 +408,7 @@ export class OutstandingManager {
     static async sendReminder(partyKey) {
         const { party } = this.findParty(partyKey);
         if (!party) {
-            UIManager.showToast('Nothing is due from this party');
+            UIManager.showToast(t('msg.outstanding.nothing_due_from_party'));
             return false;
         }
         const text = buildReminderText(party, this.shopDetails());
@@ -418,7 +427,7 @@ export class OutstandingManager {
             return true;
         } catch (error) {
             console.error('Could not open WhatsApp:', error);
-            UIManager.showToast('Could not open WhatsApp / व्हाट्सऐप नहीं खुला');
+            UIManager.showToast(t('msg.common.could_not_open_whatsapp'));
             return false;
         }
     }
@@ -427,7 +436,7 @@ export class OutstandingManager {
     static async printStatement(partyKey) {
         const { party, kind } = this.findParty(partyKey);
         if (!party) {
-            UIManager.showToast('Nothing is due for this party');
+            UIManager.showToast(t('msg.outstanding.nothing_due_party'));
             return false;
         }
         const statement = buildStatement(party, { kind, shopName: this.shopDetails().shopName });
@@ -504,7 +513,7 @@ export class OutstandingManager {
         try {
             const transaction = this.findBill(billType, billId);
             if (!transaction) {
-                UIManager.showToast('Error: Transaction not found');
+                UIManager.showToast(t('msg.outstanding.error_transaction_not_found'));
                 return false;
             }
 
@@ -512,13 +521,13 @@ export class OutstandingManager {
             const split = checkPaymentSplit(cash, online, outstanding, PAYMENT_TOLERANCE);
             if (!split.ok) {
                 UIManager.showToast(split.error === 'exceeds-due'
-                    ? 'Payment amount exceeds outstanding amount'
-                    : 'Please enter a valid payment amount');
+                    ? t('msg.common.payment_amount_exceeds_outstanding_amount')
+                    : t('msg.common.enter_valid_payment_amount'));
                 return false;
             }
 
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-                UIManager.showToast('Internet required to record payment');
+                UIManager.showToast(t('msg.common.internet_required_record_payment'));
                 return false;
             }
 
@@ -547,18 +556,18 @@ export class OutstandingManager {
                 customer: transaction.customerName || transaction.customer || transaction.supplier || 'N/A'
             });
 
-            UIManager.showToast(clear ? `✓ Due cleared: ₹${split.total} ${split.online > 0 ? 'online' : 'in cash'}` : `✓ Payment of ₹${split.total} recorded`);
+            UIManager.showToast(clear ? t(split.online > 0 ? 'msg.outstanding.due_cleared_online' : 'msg.outstanding.due_cleared_cash', { total: split.total }) : t('msg.outstanding.payment_recorded', { total: split.total }));
             UIManager.hapticFeedback('light');
             return true;
         } catch (error) {
             console.error('Error recording payment:', error);
             if (error && error.code === 'exceeds-due') {
-                UIManager.showToast(`Payment amount exceeds outstanding amount (₹${error.due})`);
+                UIManager.showToast(t('msg.common.payment_amount_exceeds_outstanding_amount_2', { due: error.due }));
                 this.renderDue();
             } else if (OutstandingManager.isOfflineError(error)) {
-                UIManager.showToast('Internet required to record payment');
+                UIManager.showToast(t('msg.common.internet_required_record_payment'));
             } else {
-                UIManager.showToast('Error: ' + error.message);
+                UIManager.showToast(t('msg.common.error', { message: error.message }));
             }
             return false;
         }
@@ -751,39 +760,40 @@ export class OutstandingManager {
     static async markAsCleared(transactionId, transactionType) {
         const transaction = this.findBill(transactionType, transactionId);
         if (!transaction) {
-            UIManager.showToast('Error: Transaction not found');
+            UIManager.showToast(t('msg.outstanding.error_transaction_not_found'));
             return false;
         }
         const due = readPayment(transaction).due;
         if (due <= PAYMENT_TOLERANCE) {
-            UIManager.showToast('Nothing is due on this bill');
+            UIManager.showToast(t('msg.outstanding.nothing_due_on_bill'));
             return false;
         }
 
         const isPurchase = transactionType === 'purchase';
+        const esc = (v) => Helpers.escapeHtml(v);
         const party = transaction.customerName ? ` — ${Helpers.escapeHtml(transaction.customerName)}` : '';
         const html = `
             <div style="text-align: left;">
-                <div style="margin-bottom: 10px;">Bill #${Helpers.escapeHtml(transaction.billNumber || String(transaction.id).slice(0, 8))}${party}<br>
-                    Remaining due: <strong>₹${Helpers.escapeHtml(due)}</strong></div>
-                <div style="margin-bottom: 6px; font-weight: 600;">How was it settled?</div>
-                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="cash"> ${isPurchase ? 'Paid' : 'Received'} in cash (₹${Helpers.escapeHtml(due)})</label>
-                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="online"> ${isPurchase ? 'Paid' : 'Received'} online (₹${Helpers.escapeHtml(due)})</label>
-                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="writeOff"> Write off — ${isPurchase ? 'will not be paid' : 'will not be received'}</label>
-                <div style="margin-top: 8px;">Reason / note (required for a write-off):</div>
+                <div style="margin-bottom: 10px;">${esc(t('ui.outstanding.bill_no', { billNumber: transaction.billNumber || String(transaction.id).slice(0, 8) }))}${party}<br>
+                    ${esc(t('ui.outstanding.remaining_due'))} <strong>₹${Helpers.escapeHtml(due)}</strong></div>
+                <div style="margin-bottom: 6px; font-weight: 600;">${esc(t('ui.outstanding.how_settled'))}</div>
+                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="cash"> ${esc(t(isPurchase ? 'ui.outstanding.paid_in_cash' : 'ui.outstanding.received_in_cash', { amount: due }))}</label>
+                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="online"> ${esc(t(isPurchase ? 'ui.outstanding.paid_online' : 'ui.outstanding.received_online', { amount: due }))}</label>
+                <label style="display: block; margin: 4px 0;"><input type="radio" name="clearMethod" value="writeOff"> ${esc(t(isPurchase ? 'ui.outstanding.write_off_not_paid' : 'ui.outstanding.write_off_not_received'))}</label>
+                <div style="margin-top: 8px;">${esc(t('ui.outstanding.write_off_reason'))}</div>
                 <textarea id="clearReason" rows="2" maxlength="300" style="width: 100%; box-sizing: border-box; padding: 6px;"></textarea>
             </div>`;
-        const confirmed = await UIManager.showModalWithHtml(html, 'Mark as cleared', true);
+        const confirmed = await UIManager.showModalWithHtml(html, t('msg.outstanding.mark_as_cleared'), true);
         if (!confirmed) return false;
 
         const method = document.querySelector('input[name="clearMethod"]:checked')?.value || '';
         const reason = (document.getElementById('clearReason')?.value || '').trim();
         if (!method) {
-            UIManager.showToast('Choose how the due was settled');
+            UIManager.showToast(t('msg.outstanding.choose_how_due_was_settled'));
             return false;
         }
         if (method === 'writeOff' && reason.length < 3) {
-            UIManager.showToast('Please write a reason for the write-off');
+            UIManager.showToast(t('msg.outstanding.write_reason_write_off'));
             return false;
         }
 
@@ -799,7 +809,7 @@ export class OutstandingManager {
         }
 
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-            UIManager.showToast('Internet required to clear a due');
+            UIManager.showToast(t('msg.outstanding.internet_required_clear_due'));
             return false;
         }
         try {
@@ -815,11 +825,11 @@ export class OutstandingManager {
                 customer: transaction.customerName || 'N/A'
             });
             UIManager.hapticFeedback('light');
-            UIManager.showToast('✓ Due written off');
+            UIManager.showToast(t('msg.outstanding.due_written_off'));
             return true;
         } catch (error) {
             console.error('Error writing off due:', error);
-            UIManager.showToast(OutstandingManager.isOfflineError(error) ? 'Internet required to clear a due' : 'Error: ' + error.message);
+            UIManager.showToast(OutstandingManager.isOfflineError(error) ? t('msg.outstanding.internet_required_clear_due') : t('msg.common.error', { message: error.message }));
             return false;
         }
     }
@@ -885,14 +895,14 @@ export class OutstandingManager {
             if (purchaseIndex >= 0) {
                 await window.app.history.viewBill(purchaseIndex, 'purchase');
             } else {
-                UIManager.showModal('Purchase not found');
+                UIManager.showModal(t('msg.outstanding.purchase_not_found'));
             }
         } else if (transactionType === 'retail') {
             const saleIndex = AppState.retailSalesHistory.findIndex(s => String(s.id) === String(transactionId));
             if (saleIndex >= 0) {
                 await window.app.history.viewBill(saleIndex, 'retail');
             } else {
-                UIManager.showModal('Retail sale not found');
+                UIManager.showModal(t('msg.outstanding.retail_sale_not_found'));
             }
         } else {
             // wholesale
@@ -900,7 +910,7 @@ export class OutstandingManager {
             if (saleIndex >= 0) {
                 await window.app.wholesaleSales.reprintSale(saleIndex);
             } else {
-                UIManager.showModal('Sale not found');
+                UIManager.showModal(t('msg.common.sale_not_found'));
             }
         }
     }
