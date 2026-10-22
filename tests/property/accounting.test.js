@@ -348,3 +348,26 @@ test.skip('AC7 same month: purchases and profit agree on Reports, Analytics and 
         reports.purchases === Math.round(want.R1_purchases) && analytics.purchases === reports.purchases && finance.purchases === reports.purchases
         && reports.profit === Math.round(want.R3_profit) && analytics.profit === reports.profit && finance.profit === reports.profit)), FC);
 });
+
+/** utils/finance-calc.js arrives with #215 (new Finance numbers); until then this check is skipped. */
+const financeCalc = (() => {
+    try {
+        return require('../../www/js/utils/finance-calc.js');
+    } catch {
+        return null;
+    }
+})();
+
+// BUG: see #215 — Finance has no cost of goods sold / profit on goods sold yet; turns on when finance-calc.js lands
+(financeCalc ? test : test.skip)('AC7 same month: Finance (#215) sales, cost of goods sold and profit == oracle', () => {
+    fc.assert(fc.property(shopArb({ years: 1 }), ({ shop: s }) => spread(monthsOf(s).slice(0, -1), 4).every(([y, m]) => {
+        const from = new Date(y, m, 1).getTime();
+        const to = new Date(y, m + 1, 1).getTime();
+        const got = financeCalc.computeFinanceSummary({
+            sources: sources(s), items: s.items, base: { state: {}, from: -Infinity }, expenses: s.expenses, withdrawals: s.withdrawals, from, to
+        });
+        const want = O.finance(s, [from, to]);
+        return close(got.sales.total, want.F1_sales) && close(got.cogs, want.F2_cogs, 0.05) && close(got.profit, want.F4_profit, 0.05)
+            && close(got.cash.net, want.F7_cashFlow, 0.05);
+    })), FC);
+});
