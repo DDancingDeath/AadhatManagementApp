@@ -50,7 +50,7 @@ const AdminManager = {
      */
     async init() {
         if (AppState.userRole !== 'owner') {
-            UIManager.showToast(t('msg.common.access_denied'), 5000);
+            UIManager.showToast(t('msg.common.access_denied'), 'error');
             return;
         }
         this.renderTabs();
@@ -270,7 +270,7 @@ const AdminManager = {
             this.renderActiveUsers(activeUsers);
         } catch (error) {
             console.error('Error loading users:', error);
-            UIManager.showToast(t('msg.common.failed_load_users'), 5000);
+            UIManager.showToast(t('msg.common.failed_load_users'), 'error');
         }
     },
 
@@ -389,7 +389,7 @@ const AdminManager = {
             await this.loadUsers();
         } catch (error) {
             console.error('Error approving user:', error);
-            UIManager.showToast(t('msg.common.failed_approve_user'), 5000);
+            UIManager.showToast(t('msg.common.failed_approve_user'), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -415,7 +415,7 @@ const AdminManager = {
             await this.loadUsers();
         } catch (error) {
             console.error('Error rejecting user:', error);
-            UIManager.showToast(t('msg.common.failed_reject_user'), 5000);
+            UIManager.showToast(t('msg.common.failed_reject_user'), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -448,7 +448,7 @@ const AdminManager = {
             await this.loadUsers();
         } catch (error) {
             console.error('Error changing role:', error);
-            UIManager.showToast(t('msg.common.failed_change_role'), 5000);
+            UIManager.showToast(t('msg.common.failed_change_role'), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -596,7 +596,7 @@ const AdminManager = {
             this.displayStorageStats(this.storageStats);
         } catch (error) {
             console.error('Error loading storage stats:', error);
-            UIManager.showToast(t('msg.admin.failed_load_storage_stats'), 5000);
+            UIManager.showToast(t('msg.admin.failed_load_storage_stats'), 'error');
         } finally {
             UIManager.hideLoading();
         }

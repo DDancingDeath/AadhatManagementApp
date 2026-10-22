@@ -90,13 +90,15 @@ rules:
     learned_at: 2026-05-21
 
   - id: showToast-wrong-arg-type
-    pattern: "showToast\\([^,]+,\\s*['\"](error|success|warning|info)['\"]"
+    pattern: "showToast\\([^,]+,\\s*['\"](?!(?:error|success|warning|info|\\d+)['\"])[^'\"]*['\"]"
     applies_to: ["www/js/**/*.js"]
     message: |
-      UIManager.showToast(message, duration): the 2nd argument is a duration in ms,
-      not a type string. Passing 'error' gives a NaN timeout.
+      UIManager.showToast(message, durationOrType[, duration]): the 2nd argument is a
+      duration in ms or one of 'error' | 'success' | 'warning' | 'info' (#51, #176).
+      Any other string ('danger', '5s', '3000ms') is ignored: no colour, default 2 s.
+      Relaxed 2026-10-22 after #176: type strings are valid — keep them for colour.
     severity: block
-    learned_at: 2026-05-21
+    learned_at: 2026-10-22
 
   - id: framework-import
     pattern: "from\\s+['\"](react|vue|svelte|preact|@angular)"

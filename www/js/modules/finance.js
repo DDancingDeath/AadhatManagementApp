@@ -787,7 +787,7 @@ export class FinanceManager {
         const icon = activeIcon ? activeIcon.dataset.icon : '💳';
         
         if (!name) {
-            UIManager.showToast(t('msg.finance.enter_account_name'), 5000);
+            UIManager.showToast(t('msg.finance.enter_account_name'), 'error');
             return;
         }
         
@@ -795,7 +795,7 @@ export class FinanceManager {
         this.saveCustomAccounts();
         this.closeAccountModal();
         this.renderAssets();
-        UIManager.showToast(t('msg.finance.account_added_successfully'), 2000);
+        UIManager.showToast(t('msg.finance.account_added_successfully'), 'success');
     }
 
     /**
@@ -804,7 +804,7 @@ export class FinanceManager {
     static quickAddAccount(name, icon) {
         // Check if already exists
         if (this.customAccounts.some(a => a.name === name)) {
-            UIManager.showToast(t('msg.finance.account_already_exists'), 5000);
+            UIManager.showToast(t('msg.finance.account_already_exists'), 'error');
             return;
         }
         
@@ -843,7 +843,7 @@ export class FinanceManager {
         const balance = parseFloat(document.getElementById('editAccountBalance').value) || 0;
         
         if (!name) {
-            UIManager.showToast(t('msg.finance.enter_account_name'), 5000);
+            UIManager.showToast(t('msg.finance.enter_account_name'), 'error');
             return;
         }
         
@@ -853,7 +853,7 @@ export class FinanceManager {
             this.saveCustomAccounts();
             this.closeEditAccountModal();
             this.renderAssets();
-            UIManager.showToast(t('msg.finance.account_updated'), 2000);
+            UIManager.showToast(t('msg.finance.account_updated'), 'success');
         }
     }
 
@@ -868,7 +868,7 @@ export class FinanceManager {
             this.saveCustomAccounts();
             this.closeEditAccountModal();
             this.renderAssets();
-            UIManager.showToast(t('msg.finance.account_deleted'), 2000);
+            UIManager.showToast(t('msg.finance.account_deleted'), 'success');
         }
     }
 
@@ -974,17 +974,17 @@ export class FinanceManager {
         }
         
         if (!amount || amount <= 0) {
-            UIManager.showToast(t('msg.common.enter_valid_amount'), 5000);
+            UIManager.showToast(t('msg.common.enter_valid_amount'), 'error');
             return;
         }
         
         if (!person) {
-            UIManager.showToast(t('msg.finance.enter_who_withdrew_money'), 5000);
+            UIManager.showToast(t('msg.finance.enter_who_withdrew_money'), 'error');
             return;
         }
         
         if (!date) {
-            UIManager.showToast(t('msg.finance.select_date'), 5000);
+            UIManager.showToast(t('msg.finance.select_date'), 'error');
             return;
         }
         
@@ -1007,11 +1007,11 @@ export class FinanceManager {
             document.getElementById('withdrawalOtherPurposeRow').style.display = 'none';
             this.setDefaultDate();
             
-            UIManager.showToast(t('msg.finance.withdrawal_recorded_successfully'), 2000);
+            UIManager.showToast(t('msg.finance.withdrawal_recorded_successfully'), 'success');
             this.renderWithdrawals();
         } catch (error) {
             console.error('Error recording withdrawal:', error);
-            UIManager.showToast(t('msg.finance.error_recording_withdrawal'), 5000);
+            UIManager.showToast(t('msg.finance.error_recording_withdrawal'), 'error');
         }
     }
 

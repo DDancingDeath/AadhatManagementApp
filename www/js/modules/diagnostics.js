@@ -54,7 +54,7 @@ const DiagnosticsManager = {
      */
     async init() {
         if (AppState.userRole !== 'owner') {
-            UIManager.showToast(t('msg.common.access_denied'), 5000);
+            UIManager.showToast(t('msg.common.access_denied'), 'error');
             return;
         }
         this.renderTabs();
@@ -159,7 +159,7 @@ const DiagnosticsManager = {
             this.data = await TelemetryService.getTelemetryData();
             this.renderErrors();
         } catch (error) {
-            UIManager.showToast(t('msg.diagnostics.failed_load_diagnostics_data'), 5000);
+            UIManager.showToast(t('msg.diagnostics.failed_load_diagnostics_data'), 'error');
         } finally {
             UIManager.hideLoading();
         }
@@ -486,7 +486,7 @@ const DiagnosticsManager = {
             this.renderErrors();
             UIManager.showToast(t('msg.diagnostics.error_deleted'));
         } catch (error) {
-            UIManager.showToast(t('msg.diagnostics.failed_delete_error'), 5000);
+            UIManager.showToast(t('msg.diagnostics.failed_delete_error'), 'error');
         }
     },
 
@@ -508,7 +508,7 @@ const DiagnosticsManager = {
             this.renderErrors();
             UIManager.showToast(t('msg.diagnostics.all_diagnostics_cleared'));
         } catch (error) {
-            UIManager.showToast(t('msg.diagnostics.failed_clear_diagnostics'), 5000);
+            UIManager.showToast(t('msg.diagnostics.failed_clear_diagnostics'), 'error');
         } finally {
             UIManager.hideLoading();
         }

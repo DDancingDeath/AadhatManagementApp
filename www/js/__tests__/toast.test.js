@@ -1,4 +1,5 @@
 import { UIManager, resolveToastOptions } from '../ui/ui-manager.js';
+import { t, setLang, resetLangForTests } from '../i18n/index.js';
 
 describe('showToast (#51)', () => {
     beforeEach(() => {
@@ -26,6 +27,19 @@ describe('showToast (#51)', () => {
         expect(toast().classList.contains('show')).toBe(true);
         jest.advanceTimersByTime(2);
         expect(toast().classList.contains('show')).toBe(false);
+    });
+
+    test("a translated message keeps its type styling: showToast(t(key), 'error') (#143, #176)", () => {
+        UIManager.showToast(t('msg.common.access_denied'), 'error');
+        expect(toast().textContent).toBe('Access denied');
+        expect(toast().classList.contains('error')).toBe(true);
+        setLang('hi');
+        UIManager.showToast(t('msg.finance.account_updated'), 'success');
+        expect(toast().textContent).toBe(t('msg.finance.account_updated', null, 'hi'));
+        expect(toast().classList.contains('success')).toBe(true);
+        expect(toast().classList.contains('error')).toBe(false);
+        localStorage.clear();
+        resetLangForTests();
     });
 
     test('resolveToastOptions handles every signature', () => {

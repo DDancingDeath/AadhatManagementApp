@@ -1049,7 +1049,7 @@ const PrinterService = {
                 // Convert canvas to blob for better mobile support
                 paddedCanvas.toBlob(async (blob) => {
                     if (!blob) {
-                        UIManager.showToast(t('msg.printer.failed_generate_image'), 5000);
+                        UIManager.showToast(t('msg.printer.failed_generate_image'), 'error');
                         return;
                     }
                     
@@ -1203,7 +1203,7 @@ const PrinterService = {
                 // Convert canvas to blob for better mobile support
                 paddedCanvas.toBlob(async (blob) => {
                     if (!blob) {
-                        UIManager.showToast(t('msg.printer.failed_generate_image'), 5000);
+                        UIManager.showToast(t('msg.printer.failed_generate_image'), 'error');
                         return;
                     }
                     
