@@ -72,6 +72,8 @@
         { "n": 61, "note": "Tests for save/split/profit before any refactor" },
         { "n": 51, "note": "Cheap: errors stay visible" },
         { "n": 49, "note": "Date parsing + || money fallbacks; do with #73" },
+        { "n": 219, "note": "Today misses untagged expenses (found by #216 oracle tests)" },
+        { "n": 220, "note": "Analytics outstanding vs outstandingDue() (found by #216 oracle tests)" },
         { "n": 73 },
         { "n": 95 },
         { "n": 83, "note": "Default: block when avg cost unknown (#106)" },

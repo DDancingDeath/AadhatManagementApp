@@ -206,10 +206,11 @@ describe('role-based restrictions', () => {
         expect(document.getElementById('exp').disabled).toBe(true);
     });
 
-    test('manager: finance/reports visible, admin/diagnostics hidden, export allowed', () => {
+    // Diagnostics is visible to managers for Number checks only (#216); errors/audit stay owner-only.
+    test('manager: finance/reports/diagnostics visible, admin hidden, export allowed', () => {
         AppState.userRole = 'manager';
         AuthManager.applyRoleBasedRestrictions();
-        expect([...document.querySelectorAll('.nav-menu a')].map(a => a.style.display)).toEqual(['block', 'none', 'none', 'block']);
+        expect([...document.querySelectorAll('.nav-menu a')].map(a => a.style.display)).toEqual(['block', 'none', 'block', 'block']);
         expect(document.getElementById('del').disabled).toBe(true);
         expect(document.getElementById('exp').disabled).toBe(false);
     });

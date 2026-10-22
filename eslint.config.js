@@ -29,6 +29,8 @@ module.exports = [
             'rules-tests/node_modules/**',
             'test-results/**',
             'playwright-report/**',
+            '.stryker-tmp/**',
+            'reports/**',
             'www/lib/**',
             '**/*.min.js'
         ]

@@ -171,3 +171,13 @@ rules:
       English-only UI text in module logic; consider a Hindi sibling ("English · हिंदी").
     severity: info
     learned_at: 2026-05-21
+  - id: displayed-number-spec
+    pattern: "\\b(updateElement|safeUpdateText)\\(\\s*['\"`]|\\b(revenue|profit|grossProfit|netProfit|investment|totalSales|totalPurchases|dueToReceive|dueToPay|stockValue|cashIn|cashOut|totalCashIn|totalCashOut|expected|cogs)\\s*[+\\-]?=[^=]"
+    applies_to: ["www/js/modules/day.js", "www/js/modules/finance.js", "www/js/modules/reports.js", "www/js/modules/analytics.js", "www/js/modules/outstanding.js", "www/js/modules/stock.js", "www/js/modules/cash-management.js", "www/js/utils/money.js", "www/js/utils/stock-replay.js", "www/js/utils/due-payments.js", "www/js/utils/cash-session.js", "www/js/utils/finance-*.js"]
+    message: |
+      This line changes how a number on screen is calculated or shown.
+      Update its definition in docs/calculations.md (spec ID) and its oracle test in
+      tests/oracle/ in the same PR, so the number stays checked against an independent
+      definition (#216). If it is a known bug being fixed, remove its BUGS entry there.
+    severity: warn
+    learned_at: 2026-10-23

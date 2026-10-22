@@ -44,7 +44,7 @@ import { t, getLang, setLang, toggleLang, applyTranslations, LANG_CHANGE_EVENT }
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261023c-test-in-production';
+const BUILD_ID = '20261023d-business-tests';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -1180,9 +1180,10 @@ window.app = {
         showChangeRoleDialog: (userId, userName, currentRole) => UsersManager.showChangeRoleDialog(userId, userName, currentRole)
     },
     
-    // Diagnostics (owner only)
+    // Diagnostics (owner; managers see Number checks only)
     diagnostics: {
         init: () => DiagnosticsManager.init(),
+        runNumberChecks: () => DiagnosticsManager.runNumberChecks(),
         showTab: (tab) => DiagnosticsManager.showTab(tab),
         loadData: () => DiagnosticsManager.loadData(),
         loadAuditLogs: () => DiagnosticsManager.loadAuditLogs(),

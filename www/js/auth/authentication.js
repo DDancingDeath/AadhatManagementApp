@@ -449,10 +449,9 @@ const AuthManager = {
                     item.style.display = isOwnerOrManager ? 'block' : 'none';
                 }
                 
-                if (tabId === 'diagnostics' && !isOwner) {
-                    item.style.display = 'none';
-                } else if (tabId === 'diagnostics' && isOwner) {
-                    item.style.display = 'block';
+                // Diagnostics: owner; managers see only Number checks (#216)
+                if (tabId === 'diagnostics') {
+                    item.style.display = isOwnerOrManager ? 'block' : 'none';
                 }
                 
                 if (tabId === 'admin' && !isOwner) {

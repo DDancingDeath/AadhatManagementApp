@@ -12,9 +12,16 @@ module.exports = {
     // Test file patterns
     testMatch: [
         '**/www/js/__tests__/**/*.test.js',
-        '**/www/js/**/*.spec.js'
+        '**/www/js/**/*.spec.js',
+        // Business-correctness tests (#216): spec oracle + accounting property checks
+        '**/tests/oracle/**/*.test.js',
+        '**/tests/property/**/*.test.js'
     ],
     
+    // Stryker's sandbox copies of the repo (#216)
+    testPathIgnorePatterns: ['/node_modules/', '<rootDir>/\\.stryker-tmp/'],
+    modulePathIgnorePatterns: ['<rootDir>/\\.stryker-tmp/'],
+
     // Module file extensions
     moduleFileExtensions: ['js', 'json'],
     

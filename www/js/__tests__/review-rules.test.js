@@ -54,6 +54,7 @@ describe('review-rules.yml', () => {
         ['bill-numbering-count-plus-one', 'www/js/modules/billing.js', 'const billNo = snapshot.size + 1;', 'const next = items.length + 1;'],
         ['inline-onclick-without-window-app', 'www/templates/items.html', '<button onclick="saveItem()">', '<button onclick="window.app.items.save()">'],
         ['framework-import', 'www/js/modules/x.js', "import React from 'react';", "import { Helpers } from '../utils/helpers.js';"],
+        ['displayed-number-spec', 'www/js/modules/finance.js', 'const profit = revenue - investment;', "const label = t('ui.finance.x');"],
     ];
     test.each(cases)('%s flags the mistake and allows the fix', (id, file, bad, good) => {
         expect(byId[id]).toBeDefined();
