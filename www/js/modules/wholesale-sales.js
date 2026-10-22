@@ -13,6 +13,7 @@ import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../uti
 import { OutstandingManager } from './outstanding.js';
 import { normalizePartyName } from '../utils/aging.js';
 import { getLang, t } from '../i18n/index.js';
+import { lineItemIdentity } from '../utils/item-catalog.js';
 
 const L = (key, params) => Helpers.escapeHtml(t(key, params));
 import {
@@ -181,13 +182,13 @@ export class WholesaleSalesManager {
             UIManager.showToast(t('msg.wholesale.approx_stock_warning', { itemName, available: short.available.toFixed(1), note: getLang() === 'hi' ? approx.hi : approx.en }), 6000);
         }
         
-        const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
         const total = Math.round(quantity * rate);
         ensurePendingBill();
         
         wholesaleSaleItems.push({
             itemId: item.id,
-            name: displayName,
+            // Catalogue name on the bill; Hindi is only for display (#143, Reports group by item).
+            name: item.name,
             rate,
             qty: quantity,
             total,
@@ -223,7 +224,7 @@ export class WholesaleSalesManager {
         tbody.innerHTML = wholesaleSaleItems.map((item, index) => {
             return `
                 <tr>
-                    <td>${Helpers.escapeHtml(item.name)}</td>
+                    <td>${Helpers.escapeHtml(lineItemIdentity(item, AppState.items, AppState.settings.showHindi).label)}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
                     <td>₹${Math.round(item.total)}</td>

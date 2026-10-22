@@ -1,5 +1,5 @@
 import { readLineItem, perUnitRate } from '../utils/money.js';
-import { aggregateLineItems, chartScaleMax, formatPerUnitRate } from '../modules/reports.js';
+import { aggregateLineItems, itemFilterOptions, chartScaleMax, formatPerUnitRate } from '../modules/reports.js';
 
 describe('Reports line items and guards (#73)', () => {
     test('legacy item/quantity/amount fields are counted in item breakdowns', () => {
@@ -12,6 +12,18 @@ describe('Reports line items and guards (#73)', () => {
             Wheat: { count: 2, qty: 15, value: 300 },
             Rice: { count: 1, qty: 4, value: 200 }
         });
+    });
+
+    test('one row per item: a Hindi-named legacy line and an English line with the same itemId (#143)', () => {
+        const items = [{ id: 'item-rice', name: 'Rice', hindiName: 'चावल' }];
+        const bills = [
+            { items: [{ itemId: 'item-rice', name: 'चावल', qty: 10, rate: 30, total: 300 }] },
+            { items: [{ itemId: 'item-rice', name: 'Rice', qty: 5, rate: 30, total: 150 }] },
+            { items: [{ name: 'चावल', qty: 1, rate: 30, total: 30 }] } // older line without itemId
+        ];
+        expect(aggregateLineItems(bills, items, false)).toEqual({ Rice: { count: 3, qty: 16, value: 480 } });
+        expect(aggregateLineItems(bills, items, true)).toEqual({ 'चावल': { count: 3, qty: 16, value: 480 } });
+        expect(itemFilterOptions(bills, items, false)).toEqual([{ value: 'id:item-rice', label: 'Rice' }]);
     });
 
     test('readLineItem prefers current fields and keeps an explicit 0', () => {

@@ -15,6 +15,10 @@ import {
 } from '../utils/money.js';
 import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
 import { t } from '../i18n/index.js';
+import { lineItemIdentity } from '../utils/item-catalog.js';
+
+/** Name to show for a catalogue item or bill line in the chosen item-name language. */
+const lineLabel = (line) => lineItemIdentity(line && 'itemId' in line ? line : { itemId: line?.id, name: line?.name }, AppState.items, AppState.settings.showHindi).label;
 
 /** Buttons disabled while a purchase save/print is in flight */
 const PURCHASE_BUTTONS = '#saveBillBtn, #printBillBtn';
@@ -193,11 +197,12 @@ const PurchaseManager = {
         const qty = weights.reduce((sum, w) => sum + w, 0);
         const total = Math.round(qty * rate);
         
-        const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
+        // Bill lines keep the catalogue name; Hindi is only for display (#143, Reports group by item).
+        const displayName = lineLabel(item);
         
         billItems.push({
             itemId: item.id,
-            name: displayName,
+            name: item.name,
             rate,
             qty,
             total,
@@ -258,7 +263,7 @@ const PurchaseManager = {
                     return `
                         <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #007bff;">
                             <div style="font-weight: 600; margin-bottom: 6px; color: #333;">
-                                ${Helpers.escapeHtml(item.name)} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
+                                ${Helpers.escapeHtml(lineLabel(item))} (${item.weights.length} packets, ${item.qty.toFixed(1)} kg)
                             </div>
                             <div style="font-family: monospace; font-size: 14px; line-height: 1.4; color: #555;">
                                 ${weightLines.join('<br>')}
@@ -275,7 +280,7 @@ const PurchaseManager = {
         tbody.innerHTML = billItems.map((item, index) => {
             return `
                 <tr style="cursor: pointer;" onclick="window.app.purchase.editBillItem(${index})">
-                    <td>${Helpers.escapeHtml(item.name)}</td>
+                    <td>${Helpers.escapeHtml(lineLabel(item))}</td>
                     <td>₹${item.rate.toFixed(2)}</td>
                     <td>${item.qty.toFixed(1)} kg</td>
                     <td>₹${Math.round(item.total)}</td>

@@ -90,6 +90,13 @@ describe('new purchase save', () => {
         await addLine(1, 30, [35]);
     }
 
+    test('Hindi item names: the bill line keeps the catalogue name + itemId, Hindi only on screen (#143)', async () => {
+        AppState.settings.showHindi = true;
+        await addLine(0, 25.5, [40]);
+        expect(PurchaseManager.getBillItems()[0]).toMatchObject({ itemId: 'item-rice', name: 'Rice' });
+        expect(document.querySelector('#billTable tbody td').textContent).toBe('चावल');
+    });
+
     test('items × rate, auto labour and grand total are computed from the lines', async () => {
         await buildBill();
         expect(document.getElementById('billTotal').textContent).toBe('2580');
@@ -292,6 +299,13 @@ describe('new retail sale save', () => {
         RetailSaleManager.setSaleWeights(weights);
         await RetailSaleManager.addToSalesBill();
     }
+
+    test('Hindi item names: the sale line keeps the catalogue name + itemId (#143)', async () => {
+        AppState.settings.showHindi = true;
+        await addLine(1, 30, [10]);
+        expect(RetailSaleManager.getSaleItems()[0]).toMatchObject({ itemId: 'item-wheat', name: 'Wheat' });
+        expect(document.querySelector('#saleTable tbody td').textContent).toBe('गेहूं');
+    });
 
     test('saves item totals and a cash + due split; payment.due equals dueAmount', async () => {
         await addLine(0, 36, [12.5]);     // 450
