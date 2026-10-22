@@ -1,0 +1,86 @@
+<div id="anomalies" class="tab">
+    <div class="anomaly-page">
+        <h2 class="anomaly-page-title">🚨 Anomalies / गड़बड़ियाँ</h2>
+        <div id="anomalyDenied" class="anomaly-empty" style="display: none;">Only the owner or a manager can see this page. / यह पेज सिर्फ़ मालिक या मैनेजर देख सकते हैं।</div>
+        <div id="anomalyBody">
+            <div class="anomaly-filters">
+                <label>Dates / तारीख़
+                    <select id="anomalyFilterPreset" onchange="window.app.anomalies.applyFilters()">
+                        <option value="today">Today / आज</option>
+                        <option value="yesterday">Yesterday / कल</option>
+                        <option value="7d">Last 7 days / 7 दिन</option>
+                        <option value="30d">Last 30 days / 30 दिन</option>
+                        <option value="90d">Last 90 days / 90 दिन</option>
+                    </select>
+                </label>
+                <label>Type / प्रकार
+                    <select id="anomalyFilterType" onchange="window.app.anomalies.applyFilters()"></select>
+                </label>
+                <label>Severity / गंभीरता
+                    <select id="anomalyFilterSeverity" onchange="window.app.anomalies.applyFilters()">
+                        <option value="all">All / सभी</option>
+                        <option value="high">High / गंभीर</option>
+                        <option value="medium">Medium / मध्यम</option>
+                        <option value="low">Low / कम</option>
+                    </select>
+                </label>
+                <label>Status / स्थिति
+                    <select id="anomalyFilterStatus" onchange="window.app.anomalies.applyFilters()">
+                        <option value="open">Open / बाकी</option>
+                        <option value="ok">OK / ठीक है</option>
+                        <option value="fixed">Fixed / सुधारा</option>
+                        <option value="all">All / सभी</option>
+                    </select>
+                </label>
+                <label>User / सदस्य
+                    <select id="anomalyFilterUser" onchange="window.app.anomalies.applyFilters()">
+                        <option value="all">All users / सभी</option>
+                    </select>
+                </label>
+                <label>Item / आइटम
+                    <input type="search" id="anomalyFilterItem" placeholder="Item name / आइटम का नाम" oninput="window.app.anomalies.applyFilters()">
+                </label>
+            </div>
+
+            <div class="sub-tabs">
+                <button type="button" id="anomalyTabList" class="sub-tab active" onclick="window.app.anomalies.showView('list')">📋 List / सूची</button>
+                <button type="button" id="anomalyTabPatterns" class="sub-tab" onclick="window.app.anomalies.showView('patterns')">📊 Patterns / पैटर्न</button>
+            </div>
+
+            <div id="anomalySummary" class="anomaly-summary"></div>
+
+            <div id="anomalyListView">
+                <div id="anomalyList" class="anomaly-list"></div>
+                <div style="text-align: center; margin: 12px 0;">
+                    <button type="button" id="anomalyMore" class="btn btn-secondary" style="display: none;" onclick="window.app.anomalies.loadMore()">Load more / और लोड करें</button>
+                </div>
+            </div>
+
+            <div id="anomalyPatternView" style="display: none;">
+                <div class="anomaly-pattern-grid">
+                    <div class="modern-card anomaly-pattern-wide">
+                        <h3 class="section-title">Per day by type / हर दिन, प्रकार अनुसार</h3>
+                        <div class="anomaly-chart-wrap"><canvas id="anomalyTrendChart"></canvas></div>
+                        <div id="anomalyTrendLegend" class="anomaly-legend-row"></div>
+                    </div>
+                    <div class="modern-card anomaly-pattern-wide">
+                        <h3 class="section-title">Item × type / आइटम × प्रकार</h3>
+                        <div id="anomalyHeat"></div>
+                    </div>
+                    <div class="modern-card">
+                        <h3 class="section-title">By user / सदस्य अनुसार</h3>
+                        <div id="anomalyByUser"></div>
+                    </div>
+                    <div class="modern-card">
+                        <h3 class="section-title">By hour of day (IST) / दिन के घंटे अनुसार</h3>
+                        <div id="anomalyByHour"></div>
+                    </div>
+                    <div class="modern-card anomaly-pattern-wide">
+                        <h3 class="section-title">Repeat offenders (2+ days) / बार-बार (2+ दिन)</h3>
+                        <div id="anomalyRepeat" class="anomaly-repeat"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

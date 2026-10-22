@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v54';
+const CACHE_NAME = 'aadhat-v55';
 // Generated/verified by scripts/check-sw-assets.js (npm run check:sw).
 // Every entry must exist: a 404 here used to make the whole precache fail.
 const STATIC_ASSETS = [
@@ -20,6 +20,7 @@ const STATIC_ASSETS = [
     '/icons/icon-512.png',
     '/icons/icon-maskable-512.png',
     '/css/analytics.css',
+    '/css/anomalies.css',
     '/css/app-updates.css',
     '/css/auth.css',
     '/css/bill-checks.css',
@@ -51,6 +52,7 @@ const STATIC_ASSETS = [
     '/js/firebase/firestore-meter.js',
     '/js/main.js',
     '/js/modules/admin.js',
+    '/js/modules/anomalies.js',
     '/js/modules/analytics.js',
     '/js/modules/app-updates.js',
     '/js/modules/billing.js',
@@ -82,6 +84,7 @@ const STATIC_ASSETS = [
     '/js/utils/bill-checks.js',
     '/js/utils/bill-share.js',
     '/js/utils/aging.js',
+    '/js/utils/anomalies.js',
     '/js/utils/party-due.js',
     '/js/utils/due-reminder.js',
     '/js/utils/open-external.js',
@@ -115,6 +118,7 @@ const STATIC_ASSETS = [
     '/js/version.js',
     '/templates/admin.html',
     '/templates/analytics.html',
+    '/templates/anomalies.html',
     '/templates/auth.html',
     '/templates/billing.html',
     '/templates/cash-management.html',

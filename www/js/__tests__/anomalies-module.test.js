@@ -1,0 +1,108 @@
+/**
+ * @fileoverview Anomalies module (#187, #40): daily scan runs once per day on
+ * owner/manager devices, never writes when stored records can't be read from
+ * the server, writes only new ids, and the Day report card is hidden for
+ * other users and escapes stored text.
+ */
+jest.mock('../firebase/firestore-service.js', () => ({
+    FirebaseService: {
+        loadCashSessionsBetween: jest.fn(async () => []),
+        loadAuditLogsSince: jest.fn(async () => []),
+        loadAnomalies: jest.fn(async () => ({ docs: [], last: null, more: false })),
+        saveAnomalies: jest.fn(async () => {})
+    }
+}));
+jest.mock('../services/printer.js', () => ({ PrinterService: { showImagePreview: jest.fn(() => true) } }));
+jest.mock('../modules/reports.js', () => ({ chartScaleMax: (v) => Math.max(1, ...v) }));
+
+import { AnomaliesManager } from '../modules/anomalies.js';
+import { FirebaseService } from '../firebase/firestore-service.js';
+import { AppState } from '../utils/state.js';
+
+const now = Date.now();
+const badBill = {
+    id: 'b1', billNumber: 'R1', customerName: '<img src=x onerror=alert(1)>', userId: 'u1', userName: 'Amit',
+    items: [{ name: 'Rice', rate: 40, qty: 10, total: 400 }], total: 400,
+    payment: { cash: 100, online: 0, due: 0 }, date: new Date(now).toISOString(), timestamp: now
+};
+
+beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    localStorage.clear();
+    AppState.userRole = 'owner';
+    AppState.currentUser = { uid: 'own1' };
+    AppState.historyLoadedFrom = 0;
+    AppState.retailSalesHistory = [badBill];
+    AppState.purchaseHistory = [];
+    AppState.salesHistory = [];
+    AppState.stockAdjustments = [];
+    AppState.items = [];
+    AnomaliesManager.stored = null;
+    AnomaliesManager.reportList = [];
+    document.body.innerHTML = '<div id="dayReportCard" style="display:none"></div>';
+});
+
+describe('daily scan', () => {
+    test('writes new records once per day; a second run the same day reads and writes nothing', async () => {
+        await AnomaliesManager.dailyScan();
+        expect(FirebaseService.loadAnomalies).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ server: true }));
+        expect(FirebaseService.saveAnomalies).toHaveBeenCalledTimes(1);
+        const writes = FirebaseService.saveAnomalies.mock.calls[0][0];
+        expect(writes.map(w => w.id)).toEqual(['payment-split~bill~b1']);
+        expect(writes[0].data.status).toBe('open');
+
+        await AnomaliesManager.dailyScan();
+        expect(FirebaseService.loadAnomalies).toHaveBeenCalledTimes(1);
+        expect(FirebaseService.saveAnomalies).toHaveBeenCalledTimes(1);
+    });
+
+    test('already stored records are not rewritten (review status kept)', async () => {
+        FirebaseService.loadAnomalies.mockResolvedValueOnce({ docs: [], last: null, more: false });
+        await AnomaliesManager.scan('2000-01-01', '2100-01-01');
+        const stored = FirebaseService.saveAnomalies.mock.calls[0][0].map(w => ({ id: w.id, ...w.data, status: 'ok' }));
+        FirebaseService.loadAnomalies.mockResolvedValueOnce({ docs: stored, last: null, more: false });
+        FirebaseService.saveAnomalies.mockClear();
+        await AnomaliesManager.scan('2000-01-01', '2100-01-01');
+        expect(FirebaseService.saveAnomalies).not.toHaveBeenCalled();
+    });
+
+    test('offline (server read fails): nothing is written and the day is not marked scanned', async () => {
+        FirebaseService.loadAnomalies.mockRejectedValueOnce(new Error('unavailable'));
+        await AnomaliesManager.dailyScan();
+        expect(FirebaseService.saveAnomalies).not.toHaveBeenCalled();
+        expect(localStorage.getItem('aadhatAnomalyScanDay')).toBeNull();
+    });
+
+    test('other users never scan; managers do not read the audit log', async () => {
+        AppState.userRole = 'staff';
+        await AnomaliesManager.dailyScan();
+        expect(FirebaseService.loadAnomalies).not.toHaveBeenCalled();
+        AppState.userRole = 'manager';
+        await AnomaliesManager.dailyScan();
+        expect(FirebaseService.loadAuditLogsSince).not.toHaveBeenCalled();
+        expect(FirebaseService.saveAnomalies).toHaveBeenCalled();
+    });
+});
+
+describe('Day report card', () => {
+    test('owner sees counts and the review queue with escaped text', async () => {
+        AnomaliesManager.renderDayReport({ sales: 400, saleCount: 1 }, null);
+        await AnomaliesManager.refreshing;
+        const card = document.getElementById('dayReportCard');
+        expect(card.style.display).toBe('block');
+        expect(card.textContent).toContain('Day report / आज की रिपोर्ट');
+        expect(card.textContent).toContain('Payment does not match total');
+        expect(card.querySelector('img')).toBeNull();
+        expect(card.innerHTML).toContain('&lt;img');
+        expect(card.textContent).not.toMatch(/staff/i);
+        expect(AnomaliesManager.dayReportText()).toContain('Sales / बिक्री: ₹400 (1 bills / बिल)');
+    });
+
+    test('hidden for other users', () => {
+        AppState.userRole = 'staff';
+        AnomaliesManager.renderDayReport({}, null);
+        expect(document.getElementById('dayReportCard').style.display).toBe('none');
+        expect(FirebaseService.loadAnomalies).not.toHaveBeenCalled();
+    });
+});

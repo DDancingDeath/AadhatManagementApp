@@ -9,6 +9,7 @@ import { parseAnyBillDate, todayLocalISO } from '../utils/dates.js';
 import { dueEvents, sumDueEvents, saleTimePayment } from '../utils/due-payments.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { CashManagementManager } from './cash-management.js';
+import { AnomaliesManager } from './anomalies.js';
 
 // Use helper functions
 const formatCurrency = (amount) => Helpers.formatCurrency(amount);
@@ -262,6 +263,14 @@ export const DayManager = {
         // Render item-wise details
         this.renderItemWiseDetails(todayPurchases, 'purchase');
         this.renderItemWiseDetails([...todayWholesaleSales, ...todayRetailSales], 'sale');
+
+        // Day report (#187, #40): today's anomalies + review queue, shared with these totals
+        AnomaliesManager.renderDayReport({
+            sales: totalSales, saleCount: todayWholesaleSales.length + todayRetailSales.length,
+            purchases: totalPurchases, purchaseCount: todayPurchases.length,
+            expenses: totalExpenses, totalIn: totalCashIn, totalOut: totalCashOut,
+            dueReceived, duePaid
+        }, session && session.date === todayIso ? session : null);
     },
 
     /**

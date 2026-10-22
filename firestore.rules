@@ -252,6 +252,33 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // --- anomalies (#187 / #40): found by the daily scan on owner/manager
+    // devices; only owner/manager may read them or mark them OK/fixed (#84 is
+    // still open, so other users see nothing). Only an owner may delete.
+    function validAnomaly(usersCol) {
+      let d = request.resource.data;
+      return isManagerIn(usersCol)
+        && d.keys().hasOnly(['type', 'rule', 'severity', 'en', 'hi', 'refKind', 'refId', 'billType', 'billNumber',
+                             'party', 'item', 'userId', 'user', 'amount', 'at', 'dayKey', 'hour', 'detectedBy',
+                             'detectedAt', 'status', 'note', 'reviewedBy', 'reviewedByName', 'reviewedAt'])
+        && d.keys().hasAll(['type', 'severity', 'dayKey', 'status'])
+        && d.type is string && d.dayKey is string
+        && d.severity in ['high', 'medium', 'low']
+        && d.status in ['open', 'ok', 'fixed'];
+    }
+
+    match /anomalies/{docId} {
+      allow read: if isManagerIn('users');
+      allow create, update: if validAnomaly('users');
+      allow delete: if isOwnerIn('users');
+    }
+
+    match /dev_anomalies/{docId} {
+      allow read: if isManagerIn('dev_users');
+      allow create, update: if validAnomaly('dev_users');
+      allow delete: if isOwnerIn('dev_users');
+    }
+
     match /users/{userId} {
       allow read: if canReadProfile('users', userId);
       allow create: if canCreateProfile(userId);

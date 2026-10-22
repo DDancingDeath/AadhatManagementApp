@@ -20,6 +20,7 @@ import { FinanceManager } from './modules/finance.js';
 import { AnalyticsManager } from './modules/analytics.js';
 import { CashManagementManager } from './modules/cash-management.js';
 import { DayManager } from './modules/day.js';
+import { AnomaliesManager } from './modules/anomalies.js';
 import { AuditService } from './services/audit.js';
 import { TelemetryService } from './services/telemetry.js';
 import { DiagnosticsManager } from './modules/diagnostics.js';
@@ -38,7 +39,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022q-party-due';
+const BUILD_ID = '20261022r-anomalies';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -311,6 +312,9 @@ async function initializeUserData() {
 
         // What's new + Android update banner (non-blocking, best effort)
         AppUpdatesManager.onAppReady();
+
+        // Daily anomaly scan (#187): owner/manager devices, once per day, over loaded data
+        AnomaliesManager.scheduleDailyScan();
         
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -996,6 +1000,20 @@ window.app = {
         setProfitPeriod: (period, evt) => AnalyticsManager.setProfitPeriod(period, evt)
     },
     
+    // Anomalies (#187, #40): Day report card on Today + Anomalies page
+    anomalies: {
+        init: () => AnomaliesManager.init(),
+        openPage: () => AnomaliesManager.openPage(),
+        applyFilters: () => AnomaliesManager.applyFilters(),
+        showView: (view) => AnomaliesManager.showView(view),
+        loadMore: () => AnomaliesManager.loadMore(),
+        openRef: (id) => AnomaliesManager.openRef(id),
+        review: (id, status) => AnomaliesManager.review(id, status),
+        shareDayReport: () => AnomaliesManager.shareDayReport(),
+        printDayReport: () => AnomaliesManager.printDayReport(),
+        cashCloseLine: () => AnomaliesManager.cashCloseLine()
+    },
+
     // Day (Today's Summary + Cash Management)
     day: {
         init: () => DayManager.init(),

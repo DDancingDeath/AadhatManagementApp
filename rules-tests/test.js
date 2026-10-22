@@ -435,6 +435,50 @@ function defineSuite(prefix) {
         await assertFails(as('manager1').collection(rateHistory).doc('c').set(entry('manager1', { field: 'stock' })));
         await assertFails(as('manager1').collection(rateHistory).doc('d').set(entry('manager1', { at: 'yesterday' })));
     });
+
+    // ---- anomalies (#187 / #40): owner/manager only ----
+
+    const anomalies = `${prefix}anomalies`;
+    const anomaly = (extra = {}) => ({
+        type: 'rate-high', severity: 'medium', en: 'Rate high', hi: 'रेट ज़्यादा', refKind: 'bill', refId: 'b1',
+        billType: 'retail', billNumber: 'R1', party: 'Ramesh', item: 'Rice', userId: 'staff1', user: 'S',
+        amount: 400, at: 1700000000000, dayKey: '2026-10-22', hour: 11, detectedBy: 'scan',
+        detectedAt: 1700000000001, status: 'open', note: '', reviewedBy: null, reviewedByName: null, reviewedAt: null, ...extra
+    });
+
+    t('anomalies: owner and manager can write (set-merge, idempotent id) and read', async () => {
+        const id = 'rate-high~bill~b1';
+        await assertSucceeds(as('manager1').collection(anomalies).doc(id).set(anomaly(), { merge: true }));
+        await assertSucceeds(as('legacyOwner').collection(anomalies).doc(id).set(anomaly({ amount: 450 }), { merge: true }));
+        await assertSucceeds(as('manager1').collection(anomalies).doc(id).get());
+        await assertSucceeds(as('legacyOwner').collection(anomalies).where('dayKey', '>=', '2026-10-01').where('dayKey', '<=', '2026-10-31').get());
+    });
+
+    t('anomalies: owner/manager can mark OK / fixed with a note', async () => {
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(anomalies).doc('a').set(anomaly()));
+        await assertSucceeds(as('manager1').collection(anomalies).doc('a').set(
+            { status: 'ok', note: 'checked with party', reviewedBy: 'manager1', reviewedByName: 'M', reviewedAt: 1 }, { merge: true }));
+        await assertSucceeds(as('legacyOwner').collection(anomalies).doc('a').update({ status: 'fixed' }));
+    });
+
+    t('anomalies: other users cannot read or write; pending users neither', async () => {
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(anomalies).doc('a').set(anomaly()));
+        await assertFails(as('staff1').collection(anomalies).doc('a').get());
+        await assertFails(as('staff1').collection(anomalies).get());
+        await assertFails(as('staff1').collection(anomalies).doc('a').update({ status: 'ok' }));
+        await assertFails(as('staff1').collection(anomalies).doc('n').set(anomaly()));
+        await assertFails(as('pending1').collection(anomalies).doc('a').get());
+        await assertFails(anon().collection(anomalies).doc('a').get());
+    });
+
+    t('anomalies: rejects unknown fields, bad status/severity; only an owner deletes', async () => {
+        await assertFails(as('manager1').collection(anomalies).doc('x').set(anomaly({ extra: 1 })));
+        await assertFails(as('manager1').collection(anomalies).doc('y').set(anomaly({ status: 'deleted' })));
+        await assertFails(as('manager1').collection(anomalies).doc('z').set(anomaly({ severity: 'block' })));
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(anomalies).doc('a').set(anomaly()));
+        await assertFails(as('manager1').collection(anomalies).doc('a').delete());
+        await assertSucceeds(as('legacyOwner').collection(anomalies).doc('a').delete());
+    });
 }
 
 defineSuite('');
