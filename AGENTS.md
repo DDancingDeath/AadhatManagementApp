@@ -258,6 +258,32 @@ existing violations. When the owner accepts a review finding that a regex
 could have caught, add a rule (with `learned_at`) and, ideally, an example
 in `.github/review-rules-examples/`.
 
+### Numbers on screen (#216)
+
+Every money/stock number the app shows has a plain-language definition with a
+spec ID in `docs/calculations.md`. `tests/oracle/` recomputes each one with an
+independent, simple implementation and compares it with the screen;
+`tests/property/` runs the accounting checks (stock value adds up, bill split,
+payments, months = all time, outstanding, cash drawer, same period = same
+number) on generated multi-year histories (`tests/fixtures/generator.js`,
+fast-check, fixed seed; `FC_RUNS=50 npx jest tests/property` for more runs).
+A number the app gets wrong today is listed in `BUGS` in
+`tests/oracle/screens.test.js` (or a `test.skip` with `// BUG: see #N`); remove
+the entry when you fix that issue. `npm run test:mutation` (Stryker, local or
+the weekly non-blocking `mutation.yml` job) shows how many deliberate small
+bugs in `money.js`, `stock-replay.js`, `bill-checks.js`, `dates.js` and
+`release-info.js` the tests catch. Owners and managers can run the same checks
+on real loaded data in Diagnostics → Number checks.
+
+### PR checklist
+
+- [ ] Tests, `npm run lint` (0 errors), `check:review`, `check:sw`, `check:release` pass.
+- [ ] Shipped `www/` file changed → cache bump (section 4).
+- [ ] Added or changed a number shown on screen (or how it is calculated) →
+      updated its entry in `docs/calculations.md` and its oracle test in
+      `tests/oracle/` (review rule `displayed-number-spec` warns).
+- [ ] New user-facing text in both `i18n/en.js` and `i18n/hi.js`; no "staff".
+
 ---
 
 ## 6. The staging clone (archived)
