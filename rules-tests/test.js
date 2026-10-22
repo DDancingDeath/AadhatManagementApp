@@ -704,9 +704,52 @@ function defineSuite(prefix) {
         await assertSucceeds(as('legacyOwner').collection(cash).doc('s1').update({ cashDeposits: [], openingBalance: 450 }));
     });
 
-    t('cash: entries cannot be added to a closed session', async () => {
+    t('cash: entries queued offline still append to a session another device closed (append-only)', async () => {
+        await seedSession(closing({ cashDeposits: [deposit()], duePayments: [{ id: 'u1', amount: 50 }] }));
+        const ref = as('staff1').collection(cash).doc('s1');
+        await assertSucceeds(ref.update({ cashDeposits: FieldValue.arrayUnion(deposit(20, 'd2')) }));
+        await assertSucceeds(as('legacyStaff').collection(cash).doc('s1').update({ duePayments: FieldValue.arrayUnion({ id: 'u2', amount: 30 }) }));
+        await assertSucceeds(as('manager1').collection(cash).doc('s1').update({
+            duePayments: [{ id: 'u1', amount: 50 }, { id: 'u2', amount: 30 }, { id: 'p1', amount: 40 }]
+        }));
+        await assertFails(ref.update({ cashDeposits: [deposit()] }));
+        await assertFails(ref.update({ cashDeposits: [deposit(999), deposit(20, 'd2')] }));
+        await assertFails(ref.update({ duePayments: [{ id: 'u1', amount: 50 }] }));
+        await assertFails(ref.update({ cashDeposits: FieldValue.arrayUnion(deposit(1, 'd3'), deposit(2, 'd4')) }));
+        await assertFails(ref.update({ cashDeposits: FieldValue.arrayUnion(deposit(-5, 'd5')) }));
+        await assertFails(ref.update({ cashDeposits: FieldValue.arrayUnion(deposit(5, 'd6')), closingBalance: 0 }));
+    });
+
+    t('cash: a counted sign-out may replace an automatic close (old apps sign out with a plain update)', async () => {
+        const autoNew = closing({ closingBalance: null, difference: null, counted: false, autoSignedOut: true, autoClosed: true,
+            autoSignOutReason: 'Session not closed by end of day' });
+        // new-style auto-close (counted: false, closingBalance null)
+        await seedSession(autoNew);
+        await assertSucceeds(as('staff1').collection(cash).doc('s1').update({ closingBalance: 640, expectedBalance: 600,
+            difference: 40, signOutTime: 'y', signedOut: true, transactions: { cashSales: 140 } }));
+        await seedSession(autoNew);
+        await assertSucceeds(as('legacyStaff').collection(cash).doc('s1').update(closing({ closingBalance: 590, difference: -10 })));
+        // old-style auto-close (closingBalance 0, no `counted`)
+        await seedSession(closing({ closingBalance: 0, difference: -600, autoSignedOut: true }));
+        await env.withSecurityRulesDisabled(ctx => ctx.firestore().collection(cash).doc('s1').update({ counted: FieldValue.delete() }));
+        await assertSucceeds(as('staff1').collection(cash).doc('s1').update({ closingBalance: 600, difference: 0, signOutTime: 'y', signedOut: true }));
+    });
+
+    t('cash: an automatic close cannot be replaced without a count, with other fields, or after a real count', async () => {
+        const autoNew = closing({ closingBalance: null, difference: null, counted: false, autoSignedOut: true });
+        await seedSession(autoNew);
+        const ref = as('staff1').collection(cash).doc('s1');
+        await assertFails(ref.update({ closingBalance: null, signOutTime: 'y', signedOut: true }));
+        await assertFails(ref.update({ closingBalance: -1, signOutTime: 'y', signedOut: true }));
+        await assertFails(ref.update({ closingBalance: '600', signOutTime: 'y', signedOut: true }));
+        await assertFails(ref.update({ closingBalance: 600, signedOut: true, openingBalance: 0 }));
+        await assertFails(ref.update({ closingBalance: 600, signedOut: true, userId: 'staff1x' }));
+        // already counted (late count or sign-out over the auto-close): no second count
+        await seedSession({ ...autoNew, closingBalance: 600, counted: true, countedLate: true });
+        await assertFails(ref.update({ closingBalance: 1, signOutTime: 'z', signedOut: true }));
+        // a normal (not automatic) sign-out cannot be redone
         await seedSession(closing());
-        await assertFails(as('staff1').collection(cash).doc('s1').update({ cashDeposits: FieldValue.arrayUnion(deposit()) }));
+        await assertFails(ref.update({ closingBalance: 1, signOutTime: 'z', signedOut: true }));
     });
 
     t('cash: anyone approved signs out (also as a full set) or the app auto-closes a past day', async () => {

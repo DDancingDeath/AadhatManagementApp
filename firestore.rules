@@ -254,20 +254,31 @@ service cloud.firestore {
         && d.get('userId', null) == request.auth.uid;
     }
 
-    // Deposits and due-payment legs are appended one at a time to an open
-    // session (arrayUnion, or outstanding.js applyPaymentTransaction).
+    // Deposits and due-payment legs are appended one at a time (arrayUnion, or
+    // outstanding.js applyPaymentTransaction). Also allowed on a closed session:
+    // an entry queued offline must not be lost because another device closed it.
     function cashAppendOk() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return resource.data.get('signedOut', false) != true
-        && changed.size() == 1
+      return changed.size() == 1
         && changed.hasOnly(['duePayments', 'cashDeposits'])
         && appendsOneEntry(changed.hasAny(['duePayments']) ? 'duePayments' : 'cashDeposits');
     }
 
+    // A day the app closed automatically without a real count (#101; older
+    // apps wrote closingBalance 0 and no `counted`).
+    function wasAutoClosedUncounted() {
+      return resource.data.get('signedOut', false) == true
+        && resource.data.get('autoSignedOut', false) == true
+        && resource.data.get('counted', null) != true;
+    }
+
     // Sign-out (counted) or the automatic close of a past day (not counted).
+    // A counted sign-out may also replace an automatic close: older apps
+    // (v1.3/v1.4) sign out with a plain update and would otherwise lose the count.
     function cashCloseOk() {
       let d = request.resource.data;
-      return resource.data.get('signedOut', false) != true
+      return (resource.data.get('signedOut', false) != true
+              || (wasAutoClosedUncounted() && d.get('closingBalance', null) is number))
         && d.get('signedOut', false) == true
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
              'closingBalance', 'expectedBalance', 'difference', 'signOutTime', 'signedOut', 'counted',
