@@ -21,6 +21,7 @@ import { AnalyticsManager } from './modules/analytics.js';
 import { CashManagementManager } from './modules/cash-management.js';
 import { DayManager } from './modules/day.js';
 import { AnomaliesManager } from './modules/anomalies.js';
+import { RateTrendsManager } from './modules/rate-trends.js';
 import { AuditService } from './services/audit.js';
 import { TelemetryService } from './services/telemetry.js';
 import { DiagnosticsManager } from './modules/diagnostics.js';
@@ -39,7 +40,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022w-startup-speed';
+const BUILD_ID = '20261022x-rate-trends';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -315,6 +316,9 @@ async function initializeUserData() {
 
         // Daily anomaly scan (#187): owner/manager devices, once per day, over loaded data
         AnomaliesManager.scheduleDailyScan();
+
+        // Rate trends (#65): roll monthly rate stats forward from loaded bills (owner/manager)
+        RateTrendsManager.scheduleRollForward();
         
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -1013,6 +1017,19 @@ window.app = {
         printDayReport: () => AnomaliesManager.printDayReport(),
         refreshNow: () => AnomaliesManager.refreshNow(),
         cashCloseLine: () => AnomaliesManager.cashCloseLine()
+    },
+
+    // Rate trends (#65): monthly rate history per item + seasonal estimate
+    rateTrends: {
+        init: () => RateTrendsManager.init(),
+        selectItem: (id) => RateTrendsManager.selectItem(id),
+        setRange: (v) => RateTrendsManager.setRange(v),
+        setView: (v) => RateTrendsManager.setView(v),
+        setWeeks: (v) => RateTrendsManager.setWeeks(v),
+        setCompareKind: (v) => RateTrendsManager.setCompareKind(v),
+        setBudget: (v) => RateTrendsManager.setBudget(v),
+        startBackfill: () => RateTrendsManager.startBackfill(),
+        continueBackfill: () => RateTrendsManager.continueBackfill()
     },
 
     // Day (Today's Summary + Cash Management)

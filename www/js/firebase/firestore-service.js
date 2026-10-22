@@ -1711,6 +1711,102 @@ const FirebaseService = {
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 
+    // ---- Rate trends (#65): rateStats/{itemId}_{YYYY-MM}, owner/manager only (rules) ----
+
+    /**
+     * One page of a bill collection in document-id order, from the server
+     * (rate-trends backfill). Billed reads = docs returned (min 1).
+     * @param {string} collKey purchases | retailSales | wholesaleSales
+     * @param {?string} after last document id of the previous page
+     * @param {number} limit
+     * @returns {Promise<{docs: Array<Object>, reads: number}>}
+     */
+    async loadBillPageById(collKey, after, limit) {
+        let query = getDb().collection(col(collKey))
+            .orderBy(firebase.firestore.FieldPath.documentId())
+            .limit(limit);
+        if (after) query = query.startAfter(after);
+        const snapshot = await query.get({ source: 'server' });
+        return { docs: snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })), reads: Math.max(1, snapshot.size) };
+    },
+
+    /**
+     * Oldest numeric bill timestamp across the three bill collections (3 reads).
+     * @returns {Promise<number>} ms, or Infinity when there are no bills
+     */
+    async oldestBillTimestamp() {
+        const db = getDb();
+        const values = await Promise.all(['purchases', 'retailSales', 'wholesaleSales'].map(key =>
+            db.collection(col(key)).orderBy('timestamp', 'asc').limit(1).get()
+                .then(s => (s.docs.length ? Number(s.docs[0].data().timestamp) : Infinity))));
+        return Math.min(...values);
+    },
+
+    /**
+     * Monthly stats of one item (document-id range, no index needed).
+     * @param {string} itemId
+     * @param {number} [max=120]
+     * @returns {Promise<Array<Object>>} oldest month first
+     */
+    async loadRateStatsForItem(itemId, max = 120) {
+        const snapshot = await getDb().collection(col('rateStats'))
+            .orderBy(firebase.firestore.FieldPath.documentId())
+            .startAt(`${itemId}_`)
+            .endAt(`${itemId}_\uf8ff`)
+            .limit(max)
+            .get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    /**
+     * Stats docs of months >= fromMonth from this device's offline cache only
+     * (no billed reads; used to skip unchanged roll-forward writes).
+     * @param {string} fromMonth YYYY-MM
+     * @returns {Promise<Array<Object>>}
+     */
+    async loadCachedRateStatsFrom(fromMonth) {
+        const snapshot = await getDb().collection(col('rateStats'))
+            .where('month', '>=', fromMonth)
+            .get({ source: 'cache' });
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    },
+
+    /**
+     * Writes whole stats docs (set, so re-running is idempotent), 400 per batch.
+     * @param {Array<{id: string, data: Object}>} writes
+     * @returns {Promise<void>}
+     */
+    async saveRateStats(writes) {
+        if (!writes || writes.length === 0) return;
+        const db = getDb();
+        const ref = db.collection(col('rateStats'));
+        const updatedAt = Date.now();
+        for (let i = 0; i < writes.length; i += 400) {
+            const batch = db.batch();
+            writes.slice(i, i + 400).forEach(w => batch.set(ref.doc(w.id), { ...w.data, updatedAt }));
+            await batch.commit();
+        }
+    },
+
+    /**
+     * Backfill status doc (rateStats/_meta), or null when it doesn't exist.
+     * @param {{server?: boolean}} [opts]
+     * @returns {Promise<?Object>}
+     */
+    async loadRateStatsMeta({ server = false } = {}) {
+        const ref = getDb().collection(col('rateStats')).doc('_meta');
+        const snap = server ? await ref.get({ source: 'server' }) : await ref.get();
+        return snap.exists ? snap.data() : null;
+    },
+
+    /**
+     * @param {Object} data merged into rateStats/_meta
+     * @returns {Promise<void>}
+     */
+    async saveRateStatsMeta(data) {
+        await getDb().collection(col('rateStats')).doc('_meta').set(data, { merge: true });
+    },
+
     /**
      * Applies an item import plan with batched writes (merge updates + new
      * docs). Never deletes. One batch for typical catalogues, so a failure

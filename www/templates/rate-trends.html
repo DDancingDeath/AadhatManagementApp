@@ -1,0 +1,83 @@
+<div id="rate-trends" class="tab">
+    <div class="rt-page">
+        <h2 class="rt-title">📈 Rate trends / रेट का रुझान</h2>
+        <div id="rtDenied" class="rt-empty" style="display: none;">Only the owner or a manager can see this page. / यह पेज सिर्फ़ मालिक या मैनेजर देख सकते हैं।</div>
+        <div id="rtBody">
+            <div class="card rt-card" id="rtStatus"></div>
+
+            <div class="card rt-card">
+                <div class="rt-controls">
+                    <label>Item / आइटम
+                        <select id="rtItem" onchange="window.app.rateTrends.selectItem(this.value)"></select>
+                    </label>
+                    <label>Months / महीने
+                        <select id="rtRange" onchange="window.app.rateTrends.setRange(this.value)">
+                            <option value="12">Last 12 / पिछले 12</option>
+                            <option value="24" selected>Last 24 / पिछले 24</option>
+                            <option value="36">Last 36 / पिछले 36</option>
+                            <option value="all">All / सभी</option>
+                        </select>
+                    </label>
+                    <label>Show / दिखाएँ
+                        <select id="rtView" onchange="window.app.rateTrends.setView(this.value)">
+                            <option value="chart">Chart / चार्ट</option>
+                            <option value="table">Table / टेबल</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            <div class="card rt-card" id="rtOutlookCard">
+                <div class="rt-card-head">
+                    <h3>🔮 Next weeks (estimate) / आने वाले हफ़्ते (अनुमान)</h3>
+                    <select id="rtWeeks" onchange="window.app.rateTrends.setWeeks(this.value)" aria-label="Weeks / हफ़्ते">
+                        <option value="4">4 weeks / हफ़्ते</option>
+                        <option value="6" selected>6 weeks / हफ़्ते</option>
+                        <option value="8">8 weeks / हफ़्ते</option>
+                    </select>
+                </div>
+                <div id="rtOutlook"></div>
+                <div class="rt-muted">Estimate from your own past bills — not a guarantee. / आपके अपने पुराने बिलों से अनुमान — पक्का नहीं।</div>
+            </div>
+
+            <div id="rtChartView">
+                <div class="card rt-card">
+                    <h3>Average rate per kg by month / हर महीने का औसत रेट (₹/kg)</h3>
+                    <div class="rt-chart-wrap"><canvas id="rtRateChart"></canvas></div>
+                    <div class="rt-legend">
+                        <span><i style="background:#2563eb"></i>Purchase / खरीद</span>
+                        <span><i style="background:#059669"></i>Retail / खुदरा</span>
+                        <span><i style="background:#d97706"></i>Wholesale / थोक</span>
+                    </div>
+                    <h3 class="rt-sub">Kg per month / हर महीने कितने kg</h3>
+                    <div class="rt-chart-wrap"><canvas id="rtVolumeChart"></canvas></div>
+                    <div class="rt-legend">
+                        <span><i style="background:#93c5fd"></i>Bought / खरीदा</span>
+                        <span><i style="background:#6ee7b7"></i>Sold / बेचा</span>
+                    </div>
+                </div>
+
+                <div class="card rt-card">
+                    <div class="rt-card-head">
+                        <h3>Same months in earlier years / पिछले सालों के यही महीने</h3>
+                        <select id="rtCompareKind" onchange="window.app.rateTrends.setCompareKind(this.value)" aria-label="Rate / रेट">
+                            <option value="purchase">Purchase / खरीद</option>
+                            <option value="sale">Sale / बिक्री</option>
+                        </select>
+                    </div>
+                    <div class="rt-chart-wrap"><canvas id="rtYearChart"></canvas></div>
+                    <div class="rt-legend" id="rtYearLegend"></div>
+                </div>
+            </div>
+
+            <div id="rtTableView" class="card rt-card" style="display: none;">
+                <div class="rt-table-wrap" id="rtTable"></div>
+            </div>
+
+            <div class="card rt-card" id="rtDefaultRatesCard" style="display: none;">
+                <h3>Default rate changes / तय रेट में बदलाव</h3>
+                <div id="rtDefaultRates"></div>
+            </div>
+        </div>
+    </div>
+</div>

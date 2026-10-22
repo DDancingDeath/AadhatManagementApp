@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v60';
+const CACHE_NAME = 'aadhat-v61';
 // Generated/verified by scripts/check-sw-assets.js (npm run check:sw).
 // Every entry must exist: a 404 here used to make the whole precache fail.
 const STATIC_ASSETS = [
@@ -39,6 +39,7 @@ const STATIC_ASSETS = [
     '/css/navigation.css',
     '/css/notifications.css',
     '/css/overlay.css',
+    '/css/rate-trends.css',
     '/css/reports.css',
     '/css/settings.css',
     '/css/stock.css',
@@ -66,6 +67,7 @@ const STATIC_ASSETS = [
     '/js/modules/notifications.js',
     '/js/modules/outstanding.js',
     '/js/modules/purchase.js',
+    '/js/modules/rate-trends.js',
     '/js/modules/reports.js',
     '/js/modules/retail-sale.js',
     '/js/modules/settings.js',
@@ -113,6 +115,7 @@ const STATIC_ASSETS = [
     '/js/utils/stock-adjust.js',
     '/js/utils/dead-stock.js',
     '/js/utils/rate-history.js',
+    '/js/utils/rate-trends.js',
     '/js/utils/stock-check.js',
     '/js/utils/stock-replay.js',
     '/js/utils/template-loader.js',
@@ -129,6 +132,7 @@ const STATIC_ASSETS = [
     '/templates/diagnostics.html',
     '/templates/due.html',
     '/templates/expenses.html',
+    '/templates/rate-trends.html',
     '/templates/finance.html',
     '/templates/history.html',
     '/templates/items.html',

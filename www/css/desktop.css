@@ -405,6 +405,21 @@
     flex: 0 0 auto;
     justify-content: flex-end;
   }
+
+  /* Rate trends page (#65): pickers in one row, outlooks side by side */
+  .rt-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #rtOutlook {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  #rtOutlook .rt-empty {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (min-width: 1024px) and (max-height: 900px) {

@@ -180,6 +180,11 @@ const NavigationManager = {
             setTimeout(() => window.app.anomalies.init(), 100);
         }
         
+        // Initialize Rate trends page (owner/manager, #65)
+        if (tabId === 'rate-trends' && window.app?.rateTrends) {
+            setTimeout(() => window.app.rateTrends.init(), 100);
+        }
+        
         // Initialize Day page when Day tab is shown
         if (tabId === 'day' && window.app?.day) {
             this.resetFilterButtons('day');
