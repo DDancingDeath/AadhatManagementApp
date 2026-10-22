@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "version": "1.5.2",
+      "date": "2026-10-22",
+      "androidVersionCode": 8,
+      "notes": {
+        "en": [
+          "Safer records: only the owner or manager can change or delete cash, expense and stock entries.",
+          "Members can still fix their own expense within 24 hours.",
+          "Payment changes are checked, so a due can't be raised by mistake.",
+          "The activity log can no longer be faked."
+        ],
+        "hi": [
+          "रिकॉर्ड अब ज़्यादा सुरक्षित: कैश, खर्च और स्टॉक की एंट्री सिर्फ़ मालिक या मैनेजर बदल या हटा सकते हैं।",
+          "सदस्य अपना खर्च 24 घंटे के अंदर अब भी ठीक कर सकते हैं।",
+          "भुगतान के बदलाव जाँचे जाते हैं, ताकि गलती से बाकी न बढ़ जाए।",
+          "गतिविधि का रिकॉर्ड (लॉग) अब नकली नहीं बनाया जा सकता।"
+        ]
+      }
+    },
+    {
       "version": "1.5.1",
       "date": "2026-10-22",
       "androidVersionCode": 7,
