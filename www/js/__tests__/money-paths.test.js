@@ -528,7 +528,7 @@ describe('Finance profit and outstanding (fixed dataset, all time)', () => {
         AppState.withdrawalsHistory = [{ id: 'x1', date: '2026-10-02', amount: 1000 }];
         document.body.innerHTML = `
           <div id="financeDashboardSection">
-            <span id="financeNetProfit"></span><span id="financeRevenue"></span><span id="financeInvestment"></span>
+            <span id="financeNetProfit"></span><span id="financeRevenue"></span><span id="financeCogs"></span>
             <span id="financeBusinessExp"></span><span id="financePersonalExp"></span>
             <span id="financeTotalWithdrawn"></span><span id="financeAvailableBalance"></span>
           </div>`;
@@ -537,17 +537,19 @@ describe('Finance profit and outstanding (fixed dataset, all time)', () => {
         ['salesHistory', 'retailSalesHistory', 'purchaseHistory', 'expensesHistory', 'withdrawalsHistory'].forEach(k => { AppState[k] = []; });
     });
 
-    test('dashboard: profit = sales − purchases (net of labour) − business − personal expenses', () => {
+    test('dashboard (#215): profit = sales − cost of goods sold − business expenses; personal and withdrawals below it', () => {
         jest.spyOn(FinanceManager, 'renderMonthlyChart').mockImplementation(() => {});
         jest.spyOn(FinanceManager, 'renderProfitBreakdown').mockImplementation(() => {});
         FinanceManager.renderDashboard();
         const text = (id) => document.getElementById(id).textContent;
-        // 6000 − 2568 − 150 − 80
+        // No item lines, so nothing to cost: 6000 − 0 − 150; unsold purchases are stock, not a loss
         expect(text('financeRevenue')).toBe('₹6,000');
-        expect(text('financeInvestment')).toBe('₹2,568');
-        expect(text('financeNetProfit')).toBe('₹3,202');
+        expect(text('financeCogs')).toBe('₹0');
+        expect(text('financeNetProfit')).toBe('₹5,850');
+        expect(text('financePersonalExp')).toBe('₹80');
         expect(text('financeTotalWithdrawn')).toBe('₹1,000');
-        expect(text('financeAvailableBalance')).toBe('₹2,202');
+        // 5850 − 80 personal − 1000 withdrawn
+        expect(text('financeAvailableBalance')).toBe('₹4,770');
     });
 
     test('outstanding: receivable from wholesale + retail (cleared excluded), payable from purchases', () => {

@@ -464,3 +464,28 @@
     --desktop-nav-width: 256px;
   }
 }
+
+/* Finance card breakdown (#215): side panel instead of a bottom sheet */
+@media (min-width: 1024px) {
+  .fin-sheet-overlay {
+    align-items: stretch;
+    justify-content: flex-end;
+  }
+
+  .fin-sheet {
+    width: 520px;
+    max-width: 100%;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    box-shadow: -8px 0 30px rgba(0, 0, 0, 0.25);
+  }
+
+  .fin-sheet-tools input {
+    flex: 2 1 200px;
+  }
+
+  .fin-sheet-tools select {
+    flex: 1 1 120px;
+  }
+}

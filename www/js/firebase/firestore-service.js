@@ -2621,6 +2621,16 @@ const FirebaseService = {
     },
 
     /**
+     * The usable stock checkpoint's running state (read-only; callers clone
+     * before replaying), for costing sales without reading older history (#215).
+     * @returns {?{asOf: number, state: Object}}
+     */
+    getStockCheckpointState() {
+        const cp = usableCheckpoint();
+        return cp ? { asOf: cp.asOf, state: cp.state } : null;
+    },
+
+    /**
      * Rebuilds the stock checkpoint from a full read of all history (one device
      * at a time via the `rebuildingUntil` lease). Also backfills `timestamp` /
      * due fields into legacy documents so window and dues queries see them.

@@ -1,0 +1,77 @@
+{
+  "name": "mixed-shapes",
+  "description": "Legacy shapes (amountPaid only, Hindi name + `quantity`), wholesale `quantity`, DD/MM dates, credit sales, later due payments (payments[]), a stock removal, untagged + personal expenses, withdrawals in two months. Hand-worked: Wheat 100@20 → sell 40 (cost 800) → remove 10 (−200) → sell 20 (cost 400) → 30 left = 600; Gram 50@40 → sell 10 (cost 400) → 40 left = 1600.",
+  "items": [
+    { "id": "item-wheat", "name": "Wheat", "hindiName": "गेहूं" },
+    { "id": "item-gram", "name": "Gram", "hindiName": "चना" }
+  ],
+  "purchases": [
+    { "id": "p1", "billNumber": "P20260910-001", "date": "2026-09-10T09:00:00", "customerName": "Ramesh",
+      "items": [ { "itemId": "item-wheat", "name": "Wheat", "qty": 100, "rate": 20, "total": 2000 } ],
+      "billTotal": 2000, "grandTotal": 2000, "cashPayment": 2000, "dueAmount": 0,
+      "payment": { "cash": 2000, "online": 0, "due": 0, "total": 2000 },
+      "payments": [ { "id": "pp1", "date": "2026-10-05T10:00:00", "cash": 1000, "online": 0 } ] },
+    { "id": "p2", "billNumber": "P20260915-001", "date": "15/09/2026", "customerName": "Mohan",
+      "items": [ { "name": "चना", "quantity": 50, "rate": 40, "total": 2000 } ],
+      "grandTotal": 2000, "amountPaid": 2000 }
+  ],
+  "wholesaleSales": [
+    { "id": "w1", "billNumber": "W20261002-001", "date": "2026-10-02T11:00:00", "customer": "Gupta Traders",
+      "items": [ { "itemId": "item-wheat", "name": "Wheat", "quantity": 40, "rate": 30, "total": 1200 } ],
+      "total": 1200, "payment": { "cash": 0, "online": 0, "due": 1200, "total": 0 } }
+  ],
+  "retailSales": [
+    { "id": "r1", "billNumber": "S20261003-001", "date": "03/10/2026", "customerName": "",
+      "items": [ { "name": "gram ", "qty": 10, "rate": 50, "total": 500 } ],
+      "total": 500, "payment": { "cash": 200, "online": 300, "due": 0, "total": 500 } },
+    { "id": "r2", "billNumber": "S20261006-001", "date": "2026-10-06T10:00:00", "customerName": "Sita",
+      "items": [ { "itemId": "item-wheat", "name": "Wheat", "qty": 20, "rate": 28, "total": 560 } ],
+      "total": 560, "cashPayment": 560, "dueAmount": 0, "payment": { "cash": 560, "online": 0, "due": 0, "total": 560 },
+      "payments": [ { "id": "rp1", "date": "2026-10-07T09:00:00", "cash": 560, "online": 0 } ] }
+  ],
+  "stockAdjustments": [
+    { "id": "a1", "itemId": "item-wheat", "itemName": "Wheat", "adjustType": "remove", "quantity": 10, "rate": 0, "date": "2026-10-04T12:00:00" }
+  ],
+  "expenses": [
+    { "id": "e1", "date": "2026-10-01", "amount": 300, "category": "business", "type": "Transport", "remarks": "truck" },
+    { "id": "e2", "date": "2026-10-02", "amount": 150, "category": "personal", "type": "Home" },
+    { "id": "e3", "date": "2026-10-03", "amount": 50, "type": "Tea" },
+    { "id": "e4", "date": "20/09/2026", "amount": 100, "category": "business", "type": "Electricity" }
+  ],
+  "withdrawals": [
+    { "id": "x1", "date": "2026-09-25", "amount": 500, "person": "Owner" },
+    { "id": "x2", "date": "2026-10-05", "amount": 1000, "person": "Owner" }
+  ],
+  "periods": {
+    "all": {
+      "range": null,
+      "expected": {
+        "sales": 2260, "cogs": 1600, "grossProfit": 660, "business": 450, "profit": 210, "personal": 150,
+        "afterPersonal": 60, "withdrawn": 1500, "afterWithdrawals": -1440,
+        "stock": { "opening": 0, "purchases": 4000, "cogs": 1600, "adjustments": -200, "closing": 2200, "now": 2200, "gap": 0 },
+        "cash": { "receivedAtSale": 500, "dueReceived": 560, "moneyIn": 1060, "paidAtPurchase": 3000, "duePaid": 1000, "moneyOut": 4600, "net": -3540 },
+        "stockMismatch": false
+      }
+    },
+    "september": {
+      "range": ["2026-09-01", "2026-10-01"],
+      "expected": {
+        "sales": 0, "cogs": 0, "grossProfit": 0, "business": 100, "profit": -100, "personal": 0,
+        "afterPersonal": -100, "withdrawn": 500, "afterWithdrawals": -600,
+        "stock": { "opening": 0, "purchases": 4000, "cogs": 0, "adjustments": 0, "closing": 4000, "now": 2200, "gap": 0 },
+        "cash": { "receivedAtSale": 0, "dueReceived": 0, "moneyIn": 0, "paidAtPurchase": 3000, "duePaid": 0, "moneyOut": 3100, "net": -3100 },
+        "stockMismatch": false
+      }
+    },
+    "october": {
+      "range": ["2026-10-01", "2026-11-01"],
+      "expected": {
+        "sales": 2260, "cogs": 1600, "grossProfit": 660, "business": 350, "profit": 310, "personal": 150,
+        "afterPersonal": 160, "withdrawn": 1000, "afterWithdrawals": -840,
+        "stock": { "opening": 4000, "purchases": 0, "cogs": 1600, "adjustments": -200, "closing": 2200, "now": 2200, "gap": 0 },
+        "cash": { "receivedAtSale": 500, "dueReceived": 560, "moneyIn": 1060, "paidAtPurchase": 0, "duePaid": 1000, "moneyOut": 1500, "net": -440 },
+        "stockMismatch": false
+      }
+    }
+  }
+}

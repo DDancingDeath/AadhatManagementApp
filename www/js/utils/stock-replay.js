@@ -93,20 +93,20 @@ export function itemsSignature(items) {
  * via the stable sort, exactly like the historical calculateStock().
  * @param {{purchases?: Array, wholesaleSales?: Array, retailSales?: Array, stockAdjustments?: Array}} sources
  * @param {{from?: number, to?: number}} [range] include events with from <= t < to
- * @returns {Array<{t: number, kind: string, item?: Object, adj?: Object}>}
+ * @returns {Array<{t: number, kind: string, item?: Object, bill?: Object, source?: string, adj?: Object}>}
  */
 export function collectEvents(sources, { from = -Infinity, to = Infinity } = {}) {
     const events = [];
     const inRange = (t) => t >= from && t < to;
-    const addBills = (bills, kind) => (bills || []).forEach(bill => {
+    const addBills = (bills, kind, source) => (bills || []).forEach(bill => {
         if (!Array.isArray(bill.items)) return;
         const t = eventTime(bill);
         if (!inRange(t)) return;
-        bill.items.forEach(item => events.push({ t, kind, item }));
+        bill.items.forEach(item => events.push({ t, kind, item, bill, source }));
     });
-    addBills(sources.purchases, 'purchase');
-    addBills(sources.wholesaleSales, 'sale');
-    addBills(sources.retailSales, 'sale');
+    addBills(sources.purchases, 'purchase', 'purchase');
+    addBills(sources.wholesaleSales, 'sale', 'wholesale');
+    addBills(sources.retailSales, 'sale', 'retail');
     (sources.stockAdjustments || []).forEach(adj => {
         const t = eventTime(adj);
         if (inRange(t)) events.push({ t, kind: 'adjustment', adj });
@@ -242,6 +242,44 @@ export function replayEvents(stock, events, getItemKey, resolutions) {
         }
     }
     return stock;
+}
+
+/**
+ * Same as replayEvents() (it is used for every step), but reports how each
+ * event changed the stock value: for a sale, -delta is the cost of the goods
+ * sold at the weighted-average cost at that moment (#215).
+ * @param {Object} stock running state, mutated
+ * @param {Array} events sorted events from collectEvents()
+ * @param {Function} getItemKey resolver from createItemKeyResolver()
+ * @param {(ev: Object, key: string, delta: number) => void} onEvent
+ * @returns {Object} the same state object
+ */
+export function replayWithValues(stock, events, getItemKey, onEvent) {
+    for (const ev of events) {
+        const key = ev.kind === 'adjustment'
+            ? getItemKey({ itemId: ev.adj.itemId, name: ev.adj.itemName })
+            : getItemKey(ev.item);
+        const before = stock[key] ? stock[key].totalValue : 0;
+        replayEvents(stock, [ev], getItemKey);
+        const after = stock[key] ? stock[key].totalValue : 0;
+        onEvent(ev, key, after - before);
+    }
+    return stock;
+}
+
+/**
+ * Value of the stock on hand in a running state (items with quantity <= 0
+ * carry no value).
+ * @param {Object} state
+ * @returns {number}
+ */
+export function stateValue(state) {
+    let total = 0;
+    Object.keys(state || {}).forEach(k => {
+        const s = state[k];
+        if (s.quantity > 0 && s.totalValue > 0) total += s.totalValue;
+    });
+    return total;
 }
 
 /**
