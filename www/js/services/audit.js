@@ -51,11 +51,14 @@ export class AuditService {
             const auditEntry = {
                 action,
                 userId: user?.uid || 'unknown',
-                userName: AppState.userName || 'Unknown User',
-                userRole: AppState.userRole || 'unknown',
+                userName: String(AppState.userName || 'Unknown User').slice(0, 200),
+                userRole: String(AppState.userRole || 'unknown').slice(0, 32),
                 details: typeof details === 'string' ? { message: details } : details,
                 timestamp: Date.now(),
-                date: new Date().toISOString()
+                date: new Date().toISOString(),
+                // Trusted time of the write: firestore.rules require it to equal the
+                // server's request time (#55); `timestamp` stays for ordering.
+                serverTime: firebase.firestore.FieldValue.serverTimestamp()
             };
             
             // Fire-and-forget: the entry is queued locally (offline persistence)
@@ -145,7 +148,9 @@ export class AuditService {
             localStorage.setItem(CLEANUP_KEY, String(Date.now()));
             
             const db = firebase.firestore();
-            const cutoffDate = Date.now() - (this.RETENTION_DAYS * 24 * 60 * 60 * 1000);
+            // One spare day so a phone clock running ahead never asks for a
+            // log the rules still protect (they allow deleting > 90 days).
+            const cutoffDate = Date.now() - ((this.RETENTION_DAYS + 1) * 24 * 60 * 60 * 1000);
             
             // Get logs older than retention period
             const snapshot = await db.collection(window.getCollection ? window.getCollection('auditLogs') : 'auditLogs')
