@@ -49,6 +49,8 @@ export const AppState = {
     stock: {},
     /** @type {boolean} false while stock is being (re)computed from full history; AppState.stock is not final then */
     stockReady: true,
+    /** @type {?{builtAt: number, asOf: number}} set when stock is approximate (member device, stale checkpoint; #129) */
+    stockApprox: null,
     /** @type {Array<Object>} Current sale items (temporary) */
     salesItems: [],
     /** @type {Array<Object>} Wholesale sales history */

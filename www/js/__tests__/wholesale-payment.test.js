@@ -254,3 +254,52 @@ describe('wholesale sale save: payment split (#113, #23, #68, #26)', () => {
         expect(readPayment(sale).cash).toBe(4025);
     });
 });
+
+describe('#129 approximate stock: adding a wholesale line warns instead of blocking', () => {
+    const DOM = `
+      <select id="sellItem"><option value="Rice">Rice</option></select><input id="sellQuantity"><input id="sellRate">
+      <input id="salesExpensesAmount" value="0"><span id="availableStock"></span><span id="avgPurchaseRate"></span>
+      <div id="availableStockApprox" style="display:none"></div>
+      <table id="salesTable"><tbody></tbody></table><span id="salesTotalAmount">0</span>
+      <span id="salesProfitAmount">0</span><span id="salesProfitPercent">0</span><div id="toast"></div>`;
+    beforeEach(() => {
+        document.body.innerHTML = DOM;
+        AppState.items = [{ id: 'rice', name: 'Rice' }];
+        AppState.stock = { rice: { quantity: 20, rate: 30 } };
+        AppState.stockReady = true;
+        AppState.settings = { showHindi: false };
+        document.getElementById('sellRate').value = '40';
+        document.getElementById('sellQuantity').value = '100';
+    });
+    afterEach(() => {
+        WholesaleSalesManager.setItems([]);
+        AppState.stockApprox = null;
+    });
+
+    test('exact stock: an oversell beyond the limit is refused', async () => {
+        AppState.stockApprox = null;
+        await WholesaleSalesManager.addToWholesaleBill();
+        expect(WholesaleSalesManager.getItems()).toHaveLength(0);
+        expect(document.getElementById('toast').textContent).toContain('Insufficient stock');
+    });
+
+    test('approximate stock: the line is added with a warning naming the approximate stock', async () => {
+        AppState.stockApprox = { builtAt: Date.now() - 3600000, asOf: 0 };
+        await WholesaleSalesManager.addToWholesaleBill();
+        expect(WholesaleSalesManager.getItems()).toHaveLength(1);
+        expect(document.getElementById('toast').textContent).toContain('approximate stock (updated');
+    });
+
+    test('item details show the approximate-stock note only while stock is approximate', () => {
+        document.getElementById('sellItem').value = 'Rice';
+        AppState.stockApprox = { builtAt: Date.now(), asOf: 0 };
+        WholesaleSalesManager.loadItemDetails();
+        const note = document.getElementById('availableStockApprox');
+        expect(note.style.display).toBe('block');
+        expect(note.textContent).toContain('≈ approximate stock (updated');
+        expect(note.textContent).toContain('अनुमानित स्टॉक');
+        AppState.stockApprox = null;
+        WholesaleSalesManager.loadItemDetails();
+        expect(note.style.display).toBe('none');
+    });
+});

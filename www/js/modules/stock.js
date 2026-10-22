@@ -12,12 +12,24 @@ import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { planStockAdjustment } from '../utils/stock-adjust.js';
+import { approxStockNote } from '../utils/stock-check.js';
 import { evaluateStockAdjustment, toFlags } from '../utils/bill-checks.js';
 import { findDeadStock, daysSinceLabel, localDaysBetween, DEAD_STOCK_DAY_OPTIONS, DEFAULT_DEAD_STOCK_DAYS } from '../utils/dead-stock.js';
 
 const DEAD_STOCK_DAYS_KEY = 'aadhat.deadStockDays';
 
 const STOCK_UPDATING_HTML = '<p class="stock-updating" style="text-align: center; color: #888; margin-top: 40px;">Stock updating… / स्टॉक अपडेट हो रहा है…</p>';
+
+/**
+ * Banner for approximate stock (member device, stale checkpoint; #129).
+ * @param {?{builtAt: number}} approx AppState.stockApprox
+ * @returns {string} HTML, '' when stock is exact
+ */
+export function stockApproxNoteHtml(approx) {
+    const note = approxStockNote(approx);
+    if (!note) return '';
+    return `<p class="stock-approx" style="background: #fff8e1; color: #8a6d00; border-radius: 6px; padding: 8px 10px; font-size: 13px; margin: 0 0 8px;">${Helpers.escapeHtml(note.en)} — exact once the owner or a manager opens the app.<br>${Helpers.escapeHtml(note.hi)} — मालिक या मैनेजर के ऐप खोलने पर सही होगा।</p>`;
+}
 
 /**
  * Stock Manager - Manages inventory stock operations
@@ -194,6 +206,9 @@ export class StockManager {
         
         // Check if user is staff (show limited quantity info for items > 100kg)
         const isStaff = AppState.userRole === 'staff';
+
+        const approxNote = stockApproxNoteHtml(AppState.stockApprox);
+        if (approxNote) container.insertAdjacentHTML('beforeend', approxNote);
         
         stockWithDetails.forEach(item => {
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;

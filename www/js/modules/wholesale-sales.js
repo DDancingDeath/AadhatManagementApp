@@ -5,7 +5,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { PrinterService } from '../services/printer.js';
 import { AuditService } from '../services/audit.js';
 import { Helpers } from '../utils/helpers.js';
-import { computeShortfallsFrom } from '../utils/stock-check.js';
+import { computeShortfallsFrom, approxStockNote } from '../utils/stock-check.js';
 import { normalizeThresholds, stockCreditFor } from '../utils/bill-checks.js';
 import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
@@ -80,6 +80,13 @@ export class WholesaleSalesManager {
         const sellRateEl = document.getElementById("sellRate");
         
         if (!availableStockEl || !avgRateEl || !sellRateEl) return;
+
+        const approxEl = document.getElementById("availableStockApprox");
+        if (approxEl) {
+            const note = AppState.stockReady === false ? null : approxStockNote(AppState.stockApprox);
+            approxEl.textContent = note ? `${note.en} / ${note.hi}` : "";
+            approxEl.style.display = note ? "block" : "none";
+        }
         
         if (!itemName) {
             availableStockEl.textContent = "-";
@@ -162,8 +169,13 @@ export class WholesaleSalesManager {
             stockCreditFor(AppState, 'wholesale', { draftId: pendingBill?.id }))
             .find(s => s.key === item.id);
         if (short && short.shortfall > oversellBlockKg + 1e-6) {
-            UIManager.showToast(`Insufficient stock! Available: ${short.available.toFixed(1)}kg`);
-            return;
+            const approx = approxStockNote(AppState.stockApprox);
+            if (!approx) {
+                UIManager.showToast(`Insufficient stock! Available: ${short.available.toFixed(1)}kg`);
+                return;
+            }
+            // Approximate stock (#129) may be off by older edits: warn only.
+            UIManager.showToast(`⚠️ ${itemName}: only ~${short.available.toFixed(1)}kg in stock (${approx.en}) / ${approx.hi}`, 6000);
         }
         
         const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;

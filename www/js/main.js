@@ -39,7 +39,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022u-release-1-5-2';
+const BUILD_ID = '20261022w-startup-speed';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -253,13 +253,11 @@ async function initializeUserData() {
             });
         }
 
-        // Stock: immediate when the checkpoint covers it, otherwise computed in
-        // the background (screens show "Stock updating…") so startup never waits
-        // on a full-history read.
-        await FirebaseService.prepareStock();
-        // The background version check may have blocked the app meanwhile.
+        // Stock is computed right after the first screen is painted (#13): the
+        // screens show "Stock updating…" until then and re-render when it is
+        // ready, so the first screen never waits on it.
         if (outdatedBlocked) return;
-        markStartup('stock', { ready: AppState.stockReady });
+        AppState.stockReady = false;
         
         // Initialize billing manager (connects purchase and retail-sale modules)
         BillingManager.init();
@@ -309,6 +307,8 @@ async function initializeUserData() {
         markStartup('app-shown', { online: navigator.onLine });
         noteStartup('listeners', FirebaseService.getStartupListenerInfo?.() || {});
         logStartupTimings();
+        FirebaseService.prepareStock({ defer: true })
+            .then(() => markStartup('stock', { ready: AppState.stockReady, approximate: !!AppState.stockApprox }));
 
         // What's new + Android update banner (non-blocking, best effort)
         AppUpdatesManager.onAppReady();

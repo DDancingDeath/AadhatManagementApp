@@ -18,7 +18,7 @@ import {
     checkPaymentSplit, dueNeedsName, NAME_REQUIRED_FOR_DUE_MESSAGE, paymentSplitMessage, readLineItem, round2, toMoney
 } from './money.js';
 import { parseAnyBillDate, startOfLocalDay } from './dates.js';
-import { computeShortfallsFrom, stockKeyFor } from './stock-check.js';
+import { computeShortfallsFrom, stockKeyFor, approxStockNote } from './stock-check.js';
 
 /**
  * Defaults from the owner questionnaire (#106; blank answer = default).
@@ -186,15 +186,17 @@ function oversellIssues(items, ctx, extraLine) {
     const lines = extraLine ? [...items, extraLine] : items;
     const shortfalls = computeShortfallsFrom(lines,
         { items: ctx.catalogue, stock: ctx.stock, stockReady: ctx.stockReady }, ctx.credit);
+    // Approximate stock (#129) may be off by older edits: warn, never block.
+    const approx = ctx.stockApproximate ? approxStockNote(ctx.stockApprox || {}) : null;
     return shortfalls.map(s => {
-        const block = ctx.oversellCanBlock && s.shortfall > ctx.thresholds.oversellBlockKg + 1e-6;
+        const block = ctx.oversellCanBlock && !approx && s.shortfall > ctx.thresholds.oversellBlockKg + 1e-6;
         const avail = s.available <= 0 ? '0' : fmtKg(s.available);
         const indices = items.map((it, i) => (stockKeyFor(it, ctx.catalogue) === s.key ? i : -1)).filter(i => i !== -1);
         const onEntry = !!extraLine && stockKeyFor(extraLine, ctx.catalogue) === s.key;
         const field = onEntry ? 'entry.qty' : 'items';
         return issue('oversell', field, block ? 'block' : 'warn',
-            `${s.name}: selling ${fmtKg(s.requested)} kg, only ${avail} kg in stock (short ${fmtKg(s.shortfall)} kg)`,
-            `${s.name}: ${fmtKg(s.requested)} किलो बिक्री, स्टॉक में सिर्फ़ ${avail} किलो (${fmtKg(s.shortfall)} किलो कम)`,
+            `${s.name}: selling ${fmtKg(s.requested)} kg, only ${avail} kg in stock (short ${fmtKg(s.shortfall)} kg)${approx ? ` — ${approx.en}` : ''}`,
+            `${s.name}: ${fmtKg(s.requested)} किलो बिक्री, स्टॉक में सिर्फ़ ${avail} किलो (${fmtKg(s.shortfall)} किलो कम)${approx ? ` — ${approx.hi}` : ''}`,
             { lines: indices });
     });
 }
@@ -422,6 +424,8 @@ export function buildCheckContext(state, kind, { now = Date.now(), editingBill =
         catalogue: Array.isArray(s.items) ? s.items : [],
         stock: s.stock || {},
         stockReady: s.stockReady !== false,
+        stockApproximate: !!s.stockApprox,
+        stockApprox: s.stockApprox || null,
         credit: stockCreditFor(s, kind, { editingBill, draftId }),
         recentBills: Array.isArray(history) ? history : [],
         // #33 (should retail reduce stock?) is open: retail oversell only warns, as before.

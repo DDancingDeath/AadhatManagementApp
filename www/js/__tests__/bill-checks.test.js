@@ -343,6 +343,17 @@ describe('buildCheckContext', () => {
         expect(ids(evaluateBill(sale, buildCheckContext(s, 'wholesale', { now: NOW, draftId: 'pend1' })))).toEqual([]);
         expect(find(evaluateBill(sale, buildCheckContext(s, 'wholesale', { now: NOW })), 'oversell').severity).toBe('block');
     });
+
+    test('#129 approximate stock (stale checkpoint on a member device): wholesale oversell only warns and says so', () => {
+        const s = { ...state, stock: { rice: { quantity: 20, rate: 30 } }, stockReady: true, salesHistory: [] };
+        const sale = draft({ kind: 'wholesale', items: [{ itemId: 'rice', name: 'Rice', rate: 40, qty: 50, total: 2000 }], total: 2000, payment: { cash: 2000 } });
+        expect(find(evaluateBill(sale, buildCheckContext(s, 'wholesale', { now: NOW })), 'oversell').severity).toBe('block');
+        const approx = { ...s, stockApprox: { builtAt: NOW - 3600000, asOf: 0 } };
+        const o = find(evaluateBill(sale, buildCheckContext(approx, 'wholesale', { now: NOW })), 'oversell');
+        expect(o.severity).toBe('warn');
+        expect(o.en).toContain('approximate stock (updated');
+        expect(o.hi).toContain('अनुमानित स्टॉक');
+    });
 });
 
 describe('cash count bands (Q19) and stock adjustment size (Q17)', () => {
