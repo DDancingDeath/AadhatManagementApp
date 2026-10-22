@@ -19,6 +19,7 @@ import { AuditService } from '../services/audit.js';
 import {
     bannerText, buildCheckContext, canOverride, evaluateBill, saveGate, toFlags, toOverrides
 } from '../utils/bill-checks.js';
+import { hidePartyDue, renderPartyDue } from './party-due-line.js';
 
 export const CHECK_DEBOUNCE_MS = 250;
 
@@ -287,6 +288,12 @@ export const BillChecksUI = {
             console.error('Bill checks failed:', error);
         }
         lastIssues[kind] = issues;
+        try {
+            const cfg = forms[kind];
+            renderPartyDue(kind, cfg.fields?.party?.inputs?.[0], cfg.getDraft());
+        } catch (error) {
+            console.error('Party due line failed:', error);
+        }
         return issues;
     },
 
@@ -296,6 +303,7 @@ export const BillChecksUI = {
         lastIssues[kind] = [];
         const section = sectionOf(kind);
         if (section) renderIssues(kind, []);
+        hidePartyDue(kind);
     },
 
     /**
@@ -400,4 +408,15 @@ async function askOverrideReason(blocks) {
         return null;
     }
     return reason;
+}
+
+// A form whose checks have not run yet has no listener; its first edit starts
+// them (e.g. typing the customer name first on the Wholesale page, #166).
+if (typeof document !== 'undefined') {
+    document.addEventListener('input', (e) => {
+        Object.keys(forms).forEach(kind => {
+            const section = sectionOf(kind);
+            if (section && !section.dataset.billChecksBound && section.contains(e.target)) BillChecksUI.schedule(kind);
+        });
+    });
 }

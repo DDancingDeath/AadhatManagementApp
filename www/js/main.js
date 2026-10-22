@@ -38,7 +38,7 @@ import { InstallManager } from './services/install-prompt.js';
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022o-bill-checks';
+const BUILD_ID = '20261022q-party-due';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -879,7 +879,8 @@ window.app = {
         updatePaymentTotal: () => WholesaleSalesManager.updatePaymentTotal(),
         fillReceivableAmount: (type) => WholesaleSalesManager.fillReceivableAmount(type),
         putRestInDue: () => WholesaleSalesManager.putRestInDue(),
-        pickContact: () => WholesaleSalesManager.pickContact()
+        pickContact: () => WholesaleSalesManager.pickContact(),
+        clearOutstandingParty: () => WholesaleSalesManager.clearOutstandingParty()
     },
     
     // History
@@ -925,7 +926,16 @@ window.app = {
         setAgingSort: (by) => OutstandingManager.setAgingSort(by),
         setPartiesOpen: (open) => OutstandingManager.setPartiesOpen(open),
         sendReminder: (partyKey) => OutstandingManager.sendReminder(partyKey),
-        printStatement: (partyKey) => OutstandingManager.printStatement(partyKey)
+        printStatement: (partyKey) => OutstandingManager.printStatement(partyKey),
+        clearPartyFilter: () => OutstandingManager.clearPartyFilter(),
+        // Tap on a bill's "Already owes" line (#166); wholesale dues live on the Wholesale page
+        showParty: (kind, name) => {
+            const tab = kind === 'wholesale' ? 'wholesale-sales' : 'due';
+            NavigationManager.setActiveNavLink(tab);
+            NavigationManager.showTab(tab);
+            if (kind === 'wholesale') WholesaleSalesManager.showOutstandingParty(name);
+            else OutstandingManager.showParty(kind === 'purchase' ? 'purchase' : 'sale', name);
+        }
     },
     
     // Reports

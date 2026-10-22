@@ -11,6 +11,7 @@ import { BillChecksUI, readTypedNumber } from '../ui/bill-highlight.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { OutstandingManager } from './outstanding.js';
+import { normalizePartyName } from '../utils/aging.js';
 import {
     checkPaymentSplit, computeWholesaleTotals, KEPT_SERVER_PAYMENT_MESSAGE, paymentSplitMessage, readPayment, round2
 } from '../utils/money.js';
@@ -533,6 +534,7 @@ export class WholesaleSalesManager {
     }
 
     static filterSalesTab(view, evt) {
+        this.outstandingParty = null;
         const buttons = document.querySelectorAll('#wholesale-sales .filter-btn');
         buttons.forEach(btn => btn.classList.remove('active'));
         if (evt) evt.target.classList.add('active');
@@ -640,14 +642,37 @@ export class WholesaleSalesManager {
         if (cleared) this.renderSalesHistory();
     }
 
+    /** Party opened from the bill's "Already owes" line (#166): {key, name} or null. */
+    static outstandingParty = null;
+
+    /**
+     * Open the Outstanding view showing only one customer's open bills.
+     * @param {string} name Customer name as typed on the bill
+     */
+    static showOutstandingParty(name) {
+        const outstandingBtn = document.querySelectorAll('#wholesale-sales .filter-btn')[1];
+        this.filterSalesTab('outstanding', outstandingBtn ? { target: outstandingBtn } : undefined);
+        const key = normalizePartyName(name);
+        if (!key) return;
+        this.outstandingParty = { key, name: String(name).trim() };
+        this.renderSalesOutstanding();
+    }
+
+    static clearOutstandingParty() {
+        this.outstandingParty = null;
+        this.renderSalesOutstanding();
+    }
+
     static renderSalesOutstanding() {
         const salesHistory = AppState.salesHistory;
         const container = document.getElementById("salesOutstandingList");
+        const party = this.outstandingParty;
         
         const outstandingSales = salesHistory
             .filter(sale => {
                 if (sale.source !== 'sales-tab') return false;
                 if (sale.cleared) return false;
+                if (party && normalizePartyName(sale.customerName) !== party.key) return false;
                 
                 const totalReceivable = sale.total || 0;
                 const onlineReceived = sale.payment ? (sale.payment.online || 0) : 0;
@@ -673,12 +698,18 @@ export class WholesaleSalesManager {
             })
             .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         
+        const partyNote = party ? `
+            <div class="party-filter-note">
+                <span>Showing only / केवल: <strong>${Helpers.escapeHtml(party.name)}</strong></span>
+                <button type="button" class="aging-btn" onclick="window.app.wholesaleSales.clearOutstandingParty()">Show all / सभी दिखाएँ</button>
+            </div>` : '';
+
         if (outstandingSales.length === 0) {
-            container.innerHTML = '<p style="text-align: center; color: #888; margin-top: 40px;">No outstanding payments</p>';
+            container.innerHTML = `${partyNote}<p style="text-align: center; color: #888; margin-top: 40px;">${party ? 'Nothing outstanding for this party / इस पार्टी का कोई बकाया नहीं' : 'No outstanding payments'}</p>`;
             return;
         }
 
-        container.innerHTML = '';
+        container.innerHTML = partyNote;
 
         outstandingSales.forEach(sale => {
                 const div = document.createElement("div");
