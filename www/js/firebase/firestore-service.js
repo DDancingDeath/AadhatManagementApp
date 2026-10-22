@@ -33,6 +33,9 @@ import { markStartup } from '../utils/startup-timings.js';
 import { isQuotaExhaustedError } from '../utils/quota-guard.js';
 import { installFirestoreMeter, getQuotaStatus } from './firestore-meter.js';
 import { t } from '../i18n/index.js';
+import { tip } from '../tip/index.js';
+import { billSaveProps } from '../tip/scenarios/bill-save.js';
+import { buildHealthDoc, buildFailureDoc, healthDocId, failureDocId, validFailureSeq } from '../tip/report.js';
 
 // Count reads and catch quota errors for every Firestore call in the app (#194).
 if (typeof firebase !== 'undefined' && firebase.firestore) {
@@ -691,13 +694,37 @@ async function saveBill(collKey, record, label, { retry = false } = {}) {
     if (!record.id) record.id = getDb().collection(col(collKey)).doc().id;
     const docRef = getDb().collection(col(collKey)).doc(String(record.id));
     const key = `${collKey}/${record.id}`;
-    if (retry) return retryBillSave(collKey, record, docRef, previous, key);
+    const run = startBillSaveRun(collKey, record, retry);
+    if (retry) {
+        try {
+            const saved = await retryBillSave(collKey, record, docRef, previous, key);
+            run.complete();
+            return saved;
+        } catch (error) {
+            run.completeAndFail('save_error', { code: String(error?.code || 'unknown').slice(0, 40) });
+            throw error;
+        }
+    }
     sentBillPaymentSigs.set(key, paymentSignature(record));
     const write = docRef.set(record);
+    // Server acknowledgement (may come after settleWrite released the UI)
+    Promise.resolve(write).then(() => run.complete(), (error) => run.completeAndFail('write_rejected', { code: String(error?.code || 'unknown').slice(0, 40) }));
     noteStockWrite(collKey, previous, record);
     noteLocalRecordWrite(collKey, String(record.id), record);
     await settleWrite(write, label);
     return record;
+}
+
+/** TIP BillSave run (#217) for a new bill; never throws. @private */
+function startBillSaveRun(collKey, record, retry) {
+    try {
+        return tip.start('BillSave', {
+            flags: { retry: !!retry, offline: typeof navigator !== 'undefined' && navigator.onLine === false },
+            props: billSaveProps(collKey, record, Date.now())
+        });
+    } catch (_) {
+        return { complete() {}, completeAndFail() {} };
+    }
 }
 
 /**
@@ -2260,6 +2287,76 @@ const FirebaseService = {
             appSettingsPromise = appSettingsPromise.then(data => ({ ...(data || {}), ...fields }), () => ({ ...fields }));
         }
         await settleWrite(write, 'saveSharedCheckThresholds');
+    },
+
+    /**
+     * Test in Production settings for every device (#217): rollback policies.
+     * settings/app is owner-only.
+     * @param {Object} policies - normalized (tip/tip.js normalizePolicies)
+     * @returns {Promise<void>}
+     */
+    async saveTipPolicies(policies) {
+        const fields = {
+            tipPolicies: { ...policies },
+            tipUpdatedAt: Date.now(),
+            tipUpdatedBy: AppState.currentUser?.uid || 'unknown'
+        };
+        const write = getDb().collection(col('settings')).doc('app').set(fields, { merge: true });
+        if (appSettingsPromise) {
+            appSettingsPromise = appSettingsPromise.then(data => ({ ...(data || {}), ...fields }), () => ({ ...fields }));
+        }
+        await settleWrite(write, 'saveTipPolicies');
+    },
+
+    /**
+     * Write TIP counters (one set+merge with FieldValue.increment per day doc)
+     * and failure samples (create-only, one doc each). Failure samples whose
+     * write failed for a retryable reason are returned for a later try;
+     * permission-denied ones (e.g. id already used) are dropped.
+     * @param {{uid: string, deviceId: string, delta: ?Object, failures: ?Array, appVersion: string, buildId: string, platform: string}} p
+     * @returns {Promise<{retryFailures: Array}>}
+     */
+    async writeTip({ uid, deviceId, delta, failures, appVersion, buildId, platform }) {
+        if (!uid) throw new Error('not signed in');
+        const db = getDb();
+        const fv = firebase.firestore.FieldValue;
+        const inc = (n) => fv.increment(n);
+        const days = Object.entries(delta || {});
+        if (days.length) {
+            const batch = db.batch();
+            days.forEach(([day, perVersion]) => {
+                batch.set(db.collection(col('tipHealth')).doc(healthDocId(deviceId, day)), buildHealthDoc({
+                    deviceId, day, uid, delta: perVersion, appVersion, buildId, platform, inc, serverTime: fv.serverTimestamp()
+                }), { merge: true });
+            });
+            await batch.commit();
+        }
+        const list = (failures || []).filter(f => validFailureSeq(f.seq));
+        const results = await Promise.allSettled(list.map(f => db.collection(col('tipFailures')).doc(failureDocId(deviceId, f))
+            .set(buildFailureDoc({ uid, deviceId, platform, failure: f, serverTime: fv.serverTimestamp() }))));
+        const retryFailures = list.filter((f, i) => results[i].status === 'rejected' && results[i].reason?.code !== 'permission-denied');
+        return { retryFailures };
+    },
+
+    /**
+     * tipHealth docs for the Health page / Today banner: one doc per device per
+     * day from `sinceDay` (YYYYMMDD) on, at most `limit` (bounded reads).
+     * @returns {Promise<Array<Object>>}
+     */
+    async loadTipHealth({ sinceDay, untilDay = null, limit = 300 }) {
+        let q = getDb().collection(col('tipHealth')).where('day', '>=', sinceDay);
+        if (untilDay) q = q.where('day', '<=', untilDay);
+        const snap = await q.orderBy('day', 'desc').limit(limit).get();
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+
+    /**
+     * Latest TIP failure samples (newest first), at most `limit`.
+     * @returns {Promise<Array<Object>>}
+     */
+    async loadTipFailures({ limit = 30 } = {}) {
+        const snap = await getDb().collection(col('tipFailures')).orderBy('at', 'desc').limit(limit).get();
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     },
 
     /**

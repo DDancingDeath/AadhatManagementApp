@@ -5,6 +5,7 @@
  */
 
 import { AppState } from '../utils/state.js';
+import { noteTipError } from '../tip/index.js';
 
 /**
  * Maximum number of errors to store locally before syncing
@@ -239,6 +240,8 @@ const TelemetryService = {
         if (FIRESTORE_UNAVAILABLE_PATTERN.test(String(errorData?.message || ''))) {
             return;
         }
+        // TIP error watcher (#217): errors during an open scenario run turn a pass into a warning
+        noteTipError();
         const error = {
             ...errorData,
             timestamp: Date.now(),

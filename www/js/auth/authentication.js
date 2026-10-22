@@ -443,6 +443,11 @@ const AuthManager = {
                 if (tabId === 'rate-trends') {
                     item.style.display = isOwnerOrManager ? 'block' : 'none';
                 }
+
+                // App health / Test in Production (#217): owner/manager only
+                if (tabId === 'health') {
+                    item.style.display = isOwnerOrManager ? 'block' : 'none';
+                }
                 
                 if (tabId === 'diagnostics' && !isOwner) {
                     item.style.display = 'none';

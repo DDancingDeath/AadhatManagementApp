@@ -184,6 +184,11 @@ const NavigationManager = {
         if (tabId === 'rate-trends' && window.app?.rateTrends) {
             setTimeout(() => window.app.rateTrends.init(), 100);
         }
+
+        // Initialize App health page (owner/manager, #217)
+        if (tabId === 'health' && window.app?.health) {
+            setTimeout(() => window.app.health.init(), 100);
+        }
         
         // Initialize Day page when Day tab is shown
         if (tabId === 'day' && window.app?.day) {

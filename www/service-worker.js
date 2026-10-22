@@ -3,7 +3,7 @@
  * Provides offline functionality and caching
  */
 
-const CACHE_NAME = 'aadhat-v64';
+const CACHE_NAME = 'aadhat-v66';
 // Generated/verified by scripts/check-sw-assets.js (npm run check:sw).
 // Every entry must exist: a 404 here used to make the whole precache fail.
 const STATIC_ASSETS = [
@@ -31,6 +31,7 @@ const STATIC_ASSETS = [
     '/css/day.css',
     '/css/desktop.css',
     '/css/finance.css',
+    '/css/health.css',
     '/css/hamburger.css',
     '/css/history.css',
     '/css/outstanding.css',
@@ -61,6 +62,7 @@ const STATIC_ASSETS = [
     '/js/modules/day.js',
     '/js/modules/diagnostics.js',
     '/js/modules/finance.js',
+    '/js/modules/health.js',
     '/js/modules/history.js',
     '/js/modules/items.js',
     '/js/modules/miscellaneous.js',
@@ -126,6 +128,14 @@ const STATIC_ASSETS = [
     '/js/utils/finance-breakdown.js',
     '/js/utils/template-loader.js',
     '/js/utils/validator.js',
+    '/js/tip/tip.js',
+    '/js/tip/index.js',
+    '/js/tip/report.js',
+    '/js/tip/health-stats.js',
+    '/js/tip/scenarios/app-start.js',
+    '/js/tip/scenarios/bill-save.js',
+    '/js/tip/scenarios/payment-record.js',
+    '/js/tip/scenarios/cash-close.js',
     '/js/version.js',
     '/templates/admin.html',
     '/templates/analytics.html',
@@ -140,6 +150,7 @@ const STATIC_ASSETS = [
     '/templates/expenses.html',
     '/templates/rate-trends.html',
     '/templates/finance.html',
+    '/templates/health.html',
     '/templates/history.html',
     '/templates/items.html',
     '/templates/modals.html',

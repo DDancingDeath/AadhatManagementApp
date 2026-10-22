@@ -33,6 +33,7 @@ export class TemplateLoader {
             'analytics',
             'anomalies',
             'rate-trends',
+            'health',
             'day',
             'cash-management',
             'users',
@@ -80,6 +81,7 @@ export class TemplateLoader {
         appContent.insertAdjacentHTML('beforeend', templates.analytics);
         appContent.insertAdjacentHTML('beforeend', templates.anomalies);
         appContent.insertAdjacentHTML('beforeend', templates['rate-trends']);
+        appContent.insertAdjacentHTML('beforeend', templates.health);
         appContent.insertAdjacentHTML('beforeend', templates['cash-management']);
         appContent.insertAdjacentHTML('beforeend', templates.users);
         appContent.insertAdjacentHTML('beforeend', templates.chat);

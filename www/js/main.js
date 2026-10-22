@@ -22,6 +22,9 @@ import { CashManagementManager } from './modules/cash-management.js';
 import { DayManager } from './modules/day.js';
 import { AnomaliesManager } from './modules/anomalies.js';
 import { RateTrendsManager } from './modules/rate-trends.js';
+import { HealthManager } from './modules/health.js';
+import { tip, configureTip, startTipReporting, tipDeviceId } from './tip/index.js';
+import { APP_VERSION } from './version.js';
 import { AuditService } from './services/audit.js';
 import { TelemetryService } from './services/telemetry.js';
 import { DiagnosticsManager } from './modules/diagnostics.js';
@@ -41,7 +44,7 @@ import { t, getLang, setLang, toggleLang, applyTranslations, LANG_CHANGE_EVENT }
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261023a-finance-profit';
+const BUILD_ID = '20261023c-test-in-production';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -199,12 +202,25 @@ function blockOutdatedApp() {
     UIManager.showModal(t('msg.app.app_version_outdated_update_app'));
 }
 
+/** TIP (#217) report sink: counters + failure samples for this user/device. */
+function writeTipReport({ delta, failures }) {
+    const uid = AppState.currentUser?.uid || firebase.auth().currentUser?.uid;
+    const native = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.();
+    return FirebaseService.writeTip({
+        uid, deviceId: tipDeviceId(uid), delta, failures,
+        appVersion: APP_VERSION, buildId: BUILD_ID, platform: native ? 'android' : 'web'
+    });
+}
+
 async function initializeUserData() {
     if (outdatedBlocked) {
         blockOutdatedApp();
         return;
     }
     UIManager.showLoading();
+    // TIP AppStart (#217): first usable screen after the profile/data load
+    const appStart = tip.start('AppStart', { flags: { offline: navigator.onLine === false } });
+    const notShown = () => { appStart.setFlag('blocked'); appStart.complete(); };
     
     try {
         // Fetch user data
@@ -222,6 +238,7 @@ async function initializeUserData() {
                 
                 // Check if user is approved
                 if (userData.status === 'pending') {
+                    notShown();
                     await firebase.auth().signOut();
                     UIManager.hideLoading();
                     UIManager.showToast(t('msg.common.account_pending_approval_wait_admin'));
@@ -230,6 +247,7 @@ async function initializeUserData() {
                 }
                 
                 if (userData.status === 'rejected') {
+                    notShown();
                     await firebase.auth().signOut();
                     UIManager.hideLoading();
                     UIManager.showToast(t('msg.common.account_has_been_rejected_contact'));
@@ -241,6 +259,7 @@ async function initializeUserData() {
                 AppState.userName = userData.name || 'User';
             } else {
                 // User document doesn't exist
+                notShown();
                 await firebase.auth().signOut();
                 UIManager.hideLoading();
                 UIManager.showToast(t('msg.app.user_account_not_found_register'));
@@ -256,8 +275,10 @@ async function initializeUserData() {
         });
         // Shared labour rate / heavy-packet weight (#20) come from the same settings/app read
         FirebaseService.loadAppSettings()
-            .then(data => SettingsManager.applySharedSettings(data))
+            .then(data => { configureTip(data); return SettingsManager.applySharedSettings(data); })
             .catch(e => console.warn('Shared labour settings not loaded:', e?.code || e));
+        // TIP reporting (#217): approved user only; writes are batched (≤ 1 counter write / 30 min)
+        startTipReporting({ sink: writeTipReport, buildId: BUILD_ID });
 
         // Attach real-time listeners. Their first snapshots populate AppState,
         // so every document is read once per app open (a separate .get() of
@@ -286,6 +307,7 @@ async function initializeUserData() {
             new Promise(resolve => setTimeout(() => resolve(null), VERSION_CHECK_WAIT_MS))
         ]);
         if (versionResult === false) {
+            notShown();
             blockOutdatedApp();
             return;
         }
@@ -299,7 +321,7 @@ async function initializeUserData() {
         // Stock is computed right after the first screen is painted (#13): the
         // screens show "Stock updating…" until then and re-render when it is
         // ready, so the first screen never waits on it.
-        if (outdatedBlocked) return;
+        if (outdatedBlocked) { notShown(); return; }
         AppState.stockReady = false;
         
         // Initialize billing manager (connects purchase and retail-sale modules)
@@ -332,10 +354,15 @@ async function initializeUserData() {
         BillingManager.updateDraftCount();
         ExpensesManager.updateExpensePersonOptions();
         ExpensesManager.renderexpensesHistory();
+
+        // TIP AppStart (#217): the first screen is usable now; the auto-save
+        // restore prompt below waits for the user and must not count as start time.
+        appStart.complete();
         
         // Check for auto-saved bill
         await BillingManager.checkAutoSave();
         if (outdatedBlocked) {
+            notShown();
             blockOutdatedApp();
             return;
         }
@@ -364,6 +391,7 @@ async function initializeUserData() {
         
     } catch (error) {
         console.error('Error initializing app:', error);
+        appStart.complete({ loadFailed: true });
         UIManager.hideLoading();
         UIManager.showToast(t('msg.app.failed_load_data', { message: error.message }));
     }
@@ -1069,6 +1097,14 @@ window.app = {
     },
 
     // Rate trends (#65): monthly rate history per item + seasonal estimate
+    // App health / Test in Production (#217): owner/manager page + Today banner
+    health: {
+        init: () => HealthManager.init(),
+        refresh: () => HealthManager.refresh(),
+        openPage: () => HealthManager.openPage(),
+        savePolicies: () => HealthManager.savePolicies()
+    },
+
     rateTrends: {
         init: () => RateTrendsManager.init(),
         selectItem: (id) => RateTrendsManager.selectItem(id),

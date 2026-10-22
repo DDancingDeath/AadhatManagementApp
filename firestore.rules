@@ -638,6 +638,81 @@ service cloud.firestore {
       allow delete: if isOwnerIn('dev_users');
     }
 
+    // --- Test in Production (#217) ---
+    // tipHealth/{deviceId}_{YYYYMMDD}: daily per-device counters, written with
+    // set+merge and FieldValue.increment. Any approved user may create/update
+    // only their own device docs (uid, deviceId and day can't change); the
+    // per-version map is capped. tipFailures/{deviceId}_{YYYYMMDD}_{1..20}:
+    // create-only samples, so at most 20 per device per day. Owner/manager read.
+    function validTipHealth(usersCol, docId) {
+      let d = request.resource.data;
+      return isApprovedIn(usersCol)
+        && d.keys().hasOnly(['uid', 'deviceId', 'day', 'platform', 'appVersion', 'buildId', 'updatedAt', 'v'])
+        && d.keys().hasAll(['uid', 'deviceId', 'day', 'v'])
+        && d.uid == request.auth.uid
+        && d.deviceId is string && d.deviceId.matches('^[a-z0-9]{6,20}$')
+        && d.day is string && d.day.matches('^[0-9]{8}$')
+        && docId == d.deviceId + '_' + d.day
+        && d.v is map && d.v.size() <= 4
+        && shortStringOrAbsent(d, 'platform', 16)
+        && shortStringOrAbsent(d, 'appVersion', 20)
+        && shortStringOrAbsent(d, 'buildId', 64)
+        && (!('updatedAt' in d) || d.updatedAt == request.time)
+        && (resource == null
+            || (resource.data.uid == request.auth.uid
+                && resource.data.deviceId == d.deviceId
+                && resource.data.day == d.day));
+    }
+
+    function validTipFailure(usersCol, docId) {
+      let d = request.resource.data;
+      return isApprovedIn(usersCol)
+        && d.keys().hasOnly(['uid', 'deviceId', 'day', 'test', 'result', 'reason', 'reasonName', 'flags', 'props',
+                             'errors', 'durationMs', 'appVersion', 'buildId', 'platform', 'at', 'createdAt'])
+        && d.keys().hasAll(['uid', 'deviceId', 'day', 'test', 'result', 'reason', 'at'])
+        && d.uid == request.auth.uid
+        && d.deviceId is string && d.deviceId.matches('^[a-z0-9]{6,20}$')
+        && d.day is string && d.day.matches('^[0-9]{8}$')
+        && docId.matches('^' + d.deviceId + '_' + d.day + '_([1-9]|1[0-9]|20)$')
+        && d.test is string && d.test.size() <= 32
+        && d.result in ['fail', 'abandoned', 'expired', 'rolled_back']
+        && d.reason is int && d.reason >= 0 && d.reason <= 32767
+        && d.at is number
+        && (!('flags' in d) || (d.flags is map && d.flags.size() <= 12))
+        && (!('props' in d) || (d.props is map && d.props.size() <= 12))
+        && shortStringOrAbsent(d, 'reasonName', 40)
+        && shortStringOrAbsent(d, 'appVersion', 20)
+        && shortStringOrAbsent(d, 'buildId', 64)
+        && shortStringOrAbsent(d, 'platform', 16)
+        && (!('createdAt' in d) || d.createdAt == request.time);
+    }
+
+    match /tipHealth/{docId} {
+      allow read: if isManagerIn('users');
+      allow create, update: if validTipHealth('users', docId);
+      allow delete: if isOwnerIn('users');
+    }
+
+    match /dev_tipHealth/{docId} {
+      allow read: if isManagerIn('dev_users');
+      allow create, update: if validTipHealth('dev_users', docId);
+      allow delete: if isOwnerIn('dev_users');
+    }
+
+    match /tipFailures/{docId} {
+      allow read: if isManagerIn('users');
+      allow create: if validTipFailure('users', docId);
+      allow update: if false;
+      allow delete: if isOwnerIn('users');
+    }
+
+    match /dev_tipFailures/{docId} {
+      allow read: if isManagerIn('dev_users');
+      allow create: if validTipFailure('dev_users', docId);
+      allow update: if false;
+      allow delete: if isOwnerIn('dev_users');
+    }
+
     match /users/{userId} {
       allow read: if canReadProfile('users', userId);
       allow create: if canCreateProfile(userId);

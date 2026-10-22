@@ -5,7 +5,8 @@
  */
 jest.mock('../services/audit.js', () => ({ AuditService: { log: jest.fn(async () => {}), ACTIONS: { OVERRIDE_CHECK: 'OVERRIDE_CHECK' } } }));
 
-import { BillChecksUI, CHECK_DEBOUNCE_MS, readTypedNumber } from '../ui/bill-highlight.js';
+import { BillChecksUI, CHECK_DEBOUNCE_MS, readTypedNumber, BILL_CHECKS_BLOCKING_POLICY, AUTO_ROLLBACK_REASON } from '../ui/bill-highlight.js';
+import { tip } from '../tip/index.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AuditService } from '../services/audit.js';
 import { AppState } from '../utils/state.js';
@@ -224,6 +225,34 @@ describe('save gate', () => {
         const modal = jest.spyOn(UIManager, 'showModal');
         expect(await BillChecksUI.confirmSave('test')).toEqual({ ok: true, flags: [], overrides: [] });
         expect(modal).not.toHaveBeenCalled();
+    });
+
+    test('auto rollback (#217): members stay blocked; owner/manager get a warning and the override is recorded as auto-rollback', async () => {
+        state.items[0] = { itemId: 'rice', name: 'Rice', rate: 40, qty: 110, total: 4400 };
+        $('cash').value = '4400';
+        const toast = jest.spyOn(UIManager, 'showToast').mockImplementation(() => {});
+        const modal = jest.spyOn(UIManager, 'showModal').mockResolvedValue(true);
+        const html = jest.spyOn(UIManager, 'showModalWithHtml');
+        jest.spyOn(tip, 'isRolledBack').mockReturnValue(true);
+
+        // A member who could not override before is still blocked
+        expect((await BillChecksUI.confirmSave('test')).ok).toBe(false);
+        expect(toast).toHaveBeenLastCalledWith(expect.stringContaining('Rice: selling 110.0 kg'));
+        expect(modal).not.toHaveBeenCalled();
+
+        AppState.userRole = 'manager';
+        const ok = await BillChecksUI.confirmSave('test');
+        expect(tip.isRolledBack).toHaveBeenCalledWith(BILL_CHECKS_BLOCKING_POLICY);
+        expect(html).not.toHaveBeenCalled(); // no reason prompt
+        expect(modal).toHaveBeenCalledTimes(1); // one "save anyway?" confirm
+        expect(ok).toMatchObject({ ok: true, flags: [] });
+        expect(ok.overrides).toEqual([{ rule: 'oversell', reason: AUTO_ROLLBACK_REASON, by: 'u1', at: expect.any(Number) }]);
+        expect(AuditService.log).toHaveBeenCalledWith('OVERRIDE_CHECK', { kind: 'test', rules: ['oversell'], reason: AUTO_ROLLBACK_REASON });
+
+        modal.mockResolvedValue(false); // declining the confirm saves nothing and records nothing
+        AuditService.log.mockClear();
+        expect((await BillChecksUI.confirmSave('test')).ok).toBe(false);
+        expect(AuditService.log).not.toHaveBeenCalled();
     });
 
     test('billFields: flags only when present; overrides are kept across edits', () => {
