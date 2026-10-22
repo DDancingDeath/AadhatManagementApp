@@ -27,7 +27,9 @@ import {
     stockFingerprint
 } from '../utils/stock-replay.js';
 import { defaultWindowStart, monthsBefore, normalizeFrom, dateDescComparator } from '../utils/history-range.js';
-import { decideStockRebuild, leaseOwnerUid, LEASE_MAX_WAIT_MS } from '../utils/rebuild-lease.js';
+import { decideStockRebuild, leaseOwnerUid, LEASE_MAX_WAIT_MS, memberWindowStart } from '../utils/rebuild-lease.js';
+import { whenIdle, afterFirstPaint, shouldScheduleLegacyScan, LEGACY_SCAN_DELAY_MS } from '../utils/background-tasks.js';
+import { markStartup } from '../utils/startup-timings.js';
 import { isQuotaExhaustedError } from '../utils/quota-guard.js';
 import { installFirestoreMeter, getQuotaStatus } from './firestore-meter.js';
 
@@ -366,6 +368,14 @@ let leaseWaitStartedAt = 0;
 let stockChangeGen = 0;
 /** stockCheckpoints/legacyScan: per collection {complete, foundAt} of the timestamp backfill. */
 let legacyScanDoc = null;
+/** The legacyScan doc read of this session (never rejects); read in parallel with the listeners. */
+let legacyScanReadPromise = Promise.resolve();
+/** Background legacy scan scheduled after the first screen: {run, cancel} (#13). */
+let legacyScanJob = null;
+/** Set by calculateStock() when the stock it returned is approximate (members, stale checkpoint, #129). */
+let lastStockApprox = null;
+/** Parsed stale checkpoint for approximate stock, cached per checkpoint doc snapshot. */
+let approxCheckpointCache = { doc: undefined, cp: null };
 let oldestTimestampPromise = null;
 /** When the on-demand (non-live) history currently in memory was first fetched (0 = none). */
 let onDemandAsOf = 0;
@@ -492,9 +502,9 @@ function noteLocalRecordWrite(collKey, docId, record) {
     publishCollection(c);
 }
 
-/** Parses a checkpoint doc; null if missing, stale or incompatible. */
-function parseCheckpoint(data) {
-    if (!data || data.formatVersion !== STOCK_REPLAY_FORMAT || data.stale) return null;
+/** Parses a checkpoint doc; null if missing, stale (unless allowStale) or incompatible. */
+function parseCheckpoint(data, { allowStale = false } = {}) {
+    if (!data || data.formatVersion !== STOCK_REPLAY_FORMAT || (data.stale && !allowStale)) return null;
     if (typeof data.asOf !== 'number' || !Number.isFinite(data.asOf)) return null;
     const state = deserializeState(data.state);
     if (!state || !Array.isArray(data.resolutions)) return null;
@@ -521,6 +531,22 @@ const checkpointMatchesItems = (cp, items = AppState.items || []) => {
 function usableCheckpoint() {
     const cp = activeCheckpoint;
     if (!cp || !windowState || windowState.liveFrom > cp.asOf) return null;
+    return checkpointMatchesItems(cp) ? cp : null;
+}
+
+/**
+ * Member devices only (#129): the last checkpoint even when it is marked
+ * stale, if the loaded window covers it. Its state + the window give stock
+ * that misses only the older edits that made it stale, so it is shown as
+ * approximate instead of reading all history.
+ */
+function approximateCheckpoint() {
+    if (!windowState || canManageCheckpoint() || !checkpointDoc) return null;
+    if (approxCheckpointCache.doc !== checkpointDoc) {
+        approxCheckpointCache = { doc: checkpointDoc, cp: parseCheckpoint(checkpointDoc, { allowStale: true }) };
+    }
+    const cp = approxCheckpointCache.cp;
+    if (!cp || windowState.liveFrom > cp.asOf) return null;
     return checkpointMatchesItems(cp) ? cp : null;
 }
 
@@ -1112,6 +1138,9 @@ async function backfillLegacyTimestampsNow(spec, docs, gen) {
     if (windowState) (windowState.backfillWritten ||= {})[spec.key] = written;
     if (critical.some(w => !written.has(w.id))) ok = false;
     if (gen !== sessionGen) return { ok, complete, writes: critical.length + allowed.length };
+    // The legacyScan doc is read in parallel with startup; merge with what it holds.
+    await legacyScanReadPromise;
+    if (gen !== sessionGen) return { ok, complete, writes: critical.length + allowed.length };
     const prev = legacyScanDoc?.[spec.key] || {};
     // foundAt ~ when an outdated app last wrote such a document (its event time).
     const entry = { v: LEGACY_SCAN_VERSION, complete, foundAt: Math.max(prev.foundAt || 0, lastLegacyEvent), at: Date.now() };
@@ -1142,17 +1171,44 @@ async function scanLegacyCollections(ws, gen) {
         if (gen !== sessionGen || windowState !== ws) return;
         const c = ws.colls[spec.key];
         const live = liveIdSet(c);
+        let added = 0;
         snap.docs.forEach(doc => {
             const data = doc.data();
             if (data.date !== undefined && !live.has(doc.id) &&
                 ((typeof data.timestamp !== 'number' && eventTime(data) >= ws.liveFrom) ||
                  (spec.dues && hasDue(spec.key, data) && !dueVisibleToQueries(data)))) {
                 c.extended.set(doc.id, mapDoc(doc));
+                added++;
             }
         });
         publishCollection(c);
+        // Runs after the first screen now (#13): refresh what it added.
+        if (added) markDirty(spec.views, !!spec.stock);
         if (!snap.metadata?.fromCache) ws.backfills[spec.key] = backfillLegacyTimestamps(spec, snap.docs);
     }
+}
+
+/**
+ * Schedules scanLegacyCollections() for when the device is idle after the
+ * first screen, instead of holding startup on it (#13). Owner/manager devices
+ * only, at most once per session.
+ * @private
+ */
+function scheduleLegacyScan(ws, gen) {
+    legacyScanJob?.cancel();
+    let started = null;
+    const run = () => {
+        if (!started) {
+            cancel();
+            started = legacyScanReadPromise
+                .then(() => (gen === sessionGen && windowState === ws ? scanLegacyCollections(ws, gen) : undefined))
+                .catch(e => console.warn('Legacy timestamp scan failed:', e?.code || e))
+                .then(() => markStartup('legacy-scan'));
+        }
+        return started;
+    };
+    const cancel = whenIdle(run, { minDelayMs: LEGACY_SCAN_DELAY_MS });
+    legacyScanJob = { run, cancel };
 }
 
 /**
@@ -1567,6 +1623,11 @@ const FirebaseService = {
         extendQueue = Promise.resolve();
         pendingExtends.clear();
         invalidationTags.clear();
+        legacyScanJob?.cancel();
+        legacyScanJob = null;
+        lastStockApprox = null;
+        AppState.stockApprox = null;
+        approxCheckpointCache = { doc: undefined, cp: null };
         AppState.historyLoadedFrom = 0;
     },
 
@@ -2100,17 +2161,37 @@ const FirebaseService = {
      * Startup: computes stock if that needs no full-history read; otherwise
      * starts it in the background (AppState.stockReady stays false until the
      * exact stock is available; screens show "Stock updating…").
+     * With `defer`, stock is always computed right after the first screen is
+     * painted (#13); the returned promise resolves once that is done.
+     * @param {{defer?: boolean}} [opts]
      * @returns {Promise<void>}
      */
-    async prepareStock() {
-        if (!windowState || usableCheckpoint() || AppState.historyLoadedFrom === 0) {
+    async prepareStock({ defer = false } = {}) {
+        if (!defer && (!windowState || usableCheckpoint() || AppState.historyLoadedFrom === 0)) {
             await this.getStock();
             return;
         }
         AppState.stockReady = false;
-        this.getStock()
-            .then(() => markDirty(['stockView', 'itemsList', 'billingDropdown', 'salesDropdown'], false))
+        const gen = sessionGen;
+        const run = () => this.getStock()
+            .then(() => {
+                if (gen === sessionGen) markDirty(['stockView', 'itemsList', 'billingDropdown', 'salesDropdown'], false);
+            })
             .catch(e => console.error('Background stock calculation failed:', e));
+        if (!defer) {
+            run();
+            return;
+        }
+        await new Promise(resolve => afterFirstPaint(() => run().then(resolve)));
+    },
+
+    /**
+     * Runs the background legacy-timestamp scan now if one is scheduled
+     * (tests / Diagnostics); resolves when it is done.
+     * @returns {Promise<void>}
+     */
+    runLegacyScanNow() {
+        return legacyScanJob ? legacyScanJob.run() : Promise.resolve();
     },
 
     /**
@@ -2215,6 +2296,7 @@ const FirebaseService = {
      * @returns {Promise<Object.<string, {quantity: number, rate: number}>>} Stock object keyed by item ID
      */
     async calculateStock() {
+        lastStockApprox = null;
         if (!windowState) {
             return computeStock(currentSources(), AppState.items);
         }
@@ -2225,6 +2307,8 @@ const FirebaseService = {
         if (AppState.historyLoadedFrom !== 0) {
             // One device rebuilds (lease) and does the only full-history read;
             // the others wait for its checkpoint instead of each reading everything (#194).
+            // Members use the last (stale) checkpoint as approximate stock instead (#129).
+            const approx = approximateCheckpoint();
             const plan = decideStockRebuild({
                 canManage: canManageCheckpoint(),
                 leaseUntil: checkpointDoc?.rebuildingUntil || 0,
@@ -2233,8 +2317,13 @@ const FirebaseService = {
                 now: Date.now(),
                 waitedMs: leaseWaitedMs(),
                 inFlight: !!rebuildPromise,
-                attempted: rebuildAttempted
+                attempted: rebuildAttempted,
+                approxAvailable: !!approx
             });
+            if (plan === 'approximate') {
+                lastStockApprox = { builtAt: approx.builtAt || 0, asOf: approx.asOf };
+                return computeStockFrom(approx.state, approx.asOf, currentSources(), AppState.items);
+            }
             if (plan === 'wait') return waitForCheckpoint(checkpointDoc.rebuildingUntil);
             if (plan === 'join' || plan === 'rebuild') {
                 let result = null;
@@ -2287,11 +2376,14 @@ const FirebaseService = {
      */
     async getStock() {
         if (unsubscribeFunctions.length > 0 && stockCache.stock && stockCache.stock === AppState.stock && stockCache.version === dataVersion) {
+            // Only ready stock is cached (pending results clear the cache).
+            AppState.stockReady = true;
             return AppState.stock;
         }
         const version = dataVersion;
         const stock = await this.calculateStock();
         AppState.stock = stock;
+        AppState.stockApprox = lastStockApprox;
         if (pendingStocks.has(stock)) {
             // Last known stock is shown as "updating" until the checkpoint arrives.
             AppState.stockReady = false;
@@ -2570,14 +2662,19 @@ const FirebaseService = {
             markDirty(['itemsTable'], true);
         }, { mapFn: defaultMapDoc })];
 
-        const legacyScanRead = getWithRetry(legacyScanRef(), 'Legacy scan state', { attempts: 2 })
-            .then(snap => { legacyScanDoc = snap.exists ? snap.data() : {}; })
-            .catch(e => { console.warn('Reading legacy scan state failed:', e?.code || e); legacyScanDoc = null; });
-        const historyReady = Promise.all([listenCheckpoint(gen), legacyScanRead]).then(() => {
+        // Read in parallel: only the background legacy scan and backfills need it (#13).
+        legacyScanReadPromise = getWithRetry(legacyScanRef(), 'Legacy scan state', { attempts: 2 })
+            .then(snap => { if (gen === sessionGen) legacyScanDoc = snap.exists ? snap.data() : {}; })
+            .catch(e => { console.warn('Reading legacy scan state failed:', e?.code || e); if (gen === sessionGen) legacyScanDoc = null; });
+        const historyReady = listenCheckpoint(gen).then(() => {
             if (gen !== sessionGen) return undefined;
             const W = defaultWindowStart(Date.now());
             const cp = parseCheckpoint(checkpointDoc);
-            const liveFrom = cp ? Math.min(W, cp.asOf) : W;
+            let liveFrom = cp ? Math.min(W, cp.asOf) : W;
+            if (!cp && !canManageCheckpoint()) {
+                // Cover a stale checkpoint so members get approximate stock without a full read (#129).
+                liveFrom = memberWindowStart(W, parseCheckpoint(checkpointDoc, { allowStale: true })?.asOf ?? null);
+            }
             windowState = { gen, liveFrom, rawFull: false, colls: {}, backfills: {} };
             onDemandAsOf = 0;
             AppState.historyLoadedFrom = liveFrom;
@@ -2632,7 +2729,12 @@ const FirebaseService = {
             });
             const ws = windowState;
             // Without a usable checkpoint calculateStock() reads everything anyway (and backfills).
-            return Promise.all(waits).then(() => (cp ? scanLegacyCollections(ws, gen) : undefined));
+            return Promise.all(waits).then(() => {
+                if (gen !== sessionGen) return;
+                if (shouldScheduleLegacyScan({ canManage: canManageCheckpoint(), hasCheckpoint: !!cp, online: navigator.onLine })) {
+                    scheduleLegacyScan(ws, gen);
+                }
+            });
         });
         firstSnapshots.push(historyReady);
 

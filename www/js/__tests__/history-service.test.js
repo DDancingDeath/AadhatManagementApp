@@ -58,6 +58,8 @@ function install(seed = 3) {
 async function open() {
     FirebaseService.cleanup();
     await FirebaseService.setupRealtimeListeners();
+    // The legacy-timestamp scan runs in the background after the first screen (#13).
+    await FirebaseService.runLegacyScanNow();
     await FirebaseService.getStock();
     await settle();
 }
@@ -404,20 +406,55 @@ describe('review fixes', () => {
         }));
     });
 
-    it('#3 a stale mark with a newer staleCount stops local use of the checkpoint', async () => {
+    it('#3/#129 a stale mark stops exact use of the checkpoint; members show approximate stock without reading all history', async () => {
         install(25);
         await open();
         await rebuildSettled();
         await open();
         expect(FirebaseService.getStockCheckpointInfo()).not.toBeNull();
         AppState.userRole = 'staff';
+        const fullReads = () => fake.stats.queryLog.filter(q => ['purchases', 'retailSales', 'wholesaleSales', 'stockAdjustments'].includes(q.coll) &&
+            !q.filters.some(f => f.field === 'timestamp' || f.field === 'openDue')).length;
+        const beforeEdit = fullStock();
         // Another device edits an old bill and marks the checkpoint stale.
         const old = docsOf('purchases').find(p => p.timestamp < W - 60 * 86400000 && p.items?.length && !(p.payment?.due > 0) && !(p.dueAmount > 0));
         await fake.db.collection('purchases').doc(old.id).set({ ...old, items: [...old.items, { name: 'Zeera Stale', qty: 321, rate: 2 }] });
         await fake.db.collection('stockCheckpoints').doc('current').set({ stale: true, staleCount: (cpDoc().staleCount || 0) + 1 }, { merge: true });
         await settle();
         expect(FirebaseService.getStockCheckpointInfo()).toBeNull();
+
+        const reads = fullReads();
+        const approx = await FirebaseService.getStock();
+        expect(fullReads()).toBe(reads);
+        expect(FirebaseService.isFullHistoryLoaded()).toBe(false);
+        expect(AppState.stockReady).toBe(true);
+        expect(AppState.stockApprox).toMatchObject({ asOf: W });
+        // Exact except for the older edit that made the checkpoint stale.
+        expect(approx).toEqual(beforeEdit);
+        expect(approx).not.toEqual(fullStock());
+
+        // Opening the app again as a member while it is still stale: no full read either.
+        fake.stats.queryLog.length = 0;
+        await open();
+        expect(fullReads()).toBe(0);
+        expect(AppState.stockApprox).not.toBeNull();
+        expect(AppState.stock).toEqual(beforeEdit);
+
+        // An owner/manager device rebuilds the checkpoint: it is adopted and stock is exact.
+        const all = {
+            purchases: docsOf('purchases'), wholesaleSales: docsOf('wholesaleSales'),
+            retailSales: docsOf('retailSales'), stockAdjustments: docsOf('stockAdjustments')
+        };
+        const built = buildCheckpointState(all, W, ITEMS);
+        await fake.db.collection('stockCheckpoints').doc('current').set({
+            ...cpDoc(), asOf: W, stale: false, state: serializeState(built.state),
+            resolutions: built.resolutions.map(r => ({ i: r[0], n: r[1], k: r[2] })),
+            itemsSignature: itemsSignature(ITEMS), builtAt: Date.now()
+        });
+        await settle();
         expect(await FirebaseService.getStock()).toEqual(fullStock());
+        expect(AppState.stockApprox).toBeNull();
+        expect(fullReads()).toBe(0);
     });
 
     it('#3 roll-forward discards its payload when a stock record changes meanwhile', async () => {
@@ -696,6 +733,56 @@ describe('review fixes (2)', () => {
         expect(AppState.stock).toEqual(fullStock());
         expect(cpDoc()).toMatchObject({ formatVersion: 3, rebuildingUntil: 0, stale: false });
     }, 30000);
+
+    it('#13 deferred stock: not ready at the first screen, computed right after the first paint', async () => {
+        install(41);
+        await open();
+        await rebuildSettled();
+        FirebaseService.cleanup();
+        await FirebaseService.setupRealtimeListeners();
+        const prepared = FirebaseService.prepareStock({ defer: true });
+        expect(AppState.stockReady).toBe(false);
+        await prepared;
+        expect(AppState.stockReady).toBe(true);
+        expect(AppState.stock).toEqual(fullStock());
+    }, 30000);
+
+    it('#13 startup does not wait for the legacy-scan read; the scan runs after the first screen, owner/manager only', async () => {
+        install(40);
+        await open();
+        await rebuildSettled();
+        await fake.db.collection('stockCheckpoints').doc('legacyScan').set({ expenses: { v: 2, complete: false, foundAt: Date.now() } }, { merge: true });
+        const unfiltered = () => fake.stats.queryLog.filter(q => q.coll === 'expenses' && q.filters.length === 0).length;
+        // The legacyScan doc read hangs (slow network): startup must not wait for it.
+        let release;
+        const gate = new Promise(r => { release = r; });
+        const origCollection = fake.db.collection;
+        fake.db.collection = (name) => {
+            const c = origCollection(name);
+            if (name !== 'stockCheckpoints') return c;
+            return { ...c, doc: (id) => {
+                const d = c.doc(id);
+                return id === 'legacyScan' ? { ...d, get: (...a) => gate.then(() => d.get(...a)) } : d;
+            } };
+        };
+        FirebaseService.cleanup();
+        fake.stats.queryLog.length = 0;
+        await FirebaseService.setupRealtimeListeners();
+        expect(unfiltered()).toBe(0);
+        fake.db.collection = origCollection;
+        release();
+        await FirebaseService.runLegacyScanNow();
+        expect(unfiltered()).toBe(1);
+
+        // Member devices never run the unfiltered scan.
+        AppState.userRole = 'staff';
+        FirebaseService.cleanup();
+        fake.stats.queryLog.length = 0;
+        await FirebaseService.setupRealtimeListeners();
+        await FirebaseService.runLegacyScanNow();
+        await settle();
+        expect(unfiltered()).toBe(0);
+    });
 
     it('#8 one dues listener per bill collection, bounded to before the window (no duplicate deliveries)', async () => {
         install(34);

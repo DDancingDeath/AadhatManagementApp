@@ -13,7 +13,7 @@ import {
     QUOTA_BANNER_TEXT
 } from '../utils/quota-guard.js';
 import { installFirestoreMeter, getQuotaStatus, sourceLabel } from '../firebase/firestore-meter.js';
-import { decideStockRebuild, leaseOwnerUid, LEASE_MAX_WAIT_MS } from '../utils/rebuild-lease.js';
+import { decideStockRebuild, leaseOwnerUid, LEASE_MAX_WAIT_MS, memberWindowStart, MEMBER_APPROX_MAX_EXTRA_MS } from '../utils/rebuild-lease.js';
 
 const fs = require('fs');
 const path = require('path');
@@ -237,5 +237,29 @@ describe('stock checkpoint rebuild lease (decideStockRebuild)', () => {
         expect(decideStockRebuild({ ...skewed, waitedMs: 0 })).toBe('wait');
         expect(decideStockRebuild({ ...skewed, waitedMs: LEASE_MAX_WAIT_MS + 1 })).toBe('full-read');
         expect(LEASE_MAX_WAIT_MS).toBeLessThanOrEqual(60000);
+    });
+    test('#129 members with a stale checkpoint covering the window use it as approximate stock, never a full read', () => {
+        expect(decideStockRebuild({ canManage: false, now, approxAvailable: true })).toBe('approximate');
+        // ...also while an owner/manager device is rebuilding (no waiting, no blocked wholesale lines)
+        expect(decideStockRebuild({ canManage: false, leaseUntil: now + 60000, leaseBy: 'other:1:x', uid: 'me', now, approxAvailable: true })).toBe('approximate');
+        expect(decideStockRebuild({ canManage: false, now, waitedMs: LEASE_MAX_WAIT_MS + 1, approxAvailable: true })).toBe('approximate');
+    });
+    test('#129 owners/managers still rebuild (exact) even when a stale checkpoint exists', () => {
+        expect(decideStockRebuild({ canManage: true, now, approxAvailable: true })).toBe('rebuild');
+        expect(decideStockRebuild({ canManage: true, leaseUntil: now + 1, leaseBy: 'other:1:x', uid: 'me', now, approxAvailable: true })).toBe('wait');
+    });
+});
+
+describe('member window start for a stale checkpoint (#129)', () => {
+    const W = 10 * 86400000 * 100;
+    test('widens the window to the stale checkpoint within the bound', () => {
+        expect(memberWindowStart(W, W - 20 * 86400000)).toBe(W - 20 * 86400000);
+        expect(memberWindowStart(W, W - MEMBER_APPROX_MAX_EXTRA_MS)).toBe(W - MEMBER_APPROX_MAX_EXTRA_MS);
+    });
+    test('keeps the normal window when there is no checkpoint, it is newer, or far too old', () => {
+        expect(memberWindowStart(W, null)).toBe(W);
+        expect(memberWindowStart(W, W + 5)).toBe(W);
+        expect(memberWindowStart(W, W - MEMBER_APPROX_MAX_EXTRA_MS - 1)).toBe(W);
+        expect(memberWindowStart(W, NaN)).toBe(W);
     });
 });

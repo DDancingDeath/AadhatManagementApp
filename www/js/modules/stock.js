@@ -20,6 +20,20 @@ const DEAD_STOCK_DAYS_KEY = 'aadhat.deadStockDays';
 const STOCK_UPDATING_HTML = '<p class="stock-updating" style="text-align: center; color: #888; margin-top: 40px;">Stock updating… / स्टॉक अपडेट हो रहा है…</p>';
 
 /**
+ * Banner for approximate stock (member device, stale checkpoint; #129).
+ * @param {?{builtAt: number}} approx AppState.stockApprox
+ * @returns {string} HTML, '' when stock is exact
+ */
+export function stockApproxNoteHtml(approx) {
+    if (!approx) return '';
+    const when = approx.builtAt > 0
+        ? new Date(approx.builtAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+        : '—';
+    const w = Helpers.escapeHtml(when);
+    return `<p class="stock-approx" style="background: #fff8e1; color: #8a6d00; border-radius: 6px; padding: 8px 10px; font-size: 13px; margin: 0 0 8px;">≈ Approximate stock (updated ${w}) — exact once the owner or a manager opens the app.<br>≈ अनुमानित स्टॉक (अपडेट ${w}) — मालिक या मैनेजर के ऐप खोलने पर सही होगा।</p>`;
+}
+
+/**
  * Stock Manager - Manages inventory stock operations
  * @class StockManager
  */
@@ -194,6 +208,9 @@ export class StockManager {
         
         // Check if user is staff (show limited quantity info for items > 100kg)
         const isStaff = AppState.userRole === 'staff';
+
+        const approxNote = stockApproxNoteHtml(AppState.stockApprox);
+        if (approxNote) container.insertAdjacentHTML('beforeend', approxNote);
         
         stockWithDetails.forEach(item => {
             const displayName = (AppState.settings.showHindi && item.hindiName) ? item.hindiName : item.name;
