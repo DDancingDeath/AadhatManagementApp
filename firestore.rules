@@ -62,10 +62,6 @@ service cloud.firestore {
       return ['purchases', 'retailSales', 'wholesaleSales'];
     }
 
-    function devBillCollections() {
-      return ['dev_purchases', 'dev_retailSales', 'dev_wholesaleSales'];
-    }
-
     function canDeleteBill(usersCol) {
       // resource is null when deleting a doc that is already gone (no-op).
       return isOwnerIn(usersCol)
@@ -102,8 +98,281 @@ service cloud.firestore {
         && (!changed.hasAny(['id']) || (!('id' in resource.data) && request.resource.data.id == docId));
     }
 
+    // --- money validation (#19) ---
+
+    // `key` is absent from map `m`, or a number >= 0.
+    function nonNegativeOrAbsent(m, key) {
+      return !(key in m) || (m[key] is number && m[key] >= 0);
+    }
+
+    // The bill's due before this write, as readPayment() reads it (nested
+    // payment.due first); null when it isn't stored as a number.
+    function storedDue() {
+      let p = resource.data.get('payment', {});
+      let due = (p is map && 'due' in p) ? p.due : resource.data.get('dueAmount', resource.data.get('due', null));
+      return due is number ? due : null;
+    }
+
+    // Money fields that a write changes must be numbers (full edits and creates).
+    function changedMoneyTypesOk(keys) {
+      let d = request.resource.data;
+      return (!keys.hasAny(['total']) || d.total is number)
+        && (!keys.hasAny(['dueAmount']) || d.dueAmount is number)
+        && (!keys.hasAny(['cashPayment']) || d.cashPayment is number)
+        && (!keys.hasAny(['onlinePayment']) || d.onlinePayment is number)
+        && (!keys.hasAny(['payment'])
+            || (d.payment is map
+                && (!('cash' in d.payment) || d.payment.cash is number)
+                && (!('online' in d.payment) || d.payment.online is number)
+                && (!('due' in d.payment) || d.payment.due is number)));
+    }
+
+    // payments[] may only grow by one entry; existing entries stay unchanged and
+    // the new entry has a numeric amount >= 0 (#19).
+    function appendsOneEntry(field) {
+      let oldList = resource.data.get(field, []);
+      let newList = request.resource.data.get(field, []);
+      return oldList is list && newList is list
+        && newList.size() == oldList.size() + 1
+        && (oldList.size() == 0 || newList[0:oldList.size()] == oldList)
+        && newList[oldList.size()] is map
+        && newList[oldList.size()].get('amount', null) is number
+        && newList[oldList.size()].amount >= 0;
+    }
+
+    // Payment bookkeeping by someone who may not fully edit the bill: amounts are
+    // numbers >= 0, the due never goes up, payment.due and dueAmount agree, and
+    // payments[] is append-only (outstanding.js applyPaymentTransaction /
+    // applyWriteOffTransaction, wholesale markSaleAsCleared).
+    function paymentEditOk() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let d = request.resource.data;
+      let before = storedDue();
+      return (!changed.hasAny(['payment'])
+              || (d.payment is map
+                  && nonNegativeOrAbsent(d.payment, 'cash')
+                  && nonNegativeOrAbsent(d.payment, 'online')
+                  && nonNegativeOrAbsent(d.payment, 'due')
+                  && nonNegativeOrAbsent(d.payment, 'writtenOff')
+                  && (!('due' in d.payment) || before == null || d.payment.due <= before + 0.01)))
+        && (!changed.hasAny(['dueAmount'])
+            || (d.dueAmount is number && d.dueAmount >= 0
+                && (before == null || d.dueAmount <= before + 0.01)
+                && (!(d.get('payment', {}) is map) || !('due' in d.get('payment', {})) || d.payment.due == d.dueAmount)))
+        && (!changed.hasAny(['payments']) || appendsOneEntry('payments'));
+    }
+
     function canUpdateBill(usersCol, docId) {
-      return keepsBillOwner(usersCol) && (canFullyEditBill(usersCol) || bookkeepingOnly(docId));
+      return keepsBillOwner(usersCol)
+        && (isOwnerIn(usersCol)
+            || (canFullyEditBill(usersCol) && changedMoneyTypesOk(request.resource.data.diff(resource.data).affectedKeys()))
+            || (bookkeepingOnly(docId) && paymentEditOk()));
+    }
+
+    // New bills: the creator's own uid (when set) and numeric money fields.
+    function validBillCreate() {
+      return request.resource.data.get('userId', request.auth.uid) == request.auth.uid
+        && changedMoneyTypesOk(request.resource.data.keys());
+    }
+
+    // ============================================
+    // CASH, EXPENSES, STOCK ADJUSTMENTS, ITEMS, COUNTERS (#18)
+    // The owner may write these freely (repairs, backup restore). Everyone else
+    // is limited to the writes the app makes.
+    // ============================================
+
+    function isMember(usersCol) {
+      return isApprovedIn(usersCol) && !isManagerIn(usersCol);
+    }
+
+    // Who created a record (expenses carry userId and createdBy).
+    function createdByCaller() {
+      return resource.data.get('userId', resource.data.get('createdBy', null)) == request.auth.uid;
+    }
+
+    // Members may change their own record for 24 hours after it was made
+    // (fixing a typo); after that only an owner/manager may.
+    function withinEditWindow() {
+      let t = resource.data.get('timestamp', null);
+      return t is number
+        && t > request.time.toMillis() - 86400000
+        && t < request.time.toMillis() + 86400000;
+    }
+
+    // Legacy backfill (firestore-service.js backfillLegacyTimestamps): fills a
+    // missing numeric timestamp (+ clientVersion on stock records), nothing else.
+    function legacyBackfillOnly() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['timestamp', 'clientVersion'])
+        && changed.hasAny(['timestamp'])
+        && !(resource.data.get('timestamp', null) is number)
+        && request.resource.data.timestamp is number;
+    }
+
+    function amountOk() {
+      return request.resource.data.get('amount', null) is number && request.resource.data.amount >= 0;
+    }
+
+    // Expenses / withdrawals: anyone approved records their own, with a numeric amount.
+    function validLedgerCreate() {
+      return amountOk() && request.resource.data.get('userId', null) == request.auth.uid;
+    }
+
+    function expenseEditOk() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['type', 'personName', 'amount', 'remarks', 'updatedAt', 'updatedBy', 'updatedByName'])
+        && (!changed.hasAny(['amount']) || amountOk());
+    }
+
+    function canUpdateExpense(usersCol) {
+      return legacyBackfillOnly()
+        || (isManagerIn(usersCol)
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['amount']) || amountOk()))
+        || (createdByCaller() && withinEditWindow() && expenseEditOk());
+    }
+
+    function canDeleteExpense(usersCol) {
+      return isManagerIn(usersCol) || resource == null || (createdByCaller() && withinEditWindow());
+    }
+
+    // Stock adjustments: anyone approved may record one (stock.js applyStockAdjustment).
+    function validAdjustmentCreate() {
+      let d = request.resource.data;
+      return d.get('userId', null) == request.auth.uid
+        && d.get('adjustType', null) in ['add', 'remove', 'set']
+        && d.get('quantity', null) is number && d.quantity >= 0
+        && d.get('itemId', null) != null;
+    }
+
+    // --- cash sessions (cashManagement) ---
+
+    // cash-management.js signIn
+    function validCashCreate() {
+      let d = request.resource.data;
+      return d.get('openingBalance', null) is number && d.openingBalance >= 0
+        && d.get('signedOut', false) == false
+        && d.get('userId', null) == request.auth.uid;
+    }
+
+    // Deposits and due-payment legs are appended one at a time (arrayUnion, or
+    // outstanding.js applyPaymentTransaction). Also allowed on a closed session:
+    // an entry queued offline must not be lost because another device closed it.
+    function cashAppendOk() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.size() == 1
+        && changed.hasOnly(['duePayments', 'cashDeposits'])
+        && appendsOneEntry(changed.hasAny(['duePayments']) ? 'duePayments' : 'cashDeposits');
+    }
+
+    // A day the app closed automatically without a real count (#101; older
+    // apps wrote closingBalance 0 and no `counted`).
+    function wasAutoClosedUncounted() {
+      return resource.data.get('signedOut', false) == true
+        && resource.data.get('autoSignedOut', false) == true
+        && resource.data.get('counted', null) != true;
+    }
+
+    // Sign-out (counted) or the automatic close of a past day (not counted).
+    // A counted sign-out may also replace an automatic close: older apps
+    // (v1.3/v1.4) sign out with a plain update and would otherwise lose the count.
+    function cashCloseOk() {
+      let d = request.resource.data;
+      return (resource.data.get('signedOut', false) != true
+              || (wasAutoClosedUncounted() && d.get('closingBalance', null) is number))
+        && d.get('signedOut', false) == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'closingBalance', 'expectedBalance', 'difference', 'signOutTime', 'signedOut', 'counted',
+             'transactions', 'closingNotes', 'flags', 'autoSignedOut', 'autoClosed', 'autoSignOutReason'])
+        && (d.get('closingBalance', null) == null || (d.closingBalance is number && d.closingBalance >= 0))
+        && (d.get('counted', true) == false || d.get('closingBalance', null) is number)
+        && (d.get('expectedBalance', null) == null || d.expectedBalance is number);
+    }
+
+    // Recording the real count for a day that was closed without one (#101).
+    function cashLateCountOk() {
+      let d = request.resource.data;
+      let r = resource.data;
+      return r.get('signedOut', false) == true
+        && (r.get('counted', null) == false || (!('counted' in r) && r.get('autoSignedOut', false) == true))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'closingBalance', 'difference', 'counted', 'countedLate', 'countedAt', 'countedBy', 'countedByName'])
+        && d.get('closingBalance', null) is number && d.closingBalance >= 0
+        && d.get('counted', false) == true
+        && d.get('countedBy', null) == request.auth.uid;
+    }
+
+    // --- items: owner/manager create and edit; only the owner deletes ---
+
+    function itemFieldsOk(keys) {
+      let d = request.resource.data;
+      return (!keys.hasAny(['name']) || d.name is string)
+        && (!keys.hasAny(['rates']) || d.rates is list)
+        && (!keys.hasAny(['saleRates']) || d.saleRates is list)
+        && (!keys.hasAny(['wholesaleRates']) || d.wholesaleRates is list);
+    }
+
+    // --- bill-number counters (helpers.js _nextCounterValue): +1 per transaction ---
+
+    function counterFields() {
+      return ['next', 'initialized', 'prefix', 'date', 'updatedAt'];
+    }
+
+    function validCounterCreate() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(counterFields()) && d.get('next', null) is number && d.next >= 1;
+    }
+
+    function counterIncrementOk() {
+      let d = request.resource.data;
+      let r = resource.data;
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(counterFields())
+        && d.get('next', null) is number
+        && (r.get('initialized', false) == true && r.get('next', null) is number
+            ? d.next == r.next + 1
+            // Not yet seeded from today's bills: may jump forward, never back.
+            : (d.next >= 1 && (!(r.get('next', null) is number) || d.next > r.next)));
+    }
+
+    function baseName(collection) {
+      return collection.matches('dev_.*') ? collection.replace('^dev_', '') : collection;
+    }
+
+    function usersOf(collection) {
+      return collection.matches('dev_.*') ? 'dev_users' : 'users';
+    }
+
+    function canCreateRecord(base, u) {
+      return isOwnerIn(u)
+        || (base in billCollections() ? validBillCreate()
+          : base in ['expenses', 'withdrawals'] ? validLedgerCreate()
+          : base == 'stockAdjustments' ? validAdjustmentCreate()
+          : base in ['cashManagement', 'cashSessions'] ? validCashCreate()
+          : base == 'items' ? isManagerIn(u) && itemFieldsOk(request.resource.data.keys())
+          : base == 'counters' ? validCounterCreate()
+          : true);
+    }
+
+    function canUpdateRecord(base, u, docId) {
+      return base in billCollections() ? canUpdateBill(u, docId)
+        : isOwnerIn(u) ? true
+        : base == 'expenses' ? canUpdateExpense(u)
+        : base in ['withdrawals', 'stockAdjustments']
+          ? (legacyBackfillOnly()
+             || (isManagerIn(u)
+                 && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['amount']) || amountOk())))
+        : base in ['cashManagement', 'cashSessions'] ? (cashAppendOk() || cashCloseOk() || cashLateCountOk())
+        : base == 'items' ? isManagerIn(u) && itemFieldsOk(request.resource.data.diff(resource.data).affectedKeys())
+        : base == 'counters' ? counterIncrementOk()
+        : true;
+    }
+
+    function canDeleteRecord(base, u) {
+      return base in billCollections() ? canDeleteBill(u)
+        : isOwnerIn(u) ? true
+        : base == 'expenses' ? canDeleteExpense(u)
+        : base in ['withdrawals', 'stockAdjustments'] ? isManagerIn(u)
+        : base in ['cashManagement', 'cashSessions', 'items', 'counters'] ? false
+        : true;
     }
 
     // settings/app (minClientVersion) can lock every outdated phone out: owner only.
@@ -197,6 +466,60 @@ service cloud.firestore {
                  .hasAny(['role', 'status', 'approvedAt', 'approvedBy']));
     }
 
+    // --- audit logs (#55) and telemetry (#122): append-only ---
+
+    // The caller's own uid; `serverTime` (FieldValue.serverTimestamp) is the
+    // trusted time. `timestamp` (client clock, used for ordering) may not be in
+    // the future and only lags when the entry was queued offline (up to 3 days);
+    // entries without serverTime (older apps) must be within 10 minutes.
+    function validAuditEntry() {
+      let d = request.resource.data;
+      let now = request.time.toMillis();
+      return d.keys().hasOnly(['action', 'userId', 'userName', 'userRole', 'details', 'timestamp', 'date', 'serverTime'])
+        && d.get('userId', null) == request.auth.uid
+        && d.get('action', null) is string && d.action.size() <= 64
+        && d.get('timestamp', null) is number
+        && d.timestamp <= now + 600000
+        && (d.get('serverTime', null) == request.time
+            ? d.timestamp >= now - 259200000
+            : (!('serverTime' in d) && d.timestamp >= now - 600000))
+        && (!('userName' in d) || (d.userName is string && d.userName.size() <= 200))
+        && (!('userRole' in d) || (d.userRole is string && d.userRole.size() <= 32))
+        && (!('details' in d) || (d.details is map && d.details.size() <= 40));
+    }
+
+    // Owner cleanup (audit.js cleanupOldLogs): only entries older than 90 days.
+    function isExpiredAuditEntry() {
+      return resource.data.get('timestamp', null) is number
+        && resource.data.timestamp < request.time.toMillis() - 7776000000;
+    }
+
+    function shortStringOrAbsent(d, key, max) {
+      return !(key in d) || (d[key] is string && d[key].size() <= max);
+    }
+
+    // One document per sync of a grouped error (telemetry.js syncToFirestore).
+    function validTelemetryEntry() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['type', 'message', 'source', 'line', 'column', 'stack', 'context', 'timestamp',
+                               'date', 'url', 'userAgent', 'userId', 'userName', 'userRole', 'fingerprint',
+                               'count', 'occurrences', 'lastSeen', 'firstSeen'])
+        && d.get('userId', null) == request.auth.uid
+        && d.get('fingerprint', null) is string && d.fingerprint.size() <= 40
+        && d.get('count', null) is int && d.count >= 1 && d.count <= 100
+        && (!('occurrences' in d) || (d.occurrences is list && d.occurrences.size() <= 10))
+        && shortStringOrAbsent(d, 'type', 40)
+        && shortStringOrAbsent(d, 'message', 1000)
+        && shortStringOrAbsent(d, 'source', 500)
+        && shortStringOrAbsent(d, 'stack', 4000)
+        && shortStringOrAbsent(d, 'context', 2000)
+        && shortStringOrAbsent(d, 'date', 40)
+        && shortStringOrAbsent(d, 'url', 500)
+        && shortStringOrAbsent(d, 'userAgent', 500)
+        && shortStringOrAbsent(d, 'userName', 200)
+        && shortStringOrAbsent(d, 'userRole', 32);
+    }
+
     // ============================================
     // PRODUCTION COLLECTIONS
     // ============================================
@@ -207,21 +530,22 @@ service cloud.firestore {
       // Stock records need an up-to-date app (clientVersion >= 3) on create/update.
       allow create: if businessAccess(collection)
         && appSettingsGuard(collection, docId)
-        && (!(collection in stockCollections()) || writesCurrentClient(collection));
+        && (!(collection in stockCollections()) || writesCurrentClient(collection))
+        && canCreateRecord(baseName(collection), usersOf(collection));
       // Bills: full edits by owner/manager/creator; anyone else approved may only
       // record payment/due bookkeeping. Only an owner may change userId.
+      // Cash, expenses, stock adjustments, items, counters: see canUpdateRecord.
       allow update: if businessAccess(collection)
         && appSettingsGuard(collection, docId)
         && (!(collection in stockCollections()) || writesCurrentClient(collection))
-        && ((collection in businessCollections() && (!(collection in billCollections()) || canUpdateBill('users', docId)))
-            || (collection in devBusinessCollections() && (!(collection in devBillCollections()) || canUpdateBill('dev_users', docId))));
+        && canUpdateRecord(baseName(collection), usersOf(collection), docId);
       // Bills can only be deleted by an owner or by the user who created them
-      // (matches the client check in history.js deleteBill).
-      allow delete: if appSettingsGuard(collection, docId) && (
-           (collection in businessCollections() && !(collection in billCollections()) && isApproved())
-        || (collection in devBusinessCollections() && !(collection in devBillCollections()) && isApprovedIn('dev_users'))
-        || (collection in billCollections() && canDeleteBill('users'))
-        || (collection in devBillCollections() && canDeleteBill('dev_users')));
+      // (matches the client check in history.js deleteBill). Cash sessions,
+      // items and counters: owner only. Expenses: owner/manager, or the creator
+      // within 24 hours. Withdrawals/stock adjustments: owner/manager.
+      allow delete: if businessAccess(collection)
+        && appSettingsGuard(collection, docId)
+        && canDeleteRecord(baseName(collection), usersOf(collection));
     }
 
     // State/lease writes: owner or manager only; anyone approved may mark it stale.
@@ -290,16 +614,19 @@ service cloud.firestore {
       allow read, write: if isApproved() && request.auth.uid == userId;
     }
 
-    // Audit logs - approved users can write (for logging), only owners can read
+    // Audit logs - approved users append entries as themselves; only owners read,
+    // and only owners delete entries older than 90 days (retention cleanup).
     match /auditLogs/{logId} {
-      allow create: if isApproved();
+      allow create: if isApproved() && validAuditEntry();
       allow read: if isAdmin();
-      allow update, delete: if false; // Never allow modification or deletion
+      allow update: if false;
+      allow delete: if isAdmin() && isExpiredAuditEntry();
     }
 
-    // Telemetry - approved users can write (for error logging), only owners can read/delete
+    // Telemetry - append-only error reports; only owners read/delete (Clear All).
     match /telemetry/{docId} {
-      allow create, update: if isApproved();
+      allow create: if isApproved() && validTelemetryEntry();
+      allow update: if false;
       allow read, delete: if isAdmin();
     }
 
@@ -320,13 +647,15 @@ service cloud.firestore {
     }
 
     match /dev_auditLogs/{logId} {
-      allow create: if isApprovedIn('dev_users');
+      allow create: if isApprovedIn('dev_users') && validAuditEntry();
       allow read: if isOwnerIn('dev_users');
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isOwnerIn('dev_users') && isExpiredAuditEntry();
     }
 
     match /dev_telemetry/{docId} {
-      allow create, update: if isApprovedIn('dev_users');
+      allow create: if isApprovedIn('dev_users') && validTelemetryEntry();
+      allow update: if false;
       allow read, delete: if isOwnerIn('dev_users');
     }
   }

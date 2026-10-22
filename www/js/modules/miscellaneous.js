@@ -12,6 +12,10 @@ import { Helpers } from '../utils/helpers.js';
 import { AuditService } from '../services/audit.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
+import { canChangeExpense, EXPENSE_LOCKED_MESSAGE, isPermissionDenied } from '../utils/record-permissions.js';
+
+/** The signed-in user, as canChangeExpense expects it. */
+const currentUserInfo = () => ({ uid: AppState.currentUser?.uid, role: AppState.userRole });
 
 /**
  * Expenses Manager - Manages expense operations
@@ -28,7 +32,8 @@ export class ExpensesManager {
     /**
      * Create a new expense, or update the one being edited (same doc, no delete).
      * @param {Object} expense - Expense built from the form
-     * @returns {Promise<boolean>} true if an existing expense was updated
+     * @returns {Promise<boolean|null>} true if an existing expense was updated,
+     *   null if that update was refused (message already shown)
      */
     static async persistExpense(expense) {
         const editing = this.editingExpense;
@@ -54,7 +59,14 @@ export class ExpensesManager {
             updatedBy: expense.createdBy,
             updatedByName: expense.createdByName
         };
-        await this.updateExistingExpense(editing.id, fields);
+        try {
+            await this.updateExistingExpense(editing.id, fields);
+        } catch (err) {
+            if (!isPermissionDenied(err)) throw err;
+            this.cancelExpenseEdit();
+            UIManager.showToast(EXPENSE_LOCKED_MESSAGE, 4000);
+            return null;
+        }
         this.cancelExpenseEdit();
 
         // Keep original creation info on the object used for printing
@@ -165,6 +177,7 @@ export class ExpensesManager {
         await UIManager.withLoading(async () => {
             updated = await this.persistExpense(expense);
         });
+        if (updated === null) return;
         
         
         UIManager.hapticFeedback('medium');
@@ -225,6 +238,7 @@ export class ExpensesManager {
         await UIManager.withLoading(async () => {
             updated = await this.persistExpense(expense);
         });
+        if (updated === null) return;
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');
@@ -401,6 +415,7 @@ export class ExpensesManager {
         };
 
         const updated = await this.persistExpense(expense);
+        if (updated === null) return;
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast(updated ? '✓ Business expense updated' : '✓ Business expense saved');
@@ -494,6 +509,12 @@ export class ExpensesManager {
         `;
 
         document.getElementById('expenseDetailsContent').innerHTML = content;
+        // Hide what the rules would refuse (#18): members change only their own, recent expenses
+        const allowed = canChangeExpense(expense, currentUserInfo());
+        ['expenseDeleteBtn', 'expenseEditBtn'].forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.style.display = allowed ? '' : 'none';
+        });
         document.getElementById('expenseDetailsOverlay').classList.add('active');
     }
 
@@ -575,6 +596,10 @@ export class ExpensesManager {
             UIManager.showToast('Expense not found');
             return;
         }
+        if (!canChangeExpense(expense, currentUserInfo())) {
+            UIManager.showToast(EXPENSE_LOCKED_MESSAGE, 4000);
+            return;
+        }
 
         // Populate the form fields
         if (category === 'business') {
@@ -620,13 +645,18 @@ export class ExpensesManager {
             return;
         }
         
+        const list = AppState.expensesHistory || [];
+        const index = list.findIndex(e => String(e.id) === String(expenseId));
+        const existing = index !== -1 ? list[index] : null;
+        if (existing && !canChangeExpense(existing, currentUserInfo())) {
+            UIManager.showToast(EXPENSE_LOCKED_MESSAGE, 4000);
+            return;
+        }
+
         if (showConfirm && !confirm('Are you sure you want to delete this expense?')) {
             return;
         }
 
-        const list = AppState.expensesHistory || [];
-        const index = list.findIndex(e => String(e.id) === String(expenseId));
-        const existing = index !== -1 ? list[index] : null;
         try {
             // Remove from the screen at once (#89); restored if the delete fails
             if (index !== -1) list.splice(index, 1);
@@ -653,7 +683,7 @@ export class ExpensesManager {
                 AppState.expensesHistory = [...(AppState.expensesHistory || []), existing];
             }
             this.refreshExpenseViews();
-            UIManager.showToast('Failed to delete expense');
+            UIManager.showToast(isPermissionDenied(error) ? EXPENSE_LOCKED_MESSAGE : 'Failed to delete expense', isPermissionDenied(error) ? 4000 : undefined);
         }
     }
 
@@ -685,6 +715,7 @@ export class ExpensesManager {
         };
 
         const updated = await this.persistExpense(expense);
+        if (updated === null) return;
         
         UIManager.hapticFeedback('medium');
         UIManager.showToast(updated ? '✓ Personal expense updated' : '✓ Personal expense saved');

@@ -18,6 +18,7 @@ import {
     formatHistoryValue, FIELD_LABELS, RATE_SANITY_FACTOR, RATE_FIELDS
 } from '../utils/rate-history.js';
 import { createRateEditTracker, diffItemRates, diffItemFields } from '../utils/notification-format.js';
+import { canDeleteItem, ITEM_DELETE_LOCKED_MESSAGE, isPermissionDenied } from '../utils/record-permissions.js';
 
 /**
  * Items Manager - Manages inventory items and rates
@@ -419,6 +420,10 @@ const ItemsManager = {
     async deleteItem(id) {
         const item = this.requireItem(id);
         if (!item) return false;
+        if (!canDeleteItem(AppState.userRole)) {
+            UIManager.showToast(ITEM_DELETE_LOCKED_MESSAGE, 4000);
+            return false;
+        }
         const itemName = item.name || 'Unnamed';
         
         const confirmed = await UIManager.showModal(
@@ -450,7 +455,7 @@ const ItemsManager = {
         } catch (error) {
             console.error('Error deleting item:', error);
             UIManager.hideLoading();
-            UIManager.showToast('Failed to delete item');
+            UIManager.showToast(isPermissionDenied(error) ? ITEM_DELETE_LOCKED_MESSAGE : 'Failed to delete item');
             return false;
         }
     },
@@ -728,7 +733,7 @@ const ItemsManager = {
         document.getElementById('itemModalName').value = item.name || '';
         document.getElementById('itemModalHindiName').value = item.hindiName || '';
         document.getElementById('itemModalContactPerson').value = item.contactPerson || '';
-        document.getElementById('itemModalDeleteBtn').style.display = 'block';
+        document.getElementById('itemModalDeleteBtn').style.display = canDeleteItem(AppState.userRole) ? 'block' : 'none';
         
         this.modalRates = {
             purchase: [...(item.rates || [])],

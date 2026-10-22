@@ -479,7 +479,8 @@ const DiagnosticsManager = {
         if (!confirmed) return;
 
         try {
-            await TelemetryService.deleteError(errorId);
+            const entry = this.data.find(d => d.id === errorId);
+            await TelemetryService.deleteError(errorId, entry?.docIds);
             this.data = this.data.filter(d => d.id !== errorId);
             this.renderErrors();
             UIManager.showToast('Error deleted');

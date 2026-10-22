@@ -34,6 +34,76 @@ const MAX_SYNC_BACKOFF = 60 * 60 * 1000;
  */
 const FIRESTORE_UNAVAILABLE_PATTERN = /resource-exhausted|quota exceeded|RESOURCE_EXHAUSTED/i;
 
+/** Longest stored text per field; firestore.rules (validTelemetryEntry) rejects longer. */
+const TELEMETRY_TEXT_LIMITS = {
+    type: 40, message: 1000, source: 500, stack: 4000, context: 2000, date: 40,
+    url: 500, userAgent: 500, userName: 200, userRole: 32
+};
+
+const clip = (value, max) => (value === undefined || value === null ? undefined : String(value).slice(0, max));
+
+/**
+ * The telemetry document for one grouped error, holding only the fields the
+ * rules allow (#122): reports are create-only, one document per sync.
+ * @param {Object} group - grouped error (see syncToFirestore)
+ * @param {string} uid - signed-in user's uid (rules require it)
+ * @returns {Object}
+ */
+function buildTelemetryDoc(group, uid) {
+    const doc = {
+        userId: uid,
+        fingerprint: String(group.fingerprint || 'unknown').slice(0, 40),
+        count: Math.min(Math.max(1, Math.round(Number(group.count) || 1)), 100),
+        occurrences: (group.occurrences || []).slice(-10),
+        timestamp: group.timestamp,
+        lastSeen: group.lastSeen,
+        firstSeen: group.timestamp
+    };
+    if (group.line !== undefined) doc.line = group.line;
+    if (group.column !== undefined) doc.column = group.column;
+    Object.entries(TELEMETRY_TEXT_LIMITS).forEach(([key, max]) => {
+        let value = group[key];
+        if (key === 'context' && value !== undefined && typeof value !== 'string') {
+            try { value = JSON.stringify(value); } catch (_) { value = String(value); }
+        }
+        const text = clip(value, max);
+        if (text !== undefined) doc[key] = text;
+    });
+    Object.keys(doc).forEach(key => doc[key] === undefined && delete doc[key]);
+    return doc;
+}
+
+/**
+ * Merges report documents of the same error (same fingerprint) into one entry
+ * for the Diagnostics list: counts add up, first/last seen span all reports,
+ * the latest report's text is shown. Legacy docs (one per fingerprint, no
+ * `fingerprint` field) group by their document id.
+ * @param {Array<Object>} docs - `{ id, ...data }`
+ * @returns {Array<Object>} newest first; `docIds` lists the merged documents
+ */
+function mergeTelemetryReports(docs) {
+    const byFingerprint = new Map();
+    (docs || []).forEach(d => {
+        const key = d.fingerprint || d.id;
+        const prev = byFingerprint.get(key);
+        if (!prev) {
+            byFingerprint.set(key, { ...d, id: key, docIds: [d.id], count: d.count || 1, occurrences: [...(d.occurrences || [])] });
+            return;
+        }
+        const newer = (d.lastSeen || 0) > (prev.lastSeen || 0);
+        const merged = newer ? { ...prev, ...d, id: key } : prev;
+        merged.docIds = [...prev.docIds, d.id];
+        merged.count = (prev.count || 1) + (d.count || 1);
+        merged.lastSeen = Math.max(prev.lastSeen || 0, d.lastSeen || 0);
+        merged.firstSeen = Math.min(prev.firstSeen || prev.lastSeen || Infinity, d.firstSeen || d.lastSeen || Infinity);
+        merged.occurrences = [...prev.occurrences, ...(d.occurrences || [])]
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+            .slice(-10);
+        byFingerprint.set(key, merged);
+    });
+    return [...byFingerprint.values()].sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+}
+
 /**
  * Telemetry Service - Captures and stores application errors
  * @namespace TelemetryService
@@ -269,25 +339,13 @@ const TelemetryService = {
                 }
             });
 
-            // Upsert each grouped error without reading it first: try an
-            // increment-update, and create the document only if it doesn't
-            // exist yet (update fails with 'not-found').
+            // One new document per grouped error (create-only, #122): rules
+            // forbid rewriting reports, so nothing is read or updated here.
+            const uid = AppState.currentUser.uid;
             const entries = Object.entries(grouped);
-            const results = await Promise.allSettled(entries.map(async ([fingerprint, errorData]) => {
-                const docRef = db.collection(this.col('telemetry')).doc(fingerprint);
-                try {
-                    await docRef.update({
-                        count: firebase.firestore.FieldValue.increment(errorData.count),
-                        lastSeen: errorData.lastSeen,
-                        occurrences: firebase.firestore.FieldValue.arrayUnion(...errorData.occurrences.slice(-5))
-                    });
-                } catch (error) {
-                    if (error?.code !== 'not-found') throw error;
-                    await docRef.set({
-                        ...errorData,
-                        firstSeen: errorData.timestamp
-                    });
-                }
+            const results = await Promise.allSettled(entries.map(([fingerprint, errorData]) => {
+                const id = `${fingerprint}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+                return db.collection(this.col('telemetry')).doc(id).set(buildTelemetryDoc(errorData, uid));
             }));
 
             const failedFingerprints = new Set(entries
@@ -350,13 +408,13 @@ const TelemetryService = {
             const db = this.getDb();
             const snapshot = await db.collection(this.col('telemetry'))
                 .orderBy('lastSeen', 'desc')
-                .limit(100)
+                .limit(300)
                 .get();
 
-            return snapshot.docs.map(doc => ({
+            return mergeTelemetryReports(snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            }));
+            })));
         } catch (error) {
             console.warn('Failed to get telemetry data:', error.message);
             return [];
@@ -389,18 +447,22 @@ const TelemetryService = {
     },
 
     /**
-     * Delete a specific error (owner only)
-     * @param {string} errorId - Error fingerprint ID
+     * Delete one error (owner only): every report document merged into it.
+     * @param {string} errorId - Error fingerprint (or legacy document id)
+     * @param {string[]} [docIds] - documents merged into this entry
      * @returns {Promise<void>}
      */
-    async deleteError(errorId) {
+    async deleteError(errorId, docIds) {
         if (AppState.userRole !== 'owner') {
             throw new Error('Unauthorized');
         }
 
         try {
             const db = this.getDb();
-            await db.collection(this.col('telemetry')).doc(errorId).delete();
+            const ids = docIds && docIds.length ? docIds : [errorId];
+            const batch = db.batch();
+            ids.slice(0, 450).forEach(id => batch.delete(db.collection(this.col('telemetry')).doc(id)));
+            await batch.commit();
         } catch (error) {
             console.warn('Failed to delete error:', error.message);
             throw error;
@@ -408,4 +470,4 @@ const TelemetryService = {
     }
 };
 
-export { TelemetryService };
+export { TelemetryService, buildTelemetryDoc, mergeTelemetryReports };
