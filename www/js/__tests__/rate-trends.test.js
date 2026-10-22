@@ -86,7 +86,7 @@ describe('roll-forward', () => {
     test('covered months start at the loaded window when it begins on an IST month start', () => {
         expect(rollForwardFromMonth(istMonthStartMs('2026-09'), OCT15)).toBe('2026-09');
         expect(rollForwardFromMonth(istMonthStartMs('2026-09') + 5, OCT15)).toBe('2026-10');
-        expect(rollForwardFromMonth(0, OCT15)).toBe('2026-08');
+        expect(rollForwardFromMonth(0, OCT15)).toBe('2026-09');
     });
 
     test('writes only changed or emptied month docs', () => {

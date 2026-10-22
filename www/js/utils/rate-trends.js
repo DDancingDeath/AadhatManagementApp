@@ -197,9 +197,10 @@ export function sameStats(a, b) {
 
 /**
  * First IST month fully covered by the loaded history (ms; 0 = all loaded),
- * capped to `maxMonths` back from `now` so a roll-forward stays small.
+ * capped to `maxMonths` back from `now` so a roll-forward (and its server
+ * read of those months) stays small.
  */
-export function rollForwardFromMonth(loadedFrom, now, maxMonths = 3) {
+export function rollForwardFromMonth(loadedFrom, now, maxMonths = 2) {
     const current = istMonthKey(now);
     const floor = addMonths(current, -(maxMonths - 1));
     if (!(loadedFrom > 0)) return floor;

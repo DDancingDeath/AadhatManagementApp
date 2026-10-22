@@ -1759,16 +1759,18 @@ const FirebaseService = {
     },
 
     /**
-     * Stats docs of months >= fromMonth from this device's offline cache only
-     * (no billed reads; used to skip unchanged roll-forward writes).
+     * Stats docs of months >= fromMonth from the SERVER (never the offline
+     * cache), bounded, so a roll-forward compares with what everyone sees.
      * @param {string} fromMonth YYYY-MM
-     * @returns {Promise<Array<Object>>}
+     * @param {number} [max=300]
+     * @returns {Promise<{docs: Array<Object>, more: boolean}>}
      */
-    async loadCachedRateStatsFrom(fromMonth) {
+    async loadServerRateStatsFrom(fromMonth, max = 300) {
         const snapshot = await getDb().collection(col('rateStats'))
             .where('month', '>=', fromMonth)
-            .get({ source: 'cache' });
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            .limit(max)
+            .get({ source: 'server' });
+        return { docs: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })), more: snapshot.size >= max };
     },
 
     /**
@@ -2594,6 +2596,18 @@ const FirebaseService = {
         const p = extendQueue.then(() => refreshOnDemand());
         extendQueue = p.catch(() => {});
         return p;
+    },
+
+    /**
+     * True once the live window listeners of all three bill collections
+     * (purchases, retail, wholesale) have delivered a server snapshot this
+     * session, i.e. the loaded bills are not just the offline cache.
+     * @returns {boolean}
+     */
+    historyServerSynced() {
+        const ws = windowState;
+        if (!ws || ws.gen !== sessionGen) return false;
+        return ['purchases', 'retailSales', 'wholesaleSales'].every(k => ws.colls[k]?.live?.server === true);
     },
 
     /**

@@ -24,6 +24,10 @@ const CURSOR_KEY = 'aadhatRateStatsBackfill';
 const BUDGET_KEY = 'aadhatRateStatsBudget';
 const ROLL_KEY = 'aadhatRateStatsRoll';
 const ROLL_EVERY_MS = 6 * 60 * 60 * 1000;
+const ROLL_RETRY_MS = 60 * 1000;
+const ROLL_RETRIES = 5;
+/** Server read cap for the roll-forward months (≤ 2 months × items). */
+const ROLL_SERVER_MAX = 300;
 const META_TTL_MS = 5 * 60 * 1000;
 const COLORS = { purchase: '#2563eb', retail: '#059669', wholesale: '#d97706', bought: '#93c5fd', sold: '#6ee7b7' };
 const YEAR_COLORS = ['#dc2626', '#2563eb', '#059669', '#7c3aed', '#d97706'];
@@ -294,8 +298,11 @@ export const RateTrendsManager = {
 
     /**
      * Brings the stats of months fully covered by the loaded history in line
-     * with the loaded bills. Compares with this device's cached copy (no
-     * billed reads) and writes only changed month docs.
+     * with the loaded bills. Runs only online once the bill listeners have
+     * server data (offline-cached bills may be stale and would overwrite
+     * correct docs); compares with the server copy of those months, so a
+     * wrong doc written by another device is repaired, and writes only
+     * changed month docs.
      */
     rollForward({ force = false } = {}) {
         if (!canSee() || !AppState.currentUser) return Promise.resolve('not-allowed');
@@ -306,6 +313,8 @@ export const RateTrendsManager = {
             try { last = JSON.parse(localStorage.getItem(ROLL_KEY) || 'null'); } catch (_) { last = null; }
             if (!force && last && last.uid === uid && Date.now() - Number(last.at) < ROLL_EVERY_MS) return 'recent';
             const markDone = () => localStorage.setItem(ROLL_KEY, JSON.stringify({ uid, at: Date.now() }));
+            // Not marked done: retried later.
+            if (navigator.onLine === false || !FirebaseService.historyServerSynced()) return 'not-synced';
             const meta = await this.loadMeta();
             if (!meta?.backfillDone) {
                 if (this.metaError !== 'offline') markDone();
@@ -314,8 +323,15 @@ export const RateTrendsManager = {
             const now = Date.now();
             const fromMonth = rollForwardFromMonth(Number(AppState.historyLoadedFrom) || 0, now);
             const computed = finalizeStats(aggregateBills(loadedBills(), AppState.items || [], { fromMonth }));
-            const stored = await FirebaseService.loadCachedRateStatsFrom(fromMonth).catch(() => []);
-            const writes = planRollForward(computed, stored, fromMonth);
+            let server;
+            try {
+                server = await FirebaseService.loadServerRateStatsFrom(fromMonth, ROLL_SERVER_MAX);
+            } catch (e) {
+                console.warn('Rate trends roll-forward: stored months not read from the server:', e?.code || e);
+                return 'server-unreadable';
+            }
+            if (server.more) return 'too-many';
+            const writes = planRollForward(computed, server.docs, fromMonth);
             if (writes.length) {
                 await FirebaseService.saveRateStats(writes);
                 writes.forEach(w => this.statsByItem.delete(w.data.itemId));
@@ -329,10 +345,16 @@ export const RateTrendsManager = {
     },
 
     /** Background roll-forward a little after startup (owner/manager devices). */
-    scheduleRollForward(delayMs = 20000) {
+    scheduleRollForward(delayMs = 20000, attempt = 0) {
         if (!canSee()) return;
         setTimeout(() => {
-            this.rollForward().catch(e => console.warn('Rate trends roll-forward failed:', e?.code || e));
+            this.rollForward()
+                .then(result => {
+                    if ((result === 'not-synced' || result === 'server-unreadable') && attempt < ROLL_RETRIES) {
+                        this.scheduleRollForward(ROLL_RETRY_MS, attempt + 1);
+                    }
+                })
+                .catch(e => console.warn('Rate trends roll-forward failed:', e?.code || e));
         }, delayMs);
     },
 
