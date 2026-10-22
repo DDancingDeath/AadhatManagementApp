@@ -12,6 +12,7 @@ import { BillChecksUI, CHECK_DEBOUNCE_MS } from '../ui/bill-highlight.js';
 import { renderPartyDue } from '../ui/party-due-line.js';
 import { OutstandingManager } from '../modules/outstanding.js';
 import { AppState } from '../utils/state.js';
+import { Helpers } from '../utils/helpers.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -157,6 +158,32 @@ describe('#166 due line under the name', () => {
         type('Asha');
         jest.advanceTimersByTime(CHECK_DEBOUNCE_MS);
         expect(line().textContent).toContain('₹500 on 2 bills');
+    });
+
+    test('👤 Pick Contact updates the line to the picked party (or hides it)', async () => {
+        type('Asha');
+        jest.advanceTimersByTime(CHECK_DEBOUNCE_MS);
+        expect(line().dataset.party).toBe('Asha');
+        AppState.retailSalesHistory.push(bill('r7', 'Ram', 60));
+        const pick = (name) => {
+            navigator.contacts = { select: jest.fn(async () => [{ name: [name], tel: [] }]) };
+            window.ContactsManager = function ContactsManager() {};
+            return Helpers.pickContact('saleCustomerName');
+        };
+        try {
+            await pick('Ram');
+            jest.advanceTimersByTime(CHECK_DEBOUNCE_MS);
+            expect(line().hidden).toBe(false);
+            expect(line().dataset.party).toBe('Ram');
+            expect(line().textContent).toContain('₹60 on 1 bill');
+
+            await pick('Nobody Owes');
+            jest.advanceTimersByTime(CHECK_DEBOUNCE_MS);
+            expect(line().hidden).toBe(true);
+        } finally {
+            delete navigator.contacts;
+            delete window.ContactsManager;
+        }
     });
 
     test('editing a bill leaves that bill out of the existing due', () => {

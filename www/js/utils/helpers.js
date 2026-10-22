@@ -266,6 +266,9 @@ export class Helpers {
                     const nameInput = document.getElementById(inputElementId);
                     if (nameInput && contact.name && contact.name.length > 0) {
                         nameInput.value = contact.name[0];
+                        // Let live listeners (bill checks, existing-due line #166) see the new name
+                        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        nameInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 }
             } else {
