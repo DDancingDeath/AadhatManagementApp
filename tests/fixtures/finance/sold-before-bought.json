@@ -1,17 +1,61 @@
 {
   "name": "sold-before-bought",
-  "description": "A sale entered before its purchase: the replay can't cost the 10 kg, so the check line is off by 10 × ₹20 = ₹200 and the dashboard warns.",
-  "items": [ { "id": "item-rice", "name": "Rice", "hindiName": "चावल" } ],
+  "description": "A sale entered before its purchase. In the sale's period (1 Oct) the 10 kg can't be costed: profit 250 is overstated by ~10 × ₹20 = ₹200 (uncosted warning). In the purchase's period (2 Oct) the check line is off by the same ₹200 (refilled earlier shortfall).",
+  "items": [
+    {
+      "id": "item-rice",
+      "name": "Rice",
+      "hindiName": "चावल"
+    }
+  ],
   "purchases": [
-    { "id": "p1", "billNumber": "P20261002-001", "date": "2026-10-02T09:00:00", "customerName": "Ramesh",
-      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 100, "rate": 20, "total": 2000 } ],
-      "grandTotal": 2000, "payment": { "cash": 2000, "online": 0, "due": 0, "total": 2000 } }
+    {
+      "id": "p1",
+      "billNumber": "P20261002-001",
+      "date": "2026-10-02T09:00:00",
+      "customerName": "Ramesh",
+      "items": [
+        {
+          "itemId": "item-rice",
+          "name": "Rice",
+          "qty": 100,
+          "rate": 20,
+          "total": 2000
+        }
+      ],
+      "grandTotal": 2000,
+      "payment": {
+        "cash": 2000,
+        "online": 0,
+        "due": 0,
+        "total": 2000
+      }
+    }
   ],
   "wholesaleSales": [],
   "retailSales": [
-    { "id": "r1", "billNumber": "S20261001-001", "date": "2026-10-01T10:00:00", "customerName": "",
-      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 10, "rate": 25, "total": 250 } ],
-      "total": 250, "payment": { "cash": 250, "online": 0, "due": 0, "total": 250 } }
+    {
+      "id": "r1",
+      "billNumber": "S20261001-001",
+      "date": "2026-10-01T10:00:00",
+      "customerName": "",
+      "items": [
+        {
+          "itemId": "item-rice",
+          "name": "Rice",
+          "qty": 10,
+          "rate": 25,
+          "total": 250
+        }
+      ],
+      "total": 250,
+      "payment": {
+        "cash": 250,
+        "online": 0,
+        "due": 0,
+        "total": 250
+      }
+    }
   ],
   "stockAdjustments": [],
   "expenses": [],
@@ -20,12 +64,123 @@
     "all": {
       "range": null,
       "expected": {
-        "sales": 250, "cogs": 0, "grossProfit": 250, "business": 0, "profit": 250, "personal": 0,
-        "afterPersonal": 250, "withdrawn": 0, "afterWithdrawals": 250,
-        "stock": { "opening": 0, "purchases": 2000, "cogs": 0, "adjustments": 0, "closing": 1800, "now": 1800, "gap": 200 },
-        "cash": { "receivedAtSale": 250, "dueReceived": 0, "moneyIn": 250, "paidAtPurchase": 2000, "duePaid": 0, "moneyOut": 2000, "net": -1750 },
+        "sales": 250,
+        "cogs": 0,
+        "grossProfit": 250,
+        "business": 0,
+        "profit": 250,
+        "personal": 0,
+        "afterPersonal": 250,
+        "withdrawn": 0,
+        "afterWithdrawals": 250,
+        "stock": {
+          "opening": 0,
+          "purchases": 2000,
+          "cogs": 0,
+          "adjustments": 0,
+          "closing": 1800,
+          "now": 1800,
+          "gap": 200
+        },
+        "cash": {
+          "receivedAtSale": 250,
+          "dueReceived": 0,
+          "moneyIn": 250,
+          "paidAtPurchase": 2000,
+          "duePaid": 0,
+          "moneyOut": 2000,
+          "net": -1750
+        },
         "stockMismatch": true,
-        "gapByItem": { "item-rice": 200 }
+        "gapByItem": {
+          "item-rice": 200
+        },
+        "uncosted": {
+          "qty": 10,
+          "estimate": 200
+        },
+        "mismatchFromEarlierSales": false
+      }
+    },
+    "oct1": {
+      "range": [
+        "2026-10-01",
+        "2026-10-02"
+      ],
+      "expected": {
+        "sales": 250,
+        "cogs": 0,
+        "grossProfit": 250,
+        "business": 0,
+        "profit": 250,
+        "personal": 0,
+        "afterPersonal": 250,
+        "withdrawn": 0,
+        "afterWithdrawals": 250,
+        "stock": {
+          "opening": 0,
+          "purchases": 0,
+          "cogs": 0,
+          "adjustments": 0,
+          "closing": 0,
+          "now": 1800,
+          "gap": 0
+        },
+        "cash": {
+          "receivedAtSale": 250,
+          "dueReceived": 0,
+          "moneyIn": 250,
+          "paidAtPurchase": 0,
+          "duePaid": 0,
+          "moneyOut": 0,
+          "net": 250
+        },
+        "stockMismatch": false,
+        "uncosted": {
+          "qty": 10,
+          "estimate": 200
+        }
+      }
+    },
+    "oct2": {
+      "range": [
+        "2026-10-02",
+        "2026-10-03"
+      ],
+      "expected": {
+        "sales": 0,
+        "cogs": 0,
+        "grossProfit": 0,
+        "business": 0,
+        "profit": 0,
+        "personal": 0,
+        "afterPersonal": 0,
+        "withdrawn": 0,
+        "afterWithdrawals": 0,
+        "stock": {
+          "opening": 0,
+          "purchases": 2000,
+          "cogs": 0,
+          "adjustments": 0,
+          "closing": 1800,
+          "now": 1800,
+          "gap": 200
+        },
+        "cash": {
+          "receivedAtSale": 0,
+          "dueReceived": 0,
+          "moneyIn": 0,
+          "paidAtPurchase": 2000,
+          "duePaid": 0,
+          "moneyOut": 2000,
+          "net": -2000
+        },
+        "stockMismatch": true,
+        "mismatchFromEarlierSales": true,
+        "uncosted": {
+          "qty": 0,
+          "estimate": 0
+        }
       }
     }
   }

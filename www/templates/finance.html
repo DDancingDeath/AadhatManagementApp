@@ -43,6 +43,7 @@
             <div class="finance-hero-value" id="financeNetProfit">₹0</div>
             <div class="finance-hero-sub finance-tappable" id="financeAfterPersonalLine" data-finance-card="afterPersonal" role="button" tabindex="0"></div>
         </div>
+        <div id="financeProfitWarning" class="finance-stock-check finance-tappable" data-finance-card="uncosted" role="button" tabindex="0" style="display: none;"></div>
 
         <!-- Stats Grid - 2x2 -->
         <div class="finance-stats-grid">
@@ -107,6 +108,7 @@
                     <!-- Populated by JS -->
                 </tbody>
             </table>
+            <div id="financeCashNote" class="finance-cash-note" style="display: none;"></div>
         </div>
 
         <!-- Personal expenses and withdrawals: not subtracted from business profit (#36) -->

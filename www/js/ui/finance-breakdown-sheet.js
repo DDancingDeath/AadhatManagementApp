@@ -43,6 +43,9 @@ export function describeRow(r, showTerm = false) {
     if (r.billType) {
         title = [dateText(r.t), r.billNo ? `#${r.billNo}` : '', r.party || t(BILL_TYPE_KEYS[r.billType])].filter(Boolean).join(' · ');
         if (r.rest) sub = t('ui.finance.bill_difference');
+        else if (r.writeOff) sub = t('ui.finance.written_off');
+        else if (r.labour) sub = t('ui.finance.labour_on_bill');
+        else if (r.term === 'uncosted') sub = t('ui.finance.uncosted_line', { item, qty: qtyText(r.qty), rate: qtyText(r.rate) });
         else if (r.cash !== undefined) sub = t('ui.finance.cash_online', { cash: qtyText(r.cash), online: qtyText(r.online) });
         else if (r.term === 'cogs') sub = t('ui.finance.line_avg_cost', { item, qty: qtyText(r.qty), rate: qtyText(r.rate) });
         else sub = t('ui.finance.line_rate', { item, qty: qtyText(r.qty), rate: qtyText(r.rate) });
@@ -199,6 +202,7 @@ export const FinanceBreakdownSheet = {
                 </div>
                 <div class="fin-sheet-value">${esc(rupees(b.value))}</div>
                 ${formula ? `<div class="fin-sheet-formula">${formula}</div>` : ''}
+                ${b.notes.length ? `<div class="fin-sheet-notes">${b.notes.map(note => `<button type="button" class="fin-term fin-note" data-action="drill" data-card="${esc(note.cardId)}">${esc(t(note.label))} <strong>${esc(rupees(note.value))}</strong> · ${esc(t('ui.finance.not_included'))}</button>`).join('')}</div>` : ''}
                 <div class="fin-sheet-tools"></div>
                 <div class="fin-sheet-list"></div>
                 <div class="fin-sheet-total"></div>

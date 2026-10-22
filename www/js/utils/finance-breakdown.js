@@ -27,10 +27,22 @@ const stockValue = (name) => (s) => (s.stock ? s.stock[name] : null);
  */
 export const CARDS = {
     sales: { label: 'ui.finance.sales', rows: d => d.sales, value: s => s.sales.total },
-    cogs: { label: 'ui.finance.cogs', rows: stockRows('cogs'), value: s => s.cogs },
+    cogs: { label: 'ui.finance.cogs', rows: stockRows('cogs'), value: s => s.cogs, notes: ['uncosted', 'labour'] },
     gross: { label: 'ui.finance.gross_profit', terms: [['sales', 1], ['cogs', -1]], value: s => s.grossProfit },
     business: { label: 'ui.finance.business_expenses', rows: d => d.business, value: s => s.expenses.business },
-    profit: { label: 'ui.finance.profit_on_goods_sold', terms: [['sales', 1], ['cogs', -1], ['business', -1]], value: s => s.profit },
+    badDebts: { label: 'ui.finance.bad_debts', rows: d => d.badDebts, value: s => s.badDebts },
+    profit: {
+        label: 'ui.finance.profit_on_goods_sold',
+        // 'optional' terms are left out of the formula while they are 0.
+        terms: [['sales', 1], ['cogs', -1], ['business', -1], ['badDebts', -1, 'optional']],
+        value: s => s.profit,
+        notes: ['uncosted', 'labour']
+    },
+    // Shown next to profit, never part of it: units sold before their purchase was
+    // recorded (costed at ₹0, so profit may be overstated by about this much) and
+    // labour on purchases (not in cost; owner question on #215).
+    uncosted: { label: 'ui.finance.uncosted', rows: stockRows('uncosted'), value: s => (s.stock ? s.stock.uncosted.estimate : null) },
+    labour: { label: 'ui.finance.labour', rows: d => d.labour, value: s => s.purchases.labour },
     personal: { label: 'ui.finance.personal_expenses', rows: d => d.personal, value: s => s.expenses.personal },
     afterPersonal: { label: 'ui.finance.profit_after_personal', terms: [['profit', 1], ['personal', -1]], value: s => s.afterPersonal },
     withdrawn: { label: 'ui.finance.withdrawn', rows: d => d.withdrawn, value: s => s.withdrawn },
@@ -43,6 +55,7 @@ export const CARDS = {
     // Formula shows the check line; the rows are the per-item differences.
     stockCheck: {
         label: 'ui.finance.stock_check',
+        notes: ['uncosted'],
         terms: [['stockOpening', 1], ['stockPurchases', 1], ['cogs', -1], ['stockAdjustments', 1], ['stockClosing', -1]],
         rows: stockRows('gap'),
         value: stockValue('gap')
@@ -93,7 +106,9 @@ export function sumRows(rows) {
  * @param {Object} summary computeFinanceSummary(..., detail: true)
  * @param {string} cardId
  * @returns {?{cardId: string, label: string, value: ?number, available: boolean,
- *   formula: ?Array<{cardId: string, label: string, sign: number, value: ?number}>, rows: Array, total: number}}
+ *   formula: ?Array<{cardId: string, label: string, sign: number, value: ?number}>, rows: Array, total: number,
+ *   notes: Array<{cardId: string, label: string, value: number}>}} notes: related numbers that
+ *   are NOT part of this card (shown, tappable, only when non-zero)
  */
 export function buildBreakdown(summary, cardId) {
     const card = CARDS[cardId];
@@ -101,11 +116,18 @@ export function buildBreakdown(summary, cardId) {
     const value = summary ? card.value(summary) : null;
     const rows = value === null || value === undefined ? null : cardRows(summary, cardId);
     const formula = card.terms
-        ? card.terms.map(([id, sign]) => ({ cardId: id, label: CARDS[id].label, sign, value: CARDS[id].value(summary) }))
+        ? card.terms
+            .map(([id, sign, opt]) => ({ cardId: id, label: CARDS[id].label, sign, value: CARDS[id].value(summary), opt }))
+            .filter(term => !(term.opt && !term.value))
+            .map(({ opt, ...term }) => term)
         : null;
+    const notes = (card.notes || [])
+        .map(id => ({ cardId: id, label: CARDS[id].label, value: summary ? CARDS[id].value(summary) : null }))
+        .filter(n => n.value);
     return {
         cardId,
         label: card.label,
+        notes,
         value: value ?? null,
         available: !!rows,
         formula,

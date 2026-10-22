@@ -46,6 +46,8 @@ describe.each(cases)('finance summary: %s', (_label, f, p) => {
         expect(s.cogs).toBe(e.cogs);
         expect(s.grossProfit).toBe(e.grossProfit);
         expect(s.expenses.business).toBe(e.business);
+        expect(s.badDebts).toBe(e.badDebts ?? 0);
+        expect(s.purchases.labour).toBe(e.labour ?? 0);
         expect(s.profit).toBe(e.profit);
         expect(s.expenses.personal).toBe(e.personal);
         expect(s.afterPersonal).toBe(e.afterPersonal);
@@ -54,9 +56,12 @@ describe.each(cases)('finance summary: %s', (_label, f, p) => {
     });
 
     test('stock value movement and check line', () => {
-        const { detail, saleLines, ...stock } = s.stock;
+        const { detail, saleLines, uncosted, deficitRefilled, ...stock } = s.stock;
         expect(stock).toEqual(e.stock);
         expect(s.stockMismatch).toBe(e.stockMismatch);
+        expect(s.mismatchFromEarlierSales).toBe(e.mismatchFromEarlierSales ?? false);
+        expect({ qty: uncosted.qty, estimate: uncosted.estimate }).toEqual(e.uncosted ?? { qty: 0, estimate: 0 });
+        expect(s.uncostedWarning).toBe((e.uncosted?.qty ?? 0) > 0);
     });
 
     test('cash flow', () => {
@@ -71,7 +76,7 @@ describe.each(cases)('finance summary: %s', (_label, f, p) => {
     });
 
     test('grouped subtotals add up to the card value', () => {
-        ['sales', 'cogs', 'profit', 'netCash', 'stockNow'].forEach(cardId => {
+        ['sales', 'cogs', 'profit', 'netCash', 'stockNow', 'uncosted'].forEach(cardId => {
             const b = buildBreakdown(s, cardId);
             groupOptions(b.rows).filter(g => g !== 'none').forEach(by => {
                 const groups = groupRows(b.rows, by);
@@ -124,6 +129,85 @@ describe('finance summary: periods and replay start', () => {
 
     test('a stock movement can not start before its base', () => {
         expect(stockMovement({ base: { state: {}, from: 10 }, sources: sourcesOf(f), items: f.items, from: 5 })).toBeNull();
+    });
+});
+
+describe('review fixes: uncosted units, bad debts, labour, old-bill payments', () => {
+    const g = byName['sold-before-bought'];
+
+    test('units sold before their purchase show in the SALE\'s period, estimated at the next purchase rate', () => {
+        const oct1 = summarize(g, rangeOf(g.periods.oct1));
+        expect(oct1.uncostedWarning).toBe(true);
+        expect(oct1.stockMismatch).toBe(false);
+        const b = buildBreakdown(oct1, 'uncosted');
+        expect(b.rows.map(r => [r.billId, r.qty, r.rate, r.amount])).toEqual([['r1', 10, 20, 200]]);
+        expect(buildBreakdown(oct1, 'profit').notes).toEqual([expect.objectContaining({ cardId: 'uncosted', value: 200 })]);
+        // The later purchase's period keeps the check-line warning, labelled as the same cause.
+        const oct2 = summarize(g, rangeOf(g.periods.oct2));
+        expect(oct2.uncostedWarning).toBe(false);
+        expect(oct2.stockMismatch).toBe(true);
+        expect(oct2.mismatchFromEarlierSales).toBe(true);
+        expect(oct2.stock.deficitRefilled).toEqual({ qty: 10, value: 200 });
+    });
+
+    test('with no later purchase, the last known cost is used; with none at all the cost is unknown', () => {
+        const h = JSON.parse(JSON.stringify(byName['buy-then-sell']));
+        h.retailSales.push({ ...h.retailSales[0], id: 'r2', date: '2026-10-06T10:00:00', items: [{ itemId: 'item-rice', name: 'Rice', qty: 50, rate: 25, total: 1250 }], total: 1250 });
+        const s = summarize(h, { from: -Infinity, to: Infinity });
+        expect(s.stock.uncosted).toEqual({ qty: 10, estimate: 200, unknownCost: 0 });
+        const k = JSON.parse(JSON.stringify(g));
+        k.purchases = [];
+        expect(summarize(k, { from: -Infinity, to: Infinity }).stock.uncosted).toEqual({ qty: 10, estimate: 0, unknownCost: 10 });
+    });
+
+    test('written-off receivables are a bad debt line in profit; labour is shown, not in cost', () => {
+        const w = byName['write-off-and-labour'];
+        const s = summarize(w, rangeOf(w.periods.all));
+        expect(buildBreakdown(s, 'profit').formula.map(term => [term.cardId, term.value])).toEqual([['sales', 1500], ['cogs', 1000], ['business', 0], ['badDebts', 200]]);
+        expect(buildBreakdown(s, 'badDebts').rows).toEqual([expect.objectContaining({ billId: 'r1', billType: 'retail', amount: 200, writeOff: true })]);
+        expect(buildBreakdown(s, 'labour').rows).toEqual([expect.objectContaining({ billId: 'p1', amount: 60 })]);
+        expect(buildBreakdown(s, 'cogs').notes).toEqual([expect.objectContaining({ cardId: 'labour', value: 60 })]);
+        // A write-off in another period does not touch this one.
+        const before = summarize(w, { from: localMs('2026-10-01'), to: localMs('2026-10-06') });
+        expect(before.badDebts).toBe(0);
+    });
+
+    test('cash flow counts the final payment on an old bill (not in memory) from the period\'s cash sessions, once', () => {
+        const f = byName['buy-then-sell'];
+        const range = { from: localMs('2026-10-05'), to: localMs('2026-10-06') };
+        const leg = { id: 'pay-old', billId: 'old-bill', customer: 'Gupta', type: 'received', cash: 700, online: 0, at: localMs('2026-10-05') + 3600000 };
+        const sessions = [{ id: 's1', date: '2026-10-05', duePayments: [leg] }];
+        const withSessions = computeFinanceSummary({ sources: sourcesOf(f), items: f.items, base: { state: {}, from: -Infinity }, sessions, ...range, detail: true });
+        expect(withSessions.cash.dueReceived).toBe(700);
+        expect(withSessions.duesApproximate).toBe(false);
+        expect(buildBreakdown(withSessions, 'dueReceived').rows).toEqual([expect.objectContaining({ party: 'Gupta', amount: 700, billId: null })]);
+        // The same payment also on a bill in memory: counted once.
+        const r = JSON.parse(JSON.stringify(f.retailSales[0]));
+        r.payments = [{ id: 'pay-old', date: '2026-10-05T11:00:00', cash: 700 }];
+        const both = computeFinanceSummary({ sources: { ...sourcesOf(f), retailSales: [r] }, items: f.items, base: { state: {}, from: -Infinity }, sessions, ...range });
+        expect(both.cash.dueReceived).toBe(700);
+        // Without sessions (and without full history) the cash flow is marked approximate.
+        const without = computeFinanceSummary({ sources: sourcesOf(f), items: f.items, base: { state: {}, from: -Infinity }, duesComplete: false, ...range });
+        expect(without.cash.dueReceived).toBe(0);
+        expect(without.duesApproximate).toBe(true);
+    });
+
+    test('FinanceManager loads the period\'s cash sessions once (no full read) and marks cash flow approximate until then', async () => {
+        AppState.historyLoadedFrom = Date.now() - 86400000 * 40;
+        const load = jest.spyOn(FirebaseService, 'loadCashSessionsBetween').mockResolvedValue([{ id: 's', date: '2026-10-05', duePayments: [] }]);
+        FinanceManager.sessionCache = new Map();
+        const range = { from: Date.now() - 7 * 86400000, to: Infinity };
+        expect(FinanceManager.periodSessions(range).complete).toBe(false);
+        expect(FinanceManager.periodSessions(range).complete).toBe(false);
+        expect(load).toHaveBeenCalledTimes(1);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(FinanceManager.periodSessions(range)).toEqual({ sessions: [{ id: 's', date: '2026-10-05', duePayments: [] }], complete: true });
+        // A year is too long to read session by session: approximate, no read.
+        expect(FinanceManager.periodSessions({ from: Date.now() - 365 * 86400000, to: Infinity }).complete).toBe(false);
+        expect(load).toHaveBeenCalledTimes(1);
+        AppState.historyLoadedFrom = 0;
+        expect(FinanceManager.periodSessions(range)).toEqual({ sessions: [], complete: true });
     });
 });
 
@@ -278,6 +362,31 @@ describe('Finance dashboard + breakdown sheet (rendered)', () => {
         expect(window.app.history.viewBill).toHaveBeenCalledWith('id:r1', 'retail');
         sheet.querySelector('[data-action="back"]').click();
         expect(sheet.querySelector('.fin-sheet-value').textContent).toBe('₹300');
+    });
+
+    test('the uncosted warning shows on the dashboard in the sale\'s period and opens its breakdown', () => {
+        jest.spyOn(FinanceManager, 'renderMonthlyChart').mockImplementation(() => {});
+        const g = byName['sold-before-bought'];
+        AppState.purchaseHistory = JSON.parse(JSON.stringify(g.purchases));
+        AppState.retailSalesHistory = JSON.parse(JSON.stringify(g.retailSales));
+        FinanceManager.currentDateFilter = 'custom';
+        FinanceManager.customStartDate = '2026-10-01';
+        FinanceManager.customEndDate = '2026-10-01';
+        FinanceManager.setupBreakdownTaps();
+        FinanceManager.renderDashboard();
+        const warn = document.getElementById('financeProfitWarning');
+        expect(warn.style.display).toBe('block');
+        expect(warn.textContent).toContain('10 kg');
+        expect(warn.textContent).toContain('₹200');
+        expect(document.getElementById('financeStockCheck').style.display).toBe('none');
+        warn.click();
+        expect(document.querySelector('#financeBreakdownSheet .fin-sheet-value').textContent).toBe('₹200');
+        FinanceManager.customEndDate = '2026-10-02';
+        FinanceManager.customStartDate = '2026-10-02';
+        FinanceManager.renderDashboard();
+        expect(warn.style.display).toBe('none');
+        expect(document.getElementById('financeStockCheck').textContent).toContain('10 kg');
+        FinanceManager.currentDateFilter = 'all';
     });
 
     test('long lists show 50 rows at a time; text is escaped', () => {

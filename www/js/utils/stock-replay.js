@@ -251,7 +251,8 @@ export function replayEvents(stock, events, getItemKey, resolutions) {
  * @param {Object} stock running state, mutated
  * @param {Array} events sorted events from collectEvents()
  * @param {Function} getItemKey resolver from createItemKeyResolver()
- * @param {(ev: Object, key: string, delta: number) => void} onEvent
+ * @param {(ev: Object, key: string, delta: number, prevQty: number) => void} onEvent
+ *   prevQty = quantity on hand just before the event
  * @returns {Object} the same state object
  */
 export function replayWithValues(stock, events, getItemKey, onEvent) {
@@ -260,9 +261,10 @@ export function replayWithValues(stock, events, getItemKey, onEvent) {
             ? getItemKey({ itemId: ev.adj.itemId, name: ev.adj.itemName })
             : getItemKey(ev.item);
         const before = stock[key] ? stock[key].totalValue : 0;
+        const prevQty = stock[key] ? stock[key].quantity : 0;
         replayEvents(stock, [ev], getItemKey);
         const after = stock[key] ? stock[key].totalValue : 0;
-        onEvent(ev, key, after - before);
+        onEvent(ev, key, after - before, prevQty);
     }
     return stock;
 }

@@ -10,7 +10,7 @@ import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
 import { billTotal, outstandingDue, round2 } from '../utils/money.js';
 import { computeFinanceSummary, pickReplayBase } from '../utils/finance-calc.js';
-import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+import { todayLocalISO, parseLocalDate, parseAnyBillDate, toLocalISODate } from '../utils/dates.js';
 import {
     rangeStatus, retryRange, applyRangeState, isFullHistoryLoaded, needsHistoryFrom,
     ensureHistoryFrom, historyLoadedFrom, monthStart
@@ -22,6 +22,10 @@ import { t, getLang } from '../i18n/index.js';
 
 /** Placeholder for all-time figures until the full history is loaded. */
 const NOT_LOADED = '—';
+/** Cash sessions are read for periods up to this long (one small doc per day). */
+const SESSION_MAX_DAYS = 62;
+/** Re-read a period's cash sessions after this long (today's session keeps changing). */
+const SESSION_TTL_MS = 5 * 60 * 1000;
 /** Skips recomputing the dashboard on a tab revisit when nothing changed (#24). */
 const dashboardMemo = createRenderMemo();
 
@@ -396,6 +400,12 @@ export class FinanceManager {
         updateElement('financeTotalWithdrawn', formatRupees(summary.withdrawn));
         updateElement('financeAvailableBalance', formatRupees(summary.afterWithdrawals));
 
+        const warn = document.getElementById('financeProfitWarning');
+        if (warn) {
+            warn.style.display = summary.uncostedWarning ? 'block' : 'none';
+            warn.textContent = summary.uncostedWarning ? `⚠️ ${this.uncostedText(summary.stock.uncosted)}` : '';
+        }
+
         this.renderFullHistoryPrompt(!!summary.stock);
         this.renderProfitBreakdown(summary);
         this.renderStockBreakdown(summary);
@@ -426,7 +436,8 @@ export class FinanceManager {
      * @param {{from: number, to: number, detail?: boolean}} [range] detail: also the rows behind each number
      * @returns {ReturnType<typeof computeFinanceSummary>}
      */
-    static computeSummary({ from, to, detail = false } = this.getRange()) {
+    static computeSummary({ from, to, detail = false, cashSessions } = this.getRange()) {
+        const dues = cashSessions || this.periodSessions({ from, to });
         const base = pickReplayBase({
             checkpoint: FirebaseService.getStockCheckpointState?.() || null,
             fullHistory: isFullHistoryLoaded(),
@@ -443,10 +454,56 @@ export class FinanceManager {
             base,
             expenses: AppState.expensesHistory || [],
             withdrawals: AppState.withdrawalsHistory || [],
+            sessions: dues.sessions,
+            duesComplete: dues.complete,
             from,
             to,
             detail
         });
+    }
+
+    /**
+     * Cash sessions for [from, to): their due-payment legs count the final
+     * payment on an old bill that is no longer in memory. Not needed once the
+     * full history is loaded; read (small, cached) for periods up to
+     * SESSION_MAX_DAYS; longer periods stay approximate.
+     * @param {{from: number, to: number}} range
+     * @returns {{sessions: Array, complete: boolean}}
+     */
+    static periodSessions({ from, to }) {
+        if (isFullHistoryLoaded()) return { sessions: [], complete: true };
+        const now = Date.now();
+        const end = Math.min(to, now);
+        if (!Number.isFinite(from) || end - from > SESSION_MAX_DAYS * 86400000) return { sessions: [], complete: false };
+        const key = `${toLocalISODate(new Date(from))}|${toLocalISODate(new Date(Math.max(from, end - 1)))}`;
+        if (!this.sessionCache) this.sessionCache = new Map();
+        const hit = this.sessionCache.get(key);
+        if (hit?.sessions && now - hit.at < SESSION_TTL_MS) return { sessions: hit.sessions, complete: true };
+        if (!hit || (!hit.pending && now - hit.at >= SESSION_TTL_MS)) {
+            const [a, b] = key.split('|');
+            const entry = { pending: true, at: now, sessions: hit?.sessions || null };
+            this.sessionCache.set(key, entry);
+            FirebaseService.loadCashSessionsBetween(a, b).then(sessions => {
+                this.sessionCache.set(key, { pending: false, at: Date.now(), sessions });
+                if (isShown(document.getElementById('financeDashboardSection'))) this.renderDashboard();
+            }).catch(e => {
+                console.error('Finance: loading cash sessions failed:', e);
+                this.sessionCache.set(key, { pending: false, at: Date.now(), sessions: null });
+            });
+        }
+        return { sessions: hit?.sessions || [], complete: false };
+    }
+
+    /**
+     * "X kg sold before purchase recorded — profit may be overstated by ~₹Y".
+     * @param {{qty: number, estimate: number, unknownCost: number}} u
+     * @returns {string}
+     */
+    static uncostedText(u) {
+        const qty = (Math.round(u.qty * 100) / 100).toLocaleString('en-IN');
+        return u.estimate > 0
+            ? t('ui.finance.uncosted_warning', { qty, amount: Math.round(u.estimate).toLocaleString('en-IN') })
+            : t('ui.finance.uncosted_warning_unknown', { qty });
     }
 
     /** Filter state the dashboard depends on (besides data). */
@@ -542,6 +599,7 @@ export class FinanceManager {
         if (s.expenses.uncategorised > 0) {
             rows.push([t('ui.finance.uncategorised', { amount: Math.round(s.expenses.uncategorised).toLocaleString('en-IN') }), s.expenses.uncategorised, '', 'breakdown-note', 'business']);
         }
+        if (s.badDebts) rows.push([`🧾 ${t('ui.finance.bad_debts')}`, s.badDebts, '-', '', 'badDebts']);
         rows.push(
             [t('ui.finance.profit_on_goods_sold'), s.profit, '', 'breakdown-total', 'profit'],
             [`👤 ${t('ui.finance.personal_expenses')}`, s.expenses.personal, '-', '', 'personal'],
@@ -549,6 +607,9 @@ export class FinanceManager {
             [`💸 ${t('ui.finance.withdrawn')}`, s.withdrawn, '-', '', 'withdrawn'],
             [t('ui.finance.left_after_withdrawals'), s.afterWithdrawals, '', 'breakdown-subtotal', 'afterWithdrawals']
         );
+        // Shown, not included (owner questions / data warnings).
+        if (s.uncostedWarning) rows.push([`⚠️ ${this.uncostedText(s.stock.uncosted)}`, s.stock.uncosted.estimate || null, '', 'breakdown-note', 'uncosted']);
+        if (s.purchases.labour) rows.push([t('ui.finance.labour_note'), s.purchases.labour, '', 'breakdown-note', 'labour']);
         tbody.innerHTML = this.breakdownRows(rows);
     }
 
@@ -579,7 +640,10 @@ export class FinanceManager {
         if (check) {
             check.style.display = s.stockMismatch ? 'block' : 'none';
             check.textContent = s.stockMismatch
-                ? `⚠️ ${t('ui.finance.check_mismatch', { amount: Math.round(Math.abs(s.stock.gap)).toLocaleString('en-IN') })}`
+                ? `⚠️ ${t(s.mismatchFromEarlierSales ? 'ui.finance.check_mismatch_earlier' : 'ui.finance.check_mismatch', {
+                    amount: Math.round(Math.abs(s.stock.gap)).toLocaleString('en-IN'),
+                    qty: (Math.round(s.stock.deficitRefilled.qty * 100) / 100).toLocaleString('en-IN')
+                })}`
                 : '';
         }
     }
@@ -602,6 +666,11 @@ export class FinanceManager {
             [t('ui.finance.money_out'), c.moneyOut, '', 'breakdown-subtotal', 'moneyOut'],
             [t('ui.finance.net_cash_flow'), c.net, '', 'breakdown-total', 'netCash']
         ]);
+        const note = document.getElementById('financeCashNote');
+        if (note) {
+            note.style.display = s.duesApproximate ? 'block' : 'none';
+            note.textContent = s.duesApproximate ? t('ui.finance.cash_approximate') : '';
+        }
     }
 
     /**
@@ -628,7 +697,7 @@ export class FinanceManager {
             const from = monthStart(back).getTime();
             const to = back === 0 ? Infinity : monthStart(back - 1).getTime();
             if (from < loadedFrom) continue;
-            const s = this.computeSummary({ from, to });
+            const s = this.computeSummary({ from, to, cashSessions: { sessions: [], complete: isFullHistoryLoaded() } });
             if (s.profit === null) continue;
             if (s.sales.count === 0 && s.purchases.count === 0 && s.expenses.business === 0) continue;
             months.push({ date: new Date(from), profit: s.profit });
