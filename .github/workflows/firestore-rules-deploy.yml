@@ -1,0 +1,83 @@
+# Deploys firestore.rules and firestore.indexes.json to production when they
+# change on main (#16). Hosting is deployed separately by
+# firebase-hosting-merge.yml. Never runs on pull requests.
+#
+# The service account in FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT needs, in
+# addition to its hosting roles: Firebase Rules Admin
+# (roles/firebaserules.admin) and Cloud Datastore Index Admin
+# (roles/datastore.indexAdmin).
+name: Deploy Firestore rules and indexes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - firestore.rules
+      - firestore.indexes.json
+      - .github/workflows/firestore-rules-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firestore-rules-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test and deploy Firestore rules + indexes
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install rules-test dependencies
+        working-directory: rules-tests
+        run: npm ci
+      - name: Rules tests (Firestore emulator)
+        run: npm run test:rules
+
+      - name: Write service account key
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT }}
+        run: |
+          if [ -z "$SA_JSON" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT secret is not set."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+          echo "Deploying as: $(jq -r .client_email "$RUNNER_TEMP/sa.json")"
+
+      # No --force: indexes that exist in the project but not in
+      # firestore.indexes.json are reported, not deleted.
+      - name: Deploy rules and indexes
+        run: |
+          set -o pipefail
+          SA_EMAIL=$(jq -r .client_email "$GOOGLE_APPLICATION_CREDENTIALS")
+          if npx --yes firebase-tools@latest deploy \
+              --only firestore:rules,firestore:indexes \
+              --project aadhat-management --non-interactive 2>&1 | tee "$RUNNER_TEMP/deploy.log"; then
+            exit 0
+          fi
+          if grep -qiE 'permission|403|forbidden|denied' "$RUNNER_TEMP/deploy.log"; then
+            echo "::error title=Service account is missing roles::The deploy was refused for $SA_EMAIL. In Google Cloud console -> IAM & Admin -> IAM (project aadhat-management), edit that github-action service account and add the roles 'Firebase Rules Admin' (roles/firebaserules.admin) and 'Cloud Datastore Index Admin' (roles/datastore.indexAdmin); if the log mentions serviceusage, also add 'Service Usage Consumer' (roles/serviceusage.serviceUsageConsumer). Then re-run this workflow. Until then deploy by hand: firebase deploy --only firestore:rules,firestore:indexes"
+            echo "Permission-related lines from the log:"
+            grep -iE 'permission|403|forbidden|denied' "$RUNNER_TEMP/deploy.log" | head -n 20
+          else
+            echo "::error::Firestore rules/indexes deploy failed; see the log above."
+          fi
+          exit 1
+
+      - name: Remove service account key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json" "$RUNNER_TEMP/deploy.log"

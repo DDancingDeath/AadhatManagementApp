@@ -39,8 +39,8 @@ and is wrapped in **Capacitor** for Android distribution.
 4. **Don't rename existing files casually.** Inline `onclick="window.app.x.y()"`
    handlers and `template-loader.js` reference paths and method names by
    exact string.
-5. **Install with `npm ci`** (CI uses `npm ci --legacy-peer-deps`; use that
-   flag if you hit a `canvas` / `jest-environment-jsdom` peer conflict).
+5. **Install with `npm ci`** (no `--legacy-peer-deps` needed since the unused
+   `canvas` dependency was dropped).
    Run `npm test` (Jest) and, after touching `firestore.rules`,
    `npm run test:rules` (Firestore emulator; needs Java and
    `cd rules-tests && npm install` once). `npm run lint` (ESLint) must
@@ -278,8 +278,13 @@ can break every user immediately**. Always:
 2. Add/adjust cases in `rules-tests/test.js` and run `npm run test:rules`
    (Firestore emulator). Key cases: pending user denied, approved/legacy
    (no `status`) users allowed, no self-promotion of `role`/`status`.
-3. Only then `firebase deploy --only firestore:rules` — CI deploys hosting
-   only, never rules.
+3. Merge to `main`. `.github/workflows/firestore-rules-deploy.yml` reruns
+   the rules tests and deploys `firestore.rules` + `firestore.indexes.json`
+   when either changes (or on manual dispatch). It needs the github-action
+   service account to have "Firebase Rules Admin" and "Cloud Datastore Index
+   Admin"; if those are missing the job fails and names them. Manual fallback:
+   `firebase deploy --only firestore:rules,firestore:indexes`. CI never
+   deletes indexes that exist only in the console (no `--force`).
 
 To run the whole app against local emulators:
 `npx firebase-tools emulators:start --only auth,firestore`, serve `www/`

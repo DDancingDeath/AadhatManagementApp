@@ -97,7 +97,7 @@ Each app open reads only recent data (see the section comment above `HISTORY_COL
 - Every stock-record write sets `clientVersion: 3`, bills also `openDue`, `timestamp`. Documents written by older app versions without `timestamp` are found by an unfiltered scan and backfilled (`stockCheckpoints/legacyScan`: until complete, then by one device at most every 6 h for 14 days after an outdated app last wrote one).
 - Optional: set `settings/app.minClientVersion` to make older apps show "Please update the app".
 
-**Deployment order (CI deploys hosting only, never rules/indexes):**
+**Deployment order** (on merge to `main`, `firestore-rules-deploy.yml` deploys rules/indexes when they change, and `firebase-hosting-merge.yml` deploys hosting — both start at once, so for a release that needs new indexes/rules first, deploy them by hand or merge them in an earlier PR):
 
 1. Deploy indexes and rules **before** the new web app goes live: `firebase deploy --only firestore:indexes,firestore:rules`. The dues listener needs the `openDue + timestamp` composite indexes, and the stock checkpoint (`stockCheckpoints`) is only writable under the new rules. Wait until the indexes show "Enabled" in the Firebase console.
 2. Merge / deploy hosting, then install the new APK on every phone.
@@ -113,7 +113,7 @@ Each app open reads only recent data (see the section comment above `HISTORY_COL
 ### Installation
 ```bash
 # Install dependencies (same as CI)
-npm ci --legacy-peer-deps
+npm ci
 ```
 
 ### Development
@@ -276,7 +276,7 @@ npm run test:rules                       # starts the emulator (demo-aadhat proj
 | Playwright E2E (nightly, manual dispatch, or PRs labelled `e2e`) | `npm run test:e2e` — phone + desktop projects against the Firebase emulators |
 | Production smoke (nightly, manual dispatch) | `npm run test:smoke` — live site, no login, non-GET Firebase requests blocked |
 
-The hosting workflows (`firebase-hosting-*.yml`) still run Jest and deploy Hosting only; Firestore rules/indexes are deployed by hand (see the deployment order above).
+The hosting workflows (`firebase-hosting-*.yml`) run Jest and deploy Hosting. `firestore-rules-deploy.yml` runs on pushes to `main` that change `firestore.rules` or `firestore.indexes.json` (and on manual dispatch, never on PRs): it reruns the rules tests, then runs `firebase deploy --only firestore:rules,firestore:indexes` with the `FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT` service account. That account needs the roles **Firebase Rules Admin** (`roles/firebaserules.admin`) and **Cloud Datastore Index Admin** (`roles/datastore.indexAdmin`) — Google Cloud console → IAM → the `github-action-…` service account; the job fails with a message naming the roles if they are missing. Indexes that exist only in the console are reported, not deleted. Manual fallback: `firebase deploy --only firestore:rules,firestore:indexes`.
 
 ### End-to-end tests (Playwright)
 
