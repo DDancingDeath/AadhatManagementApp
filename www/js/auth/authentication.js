@@ -476,6 +476,11 @@ const AuthManager = {
                     item.style.display = isOwnerOrManager ? 'block' : 'none';
                 }
                 
+                // Rate trends (#65): owner/manager only (purchase and wholesale rates)
+                if (tabId === 'rate-trends') {
+                    item.style.display = isOwnerOrManager ? 'block' : 'none';
+                }
+                
                 if (tabId === 'diagnostics' && !isOwner) {
                     item.style.display = 'none';
                 } else if (tabId === 'diagnostics' && isOwner) {

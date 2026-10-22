@@ -90,6 +90,24 @@ describe('FirebaseService.setupRealtimeListeners', () => {
         expect(FirebaseService.getStartupListenerInfo().Purchases).toMatchObject({ first: 'cache', docs: 1, readyBy: 'cache-timeout' });
     });
 
+    it('historyServerSynced() is false while bills come only from the offline cache (#65 roll-forward)', async () => {
+        install({ holdServer: true });
+        fake.seed('purchases', [bill('p1', NOW - 2000)]);
+        jest.useFakeTimers();
+        let resolved = false;
+        const ready = FirebaseService.setupRealtimeListeners().then(() => { resolved = true; });
+        for (let i = 0; i < 5 && !resolved; i++) {
+            await fake.settle();
+            jest.advanceTimersByTime(2600);
+            await fake.settle();
+        }
+        await ready;
+        expect(FirebaseService.historyServerSynced()).toBe(false);
+        fake.releaseServer();
+        await fake.settle();
+        expect(FirebaseService.historyServerSynced()).toBe(true);
+    });
+
     it('rejects when a required listener fails first, but tolerates withdrawals failing', async () => {
         jest.spyOn(console, 'error').mockImplementation(() => {});
         install({
