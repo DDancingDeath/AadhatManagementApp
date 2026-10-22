@@ -12,7 +12,10 @@ module.exports = {
     // Test file patterns
     testMatch: [
         '**/www/js/__tests__/**/*.test.js',
-        '**/www/js/**/*.spec.js'
+        '**/www/js/**/*.spec.js',
+        // Business-correctness tests (#216): spec oracle + accounting property checks
+        '**/tests/oracle/**/*.test.js',
+        '**/tests/property/**/*.test.js'
     ],
     
     // Module file extensions
