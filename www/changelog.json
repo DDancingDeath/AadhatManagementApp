@@ -1,6 +1,29 @@
 {
   "releases": [
     {
+      "version": "1.6.0",
+      "date": "2026-10-22",
+      "androidVersionCode": 9,
+      "notes": {
+        "en": [
+          "Choose Hindi or English for the whole app, from Settings or the side menu.",
+          "All messages now show in Hindi too.",
+          "The app opens faster.",
+          "New Rate trends page for owner/manager, with a seasonal up/down estimate.",
+          "When stock takes long to load, it is shown as approximate instead of making you wait.",
+          "Wholesale bills are no longer blocked when stock is only approximate."
+        ],
+        "hi": [
+          "पूरे ऐप के लिए हिंदी या अंग्रेज़ी चुनें — सेटिंग्स या साइड मेन्यू से।",
+          "सभी संदेश अब हिंदी में भी दिखते हैं।",
+          "ऐप अब जल्दी खुलता है।",
+          "मालिक/मैनेजर के लिए नया \"रेट का रुझान\" पेज, मौसम के हिसाब से रेट ऊपर/नीचे का अंदाज़ा।",
+          "स्टॉक लोड होने में देर हो तो इंतज़ार की जगह अनुमानित स्टॉक दिखता है।",
+          "स्टॉक सिर्फ़ अनुमानित होने पर थोक बिल अब नहीं रुकता।"
+        ]
+      }
+    },
+    {
       "version": "1.5.2",
       "date": "2026-10-22",
       "androidVersionCode": 8,
