@@ -21,8 +21,15 @@ import {
 } from '../utils/bill-checks.js';
 import { hidePartyDue, renderPartyDue } from './party-due-line.js';
 import { getLang, t } from '../i18n/index.js';
+import { tip } from '../tip/index.js';
 
 export const CHECK_DEBOUNCE_MS = 250;
+
+/**
+ * settings/app.tipPolicies key (#217): when its TIP policy trips on this device
+ * and is not telemetry-only, overridable blocks become warnings (safe mode).
+ */
+export const BILL_CHECKS_BLOCKING_POLICY = 'billChecksBlocking';
 
 const ICON = { block: '⛔', warn: '⚠️' };
 const CLASS = { block: 'bill-check-block', warn: 'bill-check-warn' };
@@ -346,7 +353,14 @@ export const BillChecksUI = {
         }
         lastIssues[kind] = issues;
         if (sectionOf(kind)) renderIssues(kind, issues);
-        const { blocks, hardBlocks, warns } = saveGate(issues);
+        const gate = saveGate(issues);
+        const { hardBlocks } = gate;
+        let { blocks, warns } = gate;
+        // Auto rollback (#217): hard blocks always stop; overridable ones only warn.
+        if (blocks.length > hardBlocks.length && tip.isRolledBack(BILL_CHECKS_BLOCKING_POLICY)) {
+            warns = [...warns, ...blocks.filter(b => b.overridable)];
+            blocks = hardBlocks;
+        }
         const stop = { ok: false, flags: [], overrides: [] };
         const by = AppState.currentUser?.uid || 'unknown';
 

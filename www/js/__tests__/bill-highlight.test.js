@@ -5,7 +5,8 @@
  */
 jest.mock('../services/audit.js', () => ({ AuditService: { log: jest.fn(async () => {}), ACTIONS: { OVERRIDE_CHECK: 'OVERRIDE_CHECK' } } }));
 
-import { BillChecksUI, CHECK_DEBOUNCE_MS, readTypedNumber } from '../ui/bill-highlight.js';
+import { BillChecksUI, CHECK_DEBOUNCE_MS, readTypedNumber, BILL_CHECKS_BLOCKING_POLICY } from '../ui/bill-highlight.js';
+import { tip } from '../tip/index.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { AuditService } from '../services/audit.js';
 import { AppState } from '../utils/state.js';
@@ -224,6 +225,23 @@ describe('save gate', () => {
         const modal = jest.spyOn(UIManager, 'showModal');
         expect(await BillChecksUI.confirmSave('test')).toEqual({ ok: true, flags: [], overrides: [] });
         expect(modal).not.toHaveBeenCalled();
+    });
+
+    test('auto rollback (#217): a tripped, non-telemetry-only policy turns overridable blocks into a warning', async () => {
+        state.items[0] = { itemId: 'rice', name: 'Rice', rate: 40, qty: 110, total: 4400 };
+        $('cash').value = '4400';
+        const toast = jest.spyOn(UIManager, 'showToast').mockImplementation(() => {});
+        const modal = jest.spyOn(UIManager, 'showModal').mockResolvedValue(true);
+        const spy = jest.spyOn(tip, 'isRolledBack').mockReturnValue(true);
+        const ok = await BillChecksUI.confirmSave('test');
+        expect(spy).toHaveBeenCalledWith(BILL_CHECKS_BLOCKING_POLICY);
+        expect(ok.ok).toBe(true);
+        expect(ok.overrides).toEqual([]);
+        expect(ok.flags).toEqual([expect.objectContaining({ rule: 'oversell' })]);
+        expect(modal).toHaveBeenCalledTimes(1);
+        spy.mockReturnValue(false);
+        expect((await BillChecksUI.confirmSave('test')).ok).toBe(false); // member: blocked as before
+        expect(toast).toHaveBeenLastCalledWith(expect.stringContaining('Rice: selling 110.0 kg'));
     });
 
     test('billFields: flags only when present; overrides are kept across edits', () => {

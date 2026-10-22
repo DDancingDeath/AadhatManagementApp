@@ -566,6 +566,74 @@ function defineSuite(prefix) {
         await assertSucceeds(as('legacyOwner').collection(anomalies).doc('a').delete());
     });
 
+    // ---- Test in Production (#217): tipHealth counters + tipFailures samples ----
+
+    const tipHealth = `${prefix}tipHealth`;
+    const tipFailures = `${prefix}tipFailures`;
+    const healthDoc = (uid, extra = {}) => ({
+        uid, deviceId: 'abc123de4f5g', day: '20261023', platform: 'web', appVersion: '1.6.0', buildId: 'b',
+        updatedAt: serverTimestamp(),
+        v: { '1_6_0': { BillSave: { n: { s: FieldValue.increment(1) }, d: { b1: FieldValue.increment(1) }, ms: FieldValue.increment(300) } } },
+        ...extra
+    });
+    const failureDoc = (uid, extra = {}) => ({
+        uid, deviceId: 'abc123de4f5g', day: '20261023', test: 'BillSave', result: 'fail', reason: 1,
+        reasonName: 'totals_mismatch', flags: { offline: false }, props: { lines: 3 }, errors: 0, durationMs: 120,
+        appVersion: '1.6.0', buildId: 'b', platform: 'web', at: 1700000000000, createdAt: serverTimestamp(), ...extra
+    });
+
+    t('tip: any approved user creates and increments own device doc (set-merge)', async () => {
+        const ref = as('staff1').collection(tipHealth).doc('abc123de4f5g_20261023');
+        await assertSucceeds(ref.set(healthDoc('staff1'), { merge: true }));
+        await assertSucceeds(ref.set(healthDoc('staff1'), { merge: true }));
+        let snap;
+        await env.withSecurityRulesDisabled(async (ctx) => {
+            snap = (await ctx.firestore().collection(tipHealth).doc('abc123de4f5g_20261023').get()).data();
+        });
+        if (snap.v['1_6_0'].BillSave.n.s !== 2) throw new Error(`expected 2 increments, got ${snap.v['1_6_0'].BillSave.n.s}`);
+    });
+
+    t('tip: cannot write another user\'s device doc, a mismatched id, unknown fields or too many versions', async () => {
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(tipHealth).doc('abc123de4f5g_20261023')
+            .set({ ...healthDoc('manager1'), updatedAt: 1, v: {} }));
+        await assertFails(as('staff1').collection(tipHealth).doc('abc123de4f5g_20261023').set(healthDoc('staff1'), { merge: true }));
+        await assertFails(as('staff1').collection(tipHealth).doc('zzz999zz9z9z_20261023').set(healthDoc('manager1')));
+        await assertFails(as('staff1').collection(tipHealth).doc('abc123de4f5g_20261024').set(healthDoc('staff1')));
+        await assertFails(as('staff1').collection(tipHealth).doc('ext123ab4c5d_20261023').set(healthDoc('staff1', { deviceId: 'ext123ab4c5d', extra: 1 })));
+        await assertFails(as('staff1').collection(tipHealth).doc('cus123ab4c5d_20261023').set(healthDoc('staff1', { deviceId: 'cus123ab4c5d', customerName: 'Ramesh' })));
+        await assertSucceeds(as('staff1').collection(tipHealth).doc('cus123ab4c5d_20261023').set(healthDoc('staff1', { deviceId: 'cus123ab4c5d' })));
+        const v = { a: {}, b: {}, c: {}, d: {}, e: {} };
+        await assertFails(as('staff1').collection(tipHealth).doc('xyz789ab0c1d_20261023').set(healthDoc('staff1', { deviceId: 'xyz789ab0c1d', v })));
+        await assertFails(as('pending1').collection(tipHealth).doc('pqr456gh7i8j_20261023').set(healthDoc('pending1', { deviceId: 'pqr456gh7i8j' })));
+        await assertFails(anon().collection(tipHealth).doc('abc123de4f5g_20261023').get());
+    });
+
+    t('tip: only owner/manager read health and failures; only an owner deletes', async () => {
+        await env.withSecurityRulesDisabled(async (ctx) => {
+            await ctx.firestore().collection(tipHealth).doc('abc123de4f5g_20261023').set({ ...healthDoc('staff1'), updatedAt: 1, v: {} });
+            await ctx.firestore().collection(tipFailures).doc('abc123de4f5g_20261023_1').set({ ...failureDoc('staff1'), createdAt: 1 });
+        });
+        await assertSucceeds(as('manager1').collection(tipHealth).where('day', '>=', '20261010').orderBy('day', 'desc').limit(300).get());
+        await assertSucceeds(as('legacyOwner').collection(tipFailures).orderBy('at', 'desc').limit(30).get());
+        await assertFails(as('staff1').collection(tipHealth).doc('abc123de4f5g_20261023').get());
+        await assertFails(as('staff1').collection(tipFailures).doc('abc123de4f5g_20261023_1').get());
+        await assertFails(as('manager1').collection(tipHealth).doc('abc123de4f5g_20261023').delete());
+        await assertSucceeds(as('legacyOwner').collection(tipFailures).doc('abc123de4f5g_20261023_1').delete());
+    });
+
+    t('tip: failure samples are create-only, capped at 20 per device per day, own uid, no extra fields', async () => {
+        const col = as('staff1').collection(tipFailures);
+        await assertSucceeds(col.doc('abc123de4f5g_20261023_1').set(failureDoc('staff1')));
+        await assertSucceeds(col.doc('abc123de4f5g_20261023_20').set(failureDoc('staff1', { result: 'rolled_back', reason: 16389 })));
+        await assertFails(col.doc('abc123de4f5g_20261023_1').set(failureDoc('staff1', { reason: 2 })));
+        await assertFails(col.doc('abc123de4f5g_20261023_21').set(failureDoc('staff1')));
+        await assertFails(col.doc('abc123de4f5g_20261024_2').set(failureDoc('staff1')));
+        await assertFails(col.doc('abc123de4f5g_20261023_3').set(failureDoc('manager1')));
+        await assertFails(col.doc('abc123de4f5g_20261023_4').set(failureDoc('staff1', { phone: '9876543210' })));
+        await assertFails(col.doc('abc123de4f5g_20261023_5').set(failureDoc('staff1', { result: 'succeed' })));
+        await assertFails(col.doc('abc123de4f5g_20261023_6').set(failureDoc('staff1', { reasonName: 'x'.repeat(41) })));
+    });
+
     // ---- rate trends (#65): rateStats, owner/manager only ----
 
     const rateStats = `${prefix}rateStats`;

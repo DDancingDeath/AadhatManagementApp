@@ -18,6 +18,8 @@ import { PrinterService } from '../services/printer.js';
 import { openExternal } from '../utils/open-external.js';
 import { billDateOf } from '../utils/history-filters.js';
 import { t } from '../i18n/index.js';
+import { tip } from '../tip/index.js';
+import { paymentRecordProps, paymentErrorOutcome } from '../tip/scenarios/payment-record.js';
 
 /** i18n key + params for a bill age in days (null = unknown). */
 function ageKey(days) {
@@ -510,6 +512,7 @@ export class OutstandingManager {
     }
 
     static async _recordDuePayment({ billType, billId, cash, online = 0, note = '', clear = false, entryId = null }) {
+        let run = null;
         try {
             const transaction = this.findBill(billType, billId);
             if (!transaction) {
@@ -541,8 +544,14 @@ export class OutstandingManager {
 
             // Server-side read-modify-write so concurrent payments from two devices can't overwrite each other
             if (clear) entry.settlesDue = true;
+            run = tip.start('PaymentRecord', { flags: { billType, clear: !!clear, split: split.cash > 0 && split.online > 0 } });
+            this.lastPaymentTip = null;
             const written = await this.applyPaymentTransaction(billType, transaction, { cash: split.cash, online: split.online }, entry, { clear });
             Object.assign(transaction, written);
+            try {
+                const info = this.lastPaymentTip || {};
+                run.complete(paymentRecordProps(info.fresh || null, written, info));
+            } catch (_) { /* TIP never breaks a payment */ }
 
             this.refreshAfterPayment();
 
@@ -561,6 +570,11 @@ export class OutstandingManager {
             return true;
         } catch (error) {
             console.error('Error recording payment:', error);
+            try {
+                const outcome = paymentErrorOutcome(error, OutstandingManager.isOfflineError(error));
+                if (run && outcome === 'fail') run.completeAndFail('tx_error', { code: String(error?.code || 'unknown').slice(0, 40) });
+                else run?.discard();
+            } catch (_) { /* TIP never breaks a payment */ }
             if (error && error.code === 'exceeds-due') {
                 UIManager.showToast(t('msg.common.payment_amount_exceeds_outstanding_amount_2', { due: error.due }));
                 this.renderDue();
@@ -648,18 +662,23 @@ export class OutstandingManager {
         const sessionRef = sessionId ? FirebaseService.cashSessionRef(sessionId) : null;
         const today = todayLocalISO();
         let legWritten = null;
+        let tipInfo = null;
 
         const written = await this.withBillRef(transactionType, bill, (db, ref) => db.runTransaction(async (tx) => {
             legWritten = null;
+            tipInfo = null;
             const snap = await tx.get(ref);
             const sessionSnap = sessionRef ? await tx.get(sessionRef) : null;
             if (!snap.exists) return null;
             const fresh = snap.data() || {};
             const pay = readPayment(fresh);
             const entries = Array.isArray(fresh.payments) ? fresh.payments : [];
+            const openSession = sessionSnap && sessionSnap.exists ? sessionSnap.data() : null;
+            tipInfo = { fresh, sessionOpen: !!(openSession && !openSession.signedOut && openSession.date === today), retried: false };
 
             // A retry of a payment that already reached the server: nothing to add (#70)
             if (entry?.id && entries.some(p => p && p.id === entry.id)) {
+                tipInfo.retried = true;
                 const current = { payment: fresh.payment, payments: entries, openDue: fresh.openDue };
                 if (Object.prototype.hasOwnProperty.call(fresh, 'dueAmount')) current.dueAmount = fresh.dueAmount;
                 return current;
@@ -724,6 +743,7 @@ export class OutstandingManager {
         if (legWritten && local && String(local.id) === sessionId) {
             local.duePayments = [...(local.duePayments || []).filter(l => l.id !== legWritten.id), legWritten];
         }
+        this.lastPaymentTip = tipInfo ? { ...tipInfo, legWritten: !!legWritten } : null;
         return written;
     }
 

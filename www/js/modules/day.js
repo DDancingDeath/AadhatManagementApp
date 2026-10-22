@@ -10,6 +10,7 @@ import { dueEvents, sumDueEvents, saleTimePayment } from '../utils/due-payments.
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { CashManagementManager } from './cash-management.js';
 import { AnomaliesManager } from './anomalies.js';
+import { HealthManager } from './health.js';
 import { t } from '../i18n/index.js';
 
 // Use helper functions
@@ -272,6 +273,9 @@ export const DayManager = {
             expenses: totalExpenses, totalIn: totalCashIn, totalOut: totalCashOut,
             dueReceived, duePaid
         }, session && session.date === todayIso ? session : null);
+
+        // App health banner (#217): a live check below its target today (owner/manager)
+        HealthManager.renderTodayBanner().catch(e => console.warn('App health banner failed:', e));
     },
 
     /**

@@ -1,0 +1,49 @@
+<div id="health" class="tab">
+    <div class="health-page">
+        <h2 class="health-title">🩺 <span data-i18n="ui.health.title">App health</span></h2>
+        <p class="health-muted" data-i18n="ui.health.intro">Live checks from every phone: saving bills, recording payments, closing cash and opening the app.</p>
+        <div id="healthDenied" class="health-empty" style="display: none;" data-i18n="ui.health.denied">Only the owner or a manager can see this page.</div>
+        <div id="healthBody">
+            <div class="health-actions">
+                <button type="button" class="btn btn-secondary" onclick="window.app.health.refresh()" data-i18n="ui.health.refresh">↻ Refresh</button>
+                <span id="healthStatus" class="health-muted"></span>
+            </div>
+            <section class="modern-card health-card">
+                <h3 data-i18n="ui.health.summary">Pass rate by check</h3>
+                <div id="healthSummary" class="health-scroll"></div>
+            </section>
+            <section class="modern-card health-card">
+                <h3 data-i18n="ui.health.by_day">By day</h3>
+                <div id="healthByDay" class="health-scroll"></div>
+            </section>
+            <section class="modern-card health-card">
+                <h3 data-i18n="ui.health.by_version">By app version</h3>
+                <div id="healthByVersion" class="health-scroll"></div>
+            </section>
+            <section class="modern-card health-card">
+                <h3 data-i18n="ui.health.top_reasons">Top failure reasons</h3>
+                <div id="healthReasons"></div>
+            </section>
+            <section class="modern-card health-card">
+                <h3 data-i18n="ui.health.durations">How long it took</h3>
+                <div id="healthDurations" class="health-scroll"></div>
+            </section>
+            <section class="modern-card health-card">
+                <h3 data-i18n="ui.health.devices">Phones and computers</h3>
+                <div id="healthDevices" class="health-scroll"></div>
+            </section>
+            <section class="modern-card health-card">
+                <h3 data-i18n="ui.health.latest_failures">Latest failures</h3>
+                <div id="healthFailures"></div>
+            </section>
+            <section class="modern-card health-card" id="healthPolicyCard" style="display: none;">
+                <h3 data-i18n="ui.health.auto_rollback">Automatic rollback</h3>
+                <p class="health-muted" data-i18n="ui.health.policy_help">If a check keeps failing on a phone, that phone can switch the feature to its safe behaviour. "Report only" just reports it.</p>
+                <div id="healthPolicyState"></div>
+                <label for="healthPolicies" class="health-muted" data-i18n="ui.health.policies_json">Rules (JSON)</label>
+                <textarea id="healthPolicies" class="health-policies" rows="7" spellcheck="false"></textarea>
+                <button type="button" class="btn btn-primary" onclick="window.app.health.savePolicies()" data-i18n="ui.health.save_policies">Save rules</button>
+            </section>
+        </div>
+    </div>
+</div>

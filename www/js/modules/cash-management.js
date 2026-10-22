@@ -17,8 +17,22 @@ import { evaluateCashCount, toFlags } from '../utils/bill-checks.js';
 import { OutstandingManager } from './outstanding.js';
 import { dueEvents, sumDueEvents, saleTimePayment, normalizeParty, sameParty, billParty } from '../utils/due-payments.js';
 import { t } from '../i18n/index.js';
+import { tip } from '../tip/index.js';
+import { cashCloseProps } from '../tip/scenarios/cash-close.js';
 
 const L = (key, params) => Helpers.escapeHtml(t(key, params));
+
+/** TIP CashClose run (#217); never throws. */
+function startCashCloseRun(session, expected, counted, difference) {
+    try {
+        return tip.start('CashClose', {
+            flags: { offline: typeof navigator !== 'undefined' && navigator.onLine === false },
+            props: cashCloseProps({ session, expected, counted, difference })
+        });
+    } catch (_) {
+        return { complete() {}, completeAndFail() {} };
+    }
+}
 
 /** Cash-tab bill picker values that are not bills. */
 const DUE_BILL_NONE = '__none__';
@@ -809,10 +823,12 @@ export class CashManagementManager {
             AppState.currentUser?.uid || 'unknown', Date.now());
         if (cashFlags.length) closingFields.flags = cashFlags;
         const updatedSession = { ...this.todaySession, ...closingFields };
+        const run = startCashCloseRun(this.todaySession, expected, actualAmount, difference);
 
         try {
             // Field-level update: never overwrite deposits/due payments added on another device
             await sessionRef(this.todaySession.id).update(closingFields);
+            run.complete();
             this.todaySession = updatedSession;
             this.updateUI();
             this.renderHistory();
@@ -825,6 +841,7 @@ export class CashManagementManager {
             if (closingNotesInput) closingNotesInput.value = '';
         } catch (error) {
             console.error('Sign out error:', error);
+            run.completeAndFail('write_failed', { code: String(error?.code || 'unknown').slice(0, 40) });
             UIManager.showToast(t('msg.cash.failed_sign_out', { message: error.message }));
         }
     }

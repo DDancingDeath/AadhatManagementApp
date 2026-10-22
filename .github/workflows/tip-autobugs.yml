@@ -1,0 +1,51 @@
+name: TIP auto bugs
+
+# Test in Production (#217): once a day, read the tipHealth counters and
+# tipFailures samples that phones report, then open / update / reopen / close
+# `tip-auto` issues ("[Bug] TIP: <Check> failing: <reason> (<version>)") for the
+# top failures and failure-rate spikes. Issues close after 7 healthy days.
+# Needs the backup service account to have "Cloud Datastore Viewer" (#168);
+# until then the job reports PERMISSION_DENIED as a warning and files nothing.
+
+on:
+  schedule:
+    - cron: '30 8 * * *' # 14:00 IST, after the free-tier read quota resets
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only print the plan; do not change issues'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: tip-autobugs
+  cancel-in-progress: false
+
+jobs:
+  autobugs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/backup/package-lock.json
+
+      # Reuses the backup tool's firebase-admin (installed in the job only).
+      - name: Install firebase-admin (job only)
+        working-directory: tools/backup
+        run: npm ci --no-audit --no-fund
+
+      - name: File / update / close TIP issues
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_BACKUP_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TIP_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: node tools/tip/autobugs.js
