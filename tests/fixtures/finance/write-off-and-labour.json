@@ -1,0 +1,118 @@
+{
+  "name": "write-off-and-labour",
+  "description": "Purchase 100 kg @ ₹20 with ₹60 labour deducted (grand total 1940); credit sale 50 kg @ ₹30 = 1500: 1000 paid at sale, 300 paid later, 200 written off. Profit = 1500 − 1000 − 200 bad debt = 300. Labour 60 shown, not in cost.",
+  "items": [
+    {
+      "id": "item-rice",
+      "name": "Rice",
+      "hindiName": "चावल"
+    }
+  ],
+  "purchases": [
+    {
+      "id": "p1",
+      "billNumber": "P20261001-001",
+      "date": "2026-10-01T09:00:00",
+      "customerName": "Ramesh",
+      "items": [
+        {
+          "itemId": "item-rice",
+          "name": "Rice",
+          "qty": 100,
+          "rate": 20,
+          "total": 2000
+        }
+      ],
+      "billTotal": 2000,
+      "laborCharges": 60,
+      "grandTotal": 1940,
+      "payment": {
+        "cash": 1940,
+        "online": 0,
+        "due": 0,
+        "total": 1940
+      }
+    }
+  ],
+  "wholesaleSales": [],
+  "retailSales": [
+    {
+      "id": "r1",
+      "billNumber": "S20261002-001",
+      "date": "2026-10-02T10:00:00",
+      "customerName": "Ravi",
+      "items": [
+        {
+          "itemId": "item-rice",
+          "name": "Rice",
+          "qty": 50,
+          "rate": 30,
+          "total": 1500
+        }
+      ],
+      "total": 1500,
+      "cleared": true,
+      "dueAmount": 0,
+      "payment": {
+        "cash": 1300,
+        "online": 0,
+        "due": 0,
+        "total": 1500
+      },
+      "payments": [
+        {
+          "id": "pay1",
+          "date": "2026-10-05T10:00:00",
+          "cash": 300,
+          "online": 0
+        },
+        {
+          "id": "wo1",
+          "kind": "writeOff",
+          "date": "2026-10-06T10:00:00",
+          "amount": 200
+        }
+      ]
+    }
+  ],
+  "stockAdjustments": [],
+  "expenses": [],
+  "withdrawals": [],
+  "periods": {
+    "all": {
+      "range": null,
+      "expected": {
+        "sales": 1500,
+        "cogs": 1000,
+        "grossProfit": 500,
+        "business": 0,
+        "badDebts": 200,
+        "profit": 300,
+        "personal": 0,
+        "afterPersonal": 300,
+        "withdrawn": 0,
+        "afterWithdrawals": 300,
+        "labour": 60,
+        "stock": {
+          "opening": 0,
+          "purchases": 2000,
+          "cogs": 1000,
+          "adjustments": 0,
+          "closing": 1000,
+          "now": 1000,
+          "gap": 0
+        },
+        "cash": {
+          "receivedAtSale": 1000,
+          "dueReceived": 300,
+          "moneyIn": 1300,
+          "paidAtPurchase": 1940,
+          "duePaid": 0,
+          "moneyOut": 1940,
+          "net": -640
+        },
+        "stockMismatch": false
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "buy-then-sell",
+  "description": "#215 headline example: buy 100 kg @ ₹20, sell 60 kg @ ₹25. Unsold stock is stock, not a loss.",
+  "items": [ { "id": "item-rice", "name": "Rice", "hindiName": "चावल" } ],
+  "purchases": [
+    { "id": "p1", "billNumber": "P20261001-001", "date": "2026-10-01T09:00:00", "customerName": "Ramesh",
+      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 100, "rate": 20, "total": 2000 } ],
+      "billTotal": 2000, "grandTotal": 2000, "cashPayment": 2000, "dueAmount": 0,
+      "payment": { "cash": 2000, "online": 0, "due": 0, "total": 2000 } }
+  ],
+  "wholesaleSales": [],
+  "retailSales": [
+    { "id": "r1", "billNumber": "S20261005-001", "date": "2026-10-05T10:00:00", "customerName": "Sita",
+      "items": [ { "itemId": "item-rice", "name": "Rice", "qty": 60, "rate": 25, "total": 1500 } ],
+      "total": 1500, "cashPayment": 1500, "dueAmount": 0, "payment": { "cash": 1500, "online": 0, "due": 0, "total": 1500 } }
+  ],
+  "stockAdjustments": [],
+  "expenses": [],
+  "withdrawals": [],
+  "periods": {
+    "all": {
+      "range": null,
+      "expected": {
+        "sales": 1500, "cogs": 1200, "grossProfit": 300, "business": 0, "profit": 300, "personal": 0,
+        "afterPersonal": 300, "withdrawn": 0, "afterWithdrawals": 300,
+        "stock": { "opening": 0, "purchases": 2000, "cogs": 1200, "adjustments": 0, "closing": 800, "now": 800, "gap": 0 },
+        "cash": { "receivedAtSale": 1500, "dueReceived": 0, "moneyIn": 1500, "paidAtPurchase": 2000, "duePaid": 0, "moneyOut": 2000, "net": -500 },
+        "stockMismatch": false
+      }
+    }
+  }
+}

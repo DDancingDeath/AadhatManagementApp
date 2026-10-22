@@ -8,33 +8,38 @@ import { AppState } from '../utils/state.js';
 import { UIManager } from '../ui/ui-manager.js';
 import { FirebaseService } from '../firebase/firestore-service.js';
 import { Helpers } from '../utils/helpers.js';
-import { billTotal, outstandingDue } from '../utils/money.js';
-import { todayLocalISO, parseLocalDate, parseAnyBillDate } from '../utils/dates.js';
+import { billTotal, outstandingDue, round2 } from '../utils/money.js';
+import { computeFinanceSummary, pickReplayBase } from '../utils/finance-calc.js';
+import { todayLocalISO, parseLocalDate, parseAnyBillDate, toLocalISODate } from '../utils/dates.js';
 import {
     rangeStatus, retryRange, applyRangeState, isFullHistoryLoaded, needsHistoryFrom,
     ensureHistoryFrom, historyLoadedFrom, monthStart
 } from '../utils/history-window.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { createRenderMemo } from '../utils/render-memo.js';
-import { t } from '../i18n/index.js';
+import { FinanceBreakdownSheet } from '../ui/finance-breakdown-sheet.js';
+import { t, getLang } from '../i18n/index.js';
 
 /** Placeholder for all-time figures until the full history is loaded. */
 const NOT_LOADED = '—';
+/** Cash sessions are read for periods up to this long (one small doc per day). */
+const SESSION_MAX_DAYS = 62;
+/** Re-read a period's cash sessions after this long (today's session keeps changing). */
+const SESSION_TTL_MS = 5 * 60 * 1000;
 /** Skips recomputing the dashboard on a tab revisit when nothing changed (#24). */
 const dashboardMemo = createRenderMemo();
 
 const isShown = (el) => !!el && el.style.display !== 'none';
 
 /**
- * 'YYYY-MM' of the first calendar month entirely at/after `ms`.
- * @param {number} ms
+ * ₹ amount rounded to the rupee ("—" for null: not computable yet).
+ * @param {?number} n
  * @returns {string}
  */
-const firstFullMonthKey = (ms) => {
-    const d = new Date(ms);
-    const first = (d.getDate() === 1 && d.getHours() === 0 && d.getMinutes() === 0)
-        ? d : new Date(d.getFullYear(), d.getMonth() + 1, 1);
-    return `${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, '0')}`;
+const formatRupees = (n) => {
+    if (n === null || n === undefined || !Number.isFinite(n)) return NOT_LOADED;
+    const r = Math.round(n);
+    return `${r < 0 ? '-' : ''}₹${Math.abs(r).toLocaleString('en-IN')}`;
 };
 
 /**
@@ -51,10 +56,43 @@ export class FinanceManager {
      * Initialize the finance module
      */
     static init() {
+        this.setupBreakdownTaps();
         this.loadCustomAccounts();
         this.filterTab('dashboard', undefined, { skipUnchanged: true });
         this.setupIconPicker();
         this.setDefaultDate();
+    }
+
+    /**
+     * Every dashboard number with data-finance-card opens its breakdown (#215).
+     * One delegated listener; the template is loaded once per session.
+     */
+    static setupBreakdownTaps() {
+        const section = document.getElementById('financeDashboardSection');
+        if (!section || section.dataset.breakdownTaps) return;
+        section.dataset.breakdownTaps = '1';
+        const openFrom = (e) => {
+            const el = e.target.closest('[data-finance-card]');
+            if (!el || !section.contains(el)) return;
+            if (e.type === 'keydown') {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+            }
+            this.openBreakdown(el.getAttribute('data-finance-card'));
+        };
+        section.addEventListener('click', openFrom);
+        section.addEventListener('keydown', openFrom);
+    }
+
+    /**
+     * Opens the "what makes up this number" sheet for a dashboard card.
+     * @param {string} cardId key of CARDS in utils/finance-breakdown.js
+     */
+    static openBreakdown(cardId) {
+        FinanceBreakdownSheet.open(cardId, {
+            getSummary: () => this.computeSummary({ ...this.getRange(), detail: true }),
+            periodLabel: this.getPeriodLabel()
+        });
     }
 
     /**
@@ -297,18 +335,18 @@ export class FinanceManager {
      */
     static getPeriodLabel() {
         switch (this.currentDateFilter) {
-            case 'week': return 'This Week';
-            case 'month': return 'This Month';
-            case 'year': return 'This Year';
+            case 'week': return t('ui.finance.period_week');
+            case 'month': return t('ui.finance.period_month');
+            case 'year': return t('ui.finance.period_year');
             case 'custom': 
                 if (this.customStartDate && this.customEndDate) {
                     const start = parseLocalDate(this.customStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                     const end = parseLocalDate(this.customEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                     return `${start} - ${end}`;
                 }
-                return 'Custom';
+                return t('ui.finance.period_custom');
             case 'all':
-            default: return 'All Time';
+            default: return t('ui.finance.period_all');
         }
     }
 
@@ -336,107 +374,154 @@ export class FinanceManager {
             return;
         }
 
-        const salesHistory = AppState.salesHistory || [];
-        const retailSalesHistory = AppState.retailSalesHistory || [];
-        const purchaseHistory = AppState.purchaseHistory || [];
-        const expensesHistory = AppState.expensesHistory || [];
-        const withdrawalsHistory = AppState.withdrawalsHistory || [];
+        const summary = this.computeSummary();
 
-        // Filter by date and calculate
-        let revenue = 0, revenueCount = 0;
-        let investment = 0, investmentCount = 0;
-        let businessExp = 0, businessExpCount = 0;
-        let personalExp = 0, personalExpCount = 0;
-        let withdrawals = 0;
-
-        // Revenue from sales
-        salesHistory.filter(s => this.isInDateRange(s.date)).forEach(sale => {
-            revenue += parseFloat(sale.total) || 0;
-            revenueCount++;
-        });
-        retailSalesHistory.filter(s => this.isInDateRange(s.date)).forEach(sale => {
-            revenue += parseFloat(sale.total) || 0;
-            revenueCount++;
-        });
-
-        // Investment (purchases)
-        purchaseHistory.filter(p => this.isInDateRange(p.date)).forEach(purchase => {
-            investment += billTotal(purchase);
-            investmentCount++;
-        });
-
-        // Expenses
-        expensesHistory.filter(e => this.isInDateRange(e.date)).forEach(expense => {
-            const amount = parseFloat(expense.amount) || 0;
-            if (expense.category === 'business') {
-                businessExp += amount;
-                businessExpCount++;
-            } else {
-                personalExp += amount;
-                personalExpCount++;
-            }
-        });
-
-        // Withdrawals (always show all-time total for context)
-        withdrawalsHistory.forEach(w => {
-            withdrawals += parseFloat(w.amount) || 0;
-        });
-
-        // Calculate profit
-        const profit = revenue - investment - businessExp - personalExp;
-        const availableBalance = profit - withdrawals;
-
-        // Update UI
         const updateElement = (id, value) => {
             const el = document.getElementById(id);
             if (el) el.textContent = value;
         };
 
-        updateElement('financeNetProfit', `₹${Math.round(profit).toLocaleString('en-IN')}`);
+        updateElement('financeNetProfit', formatRupees(summary.profit));
         updateElement('financeProfitPeriod', this.getPeriodLabel());
-        
-        updateElement('financeRevenue', `₹${Math.round(revenue).toLocaleString('en-IN')}`);
-        updateElement('financeRevenueCount', `${revenueCount} sales`);
-        
-        updateElement('financeInvestment', `₹${Math.round(investment).toLocaleString('en-IN')}`);
-        updateElement('financeInvestmentCount', `${investmentCount} purchases`);
-        
-        updateElement('financeBusinessExp', `₹${Math.round(businessExp).toLocaleString('en-IN')}`);
-        updateElement('financeBusinessExpCount', `${businessExpCount} entries`);
-        
-        updateElement('financePersonalExp', `₹${Math.round(personalExp).toLocaleString('en-IN')}`);
-        updateElement('financePersonalExpCount', `${personalExpCount} entries`);
+        updateElement('financeAfterPersonalLine',
+            `${t('ui.finance.profit_after_personal')}: ${formatRupees(summary.afterPersonal)}`);
 
-        // Withdrawals are an all-time total: show it only once full history is loaded
-        const fullHistory = isFullHistoryLoaded();
-        updateElement('financeTotalWithdrawn', fullHistory ? `₹${Math.round(withdrawals).toLocaleString('en-IN')}` : NOT_LOADED);
-        updateElement('financeAvailableBalance', fullHistory ? `₹${Math.round(availableBalance).toLocaleString('en-IN')}` : NOT_LOADED);
-        this.renderFullHistoryPrompt(fullHistory);
+        updateElement('financeRevenue', formatRupees(summary.sales.total));
+        updateElement('financeRevenueCount', summary.sales.due > 0
+            ? `${t('ui.finance.sales_count', { count: summary.sales.count })} · ${t('ui.finance.still_due', { amount: Math.round(summary.sales.due).toLocaleString('en-IN') })}`
+            : t('ui.finance.sales_count', { count: summary.sales.count }));
+        updateElement('financeCogs', formatRupees(summary.cogs));
+        updateElement('financeBusinessExp', formatRupees(summary.expenses.business));
+        updateElement('financeBusinessExpCount', t('ui.finance.entries_count', { count: summary.expenses.businessCount }));
+        updateElement('financeStockNow', formatRupees(summary.stock ? summary.stock.now : this.calculateStockValue()));
 
-        // Render breakdown table
-        this.renderProfitBreakdown(revenue, investment, businessExp, personalExp,
-            fullHistory ? withdrawals : null, profit, fullHistory ? availableBalance : null);
-        
-        // Render monthly chart
+        updateElement('financePersonalExp', formatRupees(summary.expenses.personal));
+        updateElement('financePersonalExpCount', t('ui.finance.personal_note'));
+        updateElement('financeTotalWithdrawn', formatRupees(summary.withdrawn));
+        updateElement('financeAvailableBalance', formatRupees(summary.afterWithdrawals));
+
+        const warn = document.getElementById('financeProfitWarning');
+        if (warn) {
+            warn.style.display = summary.uncostedWarning ? 'block' : 'none';
+            warn.textContent = summary.uncostedWarning ? `⚠️ ${this.uncostedText(summary.stock.uncosted)}` : '';
+        }
+
+        this.renderFullHistoryPrompt(!!summary.stock);
+        this.renderProfitBreakdown(summary);
+        this.renderStockBreakdown(summary);
+        this.renderCashFlow(summary);
+
         this.renderMonthlyChart();
         dashboardMemo.record(this.dashboardMemoState());
     }
 
-    /** Filter state the dashboard depends on (besides data). */
-    static dashboardMemoState() {
-        return [this.currentDateFilter, this.customStartDate?.getTime?.() ?? this.customStartDate, this.customEndDate?.getTime?.() ?? this.customEndDate];
+    /**
+     * Selected period as [from, to) in ms (same days as isInDateRange).
+     * @returns {{from: number, to: number}}
+     */
+    static getRange() {
+        const start = this.getRangeStart();
+        let to = Infinity;
+        if (this.currentDateFilter === 'custom' && this.customStartDate && this.customEndDate) {
+            const end = parseLocalDate(this.customEndDate);
+            to = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1).getTime();
+        }
+        return { from: start ? start.getTime() : -Infinity, to };
     }
 
     /**
-     * Prompt under the withdrawals summary while all-time figures show "—".
-     * @param {boolean} fullHistory
+     * Finance numbers for [from, to) from the loaded history (#215). Cost of
+     * goods sold starts from the stock checkpoint, or from the beginning when
+     * the full history is loaded; otherwise profit and stock show "—".
+     * @param {{from: number, to: number, detail?: boolean}} [range] detail: also the rows behind each number
+     * @returns {ReturnType<typeof computeFinanceSummary>}
      */
-    static renderFullHistoryPrompt(fullHistory) {
-        const anchor = document.getElementById('financeAvailableBalance');
+    static computeSummary({ from, to, detail = false, cashSessions } = this.getRange()) {
+        const dues = cashSessions || this.periodSessions({ from, to });
+        const base = pickReplayBase({
+            checkpoint: FirebaseService.getStockCheckpointState?.() || null,
+            fullHistory: isFullHistoryLoaded(),
+            from
+        });
+        return computeFinanceSummary({
+            sources: {
+                purchases: AppState.purchaseHistory || [],
+                wholesaleSales: AppState.salesHistory || [],
+                retailSales: AppState.retailSalesHistory || [],
+                stockAdjustments: AppState.stockAdjustments || []
+            },
+            items: AppState.items || [],
+            base,
+            expenses: AppState.expensesHistory || [],
+            withdrawals: AppState.withdrawalsHistory || [],
+            sessions: dues.sessions,
+            duesComplete: dues.complete,
+            from,
+            to,
+            detail
+        });
+    }
+
+    /**
+     * Cash sessions for [from, to): their due-payment legs count the final
+     * payment on an old bill that is no longer in memory. Not needed once the
+     * full history is loaded; read (small, cached) for periods up to
+     * SESSION_MAX_DAYS; longer periods stay approximate.
+     * @param {{from: number, to: number}} range
+     * @returns {{sessions: Array, complete: boolean}}
+     */
+    static periodSessions({ from, to }) {
+        if (isFullHistoryLoaded()) return { sessions: [], complete: true };
+        const now = Date.now();
+        const end = Math.min(to, now);
+        if (!Number.isFinite(from) || end - from > SESSION_MAX_DAYS * 86400000) return { sessions: [], complete: false };
+        const key = `${toLocalISODate(new Date(from))}|${toLocalISODate(new Date(Math.max(from, end - 1)))}`;
+        if (!this.sessionCache) this.sessionCache = new Map();
+        const hit = this.sessionCache.get(key);
+        if (hit?.sessions && now - hit.at < SESSION_TTL_MS) return { sessions: hit.sessions, complete: true };
+        if (!hit || (!hit.pending && now - hit.at >= SESSION_TTL_MS)) {
+            const [a, b] = key.split('|');
+            const entry = { pending: true, at: now, sessions: hit?.sessions || null };
+            this.sessionCache.set(key, entry);
+            FirebaseService.loadCashSessionsBetween(a, b).then(sessions => {
+                this.sessionCache.set(key, { pending: false, at: Date.now(), sessions });
+                if (isShown(document.getElementById('financeDashboardSection'))) this.renderDashboard();
+            }).catch(e => {
+                console.error('Finance: loading cash sessions failed:', e);
+                this.sessionCache.set(key, { pending: false, at: Date.now(), sessions: null });
+            });
+        }
+        return { sessions: hit?.sessions || [], complete: false };
+    }
+
+    /**
+     * "X kg sold before purchase recorded — profit may be overstated by ~₹Y".
+     * @param {{qty: number, estimate: number, unknownCost: number}} u
+     * @returns {string}
+     */
+    static uncostedText(u) {
+        const qty = (Math.round(u.qty * 100) / 100).toLocaleString('en-IN');
+        return u.estimate > 0
+            ? t('ui.finance.uncosted_warning', { qty, amount: Math.round(u.estimate).toLocaleString('en-IN') })
+            : t('ui.finance.uncosted_warning_unknown', { qty });
+    }
+
+    /** Filter state the dashboard depends on (besides data). */
+    static dashboardMemoState() {
+        return [this.currentDateFilter, this.customStartDate?.getTime?.() ?? this.customStartDate, this.customEndDate?.getTime?.() ?? this.customEndDate, getLang()];
+    }
+
+    /**
+     * Prompt under the profit breakdown while profit / stock value show "—"
+     * (the period starts before the stock checkpoint and older history isn't loaded).
+     * @param {boolean} ready
+     */
+    static renderFullHistoryPrompt(ready) {
+        const anchor = document.getElementById('financeProfitBreakdown');
         const card = anchor?.closest('.card');
         if (!card) return;
         let prompt = card.querySelector('.finance-full-history-prompt');
-        if (fullHistory) {
+        if (ready) {
             prompt?.remove();
             return;
         }
@@ -447,12 +532,12 @@ export class FinanceManager {
         }
         prompt.textContent = '';
         const text = document.createElement('span');
-        text.textContent = 'All-time figures need the full history.';
+        text.textContent = t('ui.finance.needs_full_history');
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'history-search-older-btn';
         btn.disabled = !!this.loadingFullHistory;
-        btn.textContent = this.loadingFullHistory ? 'Loading full history…' : 'Load full history';
+        btn.textContent = t(this.loadingFullHistory ? 'ui.finance.loading_full_history' : 'ui.finance.load_full_history');
         btn.addEventListener('click', () => this.loadFullHistory());
         prompt.append(text, ' ', btn);
     }
@@ -478,50 +563,118 @@ export class FinanceManager {
     }
 
     /**
-     * Render the profit breakdown table
+     * Rows of a breakdown table.
+     * @param {Array<[string, ?number, string?, string?, string?]>} rows [text, amount, sign '+'|'-'|'', rowClass, cardId]
+     * @returns {string}
      */
-    static renderProfitBreakdown(revenue, investment, businessExp, personalExp, withdrawals, profit, balance) {
-        const tbody = document.getElementById('financeProfitBreakdown');
-        if (!tbody) return;
-        // withdrawals/balance are null until full history is loaded
-        const withdrawalsText = withdrawals === null ? NOT_LOADED : `-₹${Math.round(withdrawals).toLocaleString('en-IN')}`;
-        const balanceText = balance === null ? NOT_LOADED : `₹${Math.round(balance).toLocaleString('en-IN')}`;
-        const balanceClass = balance === null || balance >= 0 ? 'amount-positive' : 'amount-negative';
-
-        tbody.innerHTML = `
-            <tr>
-                <td>📈 Sales Revenue</td>
-                <td class="amount-positive">+₹${Math.round(revenue).toLocaleString('en-IN')}</td>
-            </tr>
-            <tr>
-                <td>📦 Purchase Investment</td>
-                <td class="amount-negative">-₹${Math.round(investment).toLocaleString('en-IN')}</td>
-            </tr>
-            <tr>
-                <td>🏢 Business Expenses</td>
-                <td class="amount-negative">-₹${Math.round(businessExp).toLocaleString('en-IN')}</td>
-            </tr>
-            <tr>
-                <td>👤 Personal Expenses</td>
-                <td class="amount-negative">-₹${Math.round(personalExp).toLocaleString('en-IN')}</td>
-            </tr>
-            <tr class="breakdown-subtotal">
-                <td><strong>Net Profit</strong></td>
-                <td class="${profit >= 0 ? 'amount-positive' : 'amount-negative'}"><strong>₹${Math.round(profit).toLocaleString('en-IN')}</strong></td>
-            </tr>
-            <tr>
-                <td>💸 Total Withdrawals</td>
-                <td class="amount-negative">${withdrawalsText}</td>
-            </tr>
-            <tr class="breakdown-total">
-                <td><strong>Available Balance</strong></td>
-                <td class="${balanceClass}"><strong>${balanceText}</strong></td>
-            </tr>
-        `;
+    static breakdownRows(rows) {
+        return rows.map(([label, amount, sign = '', rowClass = '', cardId = '']) => {
+            const text = Helpers.escapeHtml(label);
+            const value = amount === null ? NOT_LOADED : `${sign}${formatRupees(sign ? Math.abs(amount) : amount)}`;
+            const cls = amount === null ? '' : (sign === '-' || amount < 0 ? 'amount-negative' : 'amount-positive');
+            const strong = rowClass === 'breakdown-subtotal' || rowClass === 'breakdown-total';
+            const classes = [rowClass, cardId ? 'finance-tappable' : ''].filter(Boolean).join(' ');
+            const tap = cardId ? ` data-finance-card="${cardId}" role="button" tabindex="0"` : '';
+            return `<tr${classes ? ` class="${classes}"` : ''}${tap}>
+                <td>${strong ? `<strong>${text}</strong>` : text}</td>
+                <td class="${cls}">${strong ? `<strong>${value}</strong>` : value}</td>
+            </tr>`;
+        }).join('');
     }
 
     /**
-     * Render monthly profit chart
+     * Profit on goods sold: sales − cost of goods sold − business expenses;
+     * personal expenses and withdrawals below it, not part of it.
+     * @param {ReturnType<typeof computeFinanceSummary>} s
+     */
+    static renderProfitBreakdown(s) {
+        const tbody = document.getElementById('financeProfitBreakdown');
+        if (!tbody) return;
+        const rows = [
+            [`📈 ${t('ui.finance.sales')}`, s.sales.total, '+', '', 'sales'],
+            [`📦 ${t('ui.finance.cogs')}`, s.cogs, '-', '', 'cogs'],
+            [t('ui.finance.gross_profit'), s.grossProfit, '', 'breakdown-subtotal', 'gross'],
+            [`🏢 ${t('ui.finance.business_expenses')}`, s.expenses.business, '-', '', 'business']
+        ];
+        if (s.expenses.uncategorised > 0) {
+            rows.push([t('ui.finance.uncategorised', { amount: Math.round(s.expenses.uncategorised).toLocaleString('en-IN') }), s.expenses.uncategorised, '', 'breakdown-note', 'business']);
+        }
+        if (s.badDebts) rows.push([`🧾 ${t('ui.finance.bad_debts')}`, s.badDebts, '-', '', 'badDebts']);
+        rows.push(
+            [t('ui.finance.profit_on_goods_sold'), s.profit, '', 'breakdown-total', 'profit'],
+            [`👤 ${t('ui.finance.personal_expenses')}`, s.expenses.personal, '-', '', 'personal'],
+            [t('ui.finance.profit_after_personal'), s.afterPersonal, '', 'breakdown-subtotal', 'afterPersonal'],
+            [`💸 ${t('ui.finance.withdrawn')}`, s.withdrawn, '-', '', 'withdrawn'],
+            [t('ui.finance.left_after_withdrawals'), s.afterWithdrawals, '', 'breakdown-subtotal', 'afterWithdrawals']
+        );
+        // Shown, not included (owner questions / data warnings).
+        if (s.uncostedWarning) rows.push([`⚠️ ${this.uncostedText(s.stock.uncosted)}`, s.stock.uncosted.estimate || null, '', 'breakdown-note', 'uncosted']);
+        if (s.purchases.labour) rows.push([t('ui.finance.labour_note'), s.purchases.labour, '', 'breakdown-note', 'labour']);
+        tbody.innerHTML = this.breakdownRows(rows);
+    }
+
+    /**
+     * Stock value for the period and the check line
+     * (opening + purchases − cost of goods sold ± corrections = closing).
+     * @param {ReturnType<typeof computeFinanceSummary>} s
+     */
+    static renderStockBreakdown(s) {
+        const tbody = document.getElementById('financeStockBreakdown');
+        const check = document.getElementById('financeStockCheck');
+        const st = s.stock;
+        if (tbody) {
+            const rows = [
+                [t('ui.finance.opening_stock'), st ? st.opening : null, '', '', 'stockOpening'],
+                [`+ ${t('ui.finance.purchases')}`, st ? st.purchases : null, '+', '', 'stockPurchases'],
+                [`− ${t('ui.finance.cogs')}`, st ? st.cogs : null, '-', '', 'cogs']
+            ];
+            if (st && st.adjustments !== 0) {
+                rows.push([`± ${t('ui.finance.stock_corrections')}`, st.adjustments, st.adjustments < 0 ? '-' : '+', '', 'stockAdjustments']);
+            }
+            rows.push(
+                [t('ui.finance.closing_stock'), st ? st.closing : null, '', 'breakdown-subtotal', 'stockClosing'],
+                [t('ui.finance.stock_value_now'), st ? st.now : this.calculateStockValue(), '', 'breakdown-total', 'stockNow']
+            );
+            tbody.innerHTML = this.breakdownRows(rows);
+        }
+        if (check) {
+            check.style.display = s.stockMismatch ? 'block' : 'none';
+            check.textContent = s.stockMismatch
+                ? `⚠️ ${t(s.mismatchFromEarlierSales ? 'ui.finance.check_mismatch_earlier' : 'ui.finance.check_mismatch', {
+                    amount: Math.round(Math.abs(s.stock.gap)).toLocaleString('en-IN'),
+                    qty: (Math.round(s.stock.deficitRefilled.qty * 100) / 100).toLocaleString('en-IN')
+                })}`
+                : '';
+        }
+    }
+
+    /**
+     * Cash flow: money received − money paid in the period.
+     * @param {ReturnType<typeof computeFinanceSummary>} s
+     */
+    static renderCashFlow(s) {
+        const tbody = document.getElementById('financeCashFlow');
+        if (!tbody) return;
+        const c = s.cash;
+        tbody.innerHTML = this.breakdownRows([
+            [t('ui.finance.received_at_sale'), c.receivedAtSale, '+', '', 'receivedAtSale'],
+            [t('ui.finance.due_received'), c.dueReceived, '+', '', 'dueReceived'],
+            [t('ui.finance.money_in'), c.moneyIn, '', 'breakdown-subtotal', 'moneyIn'],
+            [t('ui.finance.paid_at_purchase'), c.paidAtPurchase, '-', '', 'paidAtPurchase'],
+            [t('ui.finance.due_paid'), c.duePaid, '-', '', 'duePaid'],
+            [t('ui.finance.all_expenses'), round2(s.expenses.business + s.expenses.personal), '-', '', 'expensesAll'],
+            [t('ui.finance.money_out'), c.moneyOut, '', 'breakdown-subtotal', 'moneyOut'],
+            [t('ui.finance.net_cash_flow'), c.net, '', 'breakdown-total', 'netCash']
+        ]);
+        const note = document.getElementById('financeCashNote');
+        if (note) {
+            note.style.display = s.duesApproximate ? 'block' : 'none';
+            note.textContent = s.duesApproximate ? t('ui.finance.cash_approximate') : '';
+        }
+    }
+
+    /**
+     * Render monthly profit chart (profit on goods sold per calendar month)
      */
     static renderMonthlyChart() {
         const container = document.getElementById('financeMonthlyChart');
@@ -532,69 +685,42 @@ export class FinanceManager {
         const status = this.gate('financeChart', chartStart,
             document.getElementById('financeDashboardSection'), () => this.renderMonthlyChart());
         if (status === 'loading') {
-            container.innerHTML = '<p class="empty-state">Loading older months…</p>';
+            container.innerHTML = `<p class="empty-state">${Helpers.escapeHtml(t('ui.finance.loading_older_months'))}</p>`;
             return;
         }
         // Only months fully inside the loaded window (older due-only bills
         // would otherwise show up as tiny, wrong bars)
-        const minMonthKey = isFullHistoryLoaded() ? null : firstFullMonthKey(historyLoadedFrom());
+        const loadedFrom = isFullHistoryLoaded() ? -Infinity : historyLoadedFrom();
 
-        const salesHistory = AppState.salesHistory || [];
-        const retailSalesHistory = AppState.retailSalesHistory || [];
-        const purchaseHistory = AppState.purchaseHistory || [];
-        const expensesHistory = AppState.expensesHistory || [];
+        const months = [];
+        for (let back = 5; back >= 0; back--) {
+            const from = monthStart(back).getTime();
+            const to = back === 0 ? Infinity : monthStart(back - 1).getTime();
+            if (from < loadedFrom) continue;
+            const s = this.computeSummary({ from, to, cashSessions: { sessions: [], complete: isFullHistoryLoaded() } });
+            if (s.profit === null) continue;
+            if (s.sales.count === 0 && s.purchases.count === 0 && s.expenses.business === 0) continue;
+            months.push({ date: new Date(from), profit: s.profit });
+        }
 
-        // Group by month
-        const monthlyData = {};
-
-        [...salesHistory, ...retailSalesHistory].forEach(sale => {
-            const date = parseAnyBillDate(sale.date);
-            if (!date) return;
-            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
-            monthlyData[key].revenue += parseFloat(sale.total) || 0;
-        });
-
-        purchaseHistory.forEach(purchase => {
-            const date = parseAnyBillDate(purchase.date);
-            if (!date) return;
-            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
-            monthlyData[key].costs += billTotal(purchase);
-        });
-
-        expensesHistory.forEach(expense => {
-            const date = parseAnyBillDate(expense.date);
-            if (!date) return;
-            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            if (!monthlyData[key]) monthlyData[key] = { revenue: 0, costs: 0 };
-            monthlyData[key].costs += parseFloat(expense.amount) || 0;
-        });
-
-        const sortedMonths = Object.keys(monthlyData)
-            .filter(m => !minMonthKey || m >= minMonthKey)
-            .sort().slice(-6);
-
-        if (sortedMonths.length === 0) {
-            container.innerHTML = '<p class="empty-state">No data available yet</p>';
+        if (months.length === 0) {
+            container.innerHTML = `<p class="empty-state">${Helpers.escapeHtml(t('ui.finance.no_data'))}</p>`;
             return;
         }
 
-        const maxProfit = Math.max(...sortedMonths.map(m => Math.abs(monthlyData[m].revenue - monthlyData[m].costs)), 1);
+        const maxProfit = Math.max(...months.map(m => Math.abs(m.profit)), 1);
+        const locale = getLang() === 'hi' ? 'hi-IN' : 'en';
 
         let html = '';
-        sortedMonths.forEach(month => {
-            const data = monthlyData[month];
-            const profit = data.revenue - data.costs;
+        months.forEach(({ date, profit }) => {
             const height = Math.max(10, (Math.abs(profit) / maxProfit) * 150);
             const color = profit >= 0 ? 'var(--success-color)' : 'var(--danger-color)';
-            const [year, monthNum] = month.split('-');
-            const monthName = new Date(year, parseInt(monthNum) - 1).toLocaleString('en', { month: 'short' });
+            const monthName = date.toLocaleString(locale, { month: 'short' });
 
             html += `
                 <div style="display: flex; flex-direction: column; align-items: center; flex: 1;">
                     <div style="background: ${color}; width: 100%; max-width: 40px; height: ${height}px; border-radius: 6px 6px 0 0;"></div>
-                    <div style="font-size: 11px; margin-top: 6px; font-weight: 500;">${monthName}</div>
+                    <div style="font-size: 11px; margin-top: 6px; font-weight: 500;">${Helpers.escapeHtml(monthName)}</div>
                     <div style="font-size: 10px; color: var(--text-muted);">₹${(profit / 1000).toFixed(1)}k</div>
                 </div>
             `;

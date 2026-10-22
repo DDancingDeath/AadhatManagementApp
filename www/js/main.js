@@ -41,7 +41,7 @@ import { t, getLang, setLang, toggleLang, applyTranslations, LANG_CHANGE_EVENT }
 // your console shows an OLDER BUILD_ID after a deploy + reload, the service
 // worker / browser is still serving stale assets (reload twice, or hard
 // refresh / unregister the service worker).
-const BUILD_ID = '20261022z-release-1-6-0';
+const BUILD_ID = '20261023a-finance-profit';
 console.log(
     `%c[Aadhat] BUILD ${BUILD_ID}`,
     'color:#fff;background:#0a7;font-weight:bold;padding:2px 6px;border-radius:3px'
@@ -91,7 +91,8 @@ function refreshForLanguage(lang) {
         },
         'cash-management': () => CashManagementManager.refreshForLanguage(),
         'wholesale-sales': () => { WholesaleSalesManager.renderSalesHistory(); WholesaleSalesManager.renderSalesOutstanding(); },
-        settings: () => SettingsManager.loadSettings()
+        settings: () => SettingsManager.loadSettings(),
+        finance: () => FinanceManager.renderDashboard()
     }[tabId];
     if (redraw) run(tabId, redraw);
     if (tabId === 'day' && DayManager.currentSubTab === 'cash') run('day-cash', () => CashManagementManager.refreshForLanguage());
