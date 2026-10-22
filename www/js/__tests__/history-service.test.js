@@ -457,6 +457,26 @@ describe('review fixes', () => {
         expect(fullReads()).toBe(0);
     });
 
+    it('#129 once this member device edits an older bill itself, approximate stock is not used: exact via full history', async () => {
+        install(42);
+        await open();
+        await rebuildSettled();
+        await open();
+        AppState.userRole = 'staff';
+        await fake.db.collection('stockCheckpoints').doc('current').set({ stale: true, staleCount: (cpDoc().staleCount || 0) + 1 }, { merge: true });
+        await settle();
+        await FirebaseService.getStock();
+        expect(AppState.stockApprox).not.toBeNull();
+
+        await FirebaseService.ensureHistoryFrom(monthsBefore(W, 3));
+        const bill = AppState.purchaseHistory.find(p => p.timestamp < W && p.items?.length && !(p.payment?.due > 0) && !(p.dueAmount > 0));
+        await FirebaseService.updatePurchase({ ...bill, items: [...bill.items, { name: 'Zeera Own', qty: 77, rate: 1 }] });
+        await settle();
+        expect(await FirebaseService.getStock()).toEqual(fullStock());
+        expect(AppState.stockApprox).toBeNull();
+        expect(FirebaseService.isFullHistoryLoaded()).toBe(true);
+    }, 30000);
+
     it('#3 roll-forward discards its payload when a stock record changes meanwhile', async () => {
         install(26);
         await open();

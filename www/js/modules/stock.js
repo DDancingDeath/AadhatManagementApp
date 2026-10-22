@@ -12,6 +12,7 @@ import { Helpers } from '../utils/helpers.js';
 import { attachOlderHistoryScroll } from '../ui/infinite-scroll.js';
 import { isFullHistoryLoaded, historyLoadedFrom, formatWindowDate } from '../utils/history-window.js';
 import { planStockAdjustment } from '../utils/stock-adjust.js';
+import { approxStockNote } from '../utils/stock-check.js';
 import { evaluateStockAdjustment, toFlags } from '../utils/bill-checks.js';
 import { findDeadStock, daysSinceLabel, localDaysBetween, DEAD_STOCK_DAY_OPTIONS, DEFAULT_DEAD_STOCK_DAYS } from '../utils/dead-stock.js';
 
@@ -25,12 +26,9 @@ const STOCK_UPDATING_HTML = '<p class="stock-updating" style="text-align: center
  * @returns {string} HTML, '' when stock is exact
  */
 export function stockApproxNoteHtml(approx) {
-    if (!approx) return '';
-    const when = approx.builtAt > 0
-        ? new Date(approx.builtAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-        : '—';
-    const w = Helpers.escapeHtml(when);
-    return `<p class="stock-approx" style="background: #fff8e1; color: #8a6d00; border-radius: 6px; padding: 8px 10px; font-size: 13px; margin: 0 0 8px;">≈ Approximate stock (updated ${w}) — exact once the owner or a manager opens the app.<br>≈ अनुमानित स्टॉक (अपडेट ${w}) — मालिक या मैनेजर के ऐप खोलने पर सही होगा।</p>`;
+    const note = approxStockNote(approx);
+    if (!note) return '';
+    return `<p class="stock-approx" style="background: #fff8e1; color: #8a6d00; border-radius: 6px; padding: 8px 10px; font-size: 13px; margin: 0 0 8px;">${Helpers.escapeHtml(note.en)} — exact once the owner or a manager opens the app.<br>${Helpers.escapeHtml(note.hi)} — मालिक या मैनेजर के ऐप खोलने पर सही होगा।</p>`;
 }
 
 /**

@@ -376,6 +376,8 @@ let legacyScanJob = null;
 let lastStockApprox = null;
 /** Parsed stale checkpoint for approximate stock, cached per checkpoint doc snapshot. */
 let approxCheckpointCache = { doc: undefined, cp: null };
+/** This device made a checkpoint-invalidating edit this session (approximate stock would miss it). */
+let ownStaleWrite = false;
 let oldestTimestampPromise = null;
 /** When the on-demand (non-live) history currently in memory was first fetched (0 = none). */
 let onDemandAsOf = 0;
@@ -541,7 +543,7 @@ function usableCheckpoint() {
  * approximate instead of reading all history.
  */
 function approximateCheckpoint() {
-    if (!windowState || canManageCheckpoint() || !checkpointDoc) return null;
+    if (!windowState || canManageCheckpoint() || !checkpointDoc || ownStaleWrite) return null;
     if (approxCheckpointCache.doc !== checkpointDoc) {
         approxCheckpointCache = { doc: checkpointDoc, cp: parseCheckpoint(checkpointDoc, { allowStale: true }) };
     }
@@ -622,7 +624,10 @@ function noteStockWrite(collKey, oldRec, newRec, opts = {}) {
         if (!changeInvalidatesCheckpoint(oldRec, newRec, threshold, opts)) return;
         invalidationTags.add(invalidationTag(collKey, oldRec, newRec));
         const local = !!activeCheckpoint && changeInvalidatesCheckpoint(oldRec, newRec, activeCheckpoint.asOf, opts);
+        // The last checkpoint no longer reflects this device's own edit: no approximate stock from it (#129).
+        ownStaleWrite = true;
         invalidateCheckpoint(`${collKey} write`, local);
+        if (AppState.stockApprox && windowState) markDirty(['stockView'], true);
     } catch (e) {
         console.error('Stock checkpoint invalidation check failed:', e);
     }
@@ -1628,6 +1633,7 @@ const FirebaseService = {
         lastStockApprox = null;
         AppState.stockApprox = null;
         approxCheckpointCache = { doc: undefined, cp: null };
+        ownStaleWrite = false;
         AppState.historyLoadedFrom = 0;
     },
 

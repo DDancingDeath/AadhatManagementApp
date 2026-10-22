@@ -14,6 +14,20 @@
  */
 import { AppState } from '../utils/state.js';
 
+/**
+ * "≈ approximate stock (updated <time>)" label (member device, stale stock
+ * checkpoint; #129), shared by the Stock screen, wholesale and the bill checks.
+ * @param {?{builtAt: number}} approx AppState.stockApprox
+ * @returns {?{en: string, hi: string}} null when stock is exact
+ */
+export function approxStockNote(approx) {
+    if (!approx) return null;
+    const when = approx.builtAt > 0
+        ? new Date(approx.builtAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+        : '—';
+    return { en: `≈ approximate stock (updated ${when})`, hi: `≈ अनुमानित स्टॉक (अपडेट ${when})` };
+}
+
 const normalize = (s) => (s == null ? '' : String(s).trim().toLowerCase());
 // Legacy bill lines store the name as `item`.
 const lineName = (item) => item.name || item.item;
