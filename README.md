@@ -179,7 +179,7 @@ The version lives in four places that must agree: `www/changelog.json` (top entr
    The web app still deploys on merge to `main` as before.
 
 Installed Android apps check `releases/latest` (at most every 12 h) and show an "Update available" banner;
-`<site>/download` (site from `happa.config.json`) always links to the latest APK. After updating, each user sees a one-time
+https://happa-bfc07.web.app/download (site from `happa.config.json`) always links to the latest APK. After updating, each user sees a one-time
 "What's new" sheet (Settings → App updates reopens it and has "Share on WhatsApp" for sending the download link).
 
 To re-publish an existing tag (e.g. after fixing a secret), run the workflow manually (Actions → Android release →

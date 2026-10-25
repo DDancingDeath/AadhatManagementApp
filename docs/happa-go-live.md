@@ -36,23 +36,23 @@ deploy to Happa only.
 
 ## 1. Create the Firebase project (console, business account)
 
-1. Create the project (proposed id `happa-shop`). Project ids are global, so
-   note the id you actually get.
+1. Done: project **`happa-bfc07`** (display name "Happa"); default site
+   `happa-bfc07` → https://happa-bfc07.web.app. Already set in `happa.config.json`.
 2. Firestore: **Create database → Production mode → location `asia-south1` (Mumbai)**.
    You cannot change the location later.
-3. Authentication: enable **Email/Password**. Check that `<project-id>.web.app`
-   and `<project-id>.firebaseapp.com` are listed under *Authorized domains*.
+3. Authentication: enable **Email/Password**. Check that `happa-bfc07.web.app`
+   and `happa-bfc07.firebaseapp.com` are listed under *Authorized domains*.
    Add `<hostingSite>.web.app` too if you use a different site name.
 4. Project settings → *Your apps* → add a **Web app** (no Hosting setup needed).
    Copy `apiKey`, `messagingSenderId`, `appId` and `measurementId` (if any).
-5. Hosting: the default site is `<project-id>`. Leave `hostingSite` empty in the
+5. Hosting: the default site is `happa-bfc07`. Leave `hostingSite` empty in the
    config unless you create a site with another name.
 
 ## 2. Fill in `happa.config.json`
 
 | Field | Value |
 |---|---|
-| `firebase.projectId` | the real project id (replaces `__HAPPA_PROJECT_ID__`) |
+| `firebase.projectId` | ✅ `happa-bfc07` (already filled) |
 | `firebase.apiKey` | from the web app config (replaces `__HAPPA_API_KEY__`) |
 | `firebase.messagingSenderId` | from the web app config (replaces `__HAPPA_MESSAGING_SENDER_ID__`) |
 | `firebase.appId` | from the web app config (replaces `__HAPPA_APP_ID__`) |
@@ -127,7 +127,7 @@ Do this before the migration so the data is protected from the start.
 
 ```powershell
 npx --yes firebase-tools@latest login      # the business account
-npx --yes firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project <project-id>
+npx --yes firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project happa-bfc07
 ```
 
 ## 6. Stop billing in the old app and run the migration
@@ -138,7 +138,7 @@ npx --yes firebase-tools@latest deploy --only firestore:rules,firestore:indexes 
    Run workflow (on `main`, **before** the Happa PR merges, so it still backs
    up `aadhat-management`).
 3. Run the migration tool exactly as its README in the `feat/migrate-project-15`
-   PR says: dry run first, check the counts, then apply into `<project-id>`.
+   PR says: dry run first, check the counts, then apply into `happa-bfc07`.
 
 ## 7. Merge order
 
@@ -150,12 +150,12 @@ npx --yes firebase-tools@latest deploy --only firestore:rules,firestore:indexes 
 
 ## 8. Deploy hosting (= merge the Happa PR)
 
-Merging deploys `www/` to `https://<site>.web.app` (*Deploy to Firebase Hosting
+Merging deploys `www/` to `https://happa-bfc07.web.app` (*Deploy to Firebase Hosting
 on merge*), and, because `happa.config.json` changed, also re-deploys rules
 and indexes to the new project. Check that:
 
-- both runs passed, and the guard step printed `project=<project-id>`;
-- `https://<site>.web.app` and `/download` open;
+- both runs passed, and the guard step printed `project=happa-bfc07`;
+- `https://happa-bfc07.web.app` and `/download` open;
 - `https://aadhat-management.web.app` still shows the old app, unchanged.
 
 Do **not** revert the merge commit to roll back. That would bring back the
@@ -184,7 +184,7 @@ old app from the phones before that.
 
 ## 10. Install on the phones
 
-On each phone, open `https://<site>.web.app/download`, download `Happa.apk`
+On each phone, open `https://happa-bfc07.web.app/download`, download `Happa.apk`
 and install it. It installs **next to** the old app; nothing is replaced. Sign in.
 Accounts and roles work as the migration README describes. Any user it did not
 carry over registers again, and the owner approves them in Admin.

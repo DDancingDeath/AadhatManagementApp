@@ -69,9 +69,9 @@ console.log(`🔧 App Environment: ${APP_ENV} | Collection Prefix: "${COLLECTION
 // <happa-config>
 const firebaseConfig = {
   "apiKey": "__HAPPA_API_KEY__",
-  "authDomain": "__HAPPA_PROJECT_ID__.firebaseapp.com",
-  "projectId": "__HAPPA_PROJECT_ID__",
-  "storageBucket": "__HAPPA_PROJECT_ID__.firebasestorage.app",
+  "authDomain": "happa-bfc07.firebaseapp.com",
+  "projectId": "happa-bfc07",
+  "storageBucket": "happa-bfc07.firebasestorage.app",
   "messagingSenderId": "__HAPPA_MESSAGING_SENDER_ID__",
   "appId": "__HAPPA_APP_ID__"
 };

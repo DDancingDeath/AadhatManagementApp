@@ -211,10 +211,10 @@ function qrUrl(root = DEFAULT_ROOT) {
 }
 
 function writeQr(root, url) {
-    const { execFileSync } = require('child_process');
+    const { execSync } = require('child_process');
     const out = path.join(root, QR_FILE);
-    const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-    execFileSync(npx, ['--yes', 'qrcode@1.5.4', '-t', 'svg', '-o', out, url], { stdio: 'inherit', shell: process.platform === 'win32' });
+    if (!/^https:\/\/[a-z0-9.-]+\/download$/.test(url)) throw new Error(`Refusing to encode unexpected URL ${url}`);
+    execSync(`npx --yes qrcode@1.5.4 -t svg -o "${out}" "${url}"`, { stdio: 'inherit' });
     fs.appendFileSync(out, `\n<!-- happa-qr: ${url} -->\n`);
 }
 
@@ -229,7 +229,7 @@ function apply(root = DEFAULT_ROOT, { qr = true } = {}) {
         changed.push(p.file);
     }
     const d = derive(raw);
-    if (qr && !findPlaceholders(raw).length && qrUrl(root) !== d.downloadPageUrl) {
+    if (qr && !PLACEHOLDER_RE.test(d.downloadPageUrl) && qrUrl(root) !== d.downloadPageUrl) {
         writeQr(root, d.downloadPageUrl);
         changed.push(QR_FILE);
     }
