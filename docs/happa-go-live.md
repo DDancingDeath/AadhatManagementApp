@@ -43,8 +43,9 @@ deploy to Happa only.
 3. Authentication: enable **Email/Password**. Check that `happa-bfc07.web.app`
    and `happa-bfc07.firebaseapp.com` are listed under *Authorized domains*.
    Add `<hostingSite>.web.app` too if you use a different site name.
-4. Project settings → *Your apps* → add a **Web app** (no Hosting setup needed).
-   Copy `apiKey`, `messagingSenderId`, `appId` and `measurementId` (if any).
+4. Done: the web app config is in `happa.config.json` (public client config, not a
+   secret). `measurementId` is kept there, but the Analytics SDK is deliberately
+   not loaded.
 5. Hosting: the default site is `happa-bfc07`. Leave `hostingSite` empty in the
    config unless you create a site with another name.
 
@@ -53,10 +54,10 @@ deploy to Happa only.
 | Field | Value |
 |---|---|
 | `firebase.projectId` | ✅ `happa-bfc07` (already filled) |
-| `firebase.apiKey` | from the web app config (replaces `__HAPPA_API_KEY__`) |
-| `firebase.messagingSenderId` | from the web app config (replaces `__HAPPA_MESSAGING_SENDER_ID__`) |
-| `firebase.appId` | from the web app config (replaces `__HAPPA_APP_ID__`) |
-| `firebase.measurementId` | optional; leave `""` if none |
+| `firebase.apiKey` | ✅ filled |
+| `firebase.messagingSenderId` | ✅ filled |
+| `firebase.appId` | ✅ filled |
+| `firebase.measurementId` | ✅ filled (Analytics SDK not loaded) |
 | `firebase.hostingSite` | leave `""` (= project id) unless you created another site |
 | `androidPackage` | default `com.happa.shop`. **Confirm it.** It can never change after phones install v1.0.0 |
 | `appNameHi` | suggested `हप्पा`. Confirm it or change it |

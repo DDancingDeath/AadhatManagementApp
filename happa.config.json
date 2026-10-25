@@ -8,9 +8,9 @@
   "firebase": {
     "projectId": "happa-bfc07",
     "hostingSite": "",
-    "apiKey": "__HAPPA_API_KEY__",
-    "messagingSenderId": "__HAPPA_MESSAGING_SENDER_ID__",
-    "appId": "__HAPPA_APP_ID__",
-    "measurementId": ""
+    "apiKey": "AIzaSyDRSZiNfMAwU9jDfFnHf3zldvT6lUZEUtg",
+    "messagingSenderId": "516108799937",
+    "appId": "1:516108799937:web:a4e3fdbff054b9cc07a940",
+    "measurementId": "G-1514HNS14K"
   }
 }

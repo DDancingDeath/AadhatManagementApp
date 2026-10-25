@@ -34,6 +34,14 @@ describe('happa.config.json', () => {
         expect(configProblems(filled())).toEqual([]);
     });
 
+    test('the derived Firebase config uses the .firebasestorage.app bucket and no Analytics SDK is loaded', () => {
+        const d = derive(loadConfig(ROOT));
+        expect(d.webConfig.storageBucket).toBe(`${d.projectId}.firebasestorage.app`);
+        const index = fs.readFileSync(path.join(ROOT, 'www', 'index.html'), 'utf8');
+        expect(index).not.toMatch(/firebase-analytics|googletagmanager|gtag\(/i);
+        expect(fs.existsSync(path.join(ROOT, 'www', 'vendor', 'firebase', '10.7.1', 'firebase-analytics-compat.js'))).toBe(false);
+    });
+
     test('the old app project and package are refused', () => {
         const oldProject = filled();
         oldProject.firebase.projectId = 'aadhat-management';
