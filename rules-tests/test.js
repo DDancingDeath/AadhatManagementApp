@@ -638,43 +638,78 @@ function defineSuite(prefix) {
 
     const rateStats = `${prefix}rateStats`;
     const sec = (extra = {}) => ({ kg: 100, amount: 2500, min: 24, max: 26, avg: 25, bills: 2, ...extra });
+    const empty = sec({ kg: 0, amount: 0, min: null, max: null, avg: 0, bills: 0 });
+    const bucket = () => ({ purchase: sec(), retail: empty, wholesale: sec({ avg: 27.5, amount: 2750 }), bills: 4 });
     const stat = (extra = {}) => ({
-        itemId: 'wheat', month: '2026-10', purchase: sec(), retail: sec({ kg: 0, amount: 0, min: null, max: null, avg: 0, bills: 0 }),
-        wholesale: sec({ avg: 27.5, amount: 2750 }), bills: 4, updatedAt: 1700000000000, ...extra
+        itemId: 'wheat', year: '2026',
+        weeks: { 'w2026-10-19': bucket(), 'w2026-10-26': bucket() },
+        months: { 'm2026-10': bucket() },
+        updatedAt: 1700000000000, ...extra
     });
+    const manyWeeks = () => Object.fromEntries(Array.from({ length: 55 }, (_, i) => [`w2026-x${i}`, bucket()]));
 
-    t('rateStats: owner and manager can write month docs and the backfill status, and read them', async () => {
-        await assertSucceeds(as('manager1').collection(rateStats).doc('wheat_2026-10').set(stat()));
-        await assertSucceeds(as('legacyOwner').collection(rateStats).doc('wheat_2026-10').set(stat({ bills: 5 })));
+    t('rateStats: owner and manager can write item-year docs and the backfill status, and read them', async () => {
+        await assertSucceeds(as('manager1').collection(rateStats).doc('wheat_2026').set(stat()));
+        await assertSucceeds(as('legacyOwner').collection(rateStats).doc('wheat_2026').set(stat({ weeks: {} })));
         await assertSucceeds(as('legacyOwner').collection(rateStats).doc('_meta').set(
             { backfillDone: true, backfillAt: 1, bills: 1200, reads: 1210, months: 36, by: 'O', byUserId: 'legacyOwner' }, { merge: true }));
-        await assertSucceeds(as('manager1').collection(rateStats).doc('wheat_2026-10').get());
-        await assertSucceeds(as('manager1').collection(rateStats).where('month', '>=', '2026-08').get());
+        await assertSucceeds(as('manager1').collection(rateStats).doc('wheat_2026').get());
+        await assertSucceeds(as('manager1').collection(rateStats).where('year', '>=', '2025').get());
+        await assertSucceeds(as('manager1').collection(rateStats).where('year', '==', '2026').limit(300).get());
         await assertSucceeds(as('manager1').collection(rateStats).doc('_meta').get());
     });
 
     t('rateStats: other users cannot read or write; pending users neither', async () => {
-        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(rateStats).doc('wheat_2026-10').set(stat()));
-        await assertFails(as('staff1').collection(rateStats).doc('wheat_2026-10').get());
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(rateStats).doc('wheat_2026').set(stat()));
+        await assertFails(as('staff1').collection(rateStats).doc('wheat_2026').get());
         await assertFails(as('staff1').collection(rateStats).get());
-        await assertFails(as('staff1').collection(rateStats).doc('wheat_2026-11').set(stat({ month: '2026-11' })));
+        await assertFails(as('staff1').collection(rateStats).doc('wheat_2027').set(stat({ year: '2027' })));
         await assertFails(as('staff1').collection(rateStats).doc('_meta').set({ backfillDone: true }));
-        await assertFails(as('pending1').collection(rateStats).doc('wheat_2026-10').get());
-        await assertFails(anon().collection(rateStats).doc('wheat_2026-10').get());
+        await assertFails(as('pending1').collection(rateStats).doc('wheat_2026').get());
+        await assertFails(anon().collection(rateStats).doc('wheat_2026').get());
     });
 
-    t('rateStats: rejects wrong id, bad month, unknown fields and bad sections; only an owner deletes', async () => {
-        await assertFails(as('manager1').collection(rateStats).doc('rice_2026-10').set(stat()));
-        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026-1').set(stat({ month: '2026-1' })));
-        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026-10').set(stat({ extra: 1 })));
-        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026-10').set(stat({ purchase: sec({ kg: 'lots' }) })));
-        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026-10').set(stat({ purchase: sec({ note: 'x' }) })));
+    t('rateStats: rejects wrong id, bad year, the old monthly layout, unknown fields and oversized maps; only an owner deletes', async () => {
+        await assertFails(as('manager1').collection(rateStats).doc('rice_2026').set(stat()));
+        await assertFails(as('manager1').collection(rateStats).doc('wheat_26').set(stat({ year: '26' })));
+        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026').set(stat({ year: 2026 })));
+        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026-10').set({ itemId: 'wheat', month: '2026-10', purchase: sec(), bills: 1 }));
+        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026').set(stat({ extra: 1 })));
+        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026').set(stat({ weeks: 'lots' })));
+        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026').set(stat({ weeks: manyWeeks() })));
+        const { months: _m, ...noMonths } = stat();
+        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026').set(noMonths));
         await assertFails(as('manager1').collection(rateStats).doc('_meta').set({ backfillDone: true, secret: 1 }));
-        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(rateStats).doc('wheat_2026-10').set(stat()));
-        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026-10').delete());
-        await assertSucceeds(as('legacyOwner').collection(rateStats).doc('wheat_2026-10').delete());
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(rateStats).doc('wheat_2026').set(stat()));
+        await assertFails(as('manager1').collection(rateStats).doc('wheat_2026').delete());
+        await assertSucceeds(as('legacyOwner').collection(rateStats).doc('wheat_2026').delete());
     });
 
+    // Documents written by tools/migrate (#15), as its plan builds them from the synthetic backup.
+    const migrated = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tests', 'fixtures', 'migrate', 'migrated-docs.json'), 'utf8')).docs;
+    const migratedDoc = (coll, id) => migrated.find(d => d.coll === coll && d.id === id).data;
+
+    t('migration (#15): carried rate stats and _meta pass the rules; the app can roll them forward', async () => {
+        const doc = migratedDoc('rateStats', 'item-rice_2026');
+        const meta = migratedDoc('rateStats', '_meta');
+        await assertSucceeds(as('manager1').collection(rateStats).doc('item-rice_2026').set(doc));
+        await assertSucceeds(as('legacyOwner').collection(rateStats).doc('_meta').set(meta));
+        await assertSucceeds(as('manager1').collection(rateStats).doc('item-rice_2026').set({ ...doc, weeks: { ...doc.weeks, 'w2026-10-26': bucket() }, updatedAt: 1800000000000 }));
+        await assertSucceeds(as('manager1').collection(rateStats).doc('_meta').set({ startedAt: 1 }, { merge: true }));
+    });
+
+    t('migration (#15): a member records a payment on a carried opening record', async () => {
+        const col = `${prefix}retailSales`;
+        const rec = migratedDoc('retailSales', 'opening-retail-r4');
+        await env.withSecurityRulesDisabled((ctx) => ctx.firestore().collection(col).doc('opening-retail-r4').set(rec));
+        const due = rec.payment.due;
+        await assertSucceeds(as('staff1').collection(col).doc('opening-retail-r4').update({
+            payment: { ...rec.payment, cash: 100, due: due - 100, total: 100 },
+            payments: [{ id: 'm1', amount: 100, cash: 100, online: 0, at: 1 }],
+            dueAmount: due - 100, openDue: true, clientVersion: 3
+        }));
+        await assertFails(as('staff1').collection(col).doc('opening-retail-r4').update({ dueAmount: due + 1, payment: { ...rec.payment, due: due + 1 } }));
+    });
     // ---- bill payment edits (#19) ----
 
     const dueBill = { userId: 'manager1', total: 100, items: [{ name: 'Rice', qty: 10 }], timestamp: 1760000000000,
