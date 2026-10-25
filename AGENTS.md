@@ -14,7 +14,7 @@ Auth**, is built as **vanilla ES module-style JS** (no bundler, no framework),
 and is wrapped in **Capacitor** for Android distribution.
 
 - **Owner**: `DDancingDeath` (https://github.com/DDancingDeath/AadhatManagementApp)
-- **App**: **Happa** (Android `com.happa`, same name in English and Hindi). Its name, Android
+- **App**: **Happa** (Android `com.happa`; displayed as lowercase "happa" in English and Hindi). Its name, Android
   package, Firebase project and site all come from `happa.config.json`
   (`npm run apply:happa-config` writes them everywhere, `npm run check:happa-config`
   is the release gate; go-live steps in `docs/happa-go-live.md`).
@@ -253,7 +253,7 @@ section 7) before pushing; don't commit one-off probe scripts.
 3. Merge to `main` (web deploys automatically), then push tag `v<x.y.z>`.
    The tag-driven Android release workflow (#92 / PR #173) builds and signs
    the APK (Happa key, `HAPPA_*` secrets, pinned to `HAPPA_CERT_SHA256`) and
-   publishes a GitHub Release with `Happa.apk`.
+   publishes a GitHub Release with `happa.apk`.
 4. Installed apps see the "Update available" banner (checks
    `releases/latest`, at most every 12 h); `/download` always links to the
    latest APK; users get a one-time "What's new" sheet.

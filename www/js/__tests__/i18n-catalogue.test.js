@@ -65,7 +65,7 @@ describe('i18n catalogues', () => {
     });
 
     it('Hindi values are actually Hindi (not a copy of the English text)', () => {
-        // The app name "Happa" is the same in both languages.
+        // The app name "happa" is the same in both languages.
         const SAME_IN_BOTH = new Set(['ui.app.name']);
         const copies = Object.keys(en).filter(k => !SAME_IN_BOTH.has(k) && en[k] === hi[k] && /[A-Za-z]{2,}/.test(en[k]));
         expect(copies).toEqual([]);

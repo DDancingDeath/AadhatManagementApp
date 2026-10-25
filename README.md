@@ -172,9 +172,9 @@ The version lives in four places that must agree: `www/changelog.json` (top entr
 3. Open a PR, get it reviewed, merge to `main`.
 4. Owner tags the merged commit: `git tag v<ver> && git push origin v<ver>`.
 5. The workflow runs the tests and `check:release`, checks the tag equals `package.json` `version`, builds the signed
-   APK, verifies its signing certificate and package id, and creates the GitHub Release "Happa v<ver>" (marked latest)
-   with notes from `www/changelog.json` and two assets: `Happa.apk` (stable name used by
-   `releases/latest/download/Happa.apk`, the app and the download page) and `Happa-v<ver>.apk`.
+   APK, verifies its signing certificate and package id, and creates the GitHub Release "happa v<ver>" (marked latest)
+   with notes from `www/changelog.json` and two assets: `happa.apk` (stable name used by
+   `releases/latest/download/happa.apk`, the app and the download page) and `happa-v<ver>.apk`.
    Tag builds also run `npm run check:happa-config` (no placeholders left in `happa.config.json`).
    The web app still deploys on merge to `main` as before.
 

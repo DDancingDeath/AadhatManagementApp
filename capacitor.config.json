@@ -1,6 +1,6 @@
 {
   "appId": "com.happa",
-  "appName": "Happa",
+  "appName": "happa",
   "webDir": "www",
   "server": {
     "allowNavigation": [

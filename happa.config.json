@@ -1,8 +1,8 @@
 {
-  "appName": "Happa",
-  "appNameHi": "Happa",
+  "appName": "happa",
+  "appNameHi": "happa",
   "androidPackage": "com.happa",
-  "apkName": "Happa",
+  "apkName": "happa",
   "githubRepo": "DDancingDeath/AadhatManagementApp",
   "ownerConfirmed": true,
   "firebase": {

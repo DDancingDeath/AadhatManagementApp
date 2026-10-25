@@ -37,7 +37,7 @@ affected, but the project is. After rebasing on `main` they preview to Happa.
 
 ## 1. Create the Firebase project (console, business account)
 
-1. Done: project **`happa-bfc07`** (display name "Happa"); default site
+1. Done: project **`happa-bfc07`** (console display name "Happa"); default site
    `happa-bfc07` → https://happa-bfc07.web.app. Already set in `happa.config.json`.
 2. Firestore: **Create database → Production mode → location `asia-south1` (Mumbai)**.
    You cannot change the location later.
@@ -62,7 +62,8 @@ affected, but the project is. After rebasing on `main` they preview to Happa.
 | `firebase.measurementId` | ✅ filled (Analytics SDK not loaded) |
 | `firebase.hostingSite` | ✅ `""` (= `happa-bfc07`) |
 | `androidPackage` | ✅ `com.happa` (owner confirmed; it can never change after phones install v1.0.0) |
-| `appNameHi` | ✅ `Happa`: no separate Hindi name; the app is "Happa" in both languages |
+| `appName` / `appNameHi` | ✅ `happa`: all lowercase wherever it is shown, the same in English and Hindi |
+| `apkName` | ✅ `happa` → `happa.apk` / `happa-vX.Y.Z.apk`, release "happa vX.Y.Z" |
 | `ownerConfirmed` | ✅ `true` |
 
 All values are filled and `npm run check:happa-config` passes. The commands below are
@@ -177,12 +178,12 @@ git push origin v1.0.0
 
 The *Android release* workflow checks `check:happa-config`, builds and signs
 with the Happa key, checks the certificate against `HAPPA_CERT_SHA256` and the
-package against `happa.config.json`, then publishes **"Happa v1.0.0"** with
-`Happa.apk` and `Happa-v1.0.0.apk`.
+package against `happa.config.json`, then publishes **"happa v1.0.0"** with
+`happa.apk` and `happa-v1.0.0.apk`.
 
 Tag after step 8, so the APK has the feature PRs in it.
 
-Side effect: Happa v1.0.0 becomes the repo's *latest* release. The old app's
+Side effect: happa v1.0.0 becomes the repo's *latest* release. The old app's
 download page link (`releases/latest/download/AadhatManagement.apk`) then stops
 working. The old APK stays available at `releases/tag/v1.6.1`. Old phones get
 no update banner, because 1.0.0 is lower than 1.6.1. Once Happa reaches a
@@ -191,7 +192,7 @@ old app from the phones before that.
 
 ## 10. Install on the phones
 
-On each phone, open `https://happa-bfc07.web.app/download`, download `Happa.apk`
+On each phone, open `https://happa-bfc07.web.app/download`, download `happa.apk`
 and install it. It installs **next to** the old app; nothing is replaced. Sign in.
 Accounts and roles work as the migration README describes. Any user it did not
 carry over registers again, and the owner approves them in Admin.

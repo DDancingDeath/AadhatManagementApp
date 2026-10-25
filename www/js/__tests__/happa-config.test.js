@@ -61,7 +61,7 @@ describe('happa.config.json', () => {
         expect(JSON.parse(files['firebase.json']).hosting.site).toBe('happa-shop');
         expect(files['www/firebaseConfig.js']).toContain('"authDomain": "happa-shop.firebaseapp.com"');
         expect(files['www/download.html']).toContain('href="https://happa-shop.web.app"');
-        expect(files['www/download.html']).toContain('releases/latest/download/Happa.apk');
+        expect(files['www/download.html']).toContain('releases/latest/download/happa.apk');
         expect(files['android/app/build.gradle']).toMatch(/applicationId "com\.happa"/);
         expect(files['android/app/build.gradle']).toMatch(/namespace "com\.happa"/);
     });
