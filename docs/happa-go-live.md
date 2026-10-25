@@ -18,22 +18,25 @@ Run the commands in PowerShell from a clone of the repo (e.g. `Q:\aadhat\happa-a
 
 ---
 
-## 0. Merge order (owner decision): #231 FIRST
+## 0. Merge order (owner decision)
 
-The old project `aadhat-management` must stay untouched. While `main` is
-still the old app, **every** merge to `main` deploys to it. So:
+**#231 → #226 → #228 → #229 → #230 → #227 → #232**
 
-1. **#231 (this Happa PR) merges first**, once the secrets in steps 3–4 are set.
-2. Then **#232** (migration tool + cutover runbook).
-3. Then the feature PRs, in this order: **#226, #228, #229, #230, #227**.
+1. **#231** (this happa PR) merges first, after the cut-off steps 6–7.
+2. Then the feature PRs **#226, #228, #229, #230, #227**, in that order.
    Rebase each one on `main` first. Each takes the next cache bump with the
    new prefix: `?v=` token, `BUILD_ID` and `CACHE_NAME = 'happa-v2'`, `'happa-v3'`, …
    (not `aadhat-vN`).
+3. **#232** (migration tool + cutover runbook) merges last. The migration
+   `apply` runs only after #232 has merged (step 10).
 
-Until #231 merges, **don't merge anything to `main`**. Also avoid pushing to the
+The old project `aadhat-management` must stay untouched. While `main` is
+still the old app, **every** merge to `main` deploys to it. So until #231
+merges, **don't merge anything to `main`**. Also avoid pushing to the
 feature PRs: their own PR-preview workflow still uses the old secret and would
 create preview channels in `aadhat-management`. The live old site is not
-affected, but the project is. After rebasing on `main` they preview to Happa.
+affected, but the project is. Once the old secrets are deleted (step 7), those
+runs fail instead of deploying. After rebasing on `main` they preview to happa.
 
 ## 1. Create the Firebase project (console, business account)
 
@@ -125,30 +128,62 @@ Remove-Item .\happa-sa.json
 # Get-Content .\happa-backup-sa.json -Raw | gh secret set FIREBASE_BACKUP_SERVICE_ACCOUNT_HAPPA -R $R
 ```
 
-`BACKUP_PASSPHRASE` is reused. The old secrets (`ANDROID_KEYSTORE_*`,
-`ANDROID_CERT_SHA256`, `FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT`,
-`FIREBASE_BACKUP_SERVICE_ACCOUNT`) stay as they are for the archived app. Nothing reads them any more.
+`BACKUP_PASSPHRASE` is reused by happa's backup; keep it. The old secrets
+(`FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT`, `FIREBASE_BACKUP_SERVICE_ACCOUNT`,
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`) are **not** read by #231's workflows. They are still
+read by the workflows on every older ref: branches made before #231, PRs that
+have not been rebased, and the tags v1.3.0–v1.6.1. A manual dispatch or a push
+on such a ref could deploy to `aadhat-management`, or publish an old-app APK as
+the *latest* release. Step 7 deletes them once the final old backup and the
+auth export are done.
 
 ## 5. Deploy Firestore rules and indexes to the new project
 
-Do this before the migration so the data is protected from the start.
+Do this before the migration (step 10) so the data is protected from the start.
 
 ```powershell
 npx --yes firebase-tools@latest login      # the business account
 npx --yes firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project happa-bfc07
 ```
 
-## 6. Stop billing in the old app and run the migration
+## 6. Cut-off: stop billing in the old app, final backup and auth export
 
 1. Pick a cut-off time. After it, nobody bills in the old app. Every phone
    opens the old app once while online, so queued offline bills get uploaded.
 2. Take a final backup of the old project: Actions → *Firestore backup* →
-   Run workflow (on `main`, **before** the Happa PR merges, so it still backs
-   up `aadhat-management`).
-3. Run the migration tool exactly as the README in #232 (`feat/migrate-project-15`,
-   run from that branch; it merges after #231) says: dry run first, check the counts, then apply into `happa-bfc07`.
+   Run workflow on `main`. This must happen **before** #231 merges and before
+   step 7, because it still uses the old secrets to back up `aadhat-management`.
+   Download the artifact and keep it with `BACKUP_PASSPHRASE`.
+3. Export the old project's Auth users, read-only, as the #232 README describes,
+   e.g. `npx --yes firebase-tools@latest auth:export old-auth-users.json --format=json --project aadhat-management`.
+   Keep the file private. It contains password hashes; never commit it.
+4. Optionally, do a migration **dry run** from the #232 branch to check the counts.
+   The real `apply` waits for step 10.
 
-## 7. Merge #231 first (= deploy hosting)
+## 7. Delete the old app's repository secrets
+
+Do this only after step 6.2 (final backup) and step 6.3 (`auth:export`) have
+succeeded. Use the owner token. This only removes GitHub secrets; it does
+**not** touch the old project's IAM or service accounts.
+
+```powershell
+$env:GH_TOKEN = (gh auth token -u DDancingDeath)
+$R = 'DDancingDeath/AadhatManagementApp'
+foreach ($s in 'FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT', 'FIREBASE_BACKUP_SERVICE_ACCOUNT',
+               'ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD') {
+    gh secret delete $s -R $R
+}
+gh secret list -R $R    # BACKUP_PASSPHRASE, HAPPA_* and FIREBASE_SERVICE_ACCOUNT_HAPPA remain
+```
+
+Keep `BACKUP_PASSPHRASE`. The old keystore and its passwords stay in the
+password manager and in `C:\Users\hik\AadhatManagementApp-apk\`. The
+`ANDROID_CERT_SHA256` variable is harmless without the keystore secrets and can stay.
+After this, an old ref can no longer deploy to `aadhat-management` or sign an
+old-app APK. Those runs fail at the secret check.
+
+## 8. Merge #231 (= deploy hosting)
 
 Merging this PR deploys `www/` to `https://happa-bfc07.web.app` (*Deploy to
 Firebase Hosting on merge*), and, because `happa.config.json` changed, it also
@@ -159,16 +194,23 @@ re-deploys rules and indexes to the new project. Check that:
 - `https://aadhat-management.web.app` still shows the old app, unchanged.
 
 Do **not** revert the merge commit to roll back. That would bring back the
-workflows that deploy to `aadhat-management`. Fix forward instead; the old app
-keeps working on its own.
+workflows that deploy to `aadhat-management` (after step 7 they would fail).
+Fix forward instead; the old app keeps working on its own.
 
-## 8. Then #232, then the feature PRs
+## 9. Merge the feature PRs, then #232
 
-Merge #232, then #226, #228, #229, #230 and #227, in that order. Rebase each
-one on `main` and let CI pass first (step 0 has the cache bump). Every merge
-now deploys to Happa only.
+Merge **#226 → #228 → #229 → #230 → #227 → #232**, in that order. Rebase each one
+on `main` and let CI pass first; step 0 has the cache bump. Every merge now
+deploys to happa only.
 
-## 9. Tag v1.0.0 (Android release)
+## 10. Run the migration (after #232 has merged)
+
+Run the migration tool from `main`, exactly as the #232 README says: dry run,
+check the counts, then `apply` into `happa-bfc07`. Its source is the old
+project (read-only, with the owner's local credentials, not repository secrets)
+plus the auth export from step 6.3.
+
+## 11. Tag v1.0.0 (Android release)
 
 ```powershell
 git fetch origin
@@ -177,32 +219,31 @@ git push origin v1.0.0
 ```
 
 The *Android release* workflow checks `check:happa-config`, builds and signs
-with the Happa key, checks the certificate against `HAPPA_CERT_SHA256` and the
-package against `happa.config.json`, then publishes **"happa v1.0.0"** with
-`happa.apk` and `happa-v1.0.0.apk`.
-
-Tag after step 8, so the APK has the feature PRs in it.
+with the happa key, checks the certificate against `HAPPA_CERT_SHA256` and the
+package (`com.happa`) against `happa.config.json`, then publishes
+**"happa v1.0.0"** with `happa.apk` and `happa-v1.0.0.apk`. Tag after step 10,
+so the APK has the feature PRs in it and the data is already in place.
 
 Side effect: happa v1.0.0 becomes the repo's *latest* release. The old app's
 download page link (`releases/latest/download/AadhatManagement.apk`) then stops
 working. The old APK stays available at `releases/tag/v1.6.1`. Old phones get
-no update banner, because 1.0.0 is lower than 1.6.1. Once Happa reaches a
+no update banner, because 1.0.0 is lower than 1.6.1. Once happa reaches a
 version above 1.6.1, old installs would offer a broken update, so remove the
 old app from the phones before that.
 
-## 10. Install on the phones
+## 12. Install on the phones
 
 On each phone, open `https://happa-bfc07.web.app/download`, download `happa.apk`
 and install it. It installs **next to** the old app; nothing is replaced. Sign in.
 Accounts and roles work as the migration README describes. Any user it did not
 carry over registers again, and the owner approves them in Admin.
 
-## 11. Opening stock
+## 13. Opening stock
 
 In Happa, count each item and enter the opening quantity with a stock
 adjustment. Do this once, before the first bill.
 
-## 12. Start billing in Happa
+## 14. Start billing in happa
 
 All new bills go into Happa from now on. Keep the old app only to look things up.
 Afterwards, run *Firestore backup* and *TIP auto bugs* once by hand (Actions →

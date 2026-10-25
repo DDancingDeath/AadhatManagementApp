@@ -193,8 +193,9 @@ Run workflow) with `tag` = `v<ver>`; assets are replaced (`--clobber`).
 - Variable (required) `HAPPA_CERT_SHA256` — SHA-256 of the Happa signing certificate. The workflow refuses to
   publish an APK signed with any other key (phones cannot update an app signed with a different key).
   Commands for all of these: [docs/happa-go-live.md](docs/happa-go-live.md).
-- The old app's `ANDROID_KEYSTORE_*` secrets and `ANDROID_CERT_SHA256` variable are no longer used and are kept
-  untouched for the archived old app (`com.hitesh.aadhat`, last release v1.6.1).
+- The old app's secrets (`ANDROID_KEYSTORE_*`, `ANDROID_KEY_*`, `FIREBASE_SERVICE_ACCOUNT_AADHAT_MANAGEMENT`,
+  `FIREBASE_BACKUP_SERVICE_ACCOUNT`) are not read by current workflows but still are by older refs and tags, so they are
+  deleted at go-live (`docs/happa-go-live.md` step 7). `BACKUP_PASSPHRASE` stays.
 
 
 ## Testing
