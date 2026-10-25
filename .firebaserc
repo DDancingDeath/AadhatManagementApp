@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "aadhat-management"
+    "default": "aadhat-management",
+    "happa": "happa-bfc07"
   }
 }
