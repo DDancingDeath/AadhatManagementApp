@@ -4,6 +4,7 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
+    "site": "__HAPPA_PROJECT_ID__",
     "public": "www",
     "ignore": [
       "firebase.json",

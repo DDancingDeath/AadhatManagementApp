@@ -65,16 +65,17 @@ const COLLECTION_PREFIX = APP_ENV === 'production' ? '' : 'dev_';
 
 console.log(`🔧 App Environment: ${APP_ENV} | Collection Prefix: "${COLLECTION_PREFIX}"`);
 
-// Single Firebase Config (same project for both environments)
+// Single Firebase Config (same project for both environments), from happa.config.json
+// <happa-config>
 const firebaseConfig = {
-  apiKey: "AIzaSyD0ib9JkKbqaNE2i_TZlXYJqEtXI_i2Fj8",
-  authDomain: "aadhat-management.firebaseapp.com",
-  projectId: "aadhat-management",
-  storageBucket: "aadhat-management.firebasestorage.app",
-  messagingSenderId: "297248223702",
-  appId: "1:297248223702:web:9ff86424b130e77d6c7477",
-  measurementId: "G-01155M3XPL"
+  "apiKey": "__HAPPA_API_KEY__",
+  "authDomain": "__HAPPA_PROJECT_ID__.firebaseapp.com",
+  "projectId": "__HAPPA_PROJECT_ID__",
+  "storageBucket": "__HAPPA_PROJECT_ID__.firebasestorage.app",
+  "messagingSenderId": "__HAPPA_MESSAGING_SENDER_ID__",
+  "appId": "__HAPPA_APP_ID__"
 };
+// </happa-config>
 
 // Expose environment globally
 window.APP_ENV = APP_ENV;

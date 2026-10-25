@@ -14,7 +14,16 @@ Auth**, is built as **vanilla ES module-style JS** (no bundler, no framework),
 and is wrapped in **Capacitor** for Android distribution.
 
 - **Owner**: `DDancingDeath` (https://github.com/DDancingDeath/AadhatManagementApp)
-- **Live URL**: `https://aadhat-management.web.app`
+- **App**: **Happa** (Android `com.happa.shop` by default). Its name, Android
+  package, Firebase project and site all come from `happa.config.json`
+  (`npm run apply:happa-config` writes them everywhere, `npm run check:happa-config`
+  is the release gate; go-live steps in `docs/happa-go-live.md`).
+- **Live URL**: `https://<hostingSite>.web.app` from `happa.config.json`.
+- **Old app (archived, never changed)**: Android `com.hitesh.aadhat`, Firebase
+  project `aadhat-management`, site `aadhat-management.web.app`, last release
+  v1.6.1. No workflow may deploy to it; the CI guard
+  (`scripts/happa-config.js guard`) fails if anything resolves to it. Its
+  release notes are archived in `docs/aadhat-changelog-archive.json`.
 - **Bug / feature list**: GitHub issues in this repo (labels, milestones and
   the pinned plan issue — see section 5). There is no other master list.
 - **The staging clone (`AadhatManagementApp-staging`) is archived** —
@@ -121,10 +130,10 @@ In order:
   file under `www/` bumps all three together:
   1. every `?v=<token>` in `www/index.html` (one token for the whole file),
   2. `BUILD_ID` in `www/js/main.js`,
-  3. `CACHE_NAME` (`aadhat-vN`) in `www/service-worker.js`.
+  3. `CACHE_NAME` (`happa-vN`) in `www/service-worker.js`.
 
   Token format: `?v=YYYYMMDD<letter>` (e.g. `20261021j`), `BUILD_ID` =
-  `'<same token>-<short-slug>'`, `CACHE_NAME` = next `aadhat-vN`. Parallel
+  `'<same token>-<short-slug>'`, `CACHE_NAME` = next `happa-vN`. Parallel
   PRs collide on these three lines — whoever merges second rebases and
   picks the next value. Don't touch app version / changelog for a cache bump.
 - **Versions / release notes**: `www/changelog.json` (newest first, `en` +
@@ -242,7 +251,8 @@ section 7) before pushing; don't commit one-off probe scripts.
    `npm run check:release`.
 3. Merge to `main` (web deploys automatically), then push tag `v<x.y.z>`.
    The tag-driven Android release workflow (#92 / PR #173) builds and signs
-   the APK and publishes a GitHub Release with `AadhatManagement.apk`.
+   the APK (Happa key, `HAPPA_*` secrets, pinned to `HAPPA_CERT_SHA256`) and
+   publishes a GitHub Release with `Happa.apk`.
 4. Installed apps see the "Update available" banner (checks
    `releases/latest`, at most every 12 h); `/download` always links to the
    latest APK; users get a one-time "What's new" sheet.
