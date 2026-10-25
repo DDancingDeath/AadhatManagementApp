@@ -14,7 +14,7 @@ Auth**, is built as **vanilla ES module-style JS** (no bundler, no framework),
 and is wrapped in **Capacitor** for Android distribution.
 
 - **Owner**: `DDancingDeath` (https://github.com/DDancingDeath/AadhatManagementApp)
-- **App**: **Happa** (Android `com.happa.shop` by default). Its name, Android
+- **App**: **Happa** (Android `com.happa`, same name in English and Hindi). Its name, Android
   package, Firebase project and site all come from `happa.config.json`
   (`npm run apply:happa-config` writes them everywhere, `npm run check:happa-config`
   is the release gate; go-live steps in `docs/happa-go-live.md`).

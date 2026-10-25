@@ -18,21 +18,22 @@ Run the commands in PowerShell from a clone of the repo (e.g. `Q:\aadhat\happa-a
 
 ---
 
-## 0. Before tomorrow: keep the old site frozen (optional, recommended)
+## 0. Merge order (owner decision): #231 FIRST
 
-Until the Happa PR merges, `main` still deploys to `aadhat-management`. So every
-feature PR merged before it **changes the old site**. If the old app must stay
-exactly as it is now, pause that workflow while the feature PRs merge:
+The old project `aadhat-management` must stay untouched. While `main` is
+still the old app, **every** merge to `main` deploys to it. So:
 
-```powershell
-$env:GH_TOKEN = (gh auth token -u DDancingDeath)
-$R = 'DDancingDeath/AadhatManagementApp'
-gh workflow disable firebase-hosting-merge.yml -R $R
-gh workflow disable firestore-rules-deploy.yml -R $R
-```
+1. **#231 (this Happa PR) merges first**, once the secrets in steps 3–4 are set.
+2. Then **#232** (migration tool + cutover runbook).
+3. Then the feature PRs, in this order: **#226, #228, #229, #230, #227**.
+   Rebase each one on `main` first. Each takes the next cache bump with the
+   new prefix: `?v=` token, `BUILD_ID` and `CACHE_NAME = 'happa-v2'`, `'happa-v3'`, …
+   (not `aadhat-vN`).
 
-Re-enable both right before merging the Happa PR (step 7). From then on they
-deploy to Happa only.
+Until #231 merges, **don't merge anything to `main`**. Also avoid pushing to the
+feature PRs: their own PR-preview workflow still uses the old secret and would
+create preview channels in `aadhat-management`. The live old site is not
+affected, but the project is. After rebasing on `main` they preview to Happa.
 
 ## 1. Create the Firebase project (console, business account)
 
@@ -40,7 +41,8 @@ deploy to Happa only.
    `happa-bfc07` → https://happa-bfc07.web.app. Already set in `happa.config.json`.
 2. Firestore: **Create database → Production mode → location `asia-south1` (Mumbai)**.
    You cannot change the location later.
-3. Authentication: enable **Email/Password**. Check that `happa-bfc07.web.app`
+3. Authentication: enable **Email/Password**. Phone sign-in stays enabled in the
+   console for a planned future feature; the app does not use it yet. Check that `happa-bfc07.web.app`
    and `happa-bfc07.firebaseapp.com` are listed under *Authorized domains*.
    Add `<hostingSite>.web.app` too if you use a different site name.
 4. Done: the web app config is in `happa.config.json` (public client config, not a
@@ -58,10 +60,14 @@ deploy to Happa only.
 | `firebase.messagingSenderId` | ✅ filled |
 | `firebase.appId` | ✅ filled |
 | `firebase.measurementId` | ✅ filled (Analytics SDK not loaded) |
-| `firebase.hostingSite` | leave `""` (= project id) unless you created another site |
-| `androidPackage` | default `com.happa.shop`. **Confirm it.** It can never change after phones install v1.0.0 |
-| `appNameHi` | suggested `हप्पा`. Confirm it or change it |
-| `ownerConfirmed` | set to `true` after confirming the two rows above |
+| `firebase.hostingSite` | ✅ `""` (= `happa-bfc07`) |
+| `androidPackage` | ✅ `com.happa` (owner confirmed; it can never change after phones install v1.0.0) |
+| `appNameHi` | ✅ `Happa`: no separate Hindi name; the app is "Happa" in both languages |
+| `ownerConfirmed` | ✅ `true` |
+
+All values are filled and `npm run check:happa-config` passes. The commands below are
+only needed if a value changes again. `apply` also moves `MainActivity.java` to the
+folder that matches `androidPackage`.
 
 ```powershell
 npm ci
@@ -138,22 +144,14 @@ npx --yes firebase-tools@latest deploy --only firestore:rules,firestore:indexes 
 2. Take a final backup of the old project: Actions → *Firestore backup* →
    Run workflow (on `main`, **before** the Happa PR merges, so it still backs
    up `aadhat-management`).
-3. Run the migration tool exactly as its README in the `feat/migrate-project-15`
-   PR says: dry run first, check the counts, then apply into `happa-bfc07`.
+3. Run the migration tool exactly as the README in #232 (`feat/migrate-project-15`,
+   run from that branch; it merges after #231) says: dry run first, check the counts, then apply into `happa-bfc07`.
 
-## 7. Merge order
+## 7. Merge #231 first (= deploy hosting)
 
-1. Merge the open feature PRs first.
-2. Rebase this PR on `main`. Re-check the cache bump (`?v=`, `BUILD_ID`,
-   `CACHE_NAME`) and run `npm run check:happa-config`. Wait for CI to pass.
-3. Re-enable the workflows from step 0 (`gh workflow enable firebase-hosting-merge.yml -R $R`,
-   `gh workflow enable firestore-rules-deploy.yml -R $R`).
-
-## 8. Deploy hosting (= merge the Happa PR)
-
-Merging deploys `www/` to `https://happa-bfc07.web.app` (*Deploy to Firebase Hosting
-on merge*), and, because `happa.config.json` changed, also re-deploys rules
-and indexes to the new project. Check that:
+Merging this PR deploys `www/` to `https://happa-bfc07.web.app` (*Deploy to
+Firebase Hosting on merge*), and, because `happa.config.json` changed, it also
+re-deploys rules and indexes to the new project. Check that:
 
 - both runs passed, and the guard step printed `project=happa-bfc07`;
 - `https://happa-bfc07.web.app` and `/download` open;
@@ -162,6 +160,12 @@ and indexes to the new project. Check that:
 Do **not** revert the merge commit to roll back. That would bring back the
 workflows that deploy to `aadhat-management`. Fix forward instead; the old app
 keeps working on its own.
+
+## 8. Then #232, then the feature PRs
+
+Merge #232, then #226, #228, #229, #230 and #227, in that order. Rebase each
+one on `main` and let CI pass first (step 0 has the cache bump). Every merge
+now deploys to Happa only.
 
 ## 9. Tag v1.0.0 (Android release)
 
@@ -175,6 +179,8 @@ The *Android release* workflow checks `check:happa-config`, builds and signs
 with the Happa key, checks the certificate against `HAPPA_CERT_SHA256` and the
 package against `happa.config.json`, then publishes **"Happa v1.0.0"** with
 `Happa.apk` and `Happa-v1.0.0.apk`.
+
+Tag after step 8, so the APK has the feature PRs in it.
 
 Side effect: Happa v1.0.0 becomes the repo's *latest* release. The old app's
 download page link (`releases/latest/download/AadhatManagement.apk`) then stops
@@ -209,7 +215,7 @@ Written by `npm run apply:happa-config` from `happa.config.json`:
 
 - `.firebaserc` (default project), `firebase.json` (`hosting.site`)
 - `capacitor.config.json` (`appId`, `appName`)
-- `android/app/build.gradle` (`applicationId`; `namespace` stays `com.hitesh.aadhat`, which is internal Java code only)
+- `android/app/build.gradle` (`applicationId` and `namespace`), and `MainActivity.java` is moved to `android/app/src/main/java/com/happa/`
 - `android/app/src/main/res/values/strings.xml` (`app_name`, `title_activity_main`, `package_name`, `custom_url_scheme`)
 - `www/manifest.webmanifest` (`name`, `short_name`)
 - `www/firebaseConfig.js` (the `<happa-config>` block)

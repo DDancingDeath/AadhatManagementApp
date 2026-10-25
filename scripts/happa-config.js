@@ -159,7 +159,9 @@ const TARGETS = [
     },
     {
         file: 'android/app/build.gradle',
-        write: (t, d) => replaceOrThrow(t, /^(\s*applicationId\s+)"[^"]*"/m, `$1"${d.androidPackage}"`, 'applicationId')
+        write: (t, d) => replaceOrThrow(
+            replaceOrThrow(t, /^(\s*applicationId\s+)"[^"]*"/m, `$1"${d.androidPackage}"`, 'applicationId'),
+            /^(\s*namespace\s+)"[^"]*"/m, `$1"${d.androidPackage}"`, 'namespace')
     },
     {
         file: 'android/app/src/main/res/values/strings.xml',
@@ -200,7 +202,51 @@ function plan(root = DEFAULT_ROOT, raw = loadConfig(root)) {
 }
 
 function outOfSync(root = DEFAULT_ROOT, raw) {
-    return plan(root, raw).filter((p) => p.current !== p.wanted).map((p) => p.file);
+    const files = plan(root, raw).filter((p) => p.current !== p.wanted).map((p) => p.file);
+    const activity = mainActivity(root, derive(raw || loadConfig(root)));
+    if (activity && activity.from !== activity.to) files.push(activity.from);
+    return files;
+}
+
+const JAVA_ROOT = 'android/app/src/main/java';
+
+/** Where MainActivity.java is and where the namespace says it must be (null if there is none). */
+function mainActivity(root, d) {
+    const base = path.join(root, JAVA_ROOT);
+    const found = [];
+    const walk = (dir) => {
+        if (!fs.existsSync(dir)) return;
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (e.isDirectory()) walk(path.join(dir, e.name));
+            else if (e.name === 'MainActivity.java') found.push(path.join(dir, e.name));
+        }
+    };
+    walk(base);
+    if (!found.length) return null;
+    if (found.length > 1) throw new Error(`More than one MainActivity.java under ${JAVA_ROOT}`);
+    const rel = (p) => path.relative(root, p).split(path.sep).join('/');
+    const to = `${JAVA_ROOT}/${d.androidPackage.split('.').join('/')}/MainActivity.java`;
+    const text = fs.readFileSync(found[0], 'utf8');
+    const pkg = (/^package\s+([\w.]+);/m.exec(text) || [])[1];
+    return { from: pkg === d.androidPackage ? rel(found[0]) : `${rel(found[0])} (package ${pkg})`, to, file: found[0], text };
+}
+
+function moveMainActivity(root, d) {
+    const a = mainActivity(root, d);
+    if (!a || a.from === a.to) return null;
+    const target = path.join(root, a.to);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, a.text.replace(/^package\s+[\w.]+;/m, `package ${d.androidPackage};`));
+    if (path.resolve(a.file) !== path.resolve(target)) {
+        fs.rmSync(a.file);
+        let dir = path.dirname(a.file);
+        const stop = path.join(root, JAVA_ROOT);
+        while (dir !== stop && fs.readdirSync(dir).length === 0) {
+            fs.rmdirSync(dir);
+            dir = path.dirname(dir);
+        }
+    }
+    return a.to;
 }
 
 function qrUrl(root = DEFAULT_ROOT) {
@@ -229,6 +275,8 @@ function apply(root = DEFAULT_ROOT, { qr = true } = {}) {
         changed.push(p.file);
     }
     const d = derive(raw);
+    const moved = moveMainActivity(root, d);
+    if (moved) changed.push(moved);
     if (qr && !PLACEHOLDER_RE.test(d.downloadPageUrl) && qrUrl(root) !== d.downloadPageUrl) {
         writeQr(root, d.downloadPageUrl);
         changed.push(QR_FILE);

@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.hitesh.aadhat"
+    namespace "com.happa"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.happa.shop"
+        applicationId "com.happa"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
